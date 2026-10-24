@@ -200,6 +200,28 @@ aggregate is still 9/2 because of the out-of-scope X container baseline
 it records the original plan paths. Progress logs:
 `progress/issue-sweep-20261024-*.md`.
 
+Agent prompt overflow guard
+([design](../design-docs/specs/design-agent-prompt-overflow-guard.md)):
+[`prompt-overflow-guard-01-contracts`](completed/prompt-overflow-guard-01-contracts.md),
+[`prompt-overflow-guard-02-fanout-observations`](completed/prompt-overflow-guard-02-fanout-observations.md),
+[`prompt-overflow-guard-03-prompt-guard`](completed/prompt-overflow-guard-03-prompt-guard.md),
+[`prompt-overflow-guard-04-failure-kind-consumers`](completed/prompt-overflow-guard-04-failure-kind-consumers.md),
+and [`prompt-overflow-guard-05-integration`](completed/prompt-overflow-guard-05-integration.md)
+were archived on 2026-10-22 after the session-479 integration review
+(comm-008796) accepted the combined tree. The work fixes the session-471
+"Prompt is too long" incident. Fanout `changeEvidence` observations are
+aggregated and bounded, upstream payloads are rendered once in the prompt, a
+pre-invocation byte guard spills oversized values, and provider overflow is
+classified as `failureKind: promptTooLarge`. The focused suites ran 141 tests
+with 0 failures, and selected-file strict SwiftLint passed on 32 files. A
+mock-scenario CLI run completed with `promptCompaction.outcome: spilled`, and
+pog-03's RielaCore target compiled on aarch64 Linux Glibc. The amd64 release
+build is deferred to PR Linux CI. Browser E2E was skipped because no
+browser-facing file changed. The dispatch manifest stays at
+[`active/prompt-overflow-dispatch.json`](active/prompt-overflow-dispatch.json).
+Progress logs: [`progress/pog-01-contracts.md`](progress/pog-01-contracts.md)
+through [`progress/pog-05-integration.md`](progress/pog-05-integration.md).
+
 Scheduled workflow overlap policy
 ([design](../design-docs/specs/design-scheduled-overlap-policy.md)):
 [`schedule-overlap-policy-01-contracts`](completed/schedule-overlap-policy-01-contracts.md),

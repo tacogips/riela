@@ -584,6 +584,72 @@ remediation or proof of deadlock. Provider fallback correlation inspects at
 most 200 launch-window candidates and returns `unknown` if that limit is
 exceeded; native session ids use targeted SQLite lookup.
 
+### Agent prompt size limits
+
+Agent requests are measured before invocation as the UTF-8 byte count of
+`systemPromptText` plus the larger of the fresh and resumed `promptText`.
+The agent node payload field `promptMaxBytes` overrides the workflow default
+`defaults.agentPromptMaxBytes`; both must be positive integers and fall back to
+400,000 bytes. Fanout `changeTracking.observationInlineLimit` defaults to 200
+and accepts 0 through 10,000 aggregated observations. Workflow excerpt (other
+step and fanout fields omitted):
+
+```json
+{
+  "defaults": { "agentPromptMaxBytes": 600000 },
+  "steps": [
+    {
+      "id": "dispatch",
+      "transitions": [
+        {
+          "toStepId": "branch",
+          "fanout": {
+            "joinStepId": "join",
+            "changeTracking": {
+              "pathsFrom": "/trackedPaths",
+              "observationInlineLimit": 50
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+A single agent node can set its own budget in its node payload, for example
+`"promptMaxBytes": 800000`.
+
+The runtime variables block renders upstream message payloads once. In that
+JSON, `$rielaElidedKeys` lists payload keys whose values are already present at
+the top level, and `_rielaInput.latest.payload` is replaced by a `$rielaSameAs`
+JSON pointer to the last `_rielaInput.messages[]` payload. These markers retain
+the values without repeating their full JSON text. Prompt templates still
+render from the original, unmodified variables.
+
+If the composed prompt exceeds its byte budget, values of at least 4,096 bytes
+are written losslessly under
+`<working-directory>/tmp/riela-prompt-spill/<sessionId>/<stepId>/` as
+content-addressed `<sha256>.json` files. The prompt receives a stub containing
+`$rielaSpilled`, `pointer`, `path`, `bytes`, `sha256`, and a `preview` of up to
+256 characters. The agent can read the referenced file. If compaction cannot
+fit the budget, the step fails before the backend is called.
+
+When a prompt is compacted or rejected, its execution `inputSnapshot` includes
+`promptCompaction` with the budget, measured and final byte counts, outcome,
+and spill records. Guard rejections use `failureKind: promptTooLarge`.
+Provider errors containing `prompt is too long`, `context_length_exceeded`,
+`maximum context length`, or `request_too_large` receive the same failure kind.
+The existing `riela session resume <id> --retry-failed-step` and
+`rerunOnAdapterFailure` recovery controls apply; raising the budget lets the
+guard recompute on retry.
+
+Fanout `changeEvidence` keeps a bounded inline `observations` list and reports
+`observationCount`, `observationOccurrenceCount`, `inlineObservationCount`,
+`observationsTruncated`, `observationsPath`, and
+`observationCountsByBranch`. The complete aggregated list is stored at
+`observationsPath`; `hasDrift` is derived from the total `observationCount`.
+
 ## Runtime Data Garbage Collection
 
 Runtime data GC is off by default. Enable automatic RielaApp cleanup by writing

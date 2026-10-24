@@ -69,6 +69,7 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
   public static let maxStepsExceeded = WorkflowSessionFailureKind(rawValue: "maxStepsExceeded")
   public static let cancelled = WorkflowSessionFailureKind(rawValue: "cancelled")
   public static let adapterFailure = WorkflowSessionFailureKind(rawValue: "adapterFailure")
+  public static let promptTooLarge = WorkflowSessionFailureKind(rawValue: "promptTooLarge")
   public static let policyBlocked = WorkflowSessionFailureKind(rawValue: "policyBlocked")
   public static let nodeTimeout = WorkflowSessionFailureKind(rawValue: "nodeTimeout")
   public static let internalFailure = WorkflowSessionFailureKind(rawValue: "internal")
@@ -88,6 +89,7 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
     maxStepsExceeded.rawValue,
     cancelled.rawValue,
     adapterFailure.rawValue,
+    promptTooLarge.rawValue,
     policyBlocked.rawValue,
     nodeTimeout.rawValue,
     internalFailure.rawValue,
@@ -273,6 +275,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var acceptedOutput: WorkflowAcceptedOutputMetadata?
   public var adapterOutput: WorkflowAdapterOutputMetadata?
   public var failureReason: String?
+  public var failureKind: WorkflowSessionFailureKind?
   public var lastBackendEventAt: Date?
   public var lastBackendEventType: String?
   public var backendEventCount: Int?
@@ -296,6 +299,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
     failureReason: String? = nil,
+    failureKind: WorkflowSessionFailureKind? = nil,
     lastBackendEventAt: Date? = nil,
     lastBackendEventType: String? = nil,
     backendEventCount: Int? = nil,
@@ -318,6 +322,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.acceptedOutput = acceptedOutput
     self.adapterOutput = adapterOutput
     self.failureReason = failureReason
+    self.failureKind = failureKind
     self.lastBackendEventAt = lastBackendEventAt
     self.lastBackendEventType = lastBackendEventType
     self.backendEventCount = backendEventCount

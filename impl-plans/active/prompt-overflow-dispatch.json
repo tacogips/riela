@@ -1,0 +1,287 @@
+{
+  "taskId": "prompt-overflow",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/agent-prompt-overflow-guard",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": false,
+  "originalHead": "3f921eb46e0a099b0d849adb62b8fb7ca69eb9af",
+  "designDocPaths": [
+    "design-docs/specs/design-agent-prompt-overflow-guard.md",
+    "design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md"
+  ],
+  "evidenceRoot": "tmp/prompt-overflow",
+  "reviewContext": {
+    "issueReference": "none (no GitHub issue). Incident: opus-luna-design-and-implement-review-loop 0.1.8 session-471 (2026-10-22). Original run: opus-luna-design-and-implement-review-loop-session-475; plan acceptance comm-008704 (step5-impl-plan-review-attempt-1-exec-7291, finding P5-F1 resolved). Rerun: opus-luna-design-and-implement-review-loop-session-478 (pog-01 writePaths amended for step-level failureKind persistence). Rerun: opus-luna-design-and-implement-review-loop-session-479 (pog-01 operator amendment 2: progress-gate bookkeeping only; plans otherwise unchanged).",
+    "userProblem": "In session-471 the implementation-wave-outcome Opus step received about 8 MB of input and the provider returned 'Prompt is too long (~1.25M tokens)'. The session failed as adapterFailure, and --retry-failed-step resent the same input. Causes confirmed at 3f921eb4: (1) WorkflowFanoutChangeEvidence.reduce() emits one observation per (branch, capture record, drifted path) with no bound; (2) runtimeVariablesPrompt in composedPrompts renders the upstream payload three times (flattened top level, _rielaInput.messages[i].payload, _rielaInput.latest.payload); (3) nothing measures the composed request, and provider overflow is recorded as plain adapterFailure.",
+    "requiredOutcomes": [
+      "changeEvidence.observations is aggregated per (branchId, selection, path), with occurrences, reasons and first/last stepId and snapshotPath. The inline list is capped by fanout.changeTracking.observationInlineLimit (default 200, range 0...10000). The join reports observationCount, observationOccurrenceCount, inlineObservationCount, observationsTruncated, observationsPath and observationCountsByBranch. The full list is written to <evidence dir>/observations.json. hasDrift is derived from the total count (pog-02).",
+      "A focused test with thousands of drifted paths across 3 branches keeps the serialized changeEvidence under 262144 bytes, with hasDrift and complete preserved (pog-02).",
+      "The runtime-variables block renders each message payload once, using the $rielaElidedKeys and $rielaSameAs markers. A runner test shows a 100 KB marker appears exactly once in systemPromptText + promptText. Templates still render from the original variables (pog-01).",
+      "A deterministic pre-invocation guard measures utf8(systemPromptText) + max(promptText, resumedPromptText) against payload.promptMaxBytes ?? defaults.agentPromptMaxBytes ?? 400000. When over budget it spills values of at least 4096 bytes to <workdir>/tmp/riela-prompt-spill/<sessionId>/<stepId>/<sha256>.json and replaces them with {$rielaSpilled, pointer, path, bytes, sha256, preview} stubs. It records inputSnapshot.promptCompaction and recomposes. If the prompt is still over budget, it records a failed step with failureKind promptTooLarge without calling the backend (pog-03).",
+      "WorkflowSessionFailureKind.promptTooLarge is added. adapterFailureKind(_:) classifies providerError/invalidInput messages that contain 'prompt is too long', 'context_length_exceeded', 'maximum context length' or 'request_too_large', and honors an explicit AdapterExecutionError.failureKind hint. It is applied at RuntimePublication.swift:348/:368 and DeterministicWorkflowRunner+Cancellation.swift:120 (pog-01).",
+      "The recovery gates (Recovery.swift retryableFailureKind, the SessionCommands retry guidance, DeterministicDirector rerunnable, TaskGuardCoordinator attempts-budget) treat promptTooLarge exactly like adapterFailure (pog-04).",
+      "An end-to-end runner test and a mock-scenario CLI run reproduce the session-471 shape: the join is bounded, the guard spills, and the agent step completes. A README section 'Agent prompt size limits' is added (pog-05).",
+      "arm64 swift build succeeds, the focused swift test filters pass with 0 failures, and swiftlint --strict passes on every Swift file changed since 3f921eb4 (tracked diff plus untracked new files)."
+    ],
+    "nonGoals": [
+      "No new retry or failure-transition route for failed agent steps; no rerunOnPromptTooLarge setting or director rule.",
+      "No token-accurate or per-backend budgets.",
+      "No compaction of node-authored payload.variables, memory guidance or output contract text.",
+      "No change to drift-detection semantics, capture/snapshot/manifest code, limits, drift reasons, artifactPaths, captureFailures, requiresSemanticReview or observationBoundary.",
+      "No AdapterExecutionErrorCode case; no GraphQL/SDL change (failureKind is already a String).",
+      "No committed example workflow or rielaExampleWorkflowNames() registration.",
+      "No push or merge (gitPush=false); workers run no git write commands."
+    ],
+    "constraints": [
+      "Every build, test and lint runs as arch -arm64 /bin/zsh -lc. Use focused swift test filters; the full suite is not a gate.",
+      "Lint only Swift files changed since 3f921eb46e0a099b0d849adb62b8fb7ca69eb9af (tracked diff plus untracked new files). The 30 repo-wide diagnostics are an inherited baseline.",
+      "Scratch and evidence go only under tmp/prompt-overflow/<planId>/. Never mirror repository trees under evidence roots (fanout source snapshot cap is 512 entries).",
+      "Re-read each file before editing it and record pre/post sha256 per edit in that plan's own impl-plans/progress/<planId>.md; stop on drift; edit only the plan's own writePaths.",
+      "Spilled values are written under the run's working directory and referenced by path, bytes, sha256 and preview; they are never silently dropped. inputSnapshot.mergedVariables and adapterInput.mergedVariables are never compacted.",
+      "Runtime records stay owned by the runtime store; output is deterministic (no timestamps or UUIDs in spill files or stubs).",
+      "Encoded WorkflowDefaults, AgentNodePayload and WorkflowFanoutChangeTracking with the new fields unset are byte-identical to before."
+    ],
+    "designDecisionsAndRationale": [
+      "Duplication is fixed inside the single runtime-variables block, not by dropping a channel: no adapter sends mergedVariables to a provider, and AgentGatewayNodeAdapter sends only systemPromptText and promptText (design Part B, Problem §2).",
+      "The dedup view is pure, sorted-key compactJSONString comparison. Templates keep reading the original variables, so existing prompts render unchanged (Part B).",
+      "Observations are aggregated by (branchId, selection, path) and sorted by plain String order for determinism. The full list is persisted with an O_EXCL/0600 pattern, and a persistence failure becomes a reduceFailures diagnostic with observationsPath null (Part A).",
+      "Spill selection takes the smallest candidate covering the excess, otherwise the largest, with ties broken by ascending RFC 6901 pointer. Candidates are re-enumerated on the compacted view each iteration; spill files are content-addressed (Part C).",
+      "The guard rejection is published through executeAndPublish after recordStepStartedExecution, not thrown, so exactly one failed step execution with promptCompaction evidence is recorded (Part D 'Guard rejection').",
+      "AdapterExecutionErrorCode stays closed; an optional failureKind hint on AdapterExecutionError plus a fixed-phrase classifier avoids altering a persisted closed enum (Part D).",
+      "promptTooLarge is a refinement of adapterFailure, so every existing recovery gate accepts it and no recovery path is lost (Part D 'Consumers of failureKind').",
+      "Shared contracts (failure kind, classifier, config fields, dedup view) are pinned in wave-1 pog-01 so wave-2 plans pog-02/03/04 have disjoint write sets."
+    ],
+    "intentionalTradeoffs": [
+      "Every agent system prompt changes shape because of Part B dedup; agents keep full information through the markers.",
+      "Workflows whose prompts are above 400 KB start spilling; the spill is lossless and authors can raise promptMaxBytes or agentPromptMaxBytes.",
+      "Placed steps (step.placement != nil) are never spilled; over budget is an immediate rejection.",
+      "The 4096-byte spill minimum and 256-character preview are fixed constants.",
+      "Aggregated observation order changes from per-record order to sorted (branchId, selection, path)."
+    ],
+    "supportedEdgeCases": [
+      "observationInlineLimit 0: observations == [] while hasDrift stays true.",
+      "No drift: observationCount 0, hasDrift false, observations.json written with an empty list.",
+      "Repeated reduce() on the same actor replaces observations.json deterministically (rename preferred).",
+      "Unwritable evidence directory: a reduceFailures entry with path observations.json, complete false, observationsPath null, and inline observations kept.",
+      "Malformed or absent _rielaInput: the dedup view returns the input unchanged and never throws.",
+      "A message payload key overridden by a later message stays inline in the earlier message.",
+      "An existing spill file with identical bytes is reused; with different bytes it is a policyBlocked rejection recorded as a failed step.",
+      "A template interpolating a spilled value renders the stub JSON.",
+      "Retry after raising the budget: resume --retry-failed-step re-runs the guard with the current definition and completes.",
+      "timeout, policyBlocked, invalidOutput and templateResolutionFailed errors containing overflow phrases stay adapterFailure."
+    ],
+    "outOfScopeEdgeCases": [
+      "Token-level overflow when the byte budget is under the limit but the model's token window is smaller.",
+      "Which bytes to write when spilling a whole container whose shown form has duplicate keys removed (low residual risk).",
+      "Output-validation retry attempts reuse the guarded input without re-measuring it (low residual risk).",
+      "A failure-transition or retry route for promptTooLarge (open question, not requested)."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-agent-prompt-overflow-guard.md",
+      "design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md",
+      "impl-plans/completed/prompt-overflow-guard-01-contracts.md",
+      "impl-plans/completed/prompt-overflow-guard-02-fanout-observations.md",
+      "impl-plans/completed/prompt-overflow-guard-03-prompt-guard.md",
+      "impl-plans/completed/prompt-overflow-guard-04-failure-kind-consumers.md",
+      "impl-plans/completed/prompt-overflow-guard-05-integration.md",
+      "Sources/RielaCore/WorkflowFanoutChangeEvidence.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift",
+      "Sources/RielaCore/RuntimePublication.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift"
+    ],
+    "codexAgentReferences": [],
+    "resolvedFindings": [
+      "opus-luna-design-and-implement-review-loop-session-475-step3-design-review-attempt-1-finding-1 (mid, resolved): promptTooLarge is a refinement of adapterFailure. design Part D 'Consumers of failureKind' (design-agent-prompt-overflow-guard.md:315-333) amends Recovery.swift:63, SessionCommands.swift:1001, DeterministicDirector.swift:101 and TaskGuardCoordinator.swift:111 to accept it, and pog-04-failure-kind-consumers implements and tests those gates.",
+      "pog-01 attempt-1 scope blocker (resolved by operator amendment): per-step failureKind persistence needs Sources/RielaCore/RuntimeStore.swift, Sources/RielaCore/RuntimeStorePublicationTransactions.swift and Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift, which are now pog-01 writePaths (prompt-overflow-guard-01-contracts.md 'Operator amendment'). Attempt-1 work stays uncommitted in the working tree for reuse.",
+      "pog-01 attempt-2 progress-gate blocker (resolved by operator amendment 2, session-479): the gate treats every findings/risks entry with severity critical/high/mid/medium as unresolved regardless of status. The session-475 step3 failureKind-consumers finding is owned by pog-04-failure-kind-consumers and must not appear in pog-01 findings/risks/authorSelfCheck; resolved self-check items use severity 'fixed' or omit severity; risk strings never start with a severity word (prompt-overflow-guard-01-contracts.md 'Operator amendment 2'). Attempt-2 Swift work stays uncommitted in the working tree for reuse.",
+      "P5-F1 (mid, resolved): the pog-01 and pog-05 lint commands now lint the tracked diff against 3f921eb4 plus untracked new Swift files (git ls-files --others --exclude-standard), and their Done Criteria require the progress log to confirm coverage (prompt-overflow-guard-01-contracts.md:302,323; prompt-overflow-guard-05-integration.md:163,186)."
+    ],
+    "residualRisks": [
+      "low: pog-03 does not specify which bytes to write when spilling a whole container whose shown form has duplicate keys removed.",
+      "low: an existing spill file with different bytes is reported as policyBlocked but recorded as adapterFailure, matching current publication.",
+      "low: the pog-05 mock-run spill find path may need adjusting; the runner integration test is the authoritative evidence.",
+      "low: output-validation retry attempts reuse the guarded input without re-measuring it.",
+      "low: the untracked-file part of the lint also picks up any stray non-ignored Swift file left outside tmp/."
+    ]
+  },
+  "plans": [
+    {
+      "planId": "pog-01-contracts",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-01-contracts.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/RuntimeSession.swift",
+        "Sources/RielaCore/AdapterContracts.swift",
+        "Sources/RielaCore/PromptOverflowClassification.swift",
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/AgentNodePayload.swift",
+        "Sources/RielaCore/WorkflowNodeValidation.swift",
+        "Sources/RielaCore/WorkflowFanoutScheduling.swift",
+        "Sources/RielaCore/WorkflowRawValidation.swift",
+        "Sources/RielaCore/RuntimeVariablesPromptView.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaCore/RuntimeStorePublicationTransactions.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Tests/RielaCoreTests/PromptOverflowContractsTests.swift",
+        "Tests/RielaCoreTests/RuntimeVariablesPromptViewTests.swift",
+        "impl-plans/progress/pog-01-contracts.md",
+        "tmp/prompt-overflow/pog-01-contracts"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/prompt-overflow/pog-01-contracts"
+      ],
+      "acceptanceCriteria": [
+        "WorkflowSessionFailureKind.promptTooLarge, AdapterExecutionError.failureKind (defaulted trailing init param), adapterFailureKind(_:) and promptOverflowMessagePhrases exist exactly as pinned; the classifier rules and test table pass.",
+        "RuntimePublication.swift:348/:368 and DeterministicWorkflowRunner+Cancellation.swift:120 call adapterFailureKind; step and session records carry promptTooLarge for an overflow adapter error, and adapterFailure for unrelated errors.",
+        "WorkflowDefaults.agentPromptMaxBytes, AgentNodePayload.promptMaxBytes and WorkflowFanoutChangeTracking.observationInlineLimit (default 200, max 10000) decode, round-trip, and validate with the pinned error paths and messages.",
+        "deduplicatedRuntimeVariablesView with the $rielaElidedKeys/$rielaSameAs markers is wired into runtimeVariablesPrompt; a 100 KB marker appears exactly once in the composed prompts; templates render unchanged.",
+        "Build, focused tests, union lint and grep (3 hits) pass, with logs and pre/post sha256 recorded in impl-plans/progress/pog-01-contracts.md."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build' 2>&1 | tee tmp/prompt-overflow/pog-01-contracts/build.log",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"PromptOverflowContractsTests|RuntimeVariablesPromptViewTests|RuntimeVariablesPromptingTests|DeterministicWorkflowRunnerTests|WorkflowOutputContractPreflightTests\"' 2>&1 | tee tmp/prompt-overflow/pog-01-contracts/test.log",
+        "arch -arm64 /bin/zsh -lc \"{ git diff --name-only -z 3f921eb46e0a099b0d849adb62b8fb7ca69eb9af -- '*.swift'; git ls-files --others --exclude-standard -z -- '*.swift'; } | xargs -0 swiftlint lint --strict\" 2>&1 | tee tmp/prompt-overflow/pog-01-contracts/lint.log",
+        "grep -n 'adapterFailureKind' Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift"
+      ]
+    },
+    {
+      "planId": "pog-02-fanout-observations",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-02-fanout-observations.md",
+      "dependsOn": [
+        "pog-01-contracts"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowFanoutChangeEvidence.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift",
+        "Tests/RielaCoreTests/WorkflowFanoutMapReduceTests.swift",
+        "Tests/RielaCoreTests/FanoutArtifactEvidenceRunnerTests.swift",
+        "impl-plans/progress/pog-02-fanout-observations.md",
+        "tmp/prompt-overflow/pog-02-fanout-observations"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/prompt-overflow/pog-02-fanout-observations"
+      ],
+      "acceptanceCriteria": [
+        "reduce(observationInlineLimit:) aggregates per (branchId, selection, path) with reason, reasons, occurrences, and first/last stepId and snapshotPath, sorted ascending, with the limit clamped to 0...10000.",
+        "The join adds observationCount, observationOccurrenceCount, inlineObservationCount, observationsTruncated, observationsPath and observationCountsByBranch, plus limits.observationInline; hasDrift == observationCount > 0; complete accounts for a persistence failure.",
+        "observations.json (the full list with occurrenceDetails) is written on every reduce with O_EXCL/0600, and repeated reduces replace it deterministically.",
+        "WorkflowFanoutObservationBoundTests pass, including the 3-branch serialized bound under 262144 bytes, limit 0, no drift, persistence failure, determinism, and the runner wiring of observationInlineLimit.",
+        "Build, focused tests and lint pass, with logs and pre/post sha256 recorded in impl-plans/progress/pog-02-fanout-observations.md."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build' 2>&1 | tee tmp/prompt-overflow/pog-02-fanout-observations/build.log",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowFanoutObservationBoundTests|WorkflowFanoutMapReduceTests|FanoutArtifactEvidenceRunnerTests|DeterministicWorkflowRunnerFanoutTests\"' 2>&1 | tee tmp/prompt-overflow/pog-02-fanout-observations/test.log",
+        "arch -arm64 /bin/zsh -lc \"swiftlint lint --strict Sources/RielaCore/WorkflowFanoutChangeEvidence.swift Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift\" 2>&1 | tee tmp/prompt-overflow/pog-02-fanout-observations/lint.log"
+      ]
+    },
+    {
+      "planId": "pog-03-prompt-guard",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-03-prompt-guard.md",
+      "dependsOn": [
+        "pog-01-contracts"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+PromptGuard.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift",
+        "Tests/RielaCoreTests/AgentPromptGuardTests.swift",
+        "impl-plans/progress/pog-03-prompt-guard.md",
+        "tmp/prompt-overflow/pog-03-prompt-guard"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/prompt-overflow/pog-03-prompt-guard"
+      ],
+      "acceptanceCriteria": [
+        "DeterministicWorkflowRunner+PromptGuard.swift defines the pinned constants (400000, 4096, 256), AgentPromptGuardOutcome, effectiveAgentPromptMaxBytes and guardAgentPrompt.",
+        "Within budget, prompts are byte-identical and inputSnapshot has no promptCompaction. Over budget, it spills deterministically (smallest covering candidate, otherwise largest; pointer tie-break) to content-addressed 0600 files with $rielaSpilled stubs, then recomposes through promptVariables and composedPromptsWithFinalizationEvidence.",
+        "A rejection that is still over budget, a placed step that is over budget, or a mismatched existing spill file records exactly one failed step execution through executeAndPublish/publishAdapterFailure without calling the backend; budget rejections carry failureKind promptTooLarge and promptCompaction.outcome overBudget.",
+        "inputSnapshot.mergedVariables and adapterInput.mergedVariables stay uncompacted; Prompting.swift and RuntimePublication.swift are not edited.",
+        "Build, focused tests and lint pass, with logs and pre/post sha256 recorded in impl-plans/progress/pog-03-prompt-guard.md."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build' 2>&1 | tee tmp/prompt-overflow/pog-03-prompt-guard/build.log",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AgentPromptGuardTests|RuntimeVariablesPromptingTests|DeterministicWorkflowRunnerTests|WorkflowOutputContractPreflightTests\"' 2>&1 | tee tmp/prompt-overflow/pog-03-prompt-guard/test.log",
+        "arch -arm64 /bin/zsh -lc \"swiftlint lint --strict Sources/RielaCore/DeterministicWorkflowRunner+PromptGuard.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift Tests/RielaCoreTests/AgentPromptGuardTests.swift\" 2>&1 | tee tmp/prompt-overflow/pog-03-prompt-guard/lint.log"
+      ]
+    },
+    {
+      "planId": "pog-04-failure-kind-consumers",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-04-failure-kind-consumers.md",
+      "dependsOn": [
+        "pog-01-contracts"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaWork/DeterministicDirector.swift",
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Tests/RielaCoreTests/PromptTooLargeRecoveryTests.swift",
+        "Tests/RielaCLITests/PromptTooLargeResumeMessageTests.swift",
+        "Tests/RielaWorkTests/PromptTooLargeRerunTests.swift",
+        "impl-plans/progress/pog-04-failure-kind-consumers.md",
+        "tmp/prompt-overflow/pog-04-failure-kind-consumers"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/prompt-overflow/pog-04-failure-kind-consumers"
+      ],
+      "acceptanceCriteria": [
+        "Recovery.swift retryableFailureKind accepts .promptTooLarge, and the validation message names 'adapter-failed, prompt-too-large or policy-blocked'.",
+        "SessionCommands nonBudgetFailureResumeMessage (now internal) shows --retry-failed-step guidance for .promptTooLarge.",
+        "DeterministicDirector rerunnable and TaskGuardCoordinator attempts-budget treat .promptTooLarge like .adapterFailure under rerunOnAdapterFailure; adapterFailure, policyBlocked and nodeTimeout behavior is unchanged.",
+        "PromptTooLargeRecoveryTests, PromptTooLargeResumeMessageTests and PromptTooLargeRerunTests pass.",
+        "Build, focused tests, lint and grep (at least 4 hits) pass, with logs and pre/post sha256 recorded in impl-plans/progress/pog-04-failure-kind-consumers.md."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build' 2>&1 | tee tmp/prompt-overflow/pog-04-failure-kind-consumers/build.log",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"PromptTooLargeRecoveryTests|PromptTooLargeResumeMessageTests|PromptTooLargeRerunTests|DeterministicDirectorTests|WorkGuardDispatcherTests|DeterministicWorkflowRunnerTests\"' 2>&1 | tee tmp/prompt-overflow/pog-04-failure-kind-consumers/test.log",
+        "arch -arm64 /bin/zsh -lc \"swiftlint lint --strict Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Sources/RielaCLI/SessionCommands.swift Sources/RielaWork/DeterministicDirector.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCoreTests/PromptTooLargeRecoveryTests.swift Tests/RielaCLITests/PromptTooLargeResumeMessageTests.swift Tests/RielaWorkTests/PromptTooLargeRerunTests.swift\" 2>&1 | tee tmp/prompt-overflow/pog-04-failure-kind-consumers/lint.log",
+        "grep -rn 'promptTooLarge' Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Sources/RielaCLI/SessionCommands.swift Sources/RielaWork/DeterministicDirector.swift Sources/RielaWork/TaskGuardCoordinator.swift"
+      ]
+    },
+    {
+      "planId": "pog-05-integration",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-05-integration.md",
+      "dependsOn": [
+        "pog-02-fanout-observations",
+        "pog-03-prompt-guard",
+        "pog-04-failure-kind-consumers"
+      ],
+      "writePaths": [
+        "Tests/RielaCoreTests/PromptOverflowGuardIntegrationTests.swift",
+        "README.md",
+        "impl-plans/progress/pog-05-integration.md",
+        "tmp/prompt-overflow/pog-05-integration"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/prompt-overflow/pog-05-integration"
+      ],
+      "acceptanceCriteria": [
+        "PromptOverflowGuardIntegrationTests runs the session-471 shape (3 fanout branches with changeTracking and observationInlineLimit 50 joined into an agent step with a small promptMaxBytes). Expected: observationsTruncated true, observations.count 50, promptCompaction.outcome spilled, spill files with matching sha256, the join step completed, and the session completed.",
+        "Recovery: a run with promptMaxBytes 100 fails with promptTooLarge and no backend call; resume with retryFailedStep and a raised budget completes.",
+        "The mock-scenario CLI run under tmp/prompt-overflow/pog-05-integration/mock-run completes, and spill-files.txt is non-empty.",
+        "README.md has an 'Agent prompt size limits' section after Session Observability covering settings and defaults, markers, stub/location, promptCompaction, promptTooLarge and the provider phrases, recovery, and the new changeEvidence fields.",
+        "The final focused filter shows 0 failures, and the union lint covers every new Swift file from pog-01..pog-05, with logs recorded in impl-plans/progress/pog-05-integration.md."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build' 2>&1 | tee tmp/prompt-overflow/pog-05-integration/build.log",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"PromptOverflowGuardIntegrationTests|PromptOverflowContractsTests|RuntimeVariablesPromptViewTests|WorkflowFanoutObservationBoundTests|AgentPromptGuardTests|PromptTooLargeRecoveryTests|PromptTooLargeResumeMessageTests|PromptTooLargeRerunTests|WorkflowFanoutMapReduceTests|FanoutArtifactEvidenceRunnerTests|DeterministicWorkflowRunnerFanoutTests|RuntimeVariablesPromptingTests|DeterministicWorkflowRunnerTests|WorkflowOutputContractPreflightTests|DeterministicDirectorTests|WorkGuardDispatcherTests\"' 2>&1 | tee tmp/prompt-overflow/pog-05-integration/swift-test.log",
+        "arch -arm64 /bin/zsh -lc \"{ git diff --name-only -z 3f921eb46e0a099b0d849adb62b8fb7ca69eb9af -- '*.swift'; git ls-files --others --exclude-standard -z -- '*.swift'; } | xargs -0 swiftlint lint --strict\" 2>&1 | tee tmp/prompt-overflow/pog-05-integration/lint.log",
+        "arch -arm64 /bin/zsh -lc 'swift build && .build/debug/riela workflow run prompt-overflow-fanout --workflow-definition-dir tmp/prompt-overflow/pog-05-integration/mock-run --working-dir tmp/prompt-overflow/pog-05-integration/workdir --mock-scenario tmp/prompt-overflow/pog-05-integration/mock-run/prompt-overflow-fanout/mock-scenario.json --output json' 2>&1 | tee tmp/prompt-overflow/pog-05-integration/mock-run.log",
+        "find tmp/prompt-overflow/pog-05-integration/workdir/tmp/riela-prompt-spill -name '*.json' | tee tmp/prompt-overflow/pog-05-integration/spill-files.txt",
+        "grep -n 'Agent prompt size limits' README.md"
+      ]
+    }
+  ]
+}

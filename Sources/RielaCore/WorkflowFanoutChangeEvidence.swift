@@ -19,6 +19,52 @@ import Foundation
 /// count and limit. Reduce failures become evidence instead of discarding
 /// sibling results.
 actor WorkflowFanoutChangeEvidence {
+  private struct ObservationKey: Hashable, Comparable {
+    let branchId: String
+    let selection: String
+    let path: String
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+      if lhs.branchId != rhs.branchId { return lhs.branchId < rhs.branchId }
+      if lhs.selection != rhs.selection { return lhs.selection < rhs.selection }
+      return lhs.path < rhs.path
+    }
+  }
+
+  private struct ObservationOccurrence {
+    let stepId: JSONValue
+    let snapshotPath: JSONValue
+    let reason: String
+
+    var json: JSONValue {
+      .object(["stepId": stepId, "snapshotPath": snapshotPath, "reason": .string(reason)])
+    }
+  }
+
+  private struct AggregatedObservation {
+    let key: ObservationKey
+    var reasons: [String] = []
+    var occurrences: [ObservationOccurrence] = []
+
+    mutating func append(reason: String, stepId: JSONValue, snapshotPath: JSONValue) {
+      if !reasons.contains(reason) { reasons.append(reason) }
+      occurrences.append(ObservationOccurrence(stepId: stepId, snapshotPath: snapshotPath, reason: reason))
+    }
+
+    func json(includeOccurrenceDetails: Bool = false) -> JSONValue {
+      let first = occurrences[0]
+      var result: JSONObject = [
+        "branchId": .string(key.branchId), "selection": .string(key.selection), "path": .string(key.path),
+        "reason": .string(first.reason), "reasons": .array(reasons.map(JSONValue.string)),
+        "occurrences": .integer(Int64(occurrences.count)),
+        "firstStepId": first.stepId, "lastStepId": occurrences[occurrences.count - 1].stepId,
+        "firstSnapshotPath": first.snapshotPath, "lastSnapshotPath": occurrences[occurrences.count - 1].snapshotPath
+      ]
+      if includeOccurrenceDetails { result["occurrenceDetails"] = .array(occurrences.map(\.json)) }
+      return .object(result)
+    }
+  }
+
   static let sourcePathLimit = 512
   static let sourceEntryLimit = 512
   static let sourceFileByteLimit = 8_000_000
@@ -109,15 +155,16 @@ actor WorkflowFanoutChangeEvidence {
   /// roots can no longer be snapshotted within policy is reported under
   /// `reduceFailures` (phase `reduce`) instead of aborting the whole join, so
   /// successful sibling evidence and the original child failure survive.
-  func reduce() throws -> JSONObject {
-    var observations: [JSONValue] = [], artifacts: [JSONValue] = [], reduceFailures: [JSONValue] = []
+  func reduce(observationInlineLimit: Int = WorkflowFanoutChangeTracking.defaultObservationInlineLimit) throws -> JSONObject {
+    let effectiveLimit = min(max(observationInlineLimit, 0), WorkflowFanoutChangeTracking.maximumObservationInlineLimit)
+    var rawObservations: [JSONValue] = [], artifacts: [JSONValue] = [], reduceFailures: [JSONValue] = []
     for branchId in records.keys.sorted() {
       for record in records[branchId] ?? [] {
         artifacts.append(record["artifactPath"] ?? .null)
         let stepId: String
         if case let .string(value)? = record["stepId"] { stepId = value } else { stepId = "unknown" }
         do {
-          try reduceRecord(record, branchId: branchId, observations: &observations)
+          try reduceRecord(record, branchId: branchId, observations: &rawObservations)
         } catch let failure as FanoutSnapshotFailure {
           reduceFailures.append(.object(failure.diagnostic(branchId: branchId, stepId: stepId, phase: "reduce")))
         } catch let error as AdapterExecutionError {
@@ -131,13 +178,69 @@ actor WorkflowFanoutChangeEvidence {
         }
       }
     }
-    return ["artifactPaths": .array(artifacts), "observations": .array(observations),
-            "hasDrift": .bool(!observations.isEmpty), "requiresSemanticReview": .bool(true),
+    var aggregated: [ObservationKey: AggregatedObservation] = [:]
+    for value in rawObservations {
+      guard case let .object(raw) = value,
+            case let .string(branchId)? = raw["branchId"],
+            case let .string(selection)? = raw["selection"],
+            case let .string(path)? = raw["path"],
+            case let .string(reason)? = raw["reason"] else { continue }
+      let key = ObservationKey(branchId: branchId, selection: selection, path: path)
+      var item = aggregated[key] ?? AggregatedObservation(key: key)
+      item.append(reason: reason, stepId: raw["stepId"] ?? .null, snapshotPath: raw["snapshotPath"] ?? .null)
+      aggregated[key] = item
+    }
+    let sortedObservations = aggregated.keys.sorted().compactMap { aggregated[$0] }
+    let inline = Array(sortedObservations.prefix(effectiveLimit))
+    let fullList = JSONValue.object(["observations": .array(sortedObservations.map { $0.json(includeOccurrenceDetails: true) })])
+    var observationsPath: JSONValue = .string(directory.appendingPathComponent("observations.json").path)
+    do {
+      try persistObservations(fullList)
+    } catch {
+      observationsPath = .null
+      let failure = FanoutSnapshotFailure(.providerError, "fanout observations list could not be persisted: \(error)", path: "observations.json")
+      reduceFailures.append(.object(failure.diagnostic(branchId: nil, stepId: "reduce", phase: "reduce")))
+    }
+    let observationCountsByBranch: JSONObject = Dictionary(grouping: sortedObservations, by: { $0.key.branchId }).mapValues { values in
+      let inlineCount = inline.filter { $0.key.branchId == values[0].key.branchId }.count
+      return JSONValue.object(["total": .integer(Int64(values.count)), "inline": .integer(Int64(inlineCount))])
+    }
+    var limits = Self.limits
+    limits["observationInline"] = .integer(Int64(effectiveLimit))
+    return ["artifactPaths": .array(artifacts), "observations": .array(inline.map { $0.json() }),
+            "observationCount": .integer(Int64(sortedObservations.count)),
+            "observationOccurrenceCount": .integer(Int64(rawObservations.count)),
+            "inlineObservationCount": .integer(Int64(inline.count)),
+            "observationsTruncated": .bool(sortedObservations.count > inline.count),
+            "observationsPath": observationsPath,
+            "observationCountsByBranch": .object(observationCountsByBranch),
+            "hasDrift": .bool(!sortedObservations.isEmpty), "requiresSemanticReview": .bool(true),
             "observationBoundary": .string("workflow-node"),
             "complete": .bool(reduceFailures.isEmpty),
             "captureFailures": .array(captureFailures),
             "reduceFailures": .array(reduceFailures),
-            "limits": .object(Self.limits)]
+            "limits": .object(limits)]
+  }
+
+  private func persistObservations(_ value: JSONValue) throws {
+    let data = Data(try value.compactJSONString().utf8)
+    let destination = directory.appendingPathComponent("observations.json")
+    let temporary = directory.appendingPathComponent(".observations-\(fanoutHex(SHA256.hash(data: data))).tmp")
+    try? FileManager.default.removeItem(at: temporary)
+    let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+    guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    do {
+      try handle.write(contentsOf: data)
+      try handle.close()
+      guard rename(temporary.path, destination.path) == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+      }
+    } catch {
+      try? handle.close()
+      try? FileManager.default.removeItem(at: temporary)
+      throw error
+    }
   }
 
   private func reduceRecord(_ record: JSONObject, branchId: String, observations: inout [JSONValue]) throws {

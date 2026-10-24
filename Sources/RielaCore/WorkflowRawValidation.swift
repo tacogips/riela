@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 private let rejectedTopLevelFieldMessages: [String: String] = [
   "managerRuntimeId": "is not part of the step-addressed workflow schema",
@@ -40,6 +41,13 @@ func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValidationDia
     }
     if let fanoutConcurrency = defaults["fanoutConcurrency"] {
       validatePositiveInteger(fanoutConcurrency, path: "workflow.defaults.fanoutConcurrency", diagnostics: &diagnostics)
+    }
+    if let agentPromptMaxBytes = defaults["agentPromptMaxBytes"] {
+      validatePositiveInteger(
+        agentPromptMaxBytes,
+        path: "workflow.defaults.agentPromptMaxBytes",
+        diagnostics: &diagnostics
+      )
     }
   } else {
     diagnostics.append(error("workflow.defaults", "must be an object"))
@@ -348,6 +356,19 @@ private func validateFanout(_ raw: Any, path: String, diagnostics: inout [Workfl
           diagnostics.append(error("\(path).\(key).\(field)", "must be a JSON Pointer")); continue
         }
       }
+    }
+  }
+  if let changeTracking = fanout["changeTracking"] as? [String: Any],
+     let inlineLimit = changeTracking["observationInlineLimit"] {
+    let inlineLimitPath = "\(path).changeTracking.observationInlineLimit"
+    if let number = inlineLimit as? NSNumber,
+       CFGetTypeID(number) != CFBooleanGetTypeID(),
+       number.doubleValue >= 0,
+       number.doubleValue <= 10_000,
+       floor(number.doubleValue) == number.doubleValue {
+      // Valid inline limit; continue validating the remaining fanout fields.
+    } else {
+      diagnostics.append(error(inlineLimitPath, "must be an integer between 0 and 10000"))
     }
   }
   if let itemsFrom = fanout["itemsFrom"] as? String, !itemsFrom.isEmpty, !itemsFrom.hasPrefix("/") {

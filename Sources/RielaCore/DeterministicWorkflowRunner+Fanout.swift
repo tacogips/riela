@@ -93,7 +93,10 @@ extension DeterministicWorkflowRunner {
       // Reduce never discards sibling results: a root that can no longer be
       // snapshotted within policy is reported under changeEvidence.reduceFailures
       // with branch/node/phase/root/path/observed/limit, and `complete` is false.
-      let changeEvidenceJoin = try await changeEvidence.reduce()
+      let changeEvidenceJoin = try await changeEvidence.reduce(
+        observationInlineLimit: directive.changeTracking?.observationInlineLimit
+          ?? WorkflowFanoutChangeTracking.defaultObservationInlineLimit
+      )
       join["changeEvidence"] = .object(changeEvidenceJoin)
       if case let .array(failures)? = changeEvidenceJoin["reduceFailures"], let first = failures.first {
         reduceFailureReason = fanoutReduceFailureDescription(first, count: failures.count)

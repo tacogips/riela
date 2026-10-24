@@ -26,6 +26,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var systemPromptTemplateFile: String?
   public var includeRuntimeVariablesInPrompt: Bool?
   public var promptTemplate: String?
+  public var promptMaxBytes: Int?
   public var promptTemplateFile: String?
   public var sessionStartPromptTemplate: String?
   public var sessionStartPromptTemplateFile: String?
@@ -70,7 +71,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     variables: JSONObject = [:],
     input: NodeInputContract? = nil,
     output: NodeOutputContract? = nil,
-    requiredEnvironment: [String]? = nil
+    requiredEnvironment: [String]? = nil,
+    promptMaxBytes: Int? = nil
   ) {
     self.requiredEnvironment = requiredEnvironment
     self.id = id
@@ -106,6 +108,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.variables = variables
     self.input = input
     self.output = output
+    self.promptMaxBytes = promptMaxBytes
   }
 
   enum CodingKeys: String, CodingKey {
@@ -134,6 +137,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case systemPromptTemplateFile
     case includeRuntimeVariablesInPrompt
     case promptTemplate
+    case promptMaxBytes
     case promptTemplateFile
     case sessionStartPromptTemplate
     case sessionStartPromptTemplateFile
@@ -199,6 +203,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.systemPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplateFile)
     self.includeRuntimeVariablesInPrompt = try container.decodeIfPresent(Bool.self, forKey: .includeRuntimeVariablesInPrompt)
     self.promptTemplate = try container.decodeIfPresent(String.self, forKey: .promptTemplate)
+    self.promptMaxBytes = try container.decodeIfPresent(Int.self, forKey: .promptMaxBytes)
     self.promptTemplateFile = try container.decodeIfPresent(String.self, forKey: .promptTemplateFile)
     self.sessionStartPromptTemplate = try container.decodeIfPresent(String.self, forKey: .sessionStartPromptTemplate)
     self.sessionStartPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .sessionStartPromptTemplateFile)

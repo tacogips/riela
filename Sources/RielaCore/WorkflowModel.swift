@@ -128,11 +128,18 @@ public struct WorkflowDefaults: Codable, Equatable, Sendable {
   public var nodeTimeoutMs: Int
   public var maxLoopIterations: Int
   public var fanoutConcurrency: Int?
+  public var agentPromptMaxBytes: Int?
 
-  public init(nodeTimeoutMs: Int, maxLoopIterations: Int, fanoutConcurrency: Int? = nil) {
+  public init(
+    nodeTimeoutMs: Int,
+    maxLoopIterations: Int,
+    fanoutConcurrency: Int? = nil,
+    agentPromptMaxBytes: Int? = nil
+  ) {
     self.nodeTimeoutMs = nodeTimeoutMs
     self.maxLoopIterations = maxLoopIterations
     self.fanoutConcurrency = fanoutConcurrency
+    self.agentPromptMaxBytes = agentPromptMaxBytes
   }
 }
 

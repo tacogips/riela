@@ -108,7 +108,7 @@ public struct TaskGuardCoordinator: Sendable {
        snapshot.attemptCount >= limit {
       let rules = task.director.deterministic
       let kind = attempt.outcome?.failureKind
-      if (kind == .adapterFailure && rules.rerunOnAdapterFailure)
+      if ((kind == .adapterFailure || kind == .promptTooLarge) && rules.rerunOnAdapterFailure)
         || (kind == .nodeTimeout && rules.rerunOnNodeTimeout) {
         violations.append(.budget(.attempts, used: snapshot.attemptCount, limit: limit))
       }

@@ -648,6 +648,15 @@ extension DeterministicWorkflowRunner {
       variables: mergedVariables,
       session: session
     )
+    let promptGuard = try guardAgentPrompt(
+      workflow: request.workflow,
+      step: step,
+      payload: executionPayload,
+      request: request,
+      session: session,
+      resolvedInputPayload: resolvedInput.payload,
+      prompts: prompts
+    )
     if let providerError = validateAgentNodePayload(executionPayload, path: "nodes.\(step.nodeId)")
       .first(where: { $0.severity == .error }) {
       throw AdapterExecutionError(.invalidInput, "\(providerError.path): \(providerError.message)")
@@ -664,10 +673,10 @@ extension DeterministicWorkflowRunner {
     }
     let adapterInput = AdapterExecutionInput(
       node: executionPayload,
-      promptText: prompts.promptText,
-      freshPromptText: prompts.promptText,
-      resumedPromptText: prompts.resumedPromptText,
-      systemPromptText: prompts.systemPromptText,
+      promptText: promptGuard.prompts.promptText,
+      freshPromptText: promptGuard.prompts.promptText,
+      resumedPromptText: promptGuard.prompts.resumedPromptText,
+      systemPromptText: promptGuard.prompts.systemPromptText,
       sessionPolicy: step.sessionPolicy ?? executionPayload.sessionPolicy,
       executionIdentity: request.workflowRunId.map {
         AdapterExecutionIdentity(
@@ -689,7 +698,8 @@ extension DeterministicWorkflowRunner {
       basePayload: publicationPayload,
       transitions: transitions,
       request: request,
-      executionIndex: executionIndex
+      executionIndex: executionIndex,
+      promptGuard: promptGuard
     )
   }
 

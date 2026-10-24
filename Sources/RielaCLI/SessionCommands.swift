@@ -997,11 +997,11 @@ public struct SessionResumeCommand: Sendable {
     return nil
   }
 
-  private func nonBudgetFailureResumeMessage(session: WorkflowSession) -> String {
+  func nonBudgetFailureResumeMessage(session: WorkflowSession) -> String {
     let failureKind = session.failureKind?.rawValue ?? "unknown"
     let rerunStepId = session.currentStepId ?? session.entryStepId
     let retryGuidance = session.failureKind == .adapterFailure || session.failureKind == .policyBlocked
-      || session.failureKind == .nodeTimeout
+      || session.failureKind == .nodeTimeout || session.failureKind == .promptTooLarge
       ? "`riela session resume \(session.sessionId) --retry-failed-step` to explicitly retry the failed step, "
       : ""
     return """

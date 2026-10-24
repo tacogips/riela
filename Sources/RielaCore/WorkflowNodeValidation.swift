@@ -22,6 +22,9 @@ public func validateAgentNodePayload(
   if let failureDiagnostics = payload.command?.failureDiagnostics {
     diagnostics += commandFailureDiagnosticsWarnings(failureDiagnostics, path: "\(path).command.failureDiagnostics")
   }
+  if let promptMaxBytes = payload.promptMaxBytes, promptMaxBytes <= 0 {
+    diagnostics.append(error("\(path).promptMaxBytes", "must be a positive integer"))
+  }
   if let sandbox = payload.sandbox {
     do { try sandbox.validate() } catch {
       diagnostics.append(.init(severity: .error, path: "\(path).sandbox", message: "\(error)"))

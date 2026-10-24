@@ -25,10 +25,19 @@ public struct WorkflowFanoutDependencies: Codable, Equatable, Sendable {
 public struct WorkflowFanoutChangeTracking: Codable, Equatable, Sendable {
   public var pathsFrom: String
   public var artifactRootsFrom: String?
+  public var observationInlineLimit: Int?
 
-  public init(pathsFrom: String, artifactRootsFrom: String? = nil) {
+  public static let defaultObservationInlineLimit = 200
+  public static let maximumObservationInlineLimit = 10_000
+
+  public init(
+    pathsFrom: String,
+    artifactRootsFrom: String? = nil,
+    observationInlineLimit: Int? = nil
+  ) {
     self.pathsFrom = pathsFrom
     self.artifactRootsFrom = artifactRootsFrom
+    self.observationInlineLimit = observationInlineLimit
   }
 }
 

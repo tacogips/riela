@@ -153,4 +153,4 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 
 > Operator amendment 2 (2026-10-24): every remaining plan also owns its own active plan file (this file) so it can update its completion checklist.
 
-> Operator amendment 4 (2026-10-24, after session-6): `SurfaceParityCLITests` already fails on base commit 90d44521 with 5 failures because `cache keys` (CacheCommandRunner.operations) has no catalog row. This plan now owns `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift`: add the missing `("keys", .query, ["--scope"])` entry to `cacheRows` (options must match CacheCommands' declared `keys` options) so the parity aggregate passes. Do not change the parity tests.
+> Operator amendment 4 (2026-10-24): the pre-existing `cache keys` catalog-row parity failure (5 failures on base 90d44521) was fixed by the operator in commit fc59fbf8; SurfaceParityCLITests now passes. No catalog change is needed in this plan.

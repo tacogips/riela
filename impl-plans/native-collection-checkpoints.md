@@ -65,16 +65,27 @@ by static validation and checked as objects before bounded SDK/catalog execution
 Literal template-looking source data is never evaluated again.
 
 Evidence: 28 focused Riela tests pass, including actual runner X page/resume
-tests and typed gateway/static validation tests. ART's Gmail domain suite has
-13 passing tests using the native CLI page node; the separate actual private
-guest test is explicitly skipped until the matching Linux binary is built.
-Both updated Gmail definitions validate. Actual Opus 5.5 medium review found
-no blockers. None of this is a production cutover or the final two-hour check.
+tests and typed gateway/static validation tests. ART's Gmail domain tests use
+the native CLI page node. The matching Linux guest also passed the actual
+network-denied private graph test: one accepted message, one screened out,
+real source plan/resume and native checkpoint write, no rejected body canary
+or credential values in host session/artifact files. Provider and model calls
+are offline fixtures; this is not real Gmail acquisition. Actual Opus 5.5
+medium reviews found no blockers. None of this is a production cutover or the
+final two-hour check.
 
 The Linux addon image builder still pinned analytics/documents sources older
 than Package.swift. Their source pins must match the package dependencies;
-the existing portability adaptations are checked on copies of those exact
-sources before rebuilding. Do not patch unrelated installed production images.
+the existing portability adaptations were checked on copies of those exact
+sources, and the Linux CLI and matching ART test guest built successfully.
+Do not patch unrelated installed production images.
+
+The private gate exposed recursive history forwarding: a read payload grew
+from 20 KB to 220 KB to 2 MB, and the next route forwarded 6 MB at only 13
+steps. ART read/screen/result handoffs now project only their business fields.
+An actual native runner regression checks exact values and bounded output with
+large unrelated input. After this correction the private/source test passes
+in 29 seconds without increasing its timeout or weakening isolation.
 
 Still required: native X account/query/window cursor ownership, Gmail remaining
 generic iteration/checkpoint handling, Web acquisition/progress, source selection

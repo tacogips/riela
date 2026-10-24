@@ -8,7 +8,16 @@ extension SessionInspectionCommand {
     output: WorkflowOutputFormat,
     observabilityView: SessionObservabilityView? = nil
   ) throws -> CLICommandResult {
-    let health = command == "health" ? (snapshot.session.status == .failed ? "failed" : "ok") : nil
+    let health: String?
+    if command == "health" {
+      switch snapshot.session.status {
+      case .failed: health = "failed"
+      case .cancelled: health = "cancelled"
+      default: health = "ok"
+      }
+    } else {
+      health = nil
+    }
     let loopEvidence = snapshot.loopEvidence.map(LoopEvidenceSummary.init)
     let runningExecutions = snapshot.session.executions.filter { $0.status == .running }
     let activeExecution = runningExecutions.last

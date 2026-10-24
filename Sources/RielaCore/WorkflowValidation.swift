@@ -120,11 +120,32 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
         gateIds: gateIds,
         diagnostics: &diagnostics
       )
-      for transition in step.transitions ?? [] {
+      for (transitionIndex, transition) in (step.transitions ?? []).enumerated() {
         if transition.toWorkflowId == nil && !stepIds.contains(transition.toStepId) {
           diagnostics.append(
             error("workflow.steps.\(step.id).transitions.toStepId", "must reference workflow.steps[] entry '\(transition.toStepId)'")
           )
+        }
+        if let dynamicWorkflow = transition.dynamicWorkflow {
+          let dynamicPath = "workflow.steps.\(step.id).transitions[\(transitionIndex)].dynamicWorkflow"
+          if transition.toWorkflowId != nil {
+            diagnostics.append(error(dynamicPath, "cannot be combined with toWorkflowId"))
+          }
+          if transition.resumeStepId != nil {
+            diagnostics.append(error(dynamicPath, "cannot be combined with resumeStepId"))
+          }
+          if transition.fanout != nil {
+            diagnostics.append(error(dynamicPath, "cannot be combined with fanout"))
+          }
+          diagnostics.append(contentsOf: DynamicWorkflowPolicy.authoredDiagnostics(dynamicWorkflow, path: dynamicPath))
+          let maxIterations = dynamicWorkflow.maxIterations ?? 4
+          if transition.toStepId == step.id, workflow.defaults.maxLoopIterations <= maxIterations {
+            diagnostics.append(WorkflowValidationDiagnostic(
+              severity: .warning,
+              path: dynamicPath,
+              message: "maxLoopIterations may stop the dynamic workflow loop before maxIterations"
+            ))
+          }
         }
         if let joinStepId = transition.fanout?.joinStepId, !stepIds.contains(joinStepId) {
           diagnostics.append(

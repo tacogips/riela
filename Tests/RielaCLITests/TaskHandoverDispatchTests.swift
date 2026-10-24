@@ -509,7 +509,7 @@ final class TaskHandoverDispatchTests: XCTestCase {
     let predecessor = try XCTUnwrap(harness.store.loadAttempt(id: AttemptID(try XCTUnwrap(run.attemptId))))
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
       .load(sessionId: predecessor.sessionId)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
     XCTAssertEqual(snapshot.session.failureReason, "task handover trigger: cancelled")
     XCTAssertNil(try harness.store.pendingHandoverRequest(attemptId: predecessor.id))

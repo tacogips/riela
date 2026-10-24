@@ -161,6 +161,29 @@ public struct WorkflowCrossWorkflowDispatchDirective: Equatable, Sendable {
   }
 }
 
+/// Instruction produced when a live run selects a brain-generated workflow.
+public struct WorkflowDynamicWorkflowDispatchDirective: Equatable, Sendable {
+  public var resumeStepId: String
+  public var transitionLabel: String?
+  public var envelope: JSONObject
+  public var sourceStepExecutionId: String
+  public var transition: WorkflowDynamicWorkflowTransition
+
+  public init(
+    resumeStepId: String,
+    transitionLabel: String?,
+    envelope: JSONObject,
+    sourceStepExecutionId: String,
+    transition: WorkflowDynamicWorkflowTransition
+  ) {
+    self.resumeStepId = resumeStepId
+    self.transitionLabel = transitionLabel
+    self.envelope = envelope
+    self.sourceStepExecutionId = sourceStepExecutionId
+    self.transition = transition
+  }
+}
+
 /// Instruction produced when a live run selects a local fanout transition: the
 /// runner must execute the branch sub-paths and deliver the joined result to
 /// `joinStepId`.
@@ -226,6 +249,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
   public var nextStepId: String?
   public var rootOutput: JSONObject?
   public var crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective?
+  public var dynamicWorkflowDispatch: WorkflowDynamicWorkflowDispatchDirective?
   public var fanoutDispatch: WorkflowFanoutDispatchDirective?
   public var loopGuard: WorkflowLoopGuardPublication?
   public var handover: HandoverEnvelope?
@@ -237,6 +261,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     nextStepId: String? = nil,
     rootOutput: JSONObject? = nil,
     crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective? = nil,
+    dynamicWorkflowDispatch: WorkflowDynamicWorkflowDispatchDirective? = nil,
     fanoutDispatch: WorkflowFanoutDispatchDirective? = nil,
     loopGuard: WorkflowLoopGuardPublication? = nil,
     handover: HandoverEnvelope? = nil
@@ -247,6 +272,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     self.nextStepId = nextStepId
     self.rootOutput = rootOutput
     self.crossWorkflowDispatch = crossWorkflowDispatch
+    self.dynamicWorkflowDispatch = dynamicWorkflowDispatch
     self.fanoutDispatch = fanoutDispatch
     self.loopGuard = loopGuard
     self.handover = handover
@@ -804,6 +830,11 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         handoffPayload: payload,
         sourceStepExecutionId: execution.executionId
       ),
+      dynamicWorkflowDispatch: liveDynamicWorkflowDispatchDirective(
+        in: selectedTransitions,
+        envelope: payload,
+        sourceStepExecutionId: execution.executionId
+      ),
       fanoutDispatch: liveFanoutDispatchDirective(
         in: selectedTransitions,
         sourceStepId: request.stepId,
@@ -822,7 +853,11 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     payload: JSONObject
   ) -> [WorkflowMessageAppendInput] {
     transitions
-      .filter { !isLiveCrossWorkflowDispatchTransition($0) && !isLiveFanoutDispatchTransition($0) }
+      .filter {
+        !isLiveCrossWorkflowDispatchTransition($0) &&
+          $0.dynamicWorkflow == nil &&
+          !isLiveFanoutDispatchTransition($0)
+      }
       .map { transition in
         WorkflowMessageAppendInput(
           workflowExecutionId: request.sessionId,
@@ -943,6 +978,9 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   }
 
   private func unsupportedTransitionReason(in transitions: [WorkflowStepTransition]) -> String? {
+    if transitions.filter({ $0.dynamicWorkflow != nil }).count > 1 {
+      return "step selected more than one nested callee"
+    }
     for transition in transitions {
       if transition.toWorkflowId != nil && transition.resumeStepId == nil {
         return "cross-workflow transitions are not supported by this in-memory publisher"
@@ -981,6 +1019,26 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
 
   private func isLiveFanoutDispatchTransition(_ transition: WorkflowStepTransition) -> Bool {
     transition.fanout != nil
+  }
+
+  private func liveDynamicWorkflowDispatchDirective(
+    in transitions: [WorkflowStepTransition],
+    envelope: JSONObject,
+    sourceStepExecutionId: String
+  ) -> WorkflowDynamicWorkflowDispatchDirective? {
+    let matching = transitions.filter { $0.dynamicWorkflow != nil }
+    guard matching.count == 1,
+          let transition = matching.first,
+          let dynamicWorkflow = transition.dynamicWorkflow else {
+      return nil
+    }
+    return WorkflowDynamicWorkflowDispatchDirective(
+      resumeStepId: transition.toStepId,
+      transitionLabel: transition.label,
+      envelope: envelope,
+      sourceStepExecutionId: sourceStepExecutionId,
+      transition: dynamicWorkflow
+    )
   }
 
   private func liveCrossWorkflowDispatchDirective(

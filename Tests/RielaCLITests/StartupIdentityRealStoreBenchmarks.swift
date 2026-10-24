@@ -23,7 +23,7 @@ final class StartupIdentityRealStoreBenchmarks: XCTestCase {
     let first = try await makeSeededProductionRuntimeStore(
       sessionStoreRoot: root.path,
       executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path),
-      hydrateSessions: false)
+      hydration: .none)
     let firstSeconds = seconds(firstStart.duration(to: .now))
     let next = try await first.createSession(
       .init(workflowId: "startup-benchmark", entryStepId: "start"))
@@ -32,7 +32,7 @@ final class StartupIdentityRealStoreBenchmarks: XCTestCase {
     _ = try await makeSeededProductionRuntimeStore(
       sessionStoreRoot: root.path,
       executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path),
-      hydrateSessions: false)
+      hydration: .none)
     let secondSeconds = seconds(secondStart.duration(to: .now))
     let proof: [String: Any] = [
       "databaseBytes": bytes, "legacyBackfillAndStartupSeconds": firstSeconds,

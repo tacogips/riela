@@ -527,11 +527,8 @@ public struct SessionObservabilityService: Sendable {
   }
 
   public static func isTerminal(_ session: WorkflowSession) -> Bool {
-    if session.failureKind == .cancelled {
-      return true
-    }
     return switch session.status {
-    case .completed, .failed:
+    case .completed, .failed, .cancelled:
       true
     case .created, .running, .suspended:
       false
@@ -540,15 +537,11 @@ public struct SessionObservabilityService: Sendable {
 
   public static func isTerminal(_ node: SessionRollupNode) -> Bool {
     let rootTerminal: Bool
-    if node.digest.failureKind == .cancelled {
+    switch node.digest.status {
+    case .completed, .failed, .cancelled:
       rootTerminal = true
-    } else {
-      switch node.digest.status {
-      case .completed, .failed:
-        rootTerminal = true
-      case .created, .running, .suspended:
-        rootTerminal = false
-      }
+    case .created, .running, .suspended:
+      rootTerminal = node.digest.failureKind == .cancelled
     }
     return rootTerminal && node.children.allSatisfy(isTerminal)
   }

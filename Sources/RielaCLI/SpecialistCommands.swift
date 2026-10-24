@@ -555,7 +555,7 @@ public struct SpecialistCommandRunner: Sendable {
     switch snapshot.session.status {
     case .created, .running, .suspended:
       return false
-    case .completed, .failed:
+    case .completed, .failed, .cancelled:
       let resultJSON = String(
         data: try JSONEncoder().encode(snapshot), encoding: .utf8
       ) ?? #"{\"runtimeSnapshot\":\"encode_failed\"}"#

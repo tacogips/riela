@@ -471,19 +471,22 @@ public struct WorkflowStepTransition: Codable, Equatable, Sendable {
   public var resumeStepId: String?
   public var label: String?
   public var fanout: WorkflowStepFanout?
+  public var dynamicWorkflow: WorkflowDynamicWorkflowTransition?
 
   public init(
     toStepId: String,
     toWorkflowId: String? = nil,
     resumeStepId: String? = nil,
     label: String? = nil,
-    fanout: WorkflowStepFanout? = nil
+    fanout: WorkflowStepFanout? = nil,
+    dynamicWorkflow: WorkflowDynamicWorkflowTransition? = nil
   ) {
     self.toStepId = toStepId
     self.toWorkflowId = toWorkflowId
     self.resumeStepId = resumeStepId
     self.label = label
     self.fanout = fanout
+    self.dynamicWorkflow = dynamicWorkflow
   }
 }
 

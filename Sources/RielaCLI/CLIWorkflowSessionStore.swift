@@ -525,6 +525,11 @@ func canonicalRuntimeStoreRoot(sessionStoreRoot: String) -> String {
     .path
 }
 
+enum RuntimeStoreHydration: Equatable, Sendable {
+  case none
+  case family(of: String)
+}
+
 /// Builds the in-memory runtime store a production command seeds from the
 /// persisted CLI state. Fresh session ids are reserved through
 /// `executionLocks` so concurrent processes sharing one session store never
@@ -534,7 +539,7 @@ func canonicalRuntimeStoreRoot(sessionStoreRoot: String) -> String {
 func makeSeededProductionRuntimeStore(
   sessionStoreRoot: String,
   executionLocks: SessionExecutionLockRegistry,
-  hydrateSessions: Bool = true
+  hydration: RuntimeStoreHydration
 ) async throws -> InMemoryWorkflowRuntimeStore {
   let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
   let persistenceStore = SQLiteWorkflowRuntimePersistenceStore(
@@ -545,54 +550,68 @@ func makeSeededProductionRuntimeStore(
       || ((try? persistenceStore.sessionExists(sessionId: sessionId)) ?? false)
   }
   let runtimeStore = InMemoryWorkflowRuntimeStore(idGenerator: generator)
-  if hydrateSessions {
-    try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: sessionStoreRoot)
-  } else {
-    for attempt in 0..<3 {
-      do {
-        try sessionStore.observeStartupIdentities(generator)
-        try persistenceStore.observePersistedIdentities(generator)
-        break
-      } catch SQLiteWorkflowStartupIdentities.MetadataError.staleProjection {
-        if attempt == 2 { throw SQLiteWorkflowStartupIdentities.MetadataError.staleProjection }
-      }
+  for attempt in 0..<3 {
+    do {
+      try sessionStore.observeStartupIdentities(generator)
+      try persistenceStore.observePersistedIdentities(generator)
+      break
+    } catch SQLiteWorkflowStartupIdentities.MetadataError.staleProjection {
+      if attempt == 2 { throw SQLiteWorkflowStartupIdentities.MetadataError.staleProjection }
     }
+  }
+  if case let .family(sessionId) = hydration {
+    try await seedRuntimeStoreFromPersistedCLIState(
+      runtimeStore,
+      sessionStoreRoot: sessionStoreRoot,
+      familyOf: sessionId
+    )
   }
   return runtimeStore
 }
 
 func seedRuntimeStoreFromPersistedCLIState(
   _ runtimeStore: InMemoryWorkflowRuntimeStore,
-  sessionStoreRoot: String
+  sessionStoreRoot: String,
+  familyOf sessionId: String
 ) async throws {
   let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
   let persistenceStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
-  // A durable supervisor publishes a reserved child snapshot before a CLI
-  // session record exists. Seed those snapshots too: otherwise a fresh worker
-  // reports "resume session not found" even though reservation committed.
-  var seededSessionIDs = Set<String>()
-  for identity in try sessionStore.loadRawSessionIdentities() {
-    await runtimeStore.observeExistingSessionIdentity(
-      sessionId: identity.sessionId,
-      workflowId: identity.workflowId
-    )
+  // A durable supervisor can reserve a family child before its CLI record
+  // exists, so family hydration also checks each canonical snapshot.
+  var seen = Set<String>()
+  let familyIds = ([sessionId] + (try persistenceStore.sessionFamilyIds(of: sessionId))).filter {
+    seen.insert($0).inserted
   }
-  for existing in try sessionStore.loadAll() {
-    await runtimeStore.seedSession(existing.session)
-    seededSessionIDs.insert(existing.session.sessionId)
+  for familyId in familyIds {
+    let existing: PersistedCLIWorkflowSession?
     do {
-      let snapshot = try persistenceStore.load(sessionId: existing.session.sessionId)
-      await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
-    } catch let error as WorkflowRuntimePersistenceStoreError {
+      existing = try sessionStore.load(sessionId: familyId)
+    } catch let error as CLIWorkflowSessionStoreError {
       if case .notFound = error {
-        continue
+        existing = nil
+      } else {
+        throw error
       }
-      throw error
     }
-  }
-  for snapshot in try persistenceStore.loadAll() where !seededSessionIDs.contains(snapshot.session.sessionId) {
-    await runtimeStore.seedSession(snapshot.session)
-    await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
+    if let existing {
+      await runtimeStore.seedSession(existing.session)
+      do {
+        let snapshot = try persistenceStore.load(sessionId: familyId)
+        await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
+      } catch let error as WorkflowRuntimePersistenceStoreError {
+        if case .notFound = error { continue }
+        throw error
+      }
+    } else {
+      do {
+        let snapshot = try persistenceStore.load(sessionId: familyId)
+        await runtimeStore.seedSession(snapshot.session)
+        await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
+      } catch let snapshotError as WorkflowRuntimePersistenceStoreError {
+        if case .notFound = snapshotError { continue }
+        throw snapshotError
+      }
+    }
   }
 }
 

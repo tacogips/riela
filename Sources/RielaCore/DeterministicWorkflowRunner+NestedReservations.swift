@@ -26,6 +26,101 @@ extension DeterministicWorkflowRunner {
     }
     let records = try nestedInvocationPersistenceStore.nestedInvocationRecords(parentSessionId: session.sessionId)
     let matching = records.filter { $0.reservation.resumeStepId == currentStepId }
+    let dynamicRecords = matching.filter { $0.reservation.branchId == "dynamic-workflow" && $0.phase != .delivered }
+    for record in dynamicRecords {
+      guard let execution = session.executions.first(where: {
+        $0.executionId == record.reservation.sourceStepExecutionId
+      }), let envelope = execution.acceptedOutput?.payload,
+        let parentStep = request.workflow.steps.first(where: { $0.id == record.reservation.parentStepId }),
+        let transition = (parentStep.transitions ?? []).first(where: {
+          $0.dynamicWorkflow != nil && $0.toStepId == record.reservation.resumeStepId
+        }), let dynamicWorkflow = transition.dynamicWorkflow else {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested resume cannot reconstruct the persisted dynamic-workflow transition")
+      }
+      try await dispatchDynamicWorkflow(
+        directive: WorkflowDynamicWorkflowDispatchDirective(
+          resumeStepId: transition.toStepId,
+          transitionLabel: transition.label,
+          envelope: envelope,
+          sourceStepExecutionId: record.reservation.sourceStepExecutionId,
+          transition: dynamicWorkflow
+        ),
+        parentSessionId: session.sessionId,
+        parentStepId: record.reservation.parentStepId,
+        request: request
+      )
+    }
+
+    // Invalid iterations have no reservation. Reconstruct them from the
+    // accepted output before the ordinary no-record early return.
+    let messages = try await store.listMessages(for: session.sessionId, toStepId: currentStepId)
+    let deliveredSources = Set(messages.compactMap { message -> String? in
+      message.payload["dynamicWorkflowResult"] == nil ? nil : message.sourceStepExecutionId
+    })
+    let reservedSources = Set(records.filter { $0.reservation.branchId == "dynamic-workflow" }
+      .map { $0.reservation.sourceStepExecutionId })
+    for execution in session.executions.reversed() where !deliveredSources.contains(execution.executionId) &&
+      !reservedSources.contains(execution.executionId) {
+      guard let accepted = execution.acceptedOutput,
+            let step = request.workflow.steps.first(where: { $0.id == execution.stepId }),
+            let transition = (step.transitions ?? []).first(where: {
+              $0.dynamicWorkflow != nil && $0.toStepId == currentStepId &&
+                WorkflowBranchEvaluator().evaluate(label: $0.label, when: accepted.when, payload: accepted.payload)
+            }), let dynamicWorkflow = transition.dynamicWorkflow else {
+        continue
+      }
+      let plan = try await prepareDynamicIteration(
+        sessionId: session.sessionId,
+        sourceStepExecutionId: execution.executionId,
+        step: step,
+        transition: dynamicWorkflow,
+        envelope: accepted.payload,
+        request: request
+      )
+      switch plan {
+      case let .invalid(iteration, workflowId, rationale, diagnostics, bounds):
+        if bounds.onFailure == .fail {
+          throw DeterministicWorkflowRunnerError.crossWorkflowDispatchFailed(
+            workflowId: workflowId ?? "generated",
+            reason: "invalid generated workflow: \(diagnostics.prefix(5).map(\.message).joined(separator: "; "))"
+          )
+        }
+        try await appendDynamicWorkflowResult(DynamicWorkflowResultDelivery(
+          parentSessionId: session.sessionId,
+          parentStepId: step.id,
+          resumeStepId: transition.toStepId,
+          sourceExecutionId: execution.executionId,
+          transitionLabel: transition.label,
+          iteration: iteration,
+          bounds: bounds,
+          outcome: "invalid",
+          childSessionId: nil,
+          workflowId: workflowId,
+          definitionDigest: nil,
+          rationale: rationale,
+          rootOutput: [:],
+          failureKind: nil,
+          failureReason: nil,
+          diagnostics: diagnostics,
+          terminalSession: nil,
+          childStatus: .completed
+        ))
+      case .overBudget, .valid:
+        try await dispatchDynamicWorkflow(
+          directive: WorkflowDynamicWorkflowDispatchDirective(
+            resumeStepId: transition.toStepId,
+            transitionLabel: transition.label,
+            envelope: accepted.payload,
+            sourceStepExecutionId: execution.executionId,
+            transition: dynamicWorkflow
+          ),
+          parentSessionId: session.sessionId,
+          parentStepId: step.id,
+          request: request
+        )
+      }
+      break
+    }
     guard !matching.isEmpty else { return }
 
     // A crash after the canonical SQLite delivery commit but before the live
@@ -128,7 +223,8 @@ extension DeterministicWorkflowRunner {
     parentStepId: String,
     resumeStepId: String,
     sourceExecutionId: String,
-    branchId: String
+    branchId: String,
+    generatedWorkflow: WorkflowGeneratedWorkflowOrigin? = nil
   ) async throws -> String {
     if let nestedInvocationPersistenceStore,
        let existing = try nestedInvocationPersistenceStore.nestedInvocationRecord(
@@ -164,7 +260,8 @@ extension DeterministicWorkflowRunner {
       workflowId: workflow.workflowId,
       entryStepId: entryStepId,
       parentSessionId: parentSessionId,
-      rootSessionId: rootSessionId
+      rootSessionId: rootSessionId,
+      generatedWorkflow: generatedWorkflow
     ))
     if let nestedInvocationPersistenceStore {
       try nestedInvocationPersistenceStore.reserveNestedInvocation(WorkflowNestedInvocationReservation(
@@ -207,14 +304,18 @@ extension DeterministicWorkflowRunner {
     workflowId: String,
     status: WorkflowSessionStatus,
     payload: JSONObject,
-    terminalSession: WorkflowSession
+    terminalSession: WorkflowSession,
+    branchId: String = "cross-workflow",
+    payloadOverride: JSONObject? = nil
   ) async throws {
-    var resumePayload = payload
-    resumePayload["_rielaCrossWorkflow"] = .object([
-      "workflowId": .string(workflowId),
-      "sessionId": .string(childSessionId),
-      "status": .string(status.rawValue)
-    ])
+    var resumePayload = payloadOverride ?? payload
+    if payloadOverride == nil {
+      resumePayload["_rielaCrossWorkflow"] = .object([
+        "workflowId": .string(workflowId),
+        "sessionId": .string(childSessionId),
+        "status": .string(status.rawValue)
+      ])
+    }
     let messageInput = WorkflowMessageAppendInput(
       workflowExecutionId: parentSessionId,
       fromStepId: parentStepId,
@@ -230,9 +331,12 @@ extension DeterministicWorkflowRunner {
       guard let record = try nestedInvocationPersistenceStore.nestedInvocationRecord(
         parentSessionId: parentSessionId,
         sourceStepExecutionId: sourceExecutionId,
-        branchId: "cross-workflow"
+        branchId: branchId
       ), record.reservation.childSnapshot.session.sessionId == childSessionId else {
-        throw WorkflowRuntimePersistenceStoreError.notFound("persisted cross-workflow reservation not found")
+        let message = branchId == "cross-workflow"
+          ? "persisted cross-workflow reservation not found"
+          : "persisted dynamic-workflow reservation not found"
+        throw WorkflowRuntimePersistenceStoreError.notFound(message)
       }
       if record.childTerminalSnapshot == nil {
         _ = try nestedInvocationPersistenceStore.recordNestedChildTerminal(

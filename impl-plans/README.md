@@ -149,6 +149,32 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+Issue sweep 2 2026-10-24 (issues
+[#32](https://github.com/tacogips/riela/issues/32),
+[#27](https://github.com/tacogips/riela/issues/27),
+[#74](https://github.com/tacogips/riela/issues/74); designs
+[session store decode resilience](../design-docs/specs/design-cli-session-store-decode-resilience.md),
+[cancellation and orphan session resilience](../design-docs/specs/design-cancellation-and-orphan-session-resilience.md)
+and [brain-generated workflow loop](../design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md)):
+[`issue-sweep-2-20261024-27a-cancelled-status`](completed/issue-sweep-2-20261024-27a-cancelled-status.md),
+[`issue-sweep-2-20261024-32-recovery-hydration`](completed/issue-sweep-2-20261024-32-recovery-hydration.md),
+[`issue-sweep-2-20261024-27b-gateway-cancellation`](completed/issue-sweep-2-20261024-27b-gateway-cancellation.md),
+[`issue-sweep-2-20261024-74a-dynamic-workflow-policy`](completed/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md),
+[`issue-sweep-2-20261024-27c-session-reconcile`](completed/issue-sweep-2-20261024-27c-session-reconcile.md),
+[`issue-sweep-2-20261024-74b-dynamic-workflow-contract`](completed/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md),
+[`issue-sweep-2-20261024-74c-dynamic-workflow-dispatch`](completed/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md)
+and [`issue-sweep-2-20261024-74d-brain-loop-example`](completed/issue-sweep-2-20261024-74d-brain-loop-example.md)
+were archived on 2026-10-24 after the test-integrity, adversarial and
+combined-tree integration reviews accepted them. The combined-tree runs in
+`tmp/issue-sweep-2-20261024/serial-reconcile-session-8-wave-004/` passed:
+`swift build` exit 0, focused suites 180/0, parity 8/0, strict lint on 23
+changed files exit 0, and the brain-loop example validated and ran its mock
+scenario with exit 0. Browser E2E was skipped because no browser-facing file
+changed. Detach/reattach (#27 P5) is a follow-up. The dispatch manifest stays at
+[`active/issue-sweep-2-20261024-dispatch.json`](active/issue-sweep-2-20261024-dispatch.json);
+it records the original plan paths. Progress logs:
+`progress/issue-sweep-2-20261024-*.md`.
+
 Issue sweep 2026-10-24 (issues
 [#175](https://github.com/tacogips/riela/issues/175),
 [#163](https://github.com/tacogips/riela/issues/163),

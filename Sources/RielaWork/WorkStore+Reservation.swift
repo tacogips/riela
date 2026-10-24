@@ -520,12 +520,12 @@ public extension WorkStore {
       guard attempt.launch?.phase == .reserved, attempt.state == .prepared else { return nil }
       let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
       var snapshot = try persistence.load(sessionId: sessionId, in: database)
-      if snapshot.session.status == .failed && snapshot.session.failureKind == .cancelled
+      if snapshot.session.isCancellation
         && snapshot.session.executions.isEmpty { return snapshot }
       guard snapshot.session.status == .created, snapshot.session.executions.isEmpty else {
         throw WorkStoreError("prelaunch cancellation cannot replace an active or terminal session")
       }
-      snapshot.session.status = .failed
+      snapshot.session.status = .cancelled
       snapshot.session.failureKind = .cancelled
       snapshot.session.failureReason = "workflow run cancelled before launch"
       snapshot.session.failedAt = now
@@ -563,13 +563,21 @@ public extension WorkStore {
       try validateCancellationDecision(DecisionID(decisionId), taskId: taskId, attemptId: attemptId, in: database)
       let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
       var snapshot = try persistence.load(sessionId: sessionId, in: database)
-      if snapshot.session.status == .failed && snapshot.session.failureKind == .cancelled {
+      if snapshot.session.isCancellation {
         return snapshot
       }
       guard snapshot.session.status == .created || snapshot.session.status == .running else {
         throw WorkStoreError("joined cancellation cannot replace an ordinary terminal session")
       }
-      snapshot.session.status = .failed
+      snapshot.session.status = .cancelled
+      snapshot.session.executions = snapshot.session.executions.map { execution in
+        guard execution.status == .running else { return execution }
+        var cancelledExecution = execution
+        cancelledExecution.status = .cancelled
+        cancelledExecution.failureReason = "workflow run cancelled after owned execution stopped"
+        cancelledExecution.updatedAt = now
+        return cancelledExecution
+      }
       snapshot.session.failureKind = .cancelled
       snapshot.session.failureReason = "workflow run cancelled after owned execution stopped"
       snapshot.session.failedAt = now
@@ -615,7 +623,7 @@ public extension WorkStore {
       if attempt.entry == .director, snapshot.loopEvidence == nil {
         canonicalOutcome.costs = LoopCostAccumulator.evidence(from: snapshot.session.executions)
       }
-      guard canonicalOutcome.sessionStatus == .failed,
+      guard canonicalOutcome.sessionStatus == .cancelled || canonicalOutcome.sessionStatus == .failed,
             canonicalOutcome.failureKind == .cancelled,
             canonicalOutcome == outcome else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' has no matching cancelled workflow snapshot")
@@ -743,7 +751,7 @@ public extension WorkStore {
       if attempt.entry == .director, snapshot.loopEvidence == nil {
         canonicalOutcome.costs = LoopCostAccumulator.evidence(from: snapshot.session.executions)
       }
-      guard canonicalOutcome.sessionStatus == .completed || canonicalOutcome.sessionStatus == .failed,
+      guard [.completed, .failed, .cancelled].contains(canonicalOutcome.sessionStatus),
             canonicalOutcome == outcome else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' has no matching terminal workflow snapshot")
       }
@@ -924,7 +932,7 @@ extension WorkStore {
     for attempt in attempts where attempt.state == .reconciled {
       guard let duration = try WorkStore.attemptWallClockMs(
         attempt,
-        terminalStatuses: [.completed, .failed],
+        terminalStatuses: [.completed, .failed, .cancelled],
         loadSession: { try sessions.load(sessionId: attempt.sessionId, in: database).session }
       ) else {
         throw WorkStoreError("agent budget has no durable terminal session for an attempt")
@@ -1031,7 +1039,7 @@ extension WorkStore {
     guard snapshot.session.sessionId == attempt.sessionId else {
       throw WorkStoreError("cancellation session does not match the reserved attempt")
     }
-    if snapshot.session.status == .completed || snapshot.session.status == .failed {
+    if snapshot.session.status.isTerminal {
       throw WorkStoreError.alreadyTerminal(sessionId: attempt.sessionId)
     }
   }

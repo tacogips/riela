@@ -171,7 +171,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   ) throws -> WorkflowNestedInvocationRecord {
     try validate(reservation)
     guard terminalSnapshot.session.sessionId == reservation.childSnapshot.session.sessionId,
-          terminalSnapshot.session.status == .completed || terminalSnapshot.session.status == .failed else {
+          terminalSnapshot.session.status.isTerminal else {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested child terminal snapshot is invalid")
     }
     let database = try openDatabase()

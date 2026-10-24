@@ -68,7 +68,14 @@ extension DeterministicWorkflowRunner {
       guard var unpersistedSession = try? await store.loadSession(id: sessionId) else {
         return
       }
-      unpersistedSession.status = .failed
+      unpersistedSession.status = failureKind == .cancelled ? .cancelled : .failed
+      unpersistedSession.executions = unpersistedSession.executions.map { execution in
+        guard execution.status == .running else { return execution }
+        var interruptedExecution = execution
+        interruptedExecution.status = failureKind == .cancelled ? .cancelled : .failed
+        interruptedExecution.failureReason = failureReason
+        return interruptedExecution
+      }
       unpersistedSession.failureReason = failureReason
       unpersistedSession.failureKind = failureKind
       unpersistedSession.failedAt = unpersistedSession.failedAt ?? Date()

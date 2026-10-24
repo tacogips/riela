@@ -42,8 +42,12 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
     }
   }
 
-  func hydrate() async throws {
-    for snapshot in try persistence.loadAll() {
+  func hydrate(familyOf sessionId: String) async throws {
+    var seen = Set<String>()
+    let ids = ([sessionId] + (try persistence.sessionFamilyIds(of: sessionId))).filter {
+      seen.insert($0).inserted
+    }
+    for snapshot in try persistence.loadFamily(ids: ids) {
       await backing.seedSession(snapshot.session)
       await backing.seedWorkflowMessages(snapshot.workflowMessages)
     }
@@ -155,12 +159,12 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
       throw WorkflowRuntimeStoreError.sessionNotFound(sessionId)
     }
     let messages = try await backing.listMessages(for: sessionId, toStepId: nil)
-    if session.status == .completed || session.status == .failed,
+    if session.status.isTerminal,
        !terminalHookRan.contains(sessionId) {
       try beforeTerminalPersistence?()
       terminalHookRan.insert(sessionId)
     }
-    if session.status == .completed || session.status == .failed,
+    if session.status.isTerminal,
        deferTerminalPersistence?() == true { return }
     try consumeCanonicalWriteBudget()
     try persistenceWriter(WorkflowRuntimePersistenceSnapshot(session: session, workflowMessages: messages))

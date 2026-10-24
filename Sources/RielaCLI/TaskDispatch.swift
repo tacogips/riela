@@ -262,7 +262,7 @@ struct TaskDispatch: Sendable {
           ) {
             return handoverResult
           }
-          guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
+          guard snapshot.session.status.isTerminal else {
             throw WorkStoreError("reserved task session did not reach a durable terminal state")
           }
           let directorView = try await reconcileTerminal(
@@ -435,14 +435,14 @@ struct TaskDispatch: Sendable {
       if attempt.id == attemptId {
         let session = snapshot.session
         guard session.sessionId == attempt.sessionId,
-              session.status == .completed || session.status == .failed || session.status == .suspended else {
+              session.status.isTerminal || session.status == .suspended else {
           throw WorkStoreError("task attempt has no durable terminal session for guard evaluation")
         }
         durationMs = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
       } else {
         guard let duration = try WorkStore.attemptWallClockMs(
           attempt,
-          terminalStatuses: [.completed, .failed, .suspended],
+          terminalStatuses: [.completed, .failed, .cancelled, .suspended],
           loadSession: { try sessionStore.loadStrictReadOnly(sessionId: attempt.sessionId).session }
         ) else {
           throw WorkStoreError("task attempt has no durable terminal session for guard evaluation")

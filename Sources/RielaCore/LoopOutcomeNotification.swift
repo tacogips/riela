@@ -81,6 +81,8 @@ public enum LoopOutcomeClassifier {
       return allAccepted ? .accepted : .rejected
     case .failed:
       return session.failureKind == .loopNotConverging ? .stalled : .failed
+    case .cancelled:
+      return nil
     case .suspended:
       return nil
     default:

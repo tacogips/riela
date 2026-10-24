@@ -459,7 +459,7 @@ final class SpecialistServiceResponsivenessTests: XCTestCase {
     let terminalChild = try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
     ).load(sessionId: terminalDispatch.childSessionId)
-    XCTAssertEqual(terminalChild.session.status, .failed)
+    XCTAssertEqual(terminalChild.session.status, .cancelled)
     XCTAssertEqual(terminalChild.session.failureKind, .cancelled)
     XCTAssertFalse(try store.recoverableDispatches().contains { $0.dispatchId == dispatchId && $0.state == .prepared })
     XCTAssertEqual(try String(contentsOf: effects, encoding: .utf8).split(whereSeparator: \.isNewline), ["parent", "descendant"])

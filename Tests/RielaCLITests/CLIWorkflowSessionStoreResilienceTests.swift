@@ -148,10 +148,10 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
       in: persistenceDatabase,
       runtimeStore: persistenceStore
     )
-    let runtimeStore = InMemoryWorkflowRuntimeStore()
-    try await seedRuntimeStoreFromPersistedCLIState(
-      runtimeStore,
-      sessionStoreRoot: root.path
+    let runtimeStore = try await makeSeededProductionRuntimeStore(
+      sessionStoreRoot: root.path,
+      executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path),
+      hydration: .family(of: validRecord.session.sessionId)
     )
     let seededValidSession = try await runtimeStore.loadSession(
       id: validRecord.session.sessionId
@@ -181,7 +181,7 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
       _ = try await makeSeededProductionRuntimeStore(
         sessionStoreRoot: root.path,
         executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path),
-        hydrateSessions: false
+        hydration: .none
       )
       XCTFail("corrupt store must prevent fresh execution")
     } catch {
@@ -236,7 +236,7 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
     let locks = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
     let start = ContinuousClock.now
     let runtime = try await makeSeededProductionRuntimeStore(
-      sessionStoreRoot: root.path, executionLocks: locks, hydrateSessions: false
+      sessionStoreRoot: root.path, executionLocks: locks, hydration: .none
     )
     FileHandle.standardError.write(Data("fresh identity startup: \(start.duration(to: .now))\n".utf8))
     let unrelated = try await runtime.loadSession(id: record.session.sessionId)
@@ -281,7 +281,8 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
     let fullStart = ContinuousClock.now
     let hydrated = try await makeSeededProductionRuntimeStore(
       sessionStoreRoot: root.path,
-      executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path),
+      hydration: .family(of: reserved.sessionId)
     )
     FileHandle.standardError.write(Data("legacy full hydration startup: \(fullStart.duration(to: .now))\n".utf8))
     let hydratedReserved = try await hydrated.loadSession(id: reserved.sessionId)

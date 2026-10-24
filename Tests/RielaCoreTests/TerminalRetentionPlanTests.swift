@@ -50,4 +50,18 @@ final class TerminalRetentionPlanTests: XCTestCase {
     XCTAssertThrowsError(try plan([row("negative", bytes: -1)]))
     XCTAssertThrowsError(try plan([row("a", bytes: Int64.max), row("b")]))
   }
+
+  func testCancelledRootOlderThanRetentionCutoffIsSelected() throws {
+    let result = try plan([row("cancelled-root", status: ["cancelled"])])
+    XCTAssertEqual(result.selected.map(\.rootId), ["cancelled-root"])
+    XCTAssertTrue(result.protected.isEmpty)
+  }
+
+  func testCancelledFamilyWithRunningMemberStaysProtected() throws {
+    let result = try plan([row("root", status: ["cancelled"]),
+                           row("child", hours: 1, status: ["running"], parent: "root", root: "root")], cap: 1)
+    XCTAssertTrue(result.selected.isEmpty)
+    XCTAssertEqual(result.protected.first?.protection, "nonterminalOrConflictingStatus")
+    XCTAssertEqual(result.protected.first?.ids, ["child", "root"])
+  }
 }

@@ -182,7 +182,7 @@ extension TaskDispatch {
     _ = try await executeReserved(reservation, options: runOptions, store: store, context: context)
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
       .load(sessionId: reservation.attempt.sessionId)
-    guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
+    guard snapshot.session.status.isTerminal else {
       throw WorkStoreError("director child session did not reach a durable terminal state")
     }
     return try await finishDirectorTerminal(
@@ -236,7 +236,7 @@ extension TaskDispatch {
         located: located, options: options, output: output
       )
     }
-    if snapshot.session.status != .completed && snapshot.session.status != .failed {
+    if !snapshot.session.status.isTerminal {
       return try await waitForUncertainDirectorChild(
         attempt: latest, view: view, located: located, options: options, output: output
       )
@@ -267,7 +267,7 @@ extension TaskDispatch {
     }
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
       .load(sessionId: current.sessionId)
-    if snapshot.session.status == .completed || snapshot.session.status == .failed {
+    if snapshot.session.status.isTerminal {
       return try await resumeLinkedDirectorIfPresent(
         located: located, options: options, output: output
       ) ?? CLICommandResult(exitCode: .failure, stderr: "director child disappeared during recovery")
@@ -367,7 +367,7 @@ extension TaskDispatch {
     )
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
       .load(sessionId: attempt.sessionId)
-    guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
+    guard snapshot.session.status.isTerminal else {
       throw WorkStoreError("reclaimed director child did not reach a durable terminal state")
     }
     return try await finishDirectorTerminal(
@@ -540,7 +540,7 @@ extension TaskDispatch {
     for attempt in try store.listAttempts(taskId: task.id) where attempt.state == .reconciled {
       guard let duration = try WorkStore.attemptWallClockMs(
         attempt,
-        terminalStatuses: [.completed, .failed],
+        terminalStatuses: [.completed, .failed, .cancelled],
         loadSession: { try sessions.loadStrictReadOnly(sessionId: attempt.sessionId).session }
       ) else {
         throw WorkStoreError("director budget has no durable terminal session for an attempt")

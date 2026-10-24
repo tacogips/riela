@@ -70,7 +70,8 @@ extension DeterministicWorkflowRunner {
         "--retry-failed-step requires an adapter-failed, policy-blocked or timed-out current step with no accepted output"
       )
     }
-    if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure && !request.retryFailedStep) {
+    if existing.status == .completed || existing.status == .cancelled
+      || (existing.status == .failed && !canResumeBudgetFailure && !request.retryFailedStep) {
       let terminalResult = WorkflowRunResult(
         workflowId: request.workflow.workflowId,
         session: existing,
@@ -127,9 +128,10 @@ extension DeterministicWorkflowRunner {
       )
       importInput = history
     } else {
-      guard sourceSession.status == .failed || sourceSession.status == .suspended || sourceSession.status == .completed else {
+      guard sourceSession.status == .failed || sourceSession.status == .cancelled
+        || sourceSession.status == .suspended || sourceSession.status == .completed else {
         throw DeterministicWorkflowRunnerError.rerunValidation(
-          "rerun source session must be failed, suspended or completed")
+          "rerun source session must be failed, cancelled, suspended or completed")
       }
       let carriedInbox = try await rerunCarriedInbox(source: sourceSession, targetStepId: entryStepId)
       let boundEvidence = try Self.rerunFinalizationEvidenceExecutions(

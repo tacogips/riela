@@ -6,6 +6,27 @@ public enum WorkflowSessionStatus: String, Codable, Sendable, CaseIterable {
   case suspended
   case completed
   case failed
+  case cancelled
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    let rawValue = try container.decode(String.self)
+    self = Self(rawValue: rawValue) ?? .failed
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+
+  public var isTerminal: Bool {
+    switch self {
+    case .completed, .failed, .cancelled:
+      true
+    case .created, .running, .suspended:
+      false
+    }
+  }
 }
 
 public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
@@ -14,6 +35,18 @@ public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
   case completed
   case skipped
   case failed
+  case cancelled
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    let rawValue = try container.decode(String.self)
+    self = Self(rawValue: rawValue) ?? .failed
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, Hashable, Sendable {
@@ -328,6 +361,20 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
   }
 }
 
+public struct WorkflowGeneratedWorkflowOrigin: Codable, Equatable, Sendable {
+  public var iteration: Int
+  public var definitionDigest: String
+  public var sourceStepExecutionId: String
+  public var rationale: String?
+
+  public init(iteration: Int, definitionDigest: String, sourceStepExecutionId: String, rationale: String? = nil) {
+    self.iteration = iteration
+    self.definitionDigest = definitionDigest
+    self.sourceStepExecutionId = sourceStepExecutionId
+    self.rationale = rationale
+  }
+}
+
 public struct WorkflowSession: Codable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case workflowId
@@ -352,6 +399,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     case rootSessionId
     case effectiveStepBudget
     case suspend
+    case generatedWorkflow
   }
 
   public var workflowId: String
@@ -376,7 +424,11 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var rootSessionId: String?
   public var effectiveStepBudget: Int?
   public var suspend: SuspendRecord?
+  public var generatedWorkflow: WorkflowGeneratedWorkflowOrigin?
   public var newExecutionCount: Int { executions.filter { $0.importedFrom == nil }.count }
+  public var isCancellation: Bool {
+    failureKind == .cancelled && (status == .cancelled || status == .failed)
+  }
 
   public var workflowExecutionId: String {
     get { sessionId }
@@ -405,7 +457,8 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     parentSessionId: String? = nil,
     rootSessionId: String? = nil,
     effectiveStepBudget: Int? = nil,
-    suspend: SuspendRecord? = nil
+    suspend: SuspendRecord? = nil,
+    generatedWorkflow: WorkflowGeneratedWorkflowOrigin? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -429,6 +482,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.rootSessionId = rootSessionId
     self.effectiveStepBudget = effectiveStepBudget
     self.suspend = suspend
+    self.generatedWorkflow = generatedWorkflow
   }
 
   public init(from decoder: Decoder) throws {
@@ -455,6 +509,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.rootSessionId = try container.decodeIfPresent(String.self, forKey: .rootSessionId)
     self.effectiveStepBudget = try container.decodeIfPresent(Int.self, forKey: .effectiveStepBudget)
     self.suspend = try container.decodeIfPresent(SuspendRecord.self, forKey: .suspend)
+    self.generatedWorkflow = try container.decodeIfPresent(WorkflowGeneratedWorkflowOrigin.self, forKey: .generatedWorkflow)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -481,6 +536,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     try container.encodeIfPresent(rootSessionId, forKey: .rootSessionId)
     try container.encodeIfPresent(effectiveStepBudget, forKey: .effectiveStepBudget)
     try container.encodeIfPresent(suspend, forKey: .suspend)
+    try container.encodeIfPresent(generatedWorkflow, forKey: .generatedWorkflow)
   }
 }
 

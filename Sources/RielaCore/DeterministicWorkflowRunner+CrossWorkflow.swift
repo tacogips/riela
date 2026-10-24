@@ -199,7 +199,7 @@ extension DeterministicWorkflowRunner {
       // parent sees the failure so any reopen fails closed instead of
       // allocating a second child attempt.
       if let terminalChild = try? await store.loadSession(id: reservedChildSessionId),
-         terminalChild.status == .failed {
+         terminalChild.status == .failed || terminalChild.status == .cancelled {
         try await persistNestedTerminalIfNeeded(
           parentSessionId: parentSessionId,
           sourceExecutionId: directive.sourceStepExecutionId,

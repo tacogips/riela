@@ -516,7 +516,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
 
     let maybeOverwritten = await store.loadSessionForTest(id: failed.sessionId)
     let overwritten = try XCTUnwrap(maybeOverwritten)
-    XCTAssertEqual(overwritten.status, .failed)
+    XCTAssertEqual(overwritten.status, .cancelled)
     XCTAssertEqual(overwritten.failureKind, .cancelled)
     XCTAssertEqual(overwritten.failureReason, "workflow run cancelled")
     XCTAssertNil(overwritten.stepBudgetDiagnostic)
@@ -529,7 +529,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       resumeSessionId: failed.sessionId
     ))
 
-    XCTAssertEqual(terminalResume.status, .failed)
+    XCTAssertEqual(terminalResume.status, .cancelled)
     XCTAssertEqual(terminalResume.exitCode, 1)
     XCTAssertEqual(terminalResume.session.failureKind, .cancelled)
     XCTAssertEqual(terminalResume.session.effectiveStepBudget, 3)

@@ -58,7 +58,8 @@ extension InMemoryWorkflowRuntimeStore {
     switch input.source {
     case .session:
       guard let canonicalSource = sessions[input.sourceSessionId],
-            canonicalSource.status == .failed || canonicalSource.status == .suspended
+            canonicalSource.status == .failed || canonicalSource.status == .cancelled
+              || canonicalSource.status == .suspended
               || canonicalSource.status == .completed,
             canonicalSource.workflowId == session.workflowId else {
         throw WorkflowRuntimeStoreError.messageAppendRejected(

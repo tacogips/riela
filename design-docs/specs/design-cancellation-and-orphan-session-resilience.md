@@ -35,6 +35,15 @@ do not cover the gaps described here.
 | Short-lived shell drivers have only foreground `workflow run`, so they kill long runs and then rerun from scratch instead of detaching and reattaching. | P5 adds detached execution (`workflow run --detach`) plus `session attach`/`wait` so drivers can launch, release the shell, poll or follow progress, and later reattach without killing the runner. |
 | Existing issue #14 and #15 are open but do not cover these gaps. | The Related Issue Boundaries section keeps #14 limited to child process-group cleanup and #15 limited to stale `currentStepId`; this design only references them where the new cancellation/orphan model must avoid overlap. |
 
+> **2026-10-24 (issue #27 resolution):** the section
+> [2026-10-24 Contract](#2026-10-24-contract-issue-27) near the end of this
+> document is authoritative. It records what is already done, what no longer
+> applies (P3: auto-improve was removed), and the narrowed P1/P2/P4 contract.
+> The text up to that section is the original 2026-07 analysis. Its file
+> references to `Sources/CodexAgent`, `Sources/ClaudeCodeAgent`,
+> `Sources/CursorCLIAgent` and `WorkflowRunCommand+AutoImprove.swift` describe
+> code that no longer exists.
+
 ## Incident Evidence (2026-06-28 .. 2026-07-02)
 
 ### Wave 1 — codex-adversarial-implementation-review-loop, 06-29..06-30
@@ -337,6 +346,144 @@ background mode with polling, or set tool timeouts above
   `cancelled` and leaves live-PID sessions untouched.
 - CLI test: `session reconcile --dry-run` reports the Wave 3 fixture shape
   without mutating records.
+
+## 2026-10-24 Contract (issue #27)
+
+Verified against the tree at `90d44521`.
+
+### Status per proposal
+
+| Item | State on the current tree | Action |
+|---|---|---|
+| P1 `cancelled` status | Not done. `WorkflowSessionStatus` (`Sources/RielaCore/RuntimeSession.swift:3`) and `WorkflowStepExecutionStatus` (`:11`) have no `cancelled` case. Cancellation finalizes through `finalizeInterruptedSessionFailed` (`DeterministicWorkflowRunner+Cancellation.swift:9`) into `status=failed, failureKind=cancelled` (`WorkflowSessionFailureKind.cancelled` already exists). | Implement as specified below. |
+| P2 adapter preflight | The adapter files RC2 cites were removed: CLI agents now run in-process through `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`, which has no auth preflight catch-all. `executeWithRetry` already calls `rethrowIfCancellation` (`AdapterUtilities.swift:151`). `agentPreflightErrorDetail` (`:98`) maps `CancellationError` to `"preflight cancelled"` but has no callers. One gap remains: a cancelled host task makes the gateway turn end with `stopReason == .cancelled`, which is returned as an ordinary turn (`consumeGatewayTurn`, about line 307). An `ACPError` raised during cancellation is mapped to `providerError` (about line 312), and `executeWithRetry` only checks the error type, not `Task.isCancelled`. | Close the gateway gap (below). Leave `agentPreflightErrorDetail` as is, because it is a defensive helper and unrelated to this fix. |
+| P3 auto-improve | Not applicable. Auto-improve supervision was removed (the `riela-auto-improve` skill is migration-only, and no `runWithAutoImprove` source exists). | None. |
+| P4 orphan reconcile | Not done (no `session reconcile`). Ownership metadata already exists: `SessionExecutionLockRegistry` (`Sources/RielaCLI/SessionExecutionLock.swift`) holds an exclusive non-blocking `flock` on `runtime-records/execution-locks/<sessionId>.lock` for the whole life of every persisted runner (fresh run id reservation, resume/rerun admission, cross-workflow/fanout children through `sessionExecutionAdmission`). The kernel releases it when the process dies. Terminal retention already uses "acquire every family lock or treat the family as `executionLocked`" (`TerminalRetentionExecutor.swift:88-95`). | Implement reconcile on the flock predicate (below). Drop the `runnerPid`/`runnerHost`/`heartbeatAt` fields: flock liveness is exact for a local store and needs no heartbeat. |
+| P5 detach/reattach | Not done. | Follow-up, out of scope for #27. |
+
+### P1 contract: first-class `cancelled`
+
+1. Add `case cancelled` to `WorkflowSessionStatus` and
+   `WorkflowStepExecutionStatus`. Both enums get a tolerant `init(from:)`: an
+   unknown raw value decodes as `.failed`, which is terminal and not resumable.
+   That keeps stores written by a newer binary readable. The raw string is not
+   preserved; that limitation is documented.
+2. One choke point: `markSessionFailed` (every `WorkflowRuntimeStore`
+   implementation) persists `status = .cancelled` when
+   `input.failureKind == .cancelled`, and otherwise `.failed`. Its running
+   executions become `.cancelled` or `.failed` under the same rule.
+   `failureKind = .cancelled`, `failureReason` and `failedAt` (the terminal
+   timestamp) are kept, so existing `failureKind` consumers keep working. The
+   other handover trigger kinds (`stalled`, `leaseLost`) stay `failed`.
+3. Every writer that today writes `failed` + `cancelled` writes `cancelled` +
+   `cancelled` instead. That covers the runner finalizer, the handover
+   trigger `.cancelled`, `TaskRunCancellation` operator moves (see item 8),
+   and the Work Runtime prelaunch/joined cancellation in
+   `Sources/RielaWork/WorkStore+Reservation.swift:523-575`.
+4. Readers use one predicate, `WorkflowSession.isCancellation`. It is true when
+   `failureKind == .cancelled` and `status` is either `.cancelled` or the
+   legacy `.failed`. It replaces every `status == .failed && failureKind ==
+   .cancelled` test, for example `WorkStore+Reservation.swift:523,566,619` and
+   the pending-cancellation guard in
+   `SQLiteWorkflowRuntimePersistenceStore.swift:834-836`. This is the only
+   read tolerance for older stores; no rows are rewritten.
+5. Terminal handling: `cancelled` is terminal everywhere `completed`/`failed`
+   are. That includes `SessionObservability.isTerminal`, the persistence
+   store's terminal-transition guard (about line 845), and the nested child
+   terminal recording in `DeterministicWorkflowRunner+CrossWorkflow.swift`
+   (`terminalChild.status == .failed` also accepts `.cancelled`). In
+   statistics and exhaustive switches, `cancelled` counts as neither success
+   nor failure, so infrastructure kills never inflate failure counts.
+6. Recovery: rerun accepts `cancelled` sources, like the `failed`/`suspended`/
+   `completed` set in `resolveRerunEntry`. Resume of a `cancelled` session
+   stays terminal, the same as today's `failed`+`cancelled`. Making cancelled
+   sessions resumable is a follow-up.
+7. Surfaces: `session status/progress/list`, JSONL `session_completed` and the
+   GraphQL status string all report `cancelled`. The `session list --status`
+   filter (`SessionDiscoveryCommand.swift:57`), GraphQL status parsing
+   (`RielaGraphQL.swift:156`) and web summaries
+   (`SQLiteWorkflowRuntimePersistenceStore+WebSummaries.swift:107`) all parse
+   through `WorkflowSessionStatus(rawValue:)`, so they accept `cancelled` with
+   no extra code. The process exit code for a cancelled run stays `1`; the
+   `128 + signal` mapping is a follow-up.
+8. Write path: operator moves (`TaskRunCancellation.swift:191`) and the
+   handover trigger reach the store through `request.cancellationCause` and
+   `finalizeInterruptedSessionFailed`, so the rule in item 2 covers them. Only
+   the Work Runtime's direct snapshot writes in item 3 need their own edits.
+
+### P2 contract: gateway turn cancellation
+
+- In `consumeGatewayTurn`, once the prompt stream ends: if `Task.isCancelled`
+  is true and the deadline watchdog has not expired, throw `CancellationError`
+  instead of returning the turn. A deadline expiry stays `.timeout`.
+- In its `ACPError` catch, and in `executeWithRetry` before `normalizeError`:
+  if `Task.isCancelled`, throw `CancellationError`. A cancelled task can then
+  never be retried or reported as `providerError`, `policyBlocked` or
+  `invalidOutput`.
+- Test: an injected `AgentGatewayExecutorFactory` whose turn blocks until it
+  is cancelled. Cancelling the host task yields `CancellationError` from the
+  adapter, and at runner level the session ends `cancelled`, not
+  `failed`/`adapterFailure`/`policyBlocked`.
+
+### P4 contract: `riela session reconcile`
+
+```text
+riela session reconcile [--scope project|user | --session-store <dir>] [--working-dir <dir>]
+                        [--session <id>]... [--apply] [--output text|json]
+```
+
+- Candidates: sessions whose canonical snapshot or CLI record has
+  `status = running`, optionally restricted by `--session`. `created`
+  sessions, which include durable reserved children waiting for a worker,
+  and `suspended` sessions are never touched.
+- Liveness predicate: try `SessionExecutionLockRegistry.acquire(sessionId:)`
+  (non-blocking). `alreadyRunning` means **live**: skip and report `live`.
+  `retiredSession` means skip and report `retired`. Success means **orphaned**.
+- Default is a dry run. Each candidate is reported as `orphaned` or `live` and
+  the lock is released immediately.
+- With `--apply`, while still holding the lock, re-read the session. If it is
+  still `running`, persist `status = cancelled`, `failureKind = cancelled`,
+  `failureReason = "runner process lost; reconciled by riela session reconcile"`,
+  and mark running executions `cancelled`. The CLI record and the canonical
+  snapshot are written in the existing single-transaction
+  `CLIWorkflowSessionStore.save(_:runtimeSnapshot:)`. Then release the lock. A
+  save rejected by the persistence guards (for example a pending Work Runtime
+  cancellation) is reported per session as `skipped` with the error. It does
+  not abort the sweep.
+- Output: `{ dryRun, sessions: [{ sessionId, workflowId, verdict: orphaned|live|retired|skipped, applied, reason? }] }`.
+  The exit code is 0 unless the store cannot be opened.
+- Nested children and nested invocation records are not rewritten. A parent
+  resumed later sees a `cancelled` child terminal and fails closed through the
+  existing guard.
+- Scope boundary: flock liveness covers runners on the local host sharing this
+  session store. A store on a network filesystem is unsupported, and the docs
+  say so.
+- Surface: new `SurfaceCatalog` CLI row `session.reconcile` (kind `.mutation`)
+  with local-process exclusions for GraphQL/web/library. Regenerate the SDL
+  only if the catalog-derived SDL changes.
+
+### Tests (focused)
+
+- Runner: cancelling a run mid-step persists session `cancelled`, the
+  in-flight execution `cancelled`, and `session_completed` reports
+  `cancelled`. A fanout or cross-workflow child cancelled with its parent is
+  recorded as a `cancelled` terminal.
+- Decoding: a stored row with an unknown status decodes as `failed`.
+  Legacy `failed`+`cancelled` rows satisfy `isCancellation`.
+- Work Runtime: the prelaunch/joined cancellation and acknowledge paths
+  accept the new shape (existing Work cancellation suites stay green).
+- Reconcile: a `running` session with no lock holder is reported, and with
+  `--apply` becomes `cancelled`. A `running` session whose lock a live
+  registry in the test holds is reported `live` and stays byte-identical
+  (`record_json` unchanged). `created` and `suspended` sessions are untouched.
+  A dry run mutates nothing.
+
+### Follow-up (not part of #27 resolution)
+
+- P5 detach/reattach (`workflow run --detach`, `session attach|wait`).
+- Passive orphan reporting in `session status/health/list`.
+- Resuming `cancelled` sessions; signal-derived exit codes.
+- RielaApp/web UI treatment of `cancelled` beyond decoding the raw string.
 
 ## Design Evidence Checks
 

@@ -9,15 +9,98 @@ extension DeterministicWorkflowRunner {
     step: WorkflowStepRef,
     request: DeterministicWorkflowRunRequest
   ) -> WorkflowPreCommitPublicationHook? {
-    guard !simulatesCrossWorkflowDispatch,
-          nestedInvocationPersistenceStore != nil,
-          calleeResolver != nil,
-          step.transitions?.contains(where: {
-            $0.toWorkflowId != nil && $0.resumeStepId != nil && $0.fanout == nil
-          }) == true else {
+    guard nestedInvocationPersistenceStore != nil else { return nil }
+    let hasDynamicWorkflow = step.transitions?.contains(where: { $0.dynamicWorkflow != nil }) == true
+    let hasCrossWorkflow = !simulatesCrossWorkflowDispatch && calleeResolver != nil &&
+      step.transitions?.contains(where: {
+        $0.toWorkflowId != nil && $0.resumeStepId != nil && $0.fanout == nil
+      }) == true
+    guard hasDynamicWorkflow || hasCrossWorkflow else {
       return nil
     }
     return { context in
+      let dynamicTransitions = context.selectedTransitions.filter { $0.dynamicWorkflow != nil }
+      guard dynamicTransitions.count <= 1 else {
+        throw DeterministicWorkflowRunnerError.invalidWorkflow(
+          "step '\(step.id)' selected more than one nested callee"
+        )
+      }
+      if let transition = dynamicTransitions.first,
+         let dynamicWorkflow = transition.dynamicWorkflow {
+        let iteration = try await self.prepareDynamicIteration(
+          sessionId: context.session.sessionId,
+          sourceStepExecutionId: context.stepExecution.executionId,
+          step: step,
+          transition: dynamicWorkflow,
+          envelope: context.payload,
+          request: request
+        )
+        switch iteration {
+        case .overBudget, .invalid:
+          return nil
+        case let .valid(_, workflow, nodePayloads, digest, origin, _, _, _):
+          let persistence = try self.requiredNestedInvocationPersistenceStore()
+          if let existing = try persistence.nestedInvocationRecord(
+            parentSessionId: context.session.sessionId,
+            sourceStepExecutionId: context.stepExecution.executionId,
+            branchId: "dynamic-workflow"
+          ) {
+            guard existing.reservation.calleeRevision == digest else {
+              throw WorkflowRuntimePersistenceStoreError.sqliteFailed(
+                "dynamic workflow reservation digest does not match the prepared definition"
+              )
+            }
+            return WorkflowNestedPublicationPlan(reservation: existing.reservation)
+          }
+          let rootSessionId = request.rootSessionId ?? context.session.rootSessionId ?? context.session.sessionId
+          let childSessionId = try self.nestedSessionID(
+            parentSessionId: context.session.sessionId,
+            sourceExecutionId: context.stepExecution.executionId,
+            branchId: "dynamic-workflow"
+          )
+          let now = Date()
+          let child = WorkflowSession(
+            workflowId: workflow.workflowId,
+            sessionId: childSessionId,
+            status: .created,
+            entryStepId: workflow.entryStepId,
+            currentStepId: workflow.entryStepId,
+            createdAt: now,
+            updatedAt: now,
+            parentSessionId: context.session.sessionId,
+            rootSessionId: rootSessionId,
+            generatedWorkflow: origin
+          )
+          let plan = WorkflowNestedPublicationPlan(reservation: WorkflowNestedInvocationReservation(
+            parentSessionId: context.session.sessionId,
+            parentStepId: step.id,
+            resumeStepId: transition.toStepId,
+            sourceStepExecutionId: context.stepExecution.executionId,
+            branchId: "dynamic-workflow",
+            childSnapshot: WorkflowRuntimePersistenceSnapshot(session: child),
+            calleeWorkflow: workflow,
+            calleeNodePayloads: nodePayloads,
+            calleeRevision: digest
+          ))
+          if self.store is any WorkflowNestedPublicationCommitting {
+            try await self.nestedInvocationRecoveryCheckpointer?.reached(.prepared)
+            return plan
+          }
+          _ = try await self.reserveNestedSession(
+            workflow: workflow,
+            nodePayloads: nodePayloads,
+            entryStepId: workflow.entryStepId,
+            parentSessionId: context.session.sessionId,
+            rootSessionId: rootSessionId,
+            parentStepId: step.id,
+            resumeStepId: transition.toStepId,
+            sourceExecutionId: context.stepExecution.executionId,
+            branchId: "dynamic-workflow",
+            generatedWorkflow: origin
+          )
+          return nil
+        }
+      }
       let transitions = context.selectedTransitions.filter {
         $0.toWorkflowId != nil && $0.resumeStepId != nil && $0.fanout == nil
       }

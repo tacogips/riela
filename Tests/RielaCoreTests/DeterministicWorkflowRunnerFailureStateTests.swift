@@ -33,10 +33,10 @@ extension DeterministicWorkflowRunnerTests {
     XCTAssertEqual(log.attributes["failure.kind"], "cancelled")
     XCTAssertEqual(log.attributes["error_class"], "WorkflowRuntimeStoreError")
 
-    // ...and the terminal event still reaches the projection with failed status.
+    // ...and the terminal event still reaches the projection with cancelled status.
     let events = await recorder.events()
     XCTAssertEqual(events.last?.type, .sessionCompleted)
-    XCTAssertEqual(events.last?.status, .failed)
+    XCTAssertEqual(events.last?.status, .cancelled)
   }
 
   func testAdapterFailureRecordsFailedExecutionWithoutMessages() async throws {
@@ -127,7 +127,7 @@ extension DeterministicWorkflowRunnerTests {
     XCTAssertEqual(session.failureReason, "invalid_input: missing bodyMarkdown")
   }
 
-  func testCancellationMarksRunningSessionFailedAndEmitsTerminalEvent() async throws {
+  func testCancellationMarksRunningSessionCancelledAndEmitsTerminalEvent() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let recorder = WorkflowRunEventRecorder()
     let runner = DeterministicWorkflowRunner(store: store, adapter: CancellingAdapter())
@@ -143,17 +143,17 @@ extension DeterministicWorkflowRunnerTests {
 
     let maybeSession = await store.loadSessionForTest(id: "runner-session-1")
     let session = try XCTUnwrap(maybeSession)
-    XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.status, .cancelled)
     XCTAssertEqual(session.failureKind, .cancelled)
     XCTAssertEqual(session.executions.count, 1)
-    XCTAssertEqual(session.executions.first?.status, .failed)
+    XCTAssertEqual(session.executions.first?.status, .cancelled)
     XCTAssertEqual(session.executions.first?.failureReason, "workflow run cancelled")
     let events = await recorder.events()
     XCTAssertEqual(events.last?.type, .sessionCompleted)
-    XCTAssertEqual(events.last?.status, .failed)
+    XCTAssertEqual(events.last?.status, .cancelled)
   }
 
-  func testCancellationAfterTransitionMarksSessionFailedWithoutRunningExecution() async throws {
+  func testCancellationAfterTransitionMarksSessionCancelledWithoutRunningExecution() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let recorder = WorkflowRunEventRecorder()
     let workflow = twoStepWorkflow()
@@ -178,7 +178,7 @@ extension DeterministicWorkflowRunnerTests {
 
     let maybeSession = await store.loadSessionForTest(id: "rerun-runner-session-1")
     let session = try XCTUnwrap(maybeSession)
-    XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.status, .cancelled)
     XCTAssertEqual(session.failureKind, .cancelled)
     XCTAssertEqual(session.executions.count, 1)
     XCTAssertEqual(session.executions.first?.status, .completed)
@@ -186,7 +186,33 @@ extension DeterministicWorkflowRunnerTests {
     XCTAssertEqual(messages.map(\.toStepId), ["step-b"])
     let events = await recorder.events()
     XCTAssertEqual(events.last?.type, .sessionCompleted)
-    XCTAssertEqual(events.last?.status, .failed)
+    XCTAssertEqual(events.last?.status, .cancelled)
+  }
+
+  func testCancelledSessionIsTerminalForResumeAndAcceptedAsRerunSource() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let cancelledRunner = DeterministicWorkflowRunner(store: store, adapter: CancellingAdapter())
+    await XCTAssertThrowsErrorAsync(try await cancelledRunner.run(request()))
+    let maybeCancelled = await store.loadSessionForTest(id: "runner-session-1")
+    let cancelled = try XCTUnwrap(maybeCancelled)
+
+    var resume = request()
+    resume.resumeSessionId = cancelled.sessionId
+    let terminal = try await DeterministicWorkflowRunner(
+      store: store, adapter: StaticAdapter(output: output())
+    ).run(resume)
+    XCTAssertEqual(terminal.session.status, .cancelled)
+    XCTAssertEqual(terminal.exitCode, 1)
+    XCTAssertEqual(terminal.session.executions.count, 1)
+
+    var rerun = request()
+    rerun.rerunFromSessionId = cancelled.sessionId
+    rerun.rerunFromStepId = "step"
+    let rerunResult = try await DeterministicWorkflowRunner(
+      store: store, adapter: StaticAdapter(output: output())
+    ).run(rerun)
+    XCTAssertNotEqual(rerunResult.session.sessionId, cancelled.sessionId)
+    XCTAssertEqual(rerunResult.session.status, .completed)
   }
 
   func testCompletionFailureRecordsFailedExecutionWithoutMessages() async throws {

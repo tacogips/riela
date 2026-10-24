@@ -4,7 +4,7 @@
 **planId**: ISW2-74c-dynamic-workflow-dispatch
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Runtime data flow", "Result message", "Session lineage and provenance", "Privilege and bounds" (rules 6-8 plus stamping), "Failure, timeout and cancellation", "Mock scenarios", "Resume and rerun" and "Session scope"
-**dependsOn**: ISW2-74b-dynamic-workflow-contract, ISW2-74a-dynamic-workflow-policy (serial operator amendment; ISW2-27a accepted in 7f087cc4)
+**dependsOn**: ISW2-74b-dynamic-workflow-contract (serial operator amendment; 27a/32/27b/74a accepted in 7f087cc4/01fb5397/1345a471/f85d9add)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-74c/
 

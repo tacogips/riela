@@ -4,7 +4,7 @@
 **planId**: ISW2-74d-brain-loop-example
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, section "Example"
-**dependsOn**: ISW2-74c-dynamic-workflow-dispatch (serial operator amendment; ISW2-27a accepted in 7f087cc4)
+**dependsOn**: ISW2-74c-dynamic-workflow-dispatch (serial operator amendment; 27a/32/27b/74a accepted in 7f087cc4/01fb5397/1345a471/f85d9add)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-74d-brain-loop-example.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-74d/
 

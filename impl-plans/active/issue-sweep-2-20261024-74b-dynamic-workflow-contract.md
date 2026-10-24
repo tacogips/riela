@@ -4,7 +4,7 @@
 **planId**: ISW2-74b-dynamic-workflow-contract
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" (shared materializer) and "Session lineage and provenance"
-**dependsOn**: ISW2-74a-dynamic-workflow-policy, ISW2-32-recovery-hydration, ISW2-27c-session-reconcile (serial operator amendment; ISW2-27a accepted in 7f087cc4)
+**dependsOn**: ISW2-27c-session-reconcile (serial operator amendment; 27a/32/27b/74a accepted in 7f087cc4/01fb5397/1345a471/f85d9add)
 
 Wave 2.
 

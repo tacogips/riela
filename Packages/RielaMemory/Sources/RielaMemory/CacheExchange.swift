@@ -119,7 +119,7 @@ public struct RielaCacheExchange: Sendable {
   }
 
   public func get(_ references: [CacheBodyReference]) throws -> CacheBodyRead {
-    try validate(references)
+    try validateReferences(references)
     if references.isEmpty { return .init() }
     var found = CacheBodyRead()
     // Bound batches by bytes as well as count; storage bytes leave headroom
@@ -164,7 +164,7 @@ public struct RielaCacheExchange: Sendable {
   }
 
   public func protect(_ references: [CacheBodyReference], enabled: Bool) throws {
-    try validate(references)
+    try validateReferences(references)
     guard !references.isEmpty else { return }
     _ = try store.configure(cacheId: cacheId, policy: policy)
     if !capacityProtection {
@@ -186,7 +186,8 @@ public struct RielaCacheExchange: Sendable {
     return try store.reconcile(cacheId: cacheId, scope: scope, references: capacityProtection ? references : .array([]))
   }
 
-  private func validate(_ references: [CacheBodyReference]) throws {
+  /// Validate a complete read/protection set without touching storage.
+  public func validateReferences(_ references: [CacheBodyReference]) throws {
     guard references.count <= 10_000, Set(references.map(\.key)).count == references.count,
       references.allSatisfy({ Self.validKey($0.key) && cacheDate($0.fetchedAt) != nil &&
         (1...Self.frame).contains($0.byteCount) && [nil, "riela-json-v1"].contains($0.hashFormat) &&

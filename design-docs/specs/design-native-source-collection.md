@@ -289,6 +289,49 @@ the actual native CLI, including protection across all three frames. News manife
 coordination are still separate migrations. This does not prove production
 installation, source acquisition, or the required post-cutover two-hour gate.
 
+### Reading a manifest across declared cache spaces
+
+`cache-exchange` also accepts `action: "read-set"`. This action uses `stores`
+instead of `storage`; each named store has the same storage configuration as
+above. `requests` is an array of `{id, store, reference}`. For example:
+
+```json
+{
+  "action": "read-set",
+  "stores": {
+    "current": {"cacheId": "current-bodies", "scope": "account-window"},
+    "legacy": {"cacheId": "legacy-bodies", "scope": "account-window", "ttlSeconds": 604800}
+  },
+  "requests": "{{bodyRequests}}"
+}
+```
+
+The result is `{results: [{id, status, payload?}]}` in request order. Status is
+`hit`, `missing`, or `expired`; only hits include a payload. Logical IDs are
+unique by exact UTF-8 bytes. Physical keys can coincide in distinct stores
+without overwriting each other's results. At most16 stores and10000 requests
+are allowed; input/output remain below64MiB. Duplicate physical keys within
+one named store, unknown stores, invalid references, and conflicting policies
+for aliases of one physical database fail before any cache configuration/read.
+Physical aliases are compared using canonical paths and existing device/inode;
+aliases of one scope must also agree on capacity protection.
+All declared storage configurations are validated before IO. Used stores are
+configured before reading; disposable scopes first release legacy protection
+without fetching payloads, allowing LRU to shrink the capacity. This may
+expire/evict bodies according to their
+TTL/LRU policy. Configuration cleanup may make an expired entry appear as `missing`; neither
+status acknowledges work. A read does not extend freshness. An output-budget failure does
+not imply a rollback across stores and never advances a durable checkpoint.
+
+ART supplies its current/legacy cache permissions and verifies its original
+domain receipt/hash after native reads. Normal manifest hydration and commit
+readback use this action; selected editorial reads retain per-record admission
+and receipt checks. Disposable protection reconciliation delegates an empty
+reference set directly to native storage, without loading bodies or images
+just to release protection. Explicit protected staging keeps exact readback
+and protection checks. Provider recovery and outer queue orchestration remain
+separate work; this source migration is not deployment evidence.
+
 ## Record manifests and bounded recovery sets
 
 `riela/record-manifest` v1 is a pure metadata node composed after cache reads

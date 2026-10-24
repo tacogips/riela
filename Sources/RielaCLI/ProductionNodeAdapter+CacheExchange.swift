@@ -10,7 +10,9 @@ extension BuiltinWorkflowAddonResolver {
 
   func executeCacheExchange(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
-      case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
+      case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)) else { throw cacheExchangeInvalid() }
+    if config["action"] == .string("read-set") { return try executeCacheReadSet(input, config: config) }
+    guard
       Set(config.keys).isSubset(of: ["action", "storage", "entries", "references", "retainedReferences", "enabled"]),
       case let .string(action)? = config["action"], ["configure", "put", "get", "protect", "reconcile", "prune"].contains(action),
       case let .object(storage)? = config["storage"],
@@ -57,17 +59,7 @@ extension BuiltinWorkflowAddonResolver {
       default: throw cacheExchangeInvalid()
       }
     } catch let error as RielaCacheError {
-      let reason: String
-      switch error {
-      case .oversized: reason = "oversized"
-      case .expiredInput: reason = "expiredInput"
-      case .revisionConflict: reason = "revisionConflict"
-      case .protectedCapacityExceeded: reason = "protectedCapacityExceeded"
-      case .foreignDatabase: reason = "foreignDatabase"
-      case .busy: reason = "busy"
-      case .invalid: reason = "invalid"
-      }
-      throw AdapterExecutionError(.invalidInput, "\(reason): cache-exchange operation failed")
+      throw cacheExchangeFailure(error)
     } catch { throw cacheExchangeInvalid() }
     guard try JSONEncoder().encode(payload).count <= RielaCacheStore.maximumFrameBytes - 4096 else { throw cacheExchangeInvalid() }
     return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true, payload: payload)
@@ -80,4 +72,18 @@ private func cacheExchangeObject<T: Encodable>(_ value: T) throws -> JSONObject 
 
 private func cacheExchangeInvalid() -> AdapterExecutionError {
   .init(.invalidInput, "invalid cache-exchange request or storage operation")
+}
+
+func cacheExchangeFailure(_ error: RielaCacheError) -> AdapterExecutionError {
+  let reason: String
+  switch error {
+  case .oversized: reason = "oversized"
+  case .expiredInput: reason = "expiredInput"
+  case .revisionConflict: reason = "revisionConflict"
+  case .protectedCapacityExceeded: reason = "protectedCapacityExceeded"
+  case .foreignDatabase: reason = "foreignDatabase"
+  case .busy: reason = "busy"
+  case .invalid: reason = "invalid"
+  }
+  return .init(.invalidInput, "\(reason): cache-exchange operation failed")
 }

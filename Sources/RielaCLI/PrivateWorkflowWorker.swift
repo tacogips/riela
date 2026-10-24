@@ -24,6 +24,7 @@ enum PrivateWorkflowWorker {
         #if os(Linux)
         for (name, value) in request.environment { setenv(name, value, 1) }
         setenv("RIELA_MEMORY_ROOT", root.appendingPathComponent("memory").path, 1)
+        if request.plan.xUsageScope != nil { setenv("RIELA_X_USAGE_EXPORT", "1", 1) }
         #endif
         let result = try await executeWorkflow(request, root: root)
         writer.emit(.init(kind: .result, output: result))

@@ -107,6 +107,7 @@ struct ContainerGatewayAddonExecutor {
       }
     }
     let userCache = try gateway == .xRead ? XGatewayUserCacheExchange(input: input, workingDirectory: workingDirectory, environment: environment) : nil
+    let usageCache = try gateway == .xRead ? XGatewayUsageCacheExchange(input: input, workingDirectory: workingDirectory, environment: environment) : nil
     let gatewayEnvironment = try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment)
       .merging(userCache?.bindings() ?? [:]) { _, memory in memory }
     let result: LocalProcessResult
@@ -138,9 +139,11 @@ struct ContainerGatewayAddonExecutor {
       )
       result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
     }
+    let usageStatus = usageCache?.record(stdout: result.stdout, stderr: result.stderr, environment: gatewayEnvironment)
     // Do not surface raw gateway stderr: it may contain provider credentials.
     guard result.terminationStatus == 0 else {
       throw AdapterExecutionError(.providerError, "\(input.addon.name) container failed with exit code \(result.terminationStatus)"
+        + (usageStatus.map { " usageCacheStatus=\($0.rawValue)" } ?? "")
         + GatewayFailureDiagnostics.suffix(stdout: result.stdout, stderr: result.stderr))
     }
     let response: JSONObject
@@ -153,6 +156,7 @@ struct ContainerGatewayAddonExecutor {
     guard response["ok"] != .bool(false), response["error"] == nil,
           nonEmptyString(response["status"]) != "error", !containsGraphQLErrors(response) else {
       throw AdapterExecutionError(.providerError, "\(input.addon.name) gateway returned an error"
+        + (usageStatus.map { " usageCacheStatus=\($0.rawValue)" } ?? "")
         + GatewayFailureDiagnostics.suffix(stdout: result.stdout))
     }
     guard case .object? = response["data"] else {
@@ -174,7 +178,8 @@ struct ContainerGatewayAddonExecutor {
         gateway.namespace: .object([
           "data": gatewayData,
           "response": .object(response),
-          "runtime": .object(["kind": .string(driver.kind.rawValue), "image": .string(image)])
+          "runtime": .object(["kind": .string(driver.kind.rawValue), "image": .string(image)]
+            .merging(usageStatus.map { ["usageCacheStatus": .string($0.rawValue)] } ?? [:]) { _, value in value })
         ])
       ]
     )

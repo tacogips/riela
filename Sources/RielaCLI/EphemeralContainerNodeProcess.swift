@@ -53,6 +53,9 @@ struct EphemeralContainerNodeProcess: Sendable {
         for line in result.stdout.split(whereSeparator: \.isNewline) {
           outputEventHandler(.init(stream: .stdout, line: String(line)))
         }
+        for line in result.stderr.split(whereSeparator: \.isNewline) {
+          outputEventHandler(.init(stream: .stderr, line: String(line)))
+        }
       }
     } catch {
       await cleanup(remove)

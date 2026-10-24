@@ -4,6 +4,37 @@ import XCTest
 @testable import RielaCLI
 
 final class XGatewaySDKAddonTests: XCTestCase {
+  func testOperationalUsageSurvivesJSONPostprocessing() async throws {
+    let usage = #"""
+    {
+      "version": 1,
+      "basis": "upstream-response",
+      "billingStatus": "not-reported",
+      "httpResponses": 1,
+      "successfulResponses": 1,
+      "unclassifiedResources": 0,
+      "resources": [
+        {
+          "kind": "post",
+          "idHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "utcDay": "2026-10-24"
+        }
+      ]
+    }
+    """#
+    let gateway = RecordingGatewayGraphQLRunner(response:
+      "{\"data\":{\"homeTimeline\":{\"posts\":[{\"id\":\"1\"}]}},\"extensions\":{\"resourceUsage\":"
+      + usage + ",\"usageCacheStatus\":\"stored\"}}")
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:], localGatewayGraphQLRunner: gateway.runner)
+      .execute(.init(workflowId: "fixture", stepId: "read", nodeId: "read", addon: .init(name: "riela/x-gateway-reader", config: [
+        "operation": .string("homeTimeline"), "selection": .array([.string("posts.id")]),
+        "postprocess": .array([.object(["pick": .string("/data/homeTimeline/posts")])])])), context: .init())
+    guard case let .object(namespace)? = output.payload["xGateway"],
+          case let .object(observations)? = namespace["observations"] else { return XCTFail("usage metadata lost") }
+    XCTAssertEqual(observations["usageCacheStatus"], .string("stored"))
+    XCTAssertNotNil(observations["resourceUsage"])
+    XCTAssertEqual(output.payload["processed"], .array([.object(["id": .string("1")])]))
+  }
   func testSharedSelectionPathsBuildNestedXFields() throws {
     let document = try builtinGatewayXJSONDocument(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
       addon: .init(name: "riela/x-gateway-reader", config: ["operation": .string("homeTimeline"),

@@ -8,6 +8,52 @@ final class PrivateWorkflowTests: XCTestCase {
   private let schema: JSONObject = ["type": .string("object"), "required": .array([.string("status")]),
     "properties": .object(["status": .object(["const": .string("ok")])]), "additionalProperties": .bool(false)]
 
+  func testUsageExportReachesHostCacheEvenWhenPrivateResultIsRejected() async throws {
+    for invalid in [false, true] {
+      let root = try makeRielaCLITestTemporaryDirectory("private-usage-export")
+      defer { try? FileManager.default.removeItem(at: root) }
+      let telemetry = #"""
+      {
+        "data": {
+          "extensions": {
+            "resourceUsage": {
+              "version": 1,
+              "basis": "upstream-response",
+              "billingStatus": "not-reported",
+              "httpResponses": 1,
+              "successfulResponses": 1,
+              "unclassifiedResources": 0,
+              "resources": [
+                {
+                  "kind": "post",
+                  "idHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "utcDay": "2026-10-24"
+                }
+              ]
+            }
+          }
+        }
+      }
+      """#
+      let runner = PrivateWorkflowFixtureRunner(invalidPayload: invalid,
+        usageLine: XGatewayUsageTransport.prefix + telemetry)
+      var controller = host(runner, root: root)
+      controller.environment["RIELA_CACHE_ROOT"] = root.appendingPathComponent("host-cache").path
+      var request = input(); request.addon.config?["xUsageScope"] = .string("fixture-app")
+      do {
+        let output = try await controller.execute(request, context: .init())
+        XCTAssertFalse(invalid)
+        XCTAssertEqual(output.payload, ["status": .string("ok")])
+      } catch { XCTAssertTrue(invalid) }
+      let usageInput = WorkflowAddonExecutionInput(workflowId: "test", stepId: "read", nodeId: "read",
+        addon: .init(name: "riela/x-gateway-read", config: ["usageCache": .bool(true), "usageScope": .string("fixture-app")]))
+      let cache = try XCTUnwrap(XGatewayUsageCacheExchange(input: usageInput, workingDirectory: root,
+        environment: controller.environment))
+      XCTAssertEqual(try cache.store.keys(cacheId: XGatewayUsageCacheExchange.cacheId,
+        scope: XGatewayUsageCacheExchange.scope).count, 1)
+    }
+  }
+
   func testSelectedSecretsUseStdinOnlyAndContainerIsRemoved() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("private-workflow-host")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -185,8 +231,10 @@ private actor PrivateWorkflowFixtureRunner: LocalProcessRunning {
   var cancel: Bool
   var invalidPayload: Bool
   var event: Bool
-  init(cancel: Bool = false, invalidPayload: Bool = false, event: Bool = false) {
+  var usageLine: String?
+  init(cancel: Bool = false, invalidPayload: Bool = false, event: Bool = false, usageLine: String? = nil) {
     self.cancel = cancel; self.invalidPayload = invalidPayload; self.event = event
+    self.usageLine = usageLine
   }
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
     calls.append((configuration, stdin))
@@ -196,6 +244,6 @@ private actor PrivateWorkflowFixtureRunner: LocalProcessRunning {
       payload: invalidPayload ? ["raw": .string("RAW_UNAPPROVED")] : ["status": .string("ok")])
     let record = SandboxNodeRecord(kind: event ? .event : .result, output: event ? nil : output)
     let stdout = try XCTUnwrap(String(data: JSONEncoder().encode(record), encoding: .utf8))
-    return .init(stdout: stdout + "\n", stderr: "", terminationStatus: 0)
+    return .init(stdout: stdout + "\n", stderr: usageLine.map { $0 + "\n" } ?? "", terminationStatus: 0)
   }
 }

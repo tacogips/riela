@@ -37,6 +37,8 @@ struct LocalGatewayGraphQLDescriptor {
   /// binding mechanism cannot inject arbitrary variables into the gateway.
   var isAllowedEnvironmentTarget: (String) -> Bool
   var catalog: (() throws -> GatewaySchemaCatalog)? = nil
+  /// Optional provider-owned, normalized operational observations, separate from selected source data.
+  var observationMetadata: ((String) -> JSONObject)?
   var run: LocalGatewayGraphQLRunner
 }
 
@@ -152,6 +154,11 @@ struct LocalGatewayGraphQLEngine {
         "requestId": .string(envelope.requestId ?? "")
       ])
     ]
+    if let observations = descriptor.observationMetadata?(stdout), !observations.isEmpty,
+       case var .object(namespace)? = payload[descriptor.payloadNamespaceKey] {
+      namespace["observations"] = .object(observations)
+      payload[descriptor.payloadNamespaceKey] = .object(namespace)
+    }
     if let selected = payloadRoot["selected"] {
       payload["selected"] = selected
     }

@@ -3,7 +3,7 @@ import Foundation
 import RielaMemory
 
 struct ParsedCacheArguments: ParsableArguments {
-  @Argument(help: "configure, put, get, protect, reconcile, maintain, delete, or prune") var operation: String
+  @Argument(help: "configure, put, get, keys, protect, reconcile, maintain, delete, or prune") var operation: String
   @Argument var cacheId: String
   @Option var cacheRoot = RielaCacheStore.defaultRootDirectory()
   @Option var scope: String?
@@ -23,7 +23,7 @@ struct ParsedCacheArguments: ParsableArguments {
 }
 
 struct CacheCommandRunner {
-  static let operations = ["configure", "put", "get", "protect", "reconcile", "maintain", "delete", "prune"]
+  static let operations = ["configure", "put", "get", "keys", "protect", "reconcile", "maintain", "delete", "prune"]
 
   func run(_ arguments: [String]) -> CLICommandResult {
     if arguments.contains("--help") || arguments.contains("-h") {
@@ -37,6 +37,11 @@ struct CacheCommandRunner {
       guard ["json", "jsonl"].contains(parsed.output) else { throw CLIUsageError("cache --output must be json or jsonl") }
       try validateFlags(arguments, operation: parsed.operation)
       let store = RielaCacheStore(rootDirectory: parsed.cacheRoot)
+      if parsed.operation == "keys" {
+        let keys = try store.keys(cacheId: parsed.cacheId, scope: required(parsed.scope, "--scope"))
+        let data = try JSONEncoder().encode(keys)
+        return CLICommandResult(exitCode: .success, stdout: (String(data: data, encoding: .utf8) ?? "[]") + "\n")
+      }
       if parsed.operation == "maintain" {
         let value = try store.maintain(cacheIds: decode([String].self, file: required(parsed.keysFile, "--keys-file")),
           maxDurationSeconds: parsed.maxDurationSeconds)
@@ -96,7 +101,7 @@ struct CacheCommandRunner {
           entries = [.init(key: try required(parsed.key, "--key"), revision: try required(parsed.expectedRevision, "--expected-revision"))]
         }
         response = try store.delete(cacheId: parsed.cacheId, scope: required(parsed.scope, "--scope"), entries: entries)
-      default: throw CLIUsageError("cache operation must be configure, put, get, protect, reconcile, maintain, delete, or prune")
+      default: throw CLIUsageError("cache operation must be configure, put, get, keys, protect, reconcile, maintain, delete, or prune")
       }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -113,6 +118,7 @@ struct CacheCommandRunner {
     let common: Set<String> = ["--cache-root", "--output"]
     let options: [String: Set<String>] = [
       "configure": ["--ttl-seconds", "--max-bytes"],
+      "keys": ["--scope"],
       "put": ["--scope", "--entries-file", "--key", "--fetched-at", "--payload-file", "--references-file", "--request-file"],
       "get": ["--scope", "--keys-file", "--key", "--max-output-bytes"],
       "protect": ["--scope", "--entries-file"],

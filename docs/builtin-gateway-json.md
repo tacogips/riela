@@ -154,3 +154,11 @@ while accountMe continues succeeding. Preserve it separately from unknown
 permission errors; HTTP403 remains non-retryable, and no billing settings or
 retry policy are changed. Verified against the provider's structured response,
 then covered by SDK host/type tests and Riela/consumer masking tests.
+
+## X resource usage cache (0.2.53)
+
+Both X readers support `usageCache: true`. The built-in records upstream resource observations in `x-gateway-api-usage`, scope `observations`, independently of article and user caches. Its default policy is 35 days / 10 MiB, unprotected TTL/LRU. Set `usageScope` to a stable application identifier shared by that application's OAuth/Bearer readers. Without a configured application scope, credential fingerprints are explicitly not reliable application-level billing deduplication. No credentials, source text, raw IDs, URLs or usernames enter usage records; IDs are SHA-256 hashes and response days are UTC.
+
+`resourceUsage` counts upstream resources before projection and cache author restoration, including reference and missing-author lookup responses. Returned resources, local deduplication and provider billed units are different. Unsupported/invalid telemetry is a missing observation, not zero usage. Failed operations preserve observations received before failure. `riela cache keys x-gateway-api-usage --scope observations` lists retained events for batch cache get; this is a disposable observation history, not an invoice or an indefinite ledger.
+
+Private workflows opt in with `config.xUsageScope`. Their SDK readers still set `usageCache: true`; normalized telemetry is forwarded over a dedicated stderr record to the host cache before the guest is removed, independently of success/source-output validation. Only markers received by the host survive cancellation; an interrupted HTTP call or a missing marker is not proof of zero billing. Private raw stdout/stderr is never included in the source result. Finite cache status counts are exposed as backend events.

@@ -122,7 +122,8 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
           command.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
         ),
         inheritEnvironment: false,
-        stdoutCaptureByteLimit: command.failureDiagnostics == nil ? nil : WorkflowFailureDiagnostics.stdoutByteLimit + 1
+        stdoutCaptureByteLimit: command.failureDiagnostics == nil ? nil : WorkflowFailureDiagnostics.stdoutByteLimit + 1,
+        cancellationPolicy: command.cancellationPolicy ?? .terminateGroup
       )
     case .container:
       guard let container = input.node.container else {

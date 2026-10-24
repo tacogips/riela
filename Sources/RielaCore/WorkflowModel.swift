@@ -671,6 +671,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
   public var workingDirectory: String?
   public var failureDiagnostics: WorkflowFailureDiagnostics?
   public var executionLocks: WorkflowCommandLocks?
+  public var cancellationPolicy: WorkflowProcessCancellation?
 
   public init(
     executable: String,
@@ -678,7 +679,8 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     environment: [String: String] = [:],
     workingDirectory: String? = nil,
     failureDiagnostics: WorkflowFailureDiagnostics? = nil,
-    executionLocks: WorkflowCommandLocks? = nil
+    executionLocks: WorkflowCommandLocks? = nil,
+    cancellationPolicy: WorkflowProcessCancellation? = nil
   ) {
     self.executable = executable
     self.arguments = arguments
@@ -686,6 +688,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     self.workingDirectory = workingDirectory
     self.failureDiagnostics = failureDiagnostics
     self.executionLocks = executionLocks
+    self.cancellationPolicy = cancellationPolicy
   }
 
   enum CodingKeys: String, CodingKey {
@@ -695,6 +698,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case workingDirectory
     case failureDiagnostics
     case executionLocks
+    case cancellationPolicy
   }
 
   enum RielaCommandCodingKeys: String, CodingKey {
@@ -707,6 +711,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case workingDirectory
     case failureDiagnostics
     case executionLocks
+    case cancellationPolicy
   }
 
   public init(from decoder: Decoder) throws {
@@ -727,6 +732,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     self.failureDiagnostics = try container.decodeIfPresent(WorkflowFailureDiagnostics.self, forKey: .failureDiagnostics)
     self.executionLocks = try container.decodeIfPresent(WorkflowCommandLocks.self, forKey: .executionLocks)
     try self.executionLocks?.validate()
+    self.cancellationPolicy = try container.decodeIfPresent(WorkflowProcessCancellation.self, forKey: .cancellationPolicy)
   }
 }
 

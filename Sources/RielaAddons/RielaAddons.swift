@@ -123,6 +123,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/snapshot-scan", version: "1"),
     .init(name: "riela/array-select", version: "1"),
     .init(name: "riela/progress-tracker", version: "1"),
+    .init(name: "riela/command-result", version: "1"),
     .init(name: "riela/durable-queue", version: "1"),
     .init(name: "riela/snapshot-rotate", version: "1"),
     .init(name: "riela/cache-exchange", version: "1"),

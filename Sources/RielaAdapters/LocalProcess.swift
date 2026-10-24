@@ -17,6 +17,8 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
   /// Maximum retained stdout bytes; excess bytes are drained without retaining or streaming them.
   public var stdoutCaptureByteLimit: Int?
   public var inheritedDescriptors: Set<Int32>
+  public var stderrCaptureByteLimit: Int?
+  public var cancellationPolicy: WorkflowProcessCancellation
 
   public init(
     executableURL: URL,
@@ -27,7 +29,9 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     sandboxPolicy: LocalProcessSandboxPolicy? = nil,
     inheritEnvironment: Bool = true,
     stdoutCaptureByteLimit: Int? = nil,
-    inheritedDescriptors: Set<Int32> = []
+    inheritedDescriptors: Set<Int32> = [],
+    stderrCaptureByteLimit: Int? = nil,
+    cancellationPolicy: WorkflowProcessCancellation = .terminateGroup
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
@@ -38,6 +42,8 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     self.inheritEnvironment = inheritEnvironment
     self.stdoutCaptureByteLimit = stdoutCaptureByteLimit
     self.inheritedDescriptors = inheritedDescriptors
+    self.stderrCaptureByteLimit = stderrCaptureByteLimit
+    self.cancellationPolicy = cancellationPolicy
   }
 }
 
@@ -449,9 +455,11 @@ final class LocalProcessHandle: @unchecked Sendable {
   private var didExit = false
   private var killWorkItem: DispatchWorkItem?
   private let signalProcess: LocalProcessSignal
+  private let cancellationPolicy: WorkflowProcessCancellation
 
-  init(signalProcess: @escaping LocalProcessSignal = { processId, signal in kill(processId, signal) }) {
+  init(cancellationPolicy: WorkflowProcessCancellation = .terminateGroup, signalProcess: @escaping LocalProcessSignal = { processId, signal in kill(processId, signal) }) {
     self.signalProcess = signalProcess
+    self.cancellationPolicy = cancellationPolicy
   }
 
   func store(processId: pid_t) {
@@ -467,16 +475,19 @@ final class LocalProcessHandle: @unchecked Sendable {
 
   @discardableResult
   func terminateGroupOrProcess() -> Bool {
-    signalGroupOrProcess(SIGTERM)
+    if cancellationPolicy == .awaitOwner { return signalOwner() }
+    return signalGroupOrProcess(SIGTERM)
   }
 
   @discardableResult
   func killGroupOrProcess() -> Bool {
-    signalGroupOrProcess(SIGKILL)
+    guard cancellationPolicy != .awaitOwner else { return false }
+    return signalGroupOrProcess(SIGKILL)
   }
 
   @discardableResult
   func scheduleKillIfRunning(after delay: TimeInterval) -> Bool {
+    guard cancellationPolicy != .awaitOwner else { return false }
     let workItem = DispatchWorkItem {
       self.killScheduledProcessGroup()
     }
@@ -524,7 +535,7 @@ final class LocalProcessHandle: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     guard let ownedPID = processId else { return 0 }
-    if terminateRemaining, let groupId = processGroupId {
+    if terminateRemaining, cancellationPolicy != .awaitOwner, let groupId = processGroupId {
       _ = signalProcess(-groupId, SIGKILL)
     }
     // Signals execute under this same lock. Clear their authority before
@@ -545,6 +556,12 @@ final class LocalProcessHandle: @unchecked Sendable {
     guard let groupId = processGroupId, processId != nil else { return }
     _ = signalProcess(-groupId, SIGKILL)
     killWorkItem = nil
+  }
+
+  private func signalOwner() -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    guard !didExit, let pid = processId else { return false }
+    return signalProcess(pid, SIGTERM) == 0
   }
 
   private func signalGroupOrProcess(_ signal: Int32) -> Bool {
@@ -727,7 +744,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
         let inputPipe = Pipe()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        let processHandle = LocalProcessHandle()
+        let processHandle = LocalProcessHandle(cancellationPolicy: configuration.cancellationPolicy)
         let pipes = LocalProcessPipes(inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
 
         let outputGroup = DispatchGroup()
@@ -742,6 +759,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
         let errorReader = LocalProcessPipeReader(
           fileHandle: errorPipe.fileHandleForReading,
           stream: .stderr,
+          captureByteLimit: configuration.stderrCaptureByteLimit,
           outputEventHandler: outputEventHandler
         )
 

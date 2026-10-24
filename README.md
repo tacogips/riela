@@ -495,6 +495,12 @@ the server do not apply these checks. See
 [built-in gateway JSON requests](docs/builtin-gateway-json.md) for the matrix
 and the cases that remain runtime-only.
 
+### Native command outcomes
+
+`riela/command-result@1` captures a bounded command outcome as JSON for
+collect-all fanout, with optional schema projection before persistence and
+trusted owner cancellation. See [command results](docs/workflows/command-result.md).
+
 ### Notion pages and images
 
 `riela/notion-gateway-read@1` and `riela/notion-gateway-write@1` call the linked

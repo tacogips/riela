@@ -196,6 +196,7 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
   public var transitionLabel: String?
   public var sourceStepExecutionId: String
   public var itemsFrom: String
+  public var contextFrom: String?
   public var itemVariable: String?
   public var concurrency: Int?
   public var failurePolicy: WorkflowFanoutFailurePolicy
@@ -221,7 +222,8 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
     writeOwnership: WorkflowFanoutWriteOwnership? = nil,
     sourcePayload: JSONObject,
     dependencies: WorkflowFanoutDependencies? = nil,
-    changeTracking: WorkflowFanoutChangeTracking? = nil
+    changeTracking: WorkflowFanoutChangeTracking? = nil,
+    contextFrom: String? = nil
   ) {
     self.groupId = groupId
     self.workflowId = workflowId
@@ -231,6 +233,7 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
     self.transitionLabel = transitionLabel
     self.sourceStepExecutionId = sourceStepExecutionId
     self.itemsFrom = itemsFrom
+    self.contextFrom = contextFrom
     self.itemVariable = itemVariable
     self.concurrency = concurrency
     self.failurePolicy = failurePolicy
@@ -1087,7 +1090,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       writeOwnership: fanout.writeOwnership,
       sourcePayload: sourcePayload,
       dependencies: fanout.dependencies,
-      changeTracking: fanout.changeTracking
+      changeTracking: fanout.changeTracking,
+      contextFrom: fanout.contextFrom
     )
   }
 }

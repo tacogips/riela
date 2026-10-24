@@ -93,3 +93,11 @@ before HTTP rather than producing an endlessly empty deferred result. A successf
 reported as partial; it is not permission to drop pending identities or mark
 publication complete. Generic durable work scheduling/recovery still composes
 with the separate checkpoint, manifest, cache and snapshot nodes.
+
+For inspection, compose `riela/array-batch` (a count and optional byte cap) with
+runtime fanout. Keep the proposed checkpoint in the batch `context`, then set
+`fanout.contextFrom: "/context"`. The join retains that checkpoint once even
+when no records were found. Branches receive only their record batch; a domain
+acceptance step must still bind the reviewed IDs/versions before persisting the
+checkpoint. No script needs to count batches, wait for a minimum, or advance an
+inspection-loop cursor. See [JSON batching](json-data-processing.md).

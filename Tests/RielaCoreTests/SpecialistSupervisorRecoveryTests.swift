@@ -651,6 +651,35 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
     }
   }
 
+  func testEmptyFanoutHasOneDurableReceiptAndRejectsChangedContext() throws {
+    let root = try taskDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try persistence.save(runtimeSnapshot(workflowId: "parent-workflow", sessionId: "parent",
+      status: .running, date: Date(timeIntervalSince1970: 1_700_000_000)))
+    var input = WorkflowMessageAppendInput(workflowExecutionId: "parent", fromStepId: "dispatch", toStepId: "join",
+      sourceStepExecutionId: "empty-execution", payload: ["fanoutJoin": .object([
+        "branches": .array([]), "dispatchedBranchIds": .array([]), "allBranchesCompleted": .bool(true),
+        "context": .object(["version": .integer(3)])])])
+    for _ in 0..<2 {
+      let reopened = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      XCTAssertTrue(try reopened.publishFanoutParentMessage(parentSessionId: "parent",
+        sourceStepExecutionId: "empty-execution", input: input).isEmpty)
+    }
+    var changed = input
+    changed.payload["fanoutJoin"] = .object(["branches": .array([]), "dispatchedBranchIds": .array([]),
+      "allBranchesCompleted": .bool(true), "context": .object(["version": .integer(4)])])
+    XCTAssertThrowsError(try persistence.publishFanoutParentMessage(parentSessionId: "parent",
+      sourceStepExecutionId: "empty-execution", input: changed))
+    input.payload["fanoutJoin"] = .object(["branches": .array([.object([:])])])
+    input.sourceStepExecutionId = "unreserved-nonempty"
+    XCTAssertThrowsError(try persistence.publishFanoutParentMessage(parentSessionId: "parent",
+      sourceStepExecutionId: "unreserved-nonempty", input: input))
+    let messages = try SQLiteWorkflowMessageLog(databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path))
+      .listMessages(workflowExecutionId: "parent", toStepId: "join")
+    XCTAssertEqual(messages.count, 1)
+  }
+
   func testPersistentFanoutTerminalSnapshotsFenceOneAggregateJoinAcrossReopenRaces() async throws {
     let root = try taskDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

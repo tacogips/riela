@@ -438,6 +438,7 @@ public struct WorkflowFanoutWriteOwnership: Codable, Equatable, Sendable {
 public struct WorkflowStepFanout: Codable, Equatable, Sendable {
   public var groupId: String
   public var itemsFrom: String
+  public var contextFrom: String?
   public var itemVariable: String?
   public var concurrency: Int?
   public var joinStepId: String
@@ -457,10 +458,12 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
     resultOrder: WorkflowFanoutResultOrder? = nil,
     writeOwnership: WorkflowFanoutWriteOwnership? = nil,
     dependencies: WorkflowFanoutDependencies? = nil,
-    changeTracking: WorkflowFanoutChangeTracking? = nil
+    changeTracking: WorkflowFanoutChangeTracking? = nil,
+    contextFrom: String? = nil
   ) {
     self.groupId = groupId
     self.itemsFrom = itemsFrom
+    self.contextFrom = contextFrom
     self.itemVariable = itemVariable
     self.concurrency = concurrency
     self.joinStepId = joinStepId

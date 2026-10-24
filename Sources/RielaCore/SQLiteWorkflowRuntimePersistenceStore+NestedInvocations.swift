@@ -394,7 +394,23 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         in: db
       )
       guard !records.isEmpty else {
-        throw WorkflowRuntimePersistenceStoreError.notFound("fanout nested invocation reservations not found")
+        guard case let .object(join)? = input.payload["fanoutJoin"],
+              join["branches"] == .array([]), join["dispatchedBranchIds"] == .array([]),
+              join["allBranchesCompleted"] == .bool(true) else {
+          throw WorkflowRuntimePersistenceStoreError.notFound("fanout nested invocation reservations not found")
+        }
+        let key = fanoutReceiptKey(parentSessionId: parentSessionId, sourceStepExecutionId: sourceStepExecutionId)
+        let log = SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
+        let prior = try log.listMessages(workflowExecutionId: parentSessionId, toStepId: input.toStepId,
+          fromStepId: input.fromStepId, in: db).first { $0.communicationId == "nested-" + key.prefix(32) }
+        if let prior {
+          guard nestedMessage(prior, matches: input) else {
+            throw WorkflowRuntimePersistenceStoreError.sqliteFailed("empty fanout publication conflicts with durable receipt")
+          }
+        } else {
+          _ = try makeNestedParentMessage(key: key, input: input, in: db)
+        }
+        return []
       }
       guard records.allSatisfy({ $0.record.childTerminalSnapshot != nil && $0.record.recoveryReason == nil }) else {
         throw WorkflowRuntimePersistenceStoreError.sqliteFailed("fanout parent publication requires terminal snapshots for every branch")

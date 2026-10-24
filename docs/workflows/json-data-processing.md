@@ -86,3 +86,63 @@ entries, and values at most 8 MiB (8,388,608 bytes) of encoded JSON at each boun
 Editorial decisions (for example, preserving an opinion as an opinion and adding
 an unverified-context notice) belong to the review/workflow nodes rather than
 being inferred by these data operations.
+
+## Batches and one shared join context
+
+`riela/array-batch` accepts an optional `context`, copied unchanged once alongside
+`items`, including when the input is empty. `size` remains a maximum rather than
+a minimum: short final batches are emitted immediately. Optional `maxBatchBytes`
+(2–8,000,000) also limits each encoded JSON array, including its brackets and
+commas. Order is preserved; an individually oversized item fails before dispatch
+rather than being dropped. The complete output, context included, still has the
+existing 8,000,000-byte bound.
+
+```json
+{
+  "name": "riela/array-batch",
+  "version": "1",
+  "config": {
+    "items": "{{input.records}}",
+    "size": 15,
+    "maxBatchBytes": 180000,
+    "uniqueBy": "id",
+    "context": "{{input.checkpoint}}"
+  }
+}
+```
+
+A transition's `fanout.contextFrom` optionally selects a required JSON Pointer
+from its accepted source payload. It is returned once as `fanoutJoin.context`,
+separate from branch items and outputs. It is not inserted into branch variables
+or interpreted as a template. Use it to retain a proposed checkpoint while the
+runtime dispatches and joins independently inspected record batches:
+
+```json
+{
+  "toWorkflowId": "inspect-record-batch",
+  "toStepId": "inspect",
+  "resumeStepId": "accept",
+  "fanout": {
+    "groupId": "record-inspection",
+    "itemsFrom": "/items",
+    "contextFrom": "/context",
+    "itemVariable": "records",
+    "concurrency": 2,
+    "joinStepId": "accept",
+    "failurePolicy": "collect-all",
+    "resultOrder": "input",
+    "writeOwnership": { "mode": "read-only" }
+  }
+}
+```
+
+The pointer is bounded to 1024 bytes and its resolved value to 8,000,000 bytes;
+a missing/oversized context fails before any branch runs. Omission preserves the
+previous join shape. Context survives an empty fanout and durable source replay.
+A zero-selected wave (empty input or dependency-completed items) publishes one
+fenced parent receipt without child reservations;
+a changed replay conflicts instead of overwriting that receipt. After an
+interruption before delivery, recovery evaluates the original route and dependency
+wave, then reconstructs the zero-selected join from the accepted source without
+re-running the provider. Untaken conditional routes are not reconstructed. These additions require the
+updated runtime in both the host and any private guest.

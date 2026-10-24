@@ -343,6 +343,13 @@ private func validateFanout(_ raw: Any, path: String, diagnostics: inout [Workfl
   validateNonEmptyString(fanout["groupId"], path: "\(path).groupId", diagnostics: &diagnostics)
   validateNonEmptyString(fanout["itemsFrom"], path: "\(path).itemsFrom", diagnostics: &diagnostics)
   validateNonEmptyString(fanout["joinStepId"], path: "\(path).joinStepId", diagnostics: &diagnostics)
+  if let value = fanout["contextFrom"] {
+    if let pointer = value as? String, pointer.hasPrefix("/"), pointer.utf8.count <= 1_024 {
+      // A supplied null is invalid; an absent field preserves existing joins.
+    } else {
+      diagnostics.append(error("\(path).contextFrom", "must be a JSON Pointer of at most 1024 bytes"))
+    }
+  }
   for (key, requiredFields, optionalFields) in [
     ("dependencies", ["branchIdFrom", "dependsOnFrom"], ["completedBranchIdsFrom"]),
     ("changeTracking", ["pathsFrom"], ["artifactRootsFrom"])

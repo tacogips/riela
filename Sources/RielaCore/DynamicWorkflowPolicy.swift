@@ -130,7 +130,7 @@ public enum DynamicWorkflowPolicy {
   private static let allowedLoopKeys: Set<String> = ["while", "restartAt", "maxIterations"]
   private static let allowedTransitionKeys: Set<String> = ["toStepId", "label", "fanout"]
   private static let allowedFanoutKeys: Set<String> = [
-    "groupId", "itemsFrom", "itemVariable", "concurrency", "joinStepId", "failurePolicy", "resultOrder"
+    "groupId", "itemsFrom", "contextFrom", "itemVariable", "concurrency", "joinStepId", "failurePolicy", "resultOrder"
   ]
   private static let allowedPayloadKeys: Set<String> = [
     "id", "description", "nodeType", "executionBackend", "model", "modelFreeze", "effort",

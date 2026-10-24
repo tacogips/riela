@@ -49,7 +49,7 @@ extension BuiltinWorkflowAddonResolver {
       }
       payload = value
     case .batch:
-      guard Set(config.keys).isSubset(of: ["items", "size", "minItems", "maxItems", "uniqueBy", "jsonSchema"]),
+      guard Set(config.keys).isSubset(of: ["items", "size", "minItems", "maxItems", "uniqueBy", "jsonSchema", "context", "maxBatchBytes"]),
             case let .array(items)? = config["items"] else {
         throw AdapterExecutionError(.invalidInput, "array-batch requires items")
       }
@@ -71,11 +71,11 @@ extension BuiltinWorkflowAddonResolver {
           }
         }
       }
-      let batches = stride(from: 0, to: items.count, by: size).map { start in
-        JSONValue.array(Array(items[start..<min(start + size, items.count)]))
-      }
-      payload = ["items": .array(batches), "itemCount": .integer(Int64(items.count)),
-                 "batchCount": .integer(Int64(batches.count))]
+      let batches = try dataBatches(items, size: size, maximumBytes: config["maxBatchBytes"])
+      var result: JSONObject = ["items": .array(batches), "itemCount": .integer(Int64(items.count)),
+                               "batchCount": .integer(Int64(batches.count))]
+      if let context = config["context"] { result["context"] = context }
+      payload = result
     }
     guard try JSONEncoder().encode(payload).count <= 8_000_000 else {
       throw AdapterExecutionError(.invalidOutput, "data add-on output exceeds the size limit")
@@ -91,6 +91,25 @@ extension BuiltinWorkflowAddonResolver {
     }
     return AdapterExecutionOutput(provider: "riela-builtin-addon", model: input.addon.name,
       promptText: "", completionPassed: true, payload: payload)
+  }
+
+  private func dataBatches(_ items: [JSONValue], size: Int, maximumBytes: JSONValue?) throws -> [JSONValue] {
+    let limit = try dataInteger(maximumBytes.map { ["limit": $0] } ?? [:], "limit", fallback: 8_000_000, range: 2...8_000_000)
+    var batches: [JSONValue] = [], current: [JSONValue] = []
+    var bytes = 2
+    for item in items {
+      let itemBytes = try JSONEncoder().encode(item).count
+      guard itemBytes + 2 <= limit else {
+        throw AdapterExecutionError(.invalidInput, "array-batch item exceeds maxBatchBytes")
+      }
+      if current.count == size || bytes + itemBytes + (current.isEmpty ? 0 : 1) > limit {
+        batches.append(.array(current)); current = []; bytes = 2
+      }
+      bytes += itemBytes + (current.isEmpty ? 0 : 1)
+      current.append(item)
+    }
+    if !current.isEmpty { batches.append(.array(current)) }
+    return batches
   }
 
   private func dataInteger(_ config: JSONObject, _ key: String, fallback: Int, range: ClosedRange<Int>) throws -> Int {

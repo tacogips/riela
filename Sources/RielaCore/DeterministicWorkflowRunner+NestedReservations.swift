@@ -121,6 +121,35 @@ extension DeterministicWorkflowRunner {
       }
       break
     }
+    // Zero-selected fanout waves have no child reservation. Rebuild a missing join from the
+    // durable accepted source without re-running its provider or creating a child.
+    let deliveredFanoutSources = Set(messages.compactMap { message -> String? in
+      message.payload["fanoutJoin"] == nil ? nil : message.sourceStepExecutionId
+    })
+    for execution in session.executions.reversed() where !deliveredFanoutSources.contains(execution.executionId) {
+      guard let accepted = execution.acceptedOutput,
+            let parentStep = request.workflow.steps.first(where: { $0.id == execution.stepId }) else { continue }
+      let transitions = (parentStep.transitions ?? []).filter {
+        $0.fanout?.joinStepId == currentStepId &&
+          WorkflowBranchEvaluator().evaluate(label: $0.label, when: accepted.when, payload: accepted.payload)
+      }
+      guard transitions.count <= 1 else {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested resume has ambiguous fanout transitions")
+      }
+      guard let transition = transitions.first, let fanout = transition.fanout,
+            case let .array(items)? = fanoutJSONPointer(.object(accepted.payload), fanout.itemsFrom) else { continue }
+      let wave = try WorkflowFanoutWave.select(items: items, policy: fanout.dependencies, source: accepted.payload)
+      guard wave.selectedIndices.isEmpty else { continue }
+      _ = try await dispatchFanout(directive: WorkflowFanoutDispatchDirective(
+        groupId: fanout.groupId, workflowId: transition.toWorkflowId, sourceStepId: parentStep.id,
+        targetStepId: transition.toStepId, joinStepId: fanout.joinStepId, transitionLabel: transition.label,
+        sourceStepExecutionId: execution.executionId, itemsFrom: fanout.itemsFrom, itemVariable: fanout.itemVariable,
+        concurrency: fanout.concurrency, failurePolicy: fanout.failurePolicy ?? .failFast,
+        resultOrder: fanout.resultOrder ?? .input, writeOwnership: fanout.writeOwnership, sourcePayload: accepted.payload,
+        dependencies: fanout.dependencies, changeTracking: fanout.changeTracking, contextFrom: fanout.contextFrom),
+        parentSessionId: session.sessionId, parentStepId: parentStep.id, request: request)
+      break
+    }
     guard !matching.isEmpty else { return }
 
     // A crash after the canonical SQLite delivery commit but before the live
@@ -188,7 +217,8 @@ extension DeterministicWorkflowRunner {
           writeOwnership: fanout.writeOwnership,
           sourcePayload: payload,
           dependencies: fanout.dependencies,
-          changeTracking: fanout.changeTracking
+          changeTracking: fanout.changeTracking,
+          contextFrom: fanout.contextFrom
         ),
         parentSessionId: session.sessionId,
         parentStepId: record.reservation.parentStepId,

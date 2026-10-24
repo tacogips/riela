@@ -9,6 +9,7 @@ extension DeterministicWorkflowRunner {
   ) async throws -> JSONObject {
     try validateFanoutWriteOwnership(directive)
     let items = try fanoutItems(from: directive)
+    let joinContext = try fanoutContext(from: directive)
     let wave = try WorkflowFanoutWave.select(items: items, policy: directive.dependencies, source: directive.sourcePayload)
     let fanoutGroupRunId = "\(directive.groupId):\(directive.sourceStepExecutionId)"
     if wave.selectedIndices.isEmpty {
@@ -17,6 +18,7 @@ extension DeterministicWorkflowRunner {
         fanoutGroupRunId: fanoutGroupRunId,
         branches: []
       )
+      if let joinContext { join["context"] = joinContext }
       join["pendingBranchIds"] = .array(wave.pendingBranchIds.map(JSONValue.string))
       join["completedBranchIds"] = .array(wave.completedBranchIds.map(JSONValue.string))
       join["dispatchedBranchIds"] = .array([])
@@ -84,6 +86,7 @@ extension DeterministicWorkflowRunner {
       fanoutGroupRunId: fanoutGroupRunId,
       branches: orderedBranches
     )
+    if let joinContext { join["context"] = joinContext }
     join["pendingBranchIds"] = .array(wave.pendingBranchIds.map(JSONValue.string))
     join["completedBranchIds"] = .array(wave.completedBranchIds.map(JSONValue.string))
     join["dispatchedBranchIds"] = .array(wave.selectedIndices.map { .string(wave.branchIds[$0]) })
@@ -482,6 +485,17 @@ extension DeterministicWorkflowRunner {
     let transitionBound = directive.concurrency ?? itemCount
     let runBound = request.maxConcurrency ?? transitionBound
     return max(1, min(itemCount, transitionBound, runBound))
+  }
+
+  private func fanoutContext(from directive: WorkflowFanoutDispatchDirective) throws -> JSONValue? {
+    guard let pointer = directive.contextFrom else { return nil }
+    guard pointer.hasPrefix("/"), pointer.utf8.count <= 1_024,
+          let value = jsonPointerValue(in: .object(directive.sourcePayload), pointer: pointer),
+          try JSONEncoder().encode(value).count <= 8_000_000 else {
+      throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
+        groupId: directive.groupId, reason: "contextFrom must resolve to a bounded source payload value")
+    }
+    return value
   }
 
   private func fanoutItems(from directive: WorkflowFanoutDispatchDirective) throws -> [JSONValue] {

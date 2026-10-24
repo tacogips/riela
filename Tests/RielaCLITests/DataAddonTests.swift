@@ -56,6 +56,35 @@ final class DataAddonTests: XCTestCase {
     XCTAssertEqual(empty.payload["items"], .array([]))
   }
 
+  func testBatchCarriesOneTypedContextEvenWhenNoItemsExist() async throws {
+    let context: JSONValue = .object(["version": .integer(2), "text": .string("{{opaque}}")])
+    for count in [0, 3] {
+      let output = try await run("riela/array-batch", config: [
+        "items": .array((0..<count).map { .integer(Int64($0)) }), "size": .integer(2),
+        "context": .string("{{input.context}}")], input: ["context": context])
+      XCTAssertEqual(output.payload["context"], context)
+      XCTAssertEqual(output.payload["batchCount"], .integer(count == 0 ? 0 : 2))
+    }
+  }
+
+  func testBatchByteLimitSplitsUnicodeRecordsWithoutWaitingOrDroppingItems() async throws {
+    let records = (0..<3).map { JSONValue.object(["id": .string(String($0)), "body": .string(String(repeating: "😀", count: 30))]) }
+    let output = try await run("riela/array-batch", config: ["items": .array(records), "size": .integer(15), "maxBatchBytes": .integer(300)])
+    guard case let .array(batches)? = output.payload["items"] else { return XCTFail("missing batches") }
+    var restored: [JSONValue] = []
+    for batch in batches {
+      XCTAssertLessThanOrEqual(try JSONEncoder().encode(batch).count, 300)
+      guard case let .array(rows) = batch else { return XCTFail("invalid batch") }
+      restored += rows
+    }
+    XCTAssertEqual(restored, records)
+    XCTAssertEqual(batches.count, 2)
+    do {
+      _ = try await run("riela/array-batch", config: ["items": .array(records), "maxBatchBytes": .integer(10)])
+      XCTFail("oversized individual item accepted")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+  }
+
   func testBatchRejectsInvalidBoundsIdentitiesAndUnknownFields() async throws {
     let bad: [JSONObject] = [
       ["items": .array([]), "size": .integer(0)],

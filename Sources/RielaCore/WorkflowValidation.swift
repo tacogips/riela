@@ -594,6 +594,9 @@ private func validateTypedFanout(
   if !fanout.itemsFrom.isEmpty, !fanout.itemsFrom.hasPrefix("/") {
     diagnostics.append(error("\(path).itemsFrom", "must be a JSON Pointer"))
   }
+  if let pointer = fanout.contextFrom, !pointer.hasPrefix("/") || pointer.utf8.count > 1_024 {
+    diagnostics.append(error("\(path).contextFrom", "must be a JSON Pointer of at most 1024 bytes"))
+  }
   if let concurrency = fanout.concurrency, concurrency <= 0 {
     diagnostics.append(error("\(path).concurrency", "must be a positive integer"))
   }

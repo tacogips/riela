@@ -24,6 +24,9 @@ The payload contains `revision`, `cursor` (string or null),
 `acquisitionComplete`, `pending` and `acknowledged` arrays of `{id, version}`,
 `pendingCount`, and `processingComplete`. A new key has revision 0, null cursor,
 acquisitionComplete false and no items. A load never creates a database.
+Routing flags `acquire` and `process` indicate incomplete acquisition and
+pending processing respectively; `always` is also true. Use `acquire` before
+a gateway step to avoid repeating a completed fixed-window API scan.
 
 After a successful, inspected gateway page and its cache write, record its
 exact item versions and next cursor together:
@@ -44,7 +47,10 @@ template-evaluated again. Record only a successfully obtained page; an API
 failure must leave the previous checkpoint unchanged. The node cannot infer
 whether a provider cursor means a page token, newest ID or timestamp, or
 whether the provider completed its scan: the authored gateway mapping supplies
-those values. Request pagination stays visible in the workflow graph.
+those values. For ordinary page-token pagination, omit `acquisitionComplete`
+to derive completion from a null cursor. For watermarks such as newest IDs,
+supply the completion boolean explicitly. Request pagination stays visible
+in the workflow graph.
 
 Acquiring the next page does **not** wait for pending items to be processed.
 After successful downstream processing/publication, acknowledge only the

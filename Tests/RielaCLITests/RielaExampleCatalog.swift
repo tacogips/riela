@@ -81,6 +81,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "workflow-knowledge-base",
     "wrike-project-kanban-agent",
     "x-follower-ai-business-digest",
-    "x-incremental-posts-kv"
+    "x-incremental-posts-kv",
+    "x-window-checkpoint"
   ]
 }

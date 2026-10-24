@@ -50,10 +50,15 @@ extension BuiltinWorkflowAddonResolver {
       guard Set(items).count == items.count else { throw collectionInputError() }
       if action == "record" {
         guard let cursor = config["cursor"],
-          case let .bool(complete)? = config["acquisitionComplete"],
           cursor == .null || nonEmptyString(cursor) != nil,
           (try JSONEncoder().encode(cursor)).count <= 16_384
         else { throw collectionInputError() }
+        let complete: Bool
+        switch config["acquisitionComplete"] {
+        case nil: complete = cursor == .null
+        case let .bool(value)?: complete = value
+        default: throw collectionInputError()
+        }
         let known = Set(state.pending + state.acknowledged)
         state.pending += items.filter { !known.contains($0) }
         state.cursor = cursor
@@ -83,7 +88,8 @@ extension BuiltinWorkflowAddonResolver {
     payload["pendingCount"] = .integer(Int64(state.pending.count))
     payload["processingComplete"] = .bool(state.pending.isEmpty)
     return AdapterExecutionOutput(provider: "riela-builtin-addon", model: input.addon.name,
-      promptText: "", completionPassed: true, payload: payload)
+      promptText: "", completionPassed: true,
+      when: ["always": true, "acquire": !state.acquisitionComplete, "process": !state.pending.isEmpty], payload: payload)
   }
 }
 

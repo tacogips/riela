@@ -2,7 +2,7 @@ import CRielaPublicWeb
 import Foundation
 
 enum PublicWebError: Error, Equatable, Sendable {
-  case invalidInput, blockedDestination, transport, oversized, timeout, invalidDocument
+  case invalidInput, blockedDestination, urlPolicy, transport, oversized, timeout, invalidDocument
   case httpStatus(Int)
 }
 
@@ -66,6 +66,7 @@ enum PublicWebHTTP {
   static func read(
     _ url: String, headers: [String: String] = [:], blockedHosts: [String] = [],
     maximumBytes: Int = 2_000_000, timeoutMs: Int = 25_000, deadline: Date? = nil,
+    allowedURLPattern: String? = nil,
     transport: @escaping PublicWebTransport = native
   ) async throws -> PublicWebHTTPResponse {
     guard (1...8_000_000).contains(maximumBytes), (1...120_000).contains(timeoutMs), headers.count <= 2,
@@ -73,11 +74,21 @@ enum PublicWebHTTP {
         !$0.value.isEmpty && $0.value.utf8.count <= 1024 && !$0.value.unicodeScalars.contains { $0.value < 32 || $0.value == 127 } }) else {
       throw PublicWebError.invalidInput
     }
+    let pattern = try urlPattern(allowedURLPattern)
+    func checkURL(_ value: String) throws {
+      guard value.utf8.count <= 4096 else { throw PublicWebError.invalidInput }
+      if let pattern {
+        let range = NSRange(value.startIndex..., in: value)
+        guard pattern.firstMatch(in: value, range: range)?.range == range else { throw PublicWebError.urlPolicy }
+      }
+    }
     let deadline = min(deadline ?? .distantFuture, Date().addingTimeInterval(Double(timeoutMs) / 1000))
     var current = url
     for hop in 0...3 {
       try Task.checkCancellation()
+      try checkURL(current)
       let destination = try destination(current, blockedHosts: blockedHosts)
+      try checkURL(destination.url)
       let remaining = Int(max(0, deadline.timeIntervalSinceNow * 1000))
       guard remaining > 0 else { throw PublicWebError.timeout }
       var response = try await transport(.init(url: destination.url, host: destination.host,
@@ -96,6 +107,14 @@ enum PublicWebHTTP {
       return response
     }
     throw PublicWebError.invalidInput
+  }
+
+  static func urlPattern(_ value: String?) throws -> NSRegularExpression? {
+    try value.map { pattern in
+      guard !pattern.isEmpty, pattern.utf8.count <= 1024,
+        let expression = try? NSRegularExpression(pattern: "\\A(?:\(pattern))\\z") else { throw PublicWebError.invalidInput }
+      return expression
+    }
   }
 
   static func destination(_ text: String, blockedHosts: [String]) throws -> (url: String, host: String) {

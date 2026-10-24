@@ -10,7 +10,7 @@ extension BuiltinWorkflowAddonResolver {
   func executePublicWeb(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
-      Set(config.keys).isSubset(of: ["action", "url", "options", "blockedHosts", "metadataOnly", "includeRaw", "linkPattern", "headers", "maximumBytes", "timeoutMs", "bodyBase64"]),
+      Set(config.keys).isSubset(of: ["action", "url", "options", "blockedHosts", "metadataOnly", "includeRaw", "linkPattern", "headers", "maximumBytes", "timeoutMs", "bodyBase64", "allowedURLPattern", "failureMode"]),
       let url = nonEmptyString(config["url"]), try JSONEncoder().encode(config).count <= 4_000_000 else { throw publicWebInvalid() }
     func boolean(_ key: String) throws -> Bool {
       guard let value = config[key] else { return false }; guard case let .bool(value) = value else { throw publicWebInvalid() }; return value
@@ -23,13 +23,16 @@ extension BuiltinWorkflowAddonResolver {
     let actionFields: Set<String>
     switch action {
     case "page": actionFields = ["options", "metadataOnly", "includeRaw", "linkPattern"]
-    case "response": actionFields = ["headers", "maximumBytes", "timeoutMs"]
+    case "response": actionFields = ["headers", "maximumBytes", "timeoutMs", "allowedURLPattern", "failureMode"]
     case "parse": actionFields = ["options", "metadataOnly", "bodyBase64"]
     default: throw publicWebInvalid()
     }
     guard Set(config.keys).subtracting(["action", "url", "blockedHosts"]).isSubset(of: actionFields) else { throw publicWebInvalid() }
     let blocked = try config["blockedHosts"].map { try JSONDecoder().decode([String].self, from: JSONEncoder().encode($0)) } ?? []
-    _ = try PublicWebHTTP.destination(url, blockedHosts: blocked)
+    let failureMode = try publicWebString(config["failureMode"], fallback: "throw")
+    guard ["throw", "result"].contains(failureMode) else { throw publicWebInvalid() }
+    let allowedURLPattern = try config["allowedURLPattern"].map { try publicWebString($0) }
+    do { _ = try PublicWebHTTP.urlPattern(allowedURLPattern) } catch { throw publicWebInvalid() }
     let rawOptions: JSONObject
     switch config["options"] {
     case nil: rawOptions = [:]
@@ -45,8 +48,9 @@ extension BuiltinWorkflowAddonResolver {
     options.timeoutMs = try integer(rawOptions["timeoutMs"], fallback: 20_000, range: 1000...30_000)
     options.maximumTextCharacters = try integer(rawOptions["maxTextChars"], fallback: 20_000, range: 1...50_000)
     let transport = PublicWebExecutionContext.transport ?? PublicWebHTTP.native
-    let payload: JSONObject
+    var payload: JSONObject
     do {
+      _ = try PublicWebHTTP.destination(url, blockedHosts: blocked)
       switch action {
       case "page":
         let browser = PublicWebExecutionContext.browser ?? { url, options, blocked, deadline in
@@ -58,8 +62,9 @@ extension BuiltinWorkflowAddonResolver {
       case "response":
         let headers = try config["headers"].map { try JSONDecoder().decode([String: String].self, from: JSONEncoder().encode($0)) } ?? [:]
         let response = try await PublicWebHTTP.read(url, headers: headers, blockedHosts: blocked,
-          maximumBytes: integer(config["maximumBytes"], fallback: 2_000_000, range: 1...2_000_000),
-          timeoutMs: integer(config["timeoutMs"], fallback: 25_000, range: 1...120_000), deadline: context.deadline, transport: transport)
+          maximumBytes: integer(config["maximumBytes"], fallback: 2_000_000, range: 1...5_000_000),
+          timeoutMs: integer(config["timeoutMs"], fallback: 25_000, range: 1...120_000), deadline: context.deadline,
+          allowedURLPattern: allowedURLPattern, transport: transport)
         payload = ["url": .string(response.url), "status": .integer(Int64(response.status)),
           "headers": .object(response.headers.mapValues(JSONValue.string)), "bodyBase64": .string(response.body.base64EncodedString()),
           "notModified": .bool(response.status == 304)]
@@ -69,18 +74,17 @@ extension BuiltinWorkflowAddonResolver {
       default: throw publicWebInvalid()
       }
     } catch is CancellationError { throw CancellationError() } catch {
-      let reason: String
-      switch error {
-      case PublicWebError.blockedDestination: reason = "blocked-destination"
-      case PublicWebError.oversized: reason = "response-budget"
-      case PublicWebError.timeout: reason = "deadline"
-      case PublicWebError.httpStatus(let status): reason = "http-\(status)"
-      case PublicWebError.invalidInput, PublicWebError.invalidDocument: reason = "invalid-input-or-document"
-      default: reason = "transport-or-browser"
-      }
-      throw AdapterExecutionError(.providerError, "public-web failed: \(reason)")
+      try Task.checkCancellation()
+      let reason = publicWebFailureReason(error)
+      if failureMode == "result" { payload = ["ok": .bool(false), "failure": .string(reason)]
+      } else { throw AdapterExecutionError(.providerError, "public-web failed: \(reason)") }
     }
-    guard try JSONEncoder().encode(payload).count <= 4_000_000 else { throw publicWebInvalid() }
+    try Task.checkCancellation()
+    if failureMode == "result", payload["ok"] == nil { payload["ok"] = .bool(true) }
+    if try JSONEncoder().encode(payload).count > (action == "response" ? 7_000_000 : 4_000_000) {
+      guard failureMode == "result" else { throw publicWebInvalid() }
+      payload = ["ok": .bool(false), "failure": .string("response-budget")]
+    }
     return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true, payload: payload)
   }
 }
@@ -91,3 +95,15 @@ private func publicWebString(_ value: JSONValue?, fallback: String? = nil) throw
 }
 
 private func publicWebInvalid() -> AdapterExecutionError { .init(.invalidInput, "invalid public-web configuration") }
+
+private func publicWebFailureReason(_ error: Error) -> String {
+  switch error {
+  case PublicWebError.blockedDestination: return "blocked-destination"
+  case PublicWebError.urlPolicy: return "url-policy"
+  case PublicWebError.oversized: return "response-budget"
+  case PublicWebError.timeout: return "deadline"
+  case PublicWebError.httpStatus(let status) where (100...599).contains(status): return "http-\(status)"
+  case PublicWebError.invalidInput, PublicWebError.invalidDocument: return "invalid-input-or-document"
+  default: return "transport-or-browser"
+  }
+}

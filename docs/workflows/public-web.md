@@ -39,10 +39,31 @@ be combined with a browser result.
 
 `action: "response"` returns `status`, `headers`, `bodyBase64`, `url` and
 `notModified`. It accepts `headers` containing only `If-None-Match` and
-`If-Modified-Since`, `maximumBytes` (1–2000000, default 2000000), and `timeoutMs`
+`If-Modified-Since`, `maximumBytes` (1–5000000, default 2000000), and `timeoutMs`
 (1–120000, default 25000). A 304 result has an empty body. Other successful
 responses must be 200. The node makes one attempt per hop; the source workflow
 owns retry/checkpoint policy, so an unavailable article does not stall its peers.
+
+For binary resources, `response` also accepts `allowedURLPattern`, an authored
+regular expression of at most 1024 UTF-8 bytes. It must match the entire URL,
+both before and after URL normalization, before the first request and every
+redirect hop. The ordinary HTTPS/public-address/blocked-host checks still apply.
+This is configuration, never a callback or downloaded code; use a simple bounded
+pattern and explicitly allow the intended host, path and query values. The node
+does not infer a site's URL policy or enable authentication. `page`, `parse`, and
+browser actions reject these response-only options.
+
+`failureMode: "result"` lets an optional resource fail independently. Success
+adds `ok: true` to the response; failure returns only `ok: false` and `failure`.
+Reasons are `url-policy`, `blocked-destination`, `response-budget`, `deadline`,
+`http-100` through `http-599`, `invalid-input-or-document`, or
+`transport-or-browser`. Failure results contain no provider body, headers, URL,
+or exception text. Consumers must inspect `ok`; they must not treat a failed
+resource as an acquired/verified article. Cancellation still propagates as a
+cancelled invocation. The default `failureMode: "throw"` preserves node failure.
+The response body cap applies before base64 encoding; response output is at most
+7 MB, while page/parse output remains capped at 4 MB. Page body defaults and
+cache capacities are unchanged.
 
 `action: "parse"` accepts `bodyBase64` (decoded maximum 2 MB) plus page `options`
 and `metadataOnly`, and extracts the document without DNS or a network request.

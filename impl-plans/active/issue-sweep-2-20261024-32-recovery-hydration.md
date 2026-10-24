@@ -1,6 +1,6 @@
 # ISW2-32: hydrate only the session family on resume and rerun
 
-**Status**: Implementation complete; regression gate awaits ISW2-27a disposition
+**Status**: Implementation complete; regression gate has reproduced out-of-scope session-resume failures and needs owning-plan disposition
 **planId**: ISW2-32-recovery-hydration
 **Issue**: https://github.com/tacogips/riela/issues/32
 **Design Reference**: design-docs/specs/design-cli-session-store-decode-resilience.md, section "Recovery hydration scope (issue #32, 2026-10-24)", Contract 1-6
@@ -144,9 +144,11 @@ If the build fails in a file outside the write ownership, a wave-1 sibling (ISW2
 ## Done criteria
 
 - [x] `hydrateSessions:` no longer appears in `Sources/` (`grep -rn "hydrateSessions" Sources` is empty).
-- [ ] Verification 1-5 pass, with logs. Build, focused tests, lint, and structural grep checks pass. The regression filter has one failure in the ISW2-27a-owned `Tests/RielaCoreTests/SpecialistSupervisorRecoveryTests.swift:127`; it expects `.failed` where the implemented cancellation status is `.cancelled`. See the progress log and dependency blocker.
+- [ ] Verification 1-5 pass, with logs. Current-source build, focused tests, selected-file strict lint, and structural grep checks pass. The regression filter exits 1 because `Tests/RielaCLITests/WorkflowCommandSessionDiscoveryTests.swift:262-290` repeatedly fails session-resume progress/terminal assertions, including in isolation; this test file is outside ISW2-32 write ownership. See the current-source logs and resume criterion in the progress log. Rerun the regression gate after its owning plan dispositions the failure.
 - [x] The progress log records the root-cause summary, measured seeding times, and verification records.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
 
 > Operator amendment 2 (2026-10-24): every remaining plan also owns its own active plan file (this file) so it can update its completion checklist.
+
+> Operator amendment 3 (2026-10-24, after session-5 wave 1): `WorkflowCommandSessionDiscoveryTests` (resume progress/terminal-status assertions around lines 262-290) passes 5/5 on commit 7f087cc4 (ISW2-27a accepted, no ISW2-32 changes) — operator log `tmp/issue-sweep/27a-discovery.log` in the main checkout. The failure is therefore a regression introduced by uncommitted ISW2-32 recovery-hydration changes (session seeding / resume path), not a #27 dependency. Fix it inside ISW2-32 writePaths; do NOT edit or disposition the test. The regression filter must pass with that suite unchanged before reporting completion.

@@ -470,7 +470,8 @@ public struct SessionRerunCommand: Sendable {
       let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
       let runtimeStore = try await makeSeededProductionRuntimeStore(
         sessionStoreRoot: storeRoot,
-        executionLocks: executionLocks
+        executionLocks: executionLocks,
+        hydration: .family(of: persisted.session.sessionId)
       )
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
@@ -742,7 +743,8 @@ public struct SessionResumeCommand: Sendable {
       let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
       let runtimeStore = try await makeSeededProductionRuntimeStore(
         sessionStoreRoot: storeRoot,
-        executionLocks: executionLocks
+        executionLocks: executionLocks,
+        hydration: .family(of: persisted.session.sessionId)
       )
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
@@ -960,7 +962,7 @@ public struct SessionResumeCommand: Sendable {
   }
 
   private func blocksResume(_ session: WorkflowSession) -> Bool {
-    session.status == .failed && session.failureKind != .maxStepsExceeded
+    session.status == .cancelled || (session.status == .failed && session.failureKind != .maxStepsExceeded)
   }
 
   private func suspendedQuestionResumeResult(

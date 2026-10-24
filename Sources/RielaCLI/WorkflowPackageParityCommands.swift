@@ -448,7 +448,8 @@ public struct WorkflowPackageCommandRunner: Sendable {
     let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
     let runtimeStore = try await makeSeededProductionRuntimeStore(
       sessionStoreRoot: storeRoot,
-      executionLocks: executionLocks
+      executionLocks: executionLocks,
+      hydration: .none
     )
     let result = try await DeterministicWorkflowRunner(
       store: runtimeStore,

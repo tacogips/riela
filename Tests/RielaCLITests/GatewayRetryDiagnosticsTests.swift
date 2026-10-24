@@ -54,6 +54,26 @@ final class GatewayRetryDiagnosticsTests: XCTestCase {
       " (code=PERMISSION_DENIED, httpStatus=403, providerProblem=spend-cap-reached)")
   }
 
+  func testSpendCapSurvivesLargeResourceUsageTelemetry() throws {
+    let resource: [String: Any] = ["kind": "user", "idHash": String(repeating: "a", count: 64), "utcDay": "2026-10-24"]
+    let usage: [String: Any] = ["version": 1, "basis": "upstream-response", "billingStatus": "not-reported",
+      "httpResponses": 3, "successfulResponses": 2, "unclassifiedResources": 0,
+      "resources": Array(repeating: resource, count: 1_000)]
+    let envelope: [String: Any] = ["ok": false, "error": ["code": "PERMISSION_DENIED", "httpStatus": 403,
+      "providerProblem": "spend-cap-reached", "details": "PRIVATE", "resourceUsage": usage]]
+    let text = try XCTUnwrap(String(bytes: JSONSerialization.data(withJSONObject: envelope), encoding: .utf8))
+    XCTAssertGreaterThan(text.utf8.count, GatewayFailureDiagnostics.maximumEnvelopeBytes)
+    for (stdout, stderr) in [(text, ""), ("", text)] {
+      XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: stdout, stderr: stderr),
+        " (code=PERMISSION_DENIED, httpStatus=403, providerProblem=spend-cap-reached)")
+    }
+    // Only telemetry is exempt: the rest of the envelope keeps the plain bound.
+    var padded = envelope
+    padded["padding"] = String(repeating: "x", count: GatewayFailureDiagnostics.maximumEnvelopeBytes)
+    let paddedText = try XCTUnwrap(String(bytes: JSONSerialization.data(withJSONObject: padded), encoding: .utf8))
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: paddedText), "")
+  }
+
   func testArbitraryRetryFieldsAreRejected() {
     for value in ["true", "-1", "6000001", "1.5", #""PRIVATE""#, "{}", "[]"] {
       let error = "{\"error\":{\"code\":\"RATE_LIMITED\",\"requestAttempts\":\(value),\"retryAttempts\":\(value),\"backoffMs\":\(value),\"retryStopReason\":\(value)}}"

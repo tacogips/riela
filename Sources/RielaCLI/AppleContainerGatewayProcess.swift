@@ -39,7 +39,7 @@ struct AppleContainerGatewayProcess: Sendable {
       }
       var execute = ["exec", "-i"]
       execute += [name, "/usr/local/bin/riela-gateway-guard", gateway.entrypoint]
-      execute += gateway.arguments(document: document)
+      execute += gateway.arguments(document: document, deadline: deadline)
       result = try await runner.run(configuration: configuration(execute), stdin: frame, deadline: effectiveDeadline)
     } catch {
       await cleanup(name)

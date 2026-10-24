@@ -60,12 +60,34 @@ extension RielaApp {
     _ = saveDaemonState(state, profileName: resolved.profileName)
   }
 
+  /// Evaluates with the pre-loader environment first. Kaiba credentials an
+  /// instance loader provides live only in the runtime snapshot, so a missing
+  /// credential is re-checked against the prepared snapshot (the same one start
+  /// installs; preparation is cached, so start does not run the loaders again).
   private func evaluateDaemonKaibaReadiness(
     candidate: RielaAppDaemonWorkflowCandidate,
     preference: RielaAppDaemonWorkflowPreference
   ) async -> DaemonKaibaReadinessEvaluation {
+    let base = daemonEnvironment(for: candidate, preference: preference)
+    let evaluation = await evaluateDaemonKaibaReadiness(candidate: candidate, preference: preference, environment: base)
+    guard evaluation.readiness == .blocked(.configureWorkflowEnvironment),
+          preference.configuration.environmentResolution != nil,
+          let snapshot = try? await daemonRuntime.prepareEnvironment(
+            for: candidate, configuration: daemonRuntimeConfiguration(for: candidate, preference: preference)
+          ) else {
+      return evaluation
+    }
+    return await evaluateDaemonKaibaReadiness(
+      candidate: candidate, preference: preference, environment: snapshot.runtimeEnvironment()
+    )
+  }
+
+  private func evaluateDaemonKaibaReadiness(
+    candidate: RielaAppDaemonWorkflowCandidate,
+    preference: RielaAppDaemonWorkflowPreference,
+    environment: [String: String]
+  ) async -> DaemonKaibaReadinessEvaluation {
     let workflowDirectory = candidate.workflowDirectory
-    let environment = daemonEnvironment(for: candidate, preference: preference)
     let homeURL = appHomeDirectory
     let catalogLoader = kaibaCatalogLoader
     return await Task.detached(priority: .userInitiated) {

@@ -88,9 +88,18 @@ public enum RielaWebAPIRouteTable {
     )
   ]
 
-  public static let desktopOnly: [RielaWebAPIRoute] = [
+  /// Runtime-environment status. Both hosts run `RielaAppDaemonWorkflowRuntime`
+  /// with loaders, so both serve it (and the `reloadEnvironment` action) from
+  /// their own runtime; the desktop owner is `desktopInstanceWriteOwner`.
+  public static let instanceEnvironment: [RielaWebAPIRoute] = [
     .init(method: "GET", path: "/api/v1/instances/{identity}/environment",
-          owner: desktopInstances, ownerMarker: #"parts[4] == "environment""#),
+          owner: serveInstances, ownerMarker: instanceEnvironmentMarker)
+  ]
+
+  /// The dispatch token both hosts use for the environment status route.
+  public static let instanceEnvironmentMarker = #"parts[4] == "environment""#
+
+  public static let desktopOnly: [RielaWebAPIRoute] = [
     .init(method: "POST", path: "/api/v1/instances/{identity}/runs",
           owner: "Sources/RielaApp/RielaAppConfiguredRunAPI.swift", ownerMarker: #"parts[4] == "runs""#),
     .init(method: "GET", path: "/api/v1/settings/workers", owner: desktopWorkerSettings),
@@ -146,7 +155,7 @@ public enum RielaWebAPIRouteTable {
   ]
 
   public static let all: [RielaWebAPIRoute] =
-    sharedProjection + instanceWrites + desktopOnly + workflowEditor + passkeyAuth
+    sharedProjection + instanceWrites + instanceEnvironment + desktopOnly + workflowEditor + passkeyAuth
 
   /// The desktop host serves the instance writes from its own file.
   public static let desktopInstanceWriteOwner = desktopInstances

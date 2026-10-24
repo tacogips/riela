@@ -691,8 +691,14 @@ fileprivate extension ScopedParityCommandRunner {
       let readOnlyEvidence = original.reason == "read-only" || original.readOnlyTriggers != nil
       var replayEnvelope = original.envelope
       replayEnvelope.eventId = "\(original.eventId)-replay"
-      let replay = PersistedEventReceipt(
-        receiptId: safeReceiptId(sourceId: original.sourceId, eventId: replayEnvelope.eventId),
+      // A binding-scoped (cron overlap) receipt replays per binding: the id
+      // folds in the binding like §7.1, so two bindings on one source never
+      // overwrite each other's replay, and the overlap metadata carries over.
+      let replayReceiptId = original.bindingId.map {
+        cronOverlapReceiptId(sourceId: original.sourceId, eventId: replayEnvelope.eventId, bindingId: $0)
+      } ?? safeReceiptId(sourceId: original.sourceId, eventId: replayEnvelope.eventId)
+      var replay = PersistedEventReceipt(
+        receiptId: replayReceiptId,
         sourceId: original.sourceId,
         eventId: replayEnvelope.eventId,
         status: parsed.dryRun || readOnlyEvidence ? "dry-run" : "replayed",
@@ -706,6 +712,9 @@ fileprivate extension ScopedParityCommandRunner {
         readOnlyTriggers: original.readOnlyTriggers,
         readOnlyDiagnostics: original.readOnlyDiagnostics
       )
+      replay.bindingId = original.bindingId
+      replay.overlapPolicy = original.overlapPolicy
+      replay.overlapPolicySource = original.overlapPolicySource
       try saveEventReceipt(replay, eventRoot: root)
       return ScopedParityCommandResult(scope: "events", command: action, target: receiptId, status: "ok", records: ["replayedFrom=\(original.receiptId)", "receipt=\(replay.receiptId)", "status=\(replay.status)"])
     case "serve":
@@ -886,45 +895,23 @@ fileprivate extension ScopedParityCommandRunner {
   }
 
   private func saveEventReceipt(_ receipt: PersistedEventReceipt, eventRoot: URL) throws {
-    let root = receiptsRoot(eventRoot: eventRoot)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(receipt).write(to: eventRecordURL(id: receipt.receiptId, root: root, kind: "event receipt"), options: .atomic)
+    try EventReceiptStore(eventRoot: eventRoot).save(receipt)
   }
 
   private func loadEventReceipt(receiptId: String, eventRoot: URL) throws -> PersistedEventReceipt {
-    let url = try eventRecordURL(id: receiptId, root: receiptsRoot(eventRoot: eventRoot), kind: "event receipt")
-    guard FileManager.default.fileExists(atPath: url.path) else {
+    guard let receipt = try EventReceiptStore(eventRoot: eventRoot).load(receiptId) else {
       throw CLIUsageError("event receipt not found: \(receiptId)")
     }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: url))
+    return receipt
   }
 
   private func existingEventReceipt(receiptId: String, eventRoot: URL) throws -> PersistedEventReceipt? {
-    let url = try eventRecordURL(id: receiptId, root: receiptsRoot(eventRoot: eventRoot), kind: "event receipt")
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      return nil
-    }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: url))
+    try EventReceiptStore(eventRoot: eventRoot).load(receiptId)
   }
 
+  /// Newest first; see `EventReceiptStore.list`.
   private func listEventReceipts(eventRoot: URL) throws -> [PersistedEventReceipt] {
-    let root = receiptsRoot(eventRoot: eventRoot)
-    guard FileManager.default.fileExists(atPath: root.path) else {
-      return []
-    }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-      .filter { $0.pathExtension == "json" }
-      .map { try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: $0)) }
-      .sorted { $0.receiptId < $1.receiptId }
+    try EventReceiptStore(eventRoot: eventRoot).list()
   }
 
   private func repliesRoot(eventRoot: URL) -> URL {

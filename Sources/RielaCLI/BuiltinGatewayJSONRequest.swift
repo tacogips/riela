@@ -48,17 +48,7 @@ enum BuiltinGatewayJSONRequest {
     case nil:
       selection = .default
     case let .array(fields):
-      guard !fields.isEmpty, fields.count <= 256 else {
-        throw AdapterExecutionError(.policyBlocked, "\(addonName) selection requires 1 to 256 field paths")
-      }
-      let paths = try fields.map { value -> String in
-        guard case let .string(path) = value, path.utf8.count <= 4_096,
-              path.range(of: #"^[_A-Za-z][_0-9A-Za-z]*(\.[_A-Za-z][_0-9A-Za-z]*)*$"#, options: .regularExpression) != nil else {
-          throw AdapterExecutionError(.policyBlocked, "\(addonName) selection requires literal field paths")
-        }
-        return path
-      }
-      selection = .fields(paths)
+      selection = .fields(try fieldPaths(fields, addonName: addonName))
     case let .string(text):
       guard !text.isEmpty, text.utf8.count <= 65_536, !text.contains("{{") else {
         throw AdapterExecutionError(.policyBlocked, "\(addonName) selection must be a bounded literal selection set")
@@ -68,6 +58,21 @@ enum BuiltinGatewayJSONRequest {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) selection must be field paths or a literal selection set")
     }
     return GatewayOperationRequest(operation: operation, variables: values, selection: selection)
+  }
+
+  /// Shared literal field-path selection (`["posts.id", "pageInfo.nextToken"]`),
+  /// used by catalog-backed gateways and the X SDL codec.
+  static func fieldPaths(_ fields: [JSONValue], addonName: String) throws -> [String] {
+    guard !fields.isEmpty, fields.count <= 256 else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) selection requires 1 to 256 field paths")
+    }
+    return try fields.map { value -> String in
+      guard case let .string(path) = value, path.utf8.count <= 4_096,
+            path.range(of: #"^[_A-Za-z][_0-9A-Za-z]*(\.[_A-Za-z][_0-9A-Za-z]*)*$"#, options: .regularExpression) != nil else {
+        throw AdapterExecutionError(.policyBlocked, "\(addonName) selection requires literal field paths")
+      }
+      return path
+    }
   }
 
   static func renderedArguments(

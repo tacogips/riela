@@ -25,6 +25,29 @@ final class GarbageCollectionCommandTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains(#""enabled":true"#), result.stdout)
   }
 
+  func testManualGarbageCollectionRemovesAgedEventReceiptsAndKeepsRecentOnes() async throws {
+    let home = try makeRoot()
+    let receipts = home.appendingPathComponent(".riela/events/receipts", isDirectory: true)
+    try FileManager.default.createDirectory(at: receipts, withIntermediateDirectories: true)
+    let aged = receipts.appendingPathComponent("event-cron-aged.json")
+    let recent = receipts.appendingPathComponent("event-cron-recent.json")
+    try Data("{}".utf8).write(to: aged)
+    try Data("{}".utf8).write(to: recent)
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date(timeIntervalSince1970: 1_000)],
+      ofItemAtPath: aged.path
+    )
+
+    let result = await RielaCLIApplication().run(
+      ["gc", "--retention-days", "1", "--scope", "user", "--output", "json"],
+      environment: ["HOME": home.path]
+    )
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: aged.path), result.stdout)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: recent.path), result.stdout)
+  }
+
   func testManualGarbageCollectionDefaultsToOff() async throws {
     let home = try makeRoot()
 

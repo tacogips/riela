@@ -28,6 +28,24 @@ final class DataAddonTests: XCTestCase {
     } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidOutput) }
   }
 
+  func testContractSchemaStaysLiteralAndUnsupportedSchemaIsAnInputError() async throws {
+    // The schema mentions a template; rendering it would turn the enum into
+    // ["rendered"] and reject the literal value carried in the data.
+    let schema: JSONObject = ["type": .string("object"), "required": .array([.string("tag")]),
+      "properties": .object(["tag": .object(["type": .string("string"), "enum": .array([.string("{{marker}}")])])])]
+    let output = try await run("riela/json-compose", config: [
+      "payload": .object(["tag": .string("{{tag}}")]), "jsonSchema": .object(schema)
+    ], input: ["tag": .string("{{marker}}"), "marker": .string("rendered")])
+    XCTAssertEqual(output.payload, ["tag": .string("{{marker}}")])
+    for unsupported: JSONValue in [.object(["type": .string("string")]), .object(["if": .object([:])]), .string("{{schema}}")] {
+      do {
+        _ = try await run("riela/array-batch", config: ["items": .array([]), "jsonSchema": unsupported],
+          input: ["schema": .object(schema)])
+        XCTFail("unsupported contract schema accepted")
+      } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+    }
+  }
+
   func testBatchFlushesShortFinalBatchAndPreservesInputOrder() async throws {
     let rows = (0..<5).map { JSONValue.object(["id": .string(String($0))]) }
     let output = try await run("riela/array-batch", config: [

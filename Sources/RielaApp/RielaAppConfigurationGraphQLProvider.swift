@@ -67,24 +67,36 @@ final class RielaAppConfigurationGraphQLProvider: RielaConfigurationGraphQLProvi
   ) async throws -> GraphQLRielaConfiguration {
     try await withApp { app in
       try app.validateGraphQLConfigurationRevision(input.expectedRevision, expectedProfile: nil)
-      do {
-        if let configuredPort = input.configuredPort {
-          try app.webServerController?.updateConfiguredPort(configuredPort)
-        }
-        if let isEnabled = input.isEnabled {
-          if isEnabled {
-            await app.webServerController?.start()
-          } else {
-            await app.webServerController?.stop(explicit: true)
-          }
-        }
-      } catch {
+      // The menu used to show listener failures; the console is now the only
+      // place to start or stop the server, so failures must surface as errors.
+      guard let controller = app.webServerController else {
         throw RielaConfigurationGraphQLError(
-          code: "INVALID_CONFIGURATION",
-          message: error.localizedDescription
+          code: "SERVER_UNAVAILABLE",
+          message: app.webServerSetupError ?? "The local web server is unavailable in this app."
         )
       }
-      app.webRevision += 1
+      if let configuredPort = input.configuredPort {
+        do {
+          try controller.updateConfiguredPort(configuredPort)
+        } catch {
+          throw RielaConfigurationGraphQLError(code: "INVALID_CONFIGURATION", message: error.localizedDescription)
+        }
+        app.webRevision += 1
+      }
+      if let isEnabled = input.isEnabled {
+        if isEnabled {
+          await controller.start()
+        } else {
+          await controller.stop(explicit: true)
+        }
+        if case let .failed(message) = controller.state {
+          throw RielaConfigurationGraphQLError(
+            code: isEnabled ? "SERVER_START_FAILED" : "SERVER_STOP_FAILED",
+            message: message
+          )
+        }
+        app.webRevision += 1
+      }
       return try await app.graphQLConfiguration()
     }
   }

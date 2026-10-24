@@ -1,8 +1,12 @@
-import Crypto
 import Foundation
 import RielaCore
 import RielaEvents
 import RielaObservability
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 struct CronOverlapFire: Sendable {
   var bindingId: String
@@ -24,13 +28,94 @@ enum CronOverlapSubmitOutcome: Equatable, Sendable {
   case cancelPending
 }
 
+/// Receipt statuses written for cron overlap fires (design §7.1).
+enum CronOverlapReceiptStatus: String, Sendable {
+  case queued
+  case dispatched
+  case skipped
+  case discarded
+  case cancelled
+  case completed
+  case failed
+}
+
+/// Builders for the machine-readable reason strings of design §7.2. Every
+/// reason has the form `overlap-<kind>:<bindingId>[:<detail>]`.
+enum CronOverlapReason {
+  static func skip(_ bindingId: String, runningSessionId: String?) -> String {
+    "overlap-skip:\(bindingId):\(runningSessionId ?? "pending")"
+  }
+
+  static func concurrencyCap(_ bindingId: String, cap: Int) -> String {
+    "overlap-concurrency-cap:\(bindingId):\(cap)"
+  }
+
+  static func queued(_ bindingId: String, position: Int) -> String {
+    "overlap-queued:\(bindingId):\(position)"
+  }
+
+  static func queueFull(_ bindingId: String, cap: Int) -> String {
+    "overlap-queue-full:\(bindingId):\(cap)"
+  }
+
+  static func cancelRunning(_ bindingId: String, cancelledSessionId: String?) -> String {
+    "overlap-cancel-running:\(bindingId):\(cancelledSessionId ?? "pending")"
+  }
+
+  static func cancelled(_ bindingId: String, supersedingReceiptId: String) -> String {
+    "overlap-cancelled:\(bindingId):\(supersedingReceiptId)"
+  }
+
+  static func shutdownCancelled(_ bindingId: String) -> String {
+    "overlap-shutdown-cancelled:\(bindingId)"
+  }
+
+  static func cancelTimeout(_ bindingId: String, sessionId: String?) -> String {
+    "overlap-cancel-timeout:\(bindingId):\(sessionId ?? "pending")"
+  }
+
+  static func cancelPending(_ bindingId: String) -> String {
+    "overlap-cancel-pending:\(bindingId)"
+  }
+
+  static func superseded(_ bindingId: String) -> String {
+    "overlap-superseded:\(bindingId)"
+  }
+
+  static func shutdownDiscarded(_ bindingId: String) -> String {
+    "overlap-shutdown-discarded:\(bindingId)"
+  }
+
+  static func abandoned(_ bindingId: String, sessionId: String? = nil) -> String {
+    sessionId.map { "overlap-abandoned:\(bindingId):\($0)" } ?? "overlap-abandoned:\(bindingId)"
+  }
+
+  /// The finite kind of a reason (`overlap-skip`, `routine-disabled`, ...),
+  /// i.e. the part before the first `:`. Telemetry exports only the kind; the
+  /// binding id travels as `binding.id` and session ids stay on the receipt.
+  static func kind(of reason: String) -> String {
+    String(reason.prefix { $0 != ":" })
+  }
+}
+
 actor CronOverlapDispatcher {
+  /// Why the dispatcher requested cancellation of a run.
+  private enum CancelCause {
+    /// A `cancelRunning` fire requested it; the id is the receipt of the
+    /// newest fire that superseded the run.
+    case superseded(receiptId: String)
+    /// Signal or error shutdown requested it; no fire supersedes the run.
+    case shutdown
+  }
+
   private struct RunHandle {
     var receiptId: String
     var task: Task<Void, Never>
     var sessionId: String?
     var fire: CronOverlapFire
-    var cancelRequested: Bool
+    var cancelCause: CancelCause?
+
+    var cancelRequested: Bool { cancelCause != nil }
   }
 
   private struct Scope {
@@ -46,10 +131,13 @@ actor CronOverlapDispatcher {
   private let policies: [String: EffectiveEventOverlapPolicy]
   private let clock: any EventServeClock
   private let cancelSettleTimeout: Duration
+  private let receipts: EventReceiptStore
+  /// Stamped on every receipt this dispatcher writes (`<pid>-<random>`).
+  nonisolated let serveInstanceId: String
   private var scopes: [String: Scope] = [:]
   private var drainWaiters: [CheckedContinuation<Void, Never>] = []
   private var drainAbandoned = false
-  private var shutdownWaiter: CheckedContinuation<Void, Never>?
+  private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
   private var shutdownToken = 0
 
   init(
@@ -66,6 +154,21 @@ actor CronOverlapDispatcher {
     self.policies = policies
     self.clock = clock
     self.cancelSettleTimeout = cancelSettleTimeout
+    self.receipts = EventReceiptStore(eventRoot: eventRoot)
+    let instanceId = "\(getpid())-\(UUID().uuidString.prefix(8).lowercased())"
+    self.serveInstanceId = instanceId
+    let abandoned = Self.reconcileAbandonedReceipts(
+      store: EventReceiptStore(eventRoot: eventRoot), ownInstanceId: instanceId, now: clock.now()
+    )
+    if !abandoned.isEmpty {
+      Task { [server] in
+        for receipt in abandoned {
+          await server.telemetry.recordLog(Self.overlapTelemetryLog(
+            bindingId: receipt.bindingId ?? "", policy: receipt.overlapPolicy ?? "", reason: receipt.reason ?? ""
+          ))
+        }
+      }
+    }
   }
 
   nonisolated func effectivePolicy(bindingId: String) -> EffectiveEventOverlapPolicy {
@@ -83,11 +186,13 @@ actor CronOverlapDispatcher {
     }
     switch policy.policy {
     case .skip:
-      let sid = scope.running.first?.sessionId ?? "pending"
-      return recordNonStart(fire, policy: policy, status: "skipped", reason: "overlap-skip:\(fire.bindingId):\(sid)")
+      let reason = CronOverlapReason.skip(fire.bindingId, runningSessionId: scope.running.first?.sessionId)
+      return recordNonStart(fire, policy: policy, status: .skipped, reason: reason)
     case .concurrent:
       if let cap = policy.maxConcurrentRuns, scope.running.count >= cap {
-        return recordNonStart(fire, policy: policy, status: "skipped", reason: "overlap-concurrency-cap:\(fire.bindingId):\(cap)")
+        return recordNonStart(
+          fire, policy: policy, status: .skipped, reason: CronOverlapReason.concurrencyCap(fire.bindingId, cap: cap)
+        )
       }
       scopes[fire.bindingId] = scope
       start(fire, policy: policy)
@@ -95,27 +200,35 @@ actor CronOverlapDispatcher {
     case .queue:
       let cap = policy.maxQueuedRuns ?? defaultEventOverlapMaxQueuedRuns
       guard scope.queue.count < cap else {
-        return recordNonStart(fire, policy: policy, status: "skipped", reason: "overlap-queue-full:\(fire.bindingId):\(cap)")
+        return recordNonStart(
+          fire, policy: policy, status: .skipped, reason: CronOverlapReason.queueFull(fire.bindingId, cap: cap)
+        )
       }
       scope.queue.append(fire)
       let position = scope.queue.count
       scopes[fire.bindingId] = scope
-      let reason = "overlap-queued:\(fire.bindingId):\(position)"
-      writeReceipt(fire, receiptId: makeReceiptId(fire), status: "queued", policy: policy, reason: reason)
+      let reason = CronOverlapReason.queued(fire.bindingId, position: position)
+      writeReceipt(fire, receiptId: receiptId(fire), status: .queued, policy: policy, reason: reason)
+      emitOverlapTelemetry(fire, policy: policy, reason: reason)
       return .queued(position: position)
     case .cancelRunning:
       let superseded = scope.pendingAfterCancel
       if let superseded {
-        _ = recordNonStart(superseded, policy: policy, status: "skipped", reason: "overlap-superseded:\(fire.bindingId)")
+        _ = recordNonStart(superseded, policy: policy, status: .skipped, reason: CronOverlapReason.superseded(fire.bindingId))
       }
+      let supersedingReceiptId = receiptId(fire)
       for index in scope.running.indices {
-        scope.running[index].cancelRequested = true
+        // Only a fire-requested cancel points at the newest superseding fire;
+        // the run keeps that id even if the pending fire later times out.
+        if case .shutdown? = scope.running[index].cancelCause { continue }
+        scope.running[index].cancelCause = .superseded(receiptId: supersedingReceiptId)
         scope.running[index].task.cancel()
       }
       scope.pendingAfterCancel = fire
       scopes[fire.bindingId] = scope
-      writeReceipt(fire, receiptId: makeReceiptId(fire), status: "queued", policy: policy,
-                   reason: "overlap-cancel-pending:\(fire.bindingId)")
+      let reason = CronOverlapReason.cancelPending(fire.bindingId)
+      writeReceipt(fire, receiptId: supersedingReceiptId, status: .queued, policy: policy, reason: reason)
+      emitOverlapTelemetry(fire, policy: policy, reason: reason)
       // A superseding fire inherits the running settle bound instead of restarting it.
       if superseded == nil {
         scope.settleGeneration += 1
@@ -128,6 +241,13 @@ actor CronOverlapDispatcher {
       }
       return .cancelPending
     }
+  }
+
+  /// Records a fire the routine gate stopped at submit time, exactly like the
+  /// same gate stopping a deferred start. It is not an overlap outcome, so the
+  /// caller still does not count the tick toward `--limit` (design §6.3).
+  func recordRoutineGateSkip(_ fire: CronOverlapFire, reason: String) {
+    _ = recordNonStart(fire, policy: effectivePolicy(bindingId: fire.bindingId), status: .skipped, reason: reason)
   }
 
   func runningSessionIds(bindingId: String) -> [String?] {
@@ -158,16 +278,18 @@ actor CronOverlapDispatcher {
       guard var scope = scopes[bindingId] else { continue }
       let policy = effectivePolicy(bindingId: bindingId)
       for fire in scope.queue {
-        _ = recordNonStart(fire, policy: policy, status: "discarded", reason: "overlap-shutdown-discarded:\(bindingId)")
+        _ = recordNonStart(fire, policy: policy, status: .discarded, reason: CronOverlapReason.shutdownDiscarded(bindingId))
       }
       scope.queue.removeAll()
       if let pending = scope.pendingAfterCancel {
-        _ = recordNonStart(pending, policy: policy, status: "discarded", reason: "overlap-shutdown-discarded:\(bindingId)")
+        _ = recordNonStart(pending, policy: policy, status: .discarded, reason: CronOverlapReason.shutdownDiscarded(bindingId))
         scope.pendingAfterCancel = nil
       }
       scope.settleGeneration += 1
       for index in scope.running.indices {
-        scope.running[index].cancelRequested = true
+        if scope.running[index].cancelCause == nil {
+          scope.running[index].cancelCause = .shutdown
+        }
         scope.running[index].task.cancel()
       }
       scopes[bindingId] = scope
@@ -176,8 +298,8 @@ actor CronOverlapDispatcher {
     shutdownToken += 1
     let token = shutdownToken
     await withCheckedContinuation { continuation in
-      shutdownWaiter = continuation
-      if !hasRunning { resumeShutdownWaiter() }
+      shutdownWaiters.append(continuation)
+      if !hasRunning { resumeShutdownWaiters() }
       Task.detached { [clock, cancelSettleTimeout, weak self] in
         try? await clock.sleep(for: cancelSettleTimeout)
         await self?.shutdownWaitTimedOut(token: token)
@@ -196,31 +318,43 @@ actor CronOverlapDispatcher {
   private func start(
     _ fire: CronOverlapFire,
     policy: EffectiveEventOverlapPolicy,
-    status: String = "dispatched",
     reason: String? = nil,
     cancelledSessionIds: [String]? = nil
   ) {
-    let id = makeReceiptId(fire)
-    writeReceipt(fire, receiptId: id, status: status, policy: policy, reason: reason, cancelledSessionIds: cancelledSessionIds)
+    let id = receiptId(fire)
+    writeReceipt(
+      fire, receiptId: id, status: .dispatched, policy: policy, reason: reason, cancelledSessionIds: cancelledSessionIds
+    )
     let dispatcher = self
     let task = Task { [dispatcher, server, parsed] in
+      // The session id reaches the actor through its own hop task. `finish`
+      // waits for every hop first, so a run that ends right after
+      // `session_started` still records its real session id (design §6.5).
+      let hops = SessionStartedHops()
       let request = EventWorkflowRunRequest(
         workflowName: fire.workflowName,
         runtimeVariables: fire.runtimeVariables,
         parsed: parsed,
         onSessionStarted: { sessionId in
-          Task { await dispatcher.recordSessionStarted(receiptId: id, sessionId: sessionId, bindingId: fire.bindingId) }
+          hops.append(Task {
+            await dispatcher.recordSessionStarted(receiptId: id, sessionId: sessionId, bindingId: fire.bindingId)
+          })
         }
       )
+      let result: WorkflowRunResult?
+      let failure: String?
       do {
-        let result = try await server.runEventWorkflow(request)
-        await dispatcher.finish(receiptId: id, bindingId: fire.bindingId, result: result, error: nil)
+        result = try await server.runEventWorkflow(request)
+        failure = nil
       } catch {
-        await dispatcher.finish(receiptId: id, bindingId: fire.bindingId, result: nil, error: String(describing: error))
+        result = nil
+        failure = String(describing: error)
       }
+      await hops.waitAll()
+      await dispatcher.finish(receiptId: id, bindingId: fire.bindingId, result: result, error: failure)
     }
     var scope = scopes[fire.bindingId] ?? Scope()
-    scope.running.append(RunHandle(receiptId: id, task: task, sessionId: nil, fire: fire, cancelRequested: false))
+    scope.running.append(RunHandle(receiptId: id, task: task, sessionId: nil, fire: fire, cancelCause: nil))
     scopes[fire.bindingId] = scope
   }
 
@@ -232,7 +366,7 @@ actor CronOverlapDispatcher {
     scope.running.remove(at: index)
     scopes[bindingId] = scope
     if let result {
-      updateReceipt(receiptId, status: "completed", workflowExecutionId: result.session.sessionId)
+      updateReceipt(receiptId, status: .completed, workflowExecutionId: result.session.sessionId)
       if let routineId = handle.fire.routineId {
         routineStore(handle.fire).record(routineId: routineId, at: handle.fire.firedAt)
       }
@@ -240,10 +374,16 @@ actor CronOverlapDispatcher {
         eventRoot: eventRoot, status: "ready", pollingTarget: handle.fire.sourceId,
         lastWorkflowName: handle.fire.workflowName
       )
-    } else if handle.cancelRequested {
-      updateReceipt(receiptId, status: "cancelled", reason: "overlap-cancelled:\(bindingId):\(scope.pendingAfterCancel.map { makeReceiptId($0) } ?? "pending")")
+    } else if let cause = handle.cancelCause {
+      let reason = switch cause {
+      case let .superseded(supersedingReceiptId):
+        CronOverlapReason.cancelled(bindingId, supersedingReceiptId: supersedingReceiptId)
+      case .shutdown:
+        CronOverlapReason.shutdownCancelled(bindingId)
+      }
+      updateReceipt(receiptId, status: .cancelled, reason: reason)
     } else {
-      updateReceipt(receiptId, status: "failed", reason: error)
+      updateReceipt(receiptId, status: .failed, reason: error)
     }
     // Advance before any suspension so a reentrant submit cannot overtake the FIFO
     // queue; record the failure before waking drain so serve reports it.
@@ -255,7 +395,7 @@ actor CronOverlapDispatcher {
       )
     }
     resumeDrainWaitersIfNeeded()
-    if !hasRunning { resumeShutdownWaiter() }
+    if !hasRunning { resumeShutdownWaiters() }
   }
 
   private func advanceDeferred(
@@ -269,45 +409,54 @@ actor CronOverlapDispatcher {
       scope.pendingAfterCancel = nil
       scope.settleGeneration += 1
       scopes[bindingId] = scope
-      guard !startDeferredIfRoutineInactive(pending, policy: policy) else {
+      guard !skipDeferredIfRoutineInactive(pending, policy: policy) else {
         await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
         return
       }
-      start(pending, policy: policy, status: "dispatched", reason: "overlap-cancel-running:\(bindingId):\(ids.first ?? "pending")", cancelledSessionIds: ids)
+      start(
+        pending, policy: policy,
+        reason: CronOverlapReason.cancelRunning(bindingId, cancelledSessionId: ids.first),
+        cancelledSessionIds: ids
+      )
       return
     }
     guard scope.running.isEmpty, scope.pendingAfterCancel == nil, !scope.queue.isEmpty else { return }
     let next = scope.queue.removeFirst()
     scopes[bindingId] = scope
-    guard !startDeferredIfRoutineInactive(next, policy: policy) else {
+    guard !skipDeferredIfRoutineInactive(next, policy: policy) else {
       await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
       return
     }
     start(next, policy: policy)
   }
 
-  private func startDeferredIfRoutineInactive(_ fire: CronOverlapFire, policy: EffectiveEventOverlapPolicy) -> Bool {
+  /// Returns true when the routine gate stopped the deferred fire (it is then
+  /// recorded `skipped` with the gate's reason).
+  private func skipDeferredIfRoutineInactive(_ fire: CronOverlapFire, policy: EffectiveEventOverlapPolicy) -> Bool {
     guard let routineId = fire.routineId else { return false }
     let gate = server.routineDispatchGate(routineId: routineId, storeRoot: fire.routineStoreRoot, parsed: parsed)
     guard let reason = gate.skipReason else { return false }
-    _ = recordNonStart(fire, policy: policy, status: "skipped", reason: reason)
+    _ = recordNonStart(fire, policy: policy, status: .skipped, reason: reason)
     return true
   }
 
   private func settleTimedOut(bindingId: String, generation: Int) {
     guard var scope = scopes[bindingId], scope.settleGeneration == generation,
       let pending = scope.pendingAfterCancel else { return }
-    let sid = scope.running.first?.sessionId ?? "pending"
+    let sid = scope.running.first?.sessionId
     scope.pendingAfterCancel = nil
     scope.settleGeneration += 1
     scopes[bindingId] = scope
-    _ = recordNonStart(pending, policy: effectivePolicy(bindingId: bindingId), status: "skipped", reason: "overlap-cancel-timeout:\(bindingId):\(sid)")
+    _ = recordNonStart(
+      pending, policy: effectivePolicy(bindingId: bindingId), status: .skipped,
+      reason: CronOverlapReason.cancelTimeout(bindingId, sessionId: sid)
+    )
     resumeDrainWaitersIfNeeded()
   }
 
   private func shutdownWaitTimedOut(token: Int) {
     guard token == shutdownToken else { return }
-    resumeShutdownWaiter()
+    resumeShutdownWaiters()
   }
 
   private func recordSessionStarted(receiptId: String, sessionId: String, bindingId: String) {
@@ -320,52 +469,58 @@ actor CronOverlapDispatcher {
   private func recordNonStart(
     _ fire: CronOverlapFire,
     policy: EffectiveEventOverlapPolicy,
-    status: String,
+    status: CronOverlapReceiptStatus,
     reason: String
   ) -> CronOverlapSubmitOutcome {
-    writeReceipt(fire, receiptId: makeReceiptId(fire), status: status, policy: policy, reason: reason)
+    writeReceipt(fire, receiptId: receiptId(fire), status: status, policy: policy, reason: reason)
     try? server.writeServeRecord(eventRoot: eventRoot, status: "ready", pollingTarget: fire.sourceId, lastIgnoredReason: reason)
-    Task {
-      await server.telemetry.recordLog(RielaTelemetryLog(name: "riela.events.cron.overlap", attributes: [
-        "binding.id": fire.bindingId,
-        "overlap.policy": policy.policy.rawValue,
-        "overlap.reason": reason
-      ]))
-    }
+    emitOverlapTelemetry(fire, policy: policy, reason: reason)
     return .skipped(reason: reason)
   }
 
-  private func makeReceiptId(_ fire: CronOverlapFire) -> String {
-    let data = Data((fire.sourceId + "\u{0}" + fire.envelope.eventId + "\u{0}" + fire.bindingId).utf8)
-    return "event-cron-" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  /// One `riela.events.cron.overlap` log per non-start outcome, including
+  /// `queued` and `cancel-pending` (design §7.3).
+  private func emitOverlapTelemetry(_ fire: CronOverlapFire, policy: EffectiveEventOverlapPolicy, reason: String) {
+    Task { [server] in
+      await server.telemetry.recordLog(Self.overlapTelemetryLog(
+        bindingId: fire.bindingId, policy: policy.policy.rawValue, reason: reason
+      ))
+    }
+  }
+
+  static func overlapTelemetryLog(bindingId: String, policy: String, reason: String) -> RielaTelemetryLog {
+    RielaTelemetryLog(name: "riela.events.cron.overlap", attributes: [
+      "binding.id": bindingId,
+      "overlap.policy": policy,
+      "overlap.reason": CronOverlapReason.kind(of: reason)
+    ])
+  }
+
+  private func receiptId(_ fire: CronOverlapFire) -> String {
+    cronOverlapReceiptId(sourceId: fire.sourceId, eventId: fire.envelope.eventId, bindingId: fire.bindingId)
   }
 
   private func writeReceipt(
     _ fire: CronOverlapFire,
     receiptId: String,
-    status: String,
+    status: CronOverlapReceiptStatus,
     policy: EffectiveEventOverlapPolicy,
     reason: String? = nil,
     cancelledSessionIds: [String]? = nil
   ) {
     do {
-      let directory = eventRoot.appendingPathComponent("receipts", isDirectory: true)
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
       let receipt = PersistedEventReceipt(
         receiptId: receiptId, sourceId: fire.sourceId, eventId: fire.envelope.eventId,
-        status: status, duplicate: false, workflowExecutionId: nil,
+        status: status.rawValue, duplicate: false, workflowExecutionId: nil,
         workflowName: fire.workflowName, replayedFromReceiptId: nil, reason: reason,
         updatedAt: clock.now(), envelope: fire.envelope, readOnlyTriggers: nil, readOnlyDiagnostics: nil,
         bindingId: fire.bindingId, overlapPolicy: policy.policy.rawValue,
         overlapPolicySource: policy.source.rawValue, cancelledSessionIds: cancelledSessionIds,
         coalescedTickCount: fire.coalescedTickCount == 0 ? nil : fire.coalescedTickCount
       )
-      let encoder = JSONEncoder()
-      encoder.dateEncodingStrategy = .iso8601
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      let url = directory.appendingPathComponent(receiptId + ".json")
-      try encoder.encode(receipt).write(to: url, options: .atomic)
-      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+      var stamped = receipt
+      stamped.serveInstanceId = serveInstanceId
+      try receipts.save(stamped)
     } catch {
       try? server.writeServeRecord(eventRoot: eventRoot, status: "ready", detail: "cron receipt write failed: \(error)")
     }
@@ -373,23 +528,20 @@ actor CronOverlapDispatcher {
 
   private func updateReceipt(
     _ receiptId: String,
-    status: String? = nil,
+    status: CronOverlapReceiptStatus? = nil,
     reason: String? = nil,
     workflowExecutionId: String? = nil
   ) {
-    let url = eventRoot.appendingPathComponent("receipts", isDirectory: true).appendingPathComponent(receiptId + ".json")
     do {
-      let decoder = JSONDecoder()
-      decoder.dateDecodingStrategy = .iso8601
-      var receipt = try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: url))
-      if let status { receipt.status = status }
+      guard var receipt = try receipts.load(receiptId) else {
+        throw CLIUsageError("event receipt not found: \(receiptId)")
+      }
+      if let status { receipt.status = status.rawValue }
       if let reason { receipt.reason = reason }
       if let workflowExecutionId { receipt.workflowExecutionId = workflowExecutionId }
       receipt.updatedAt = clock.now()
-      let encoder = JSONEncoder()
-      encoder.dateEncodingStrategy = .iso8601
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      try encoder.encode(receipt).write(to: url, options: .atomic)
+      receipt.serveInstanceId = receipt.serveInstanceId ?? serveInstanceId
+      try receipts.save(receipt)
     } catch {
       try? server.writeServeRecord(eventRoot: eventRoot, status: "ready", detail: "cron receipt update failed: \(error)")
     }
@@ -411,10 +563,71 @@ actor CronOverlapDispatcher {
     waiters.forEach { $0.resume() }
   }
 
-  private func resumeShutdownWaiter() {
-    guard let waiter = shutdownWaiter else { return }
-    shutdownWaiter = nil
-    waiter.resume()
+  private func resumeShutdownWaiters() {
+    let waiters = shutdownWaiters
+    shutdownWaiters.removeAll()
+    waiters.forEach { $0.resume() }
+  }
+
+  /// Queued fires live only in the serve process (design §6.7), so after
+  /// `kill -9` or a shutdown past its bound their receipts would stay
+  /// `queued`/`dispatched` forever. At startup, every binding-scoped receipt
+  /// in one of those states that another, no longer running serve instance
+  /// stamped (or that predates stamping) is closed: `queued` becomes
+  /// `discarded` and `dispatched` becomes `failed`, both with
+  /// `overlap-abandoned:<bindingId>[:<sessionId>]`. Receipts stamped by a
+  /// live process (including this one) are left alone. The runtime session
+  /// referenced by `workflowExecutionId` keeps its own terminal state.
+  static func reconcileAbandonedReceipts(
+    store: EventReceiptStore,
+    ownInstanceId: String,
+    now: Date
+  ) -> [PersistedEventReceipt] {
+    var reconciled: [PersistedEventReceipt] = []
+    for entry in store.listSkippingUnreadable() {
+      guard let bindingId = entry.bindingId,
+            let status = CronOverlapReceiptStatus(rawValue: entry.status),
+            status == .queued || status == .dispatched,
+            entry.serveInstanceId != ownInstanceId,
+            !isServeInstanceAlive(entry.serveInstanceId) else { continue }
+      var receipt = entry
+      if status == .queued {
+        receipt.status = CronOverlapReceiptStatus.discarded.rawValue
+        receipt.reason = CronOverlapReason.abandoned(bindingId)
+      } else {
+        receipt.status = CronOverlapReceiptStatus.failed.rawValue
+        receipt.reason = CronOverlapReason.abandoned(bindingId, sessionId: receipt.workflowExecutionId ?? "pending")
+      }
+      receipt.updatedAt = now
+      guard (try? store.save(receipt)) != nil else { continue }
+      reconciled.append(receipt)
+    }
+    return reconciled
+  }
+
+  private static func isServeInstanceAlive(_ instanceId: String?) -> Bool {
+    guard let instanceId,
+          let pidText = instanceId.split(separator: "-").first,
+          let pid = pid_t(pidText), pid > 0 else { return false }
+    return kill(pid, 0) == 0 || errno == EPERM
+  }
+}
+
+/// Collects the per-run session-id hop tasks so the run awaits them before
+/// reporting completion.
+private final class SessionStartedHops: @unchecked Sendable {
+  private let lock = NSLock()
+  private var tasks: [Task<Void, Never>] = []
+
+  func append(_ task: Task<Void, Never>) {
+    lock.withLock { tasks.append(task) }
+  }
+
+  func waitAll() async {
+    let pending = lock.withLock { tasks }
+    for task in pending {
+      await task.value
+    }
   }
 }
 

@@ -68,8 +68,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       throw AdapterExecutionError(.policyBlocked, "addon.container currently requires a built-in add-on")
     }
     if let gateway = ContainerGatewayAddon(rawValue: input.addon.name) {
-      let admission = try await SandboxExecutionAdmission.acquire(sandbox?.admission, environment: environment, deadline: context.deadline)
-      defer { withExtendedLifetime(admission) {} }
+      // Static refusals come before admission so they never wait for a slot.
       if let sandbox {
         guard sandbox.backend == .container, sandbox.credentials.isEmpty else {
           throw AdapterExecutionError(.policyBlocked, "legacy gateway reader images require container isolation; use the SDK add-on or sandbox run with a host reader for native isolation")
@@ -88,8 +87,12 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
         })
       }
       gatewayInput.addon.config = config
-      return try await ContainerGatewayAddonExecutor(environment: environment, workingDirectory: workingDirectory,
-        runner: runner, hostPlatform: hostPlatform).execute(gatewayInput, gateway: gateway, context: context)
+      let executor = ContainerGatewayAddonExecutor(environment: environment, workingDirectory: workingDirectory,
+        runner: runner, hostPlatform: hostPlatform)
+      return try await SandboxExecutionAdmission.withLease(sandbox?.admission, environment: environment,
+        deadline: context.deadline) {
+        try await executor.execute(gatewayInput, gateway: gateway, context: context)
+      }
     }
     try validateControlIsolation(settings: settings)
     if let sandbox { try validateSandboxControlIsolation(sandbox) }
@@ -182,14 +185,24 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     try transportStore.markAcknowledged(token)
   }
 
+  /// One busy or failing invocation must not skip the others. Records are
+  /// removed only after every invocation succeeded, so a later re-drive still
+  /// finds the ones that failed; the first failure is rethrown.
   func recordTerminalFinalization(workflowExecutionId: String, stepExecutionIds: [String]) async throws {
+    var firstFailure: (any Error)?
     for invocation in try transportStore.invocations(workflowExecutionId: workflowExecutionId) {
-      let reply = try await run(.init(operation: .terminal, workflowExecutionId: workflowExecutionId,
-        stepExecutionIds: stepExecutionIds, deadline: Date().addingTimeInterval(60)), invocation: invocation)
-      _ = try reply.validatedOutput(for: .terminal)
+      do {
+        let reply = try await run(.init(operation: .terminal, workflowExecutionId: workflowExecutionId,
+          stepExecutionIds: stepExecutionIds, deadline: Date().addingTimeInterval(60)), invocation: invocation)
+        _ = try reply.validatedOutput(for: .terminal)
+      } catch {
+        if error is CancellationError { throw error }
+        firstFailure = firstFailure ?? error
+      }
     }
     try await (primary as? any WorkflowAddonTerminalRecording)?.recordTerminalFinalization(
       workflowExecutionId: workflowExecutionId, stepExecutionIds: stepExecutionIds)
+    if let firstFailure { throw firstFailure }
     try transportStore.remove(workflowExecutionId: workflowExecutionId)
   }
 
@@ -201,9 +214,13 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     // The startup reserve belongs to execution. Control workers retain the
     // same pool and wait bound within their own fixed finalization deadline.
     if request.operation != .execute { policy?.minimumRemainingSeconds = 0 }
-    let admission = try await SandboxExecutionAdmission.acquire(policy,
-      environment: environment, deadline: request.deadline)
-    defer { withExtendedLifetime(admission) {} }
+    return try await SandboxExecutionAdmission.withLease(policy, environment: environment, deadline: request.deadline) {
+      try await runAdmitted(request, invocation: invocation)
+    }
+  }
+
+  /// Everything from bridge setup to reply decoding runs inside the lease.
+  private func runAdmitted(_ request: BuiltinAddonContainerRequest, invocation: Invocation) async throws -> BuiltinAddonContainerReply {
     var wireRequest = request
     let nativeBridge: NativeAppleAddonBridge?
     if let input = request.input, AppleGatewayContainerCapability(addonName: input.addon.name).isSupported {
@@ -271,7 +288,8 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       result = try await runner.run(configuration: configuration, stdin: stdin + "\n", deadline: request.deadline)
     }
     guard result.terminationStatus == 0 else {
-      throw AdapterExecutionError(.providerError, "isolated built-in worker failed with exit code \(result.terminationStatus)")
+      throw isolatedWorkerExitError(status: result.terminationStatus, deadline: request.deadline,
+        subject: "built-in add-on worker")
     }
     guard result.stdout.utf8.count <= BuiltinAddonContainerRequest.maximumRecordBytes,
           result.stdout.split(whereSeparator: \.isNewline).count == 1 else {

@@ -1,0 +1,6 @@
+{
+  "id": "cache-maintenance-hourly-cron",
+  "kind": "cron",
+  "schedule": "0 17 * * * *",
+  "timezone": "UTC"
+}

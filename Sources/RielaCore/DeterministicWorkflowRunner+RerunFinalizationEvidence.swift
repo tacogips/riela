@@ -1,51 +1,68 @@
 import Foundation
 
-private struct RerunFinalizationGraphEdge: Hashable {
-  var fromStepId: String
-  var toStepId: String
-  var label: String?
+/// The result of the protected finalization preflight for one rerun target:
+/// the source executions to bind, or the evidence steps that cannot be bound.
+private struct RerunFinalizationEvidencePlan {
+  var boundExecutionIds: Set<String>
+  var failingStepIds: Set<String>
 }
 
 extension DeterministicWorkflowRunner {
+  /// Validates that a protected-workflow rerun from `targetStepId` can satisfy
+  /// git finalization evidence from `available`. Throws the documented
+  /// preflight rejection; a no-op for unprotected workflows.
+  static func validateRerunFinalizationEvidence(
+    workflow: WorkflowDefinition,
+    source: WorkflowSession,
+    targetStepId: String,
+    available: [WorkflowStepExecution]
+  ) throws {
+    _ = try rerunFinalizationEvidenceExecutions(
+      workflow: workflow, source: source, targetStepId: targetStepId, available: available
+    )
+  }
+
+  /// The source executions a plain rerun binds as finalization evidence (D3),
+  /// in source order, after the same preflight `validateRerunFinalizationEvidence`
+  /// runs. Empty for unprotected workflows.
   static func rerunFinalizationEvidenceExecutions(
     workflow: WorkflowDefinition,
     source: WorkflowSession,
     targetStepId: String,
     available: [WorkflowStepExecution]
   ) throws -> [WorkflowStepExecution] {
-    guard let terminalStep = workflow.steps.first(where: { $0.id == "workflow-output" }),
-          let policy = gitFinalizationEvidencePolicy(workflow: workflow, terminalStep: terminalStep) else {
+    guard let plan = rerunFinalizationEvidencePlan(
+      workflow: workflow, source: source, targetStepId: targetStepId, available: available
+    ) else {
       return []
     }
-
-    let graphEdges = workflow.steps.flatMap { step in
-      (step.transitions ?? []).flatMap { transition -> [RerunFinalizationGraphEdge] in
-        var edges: [RerunFinalizationGraphEdge] = []
-        let destination = transition.toWorkflowId == nil ? transition.toStepId : transition.resumeStepId
-        if let destination {
-          edges.append(RerunFinalizationGraphEdge(fromStepId: step.id, toStepId: destination, label: transition.label))
-        }
-        if let joinStepId = transition.fanout?.joinStepId {
-          edges.append(RerunFinalizationGraphEdge(fromStepId: step.id, toStepId: joinStepId, label: nil))
-        }
-        return edges
-      }
+    if !plan.failingStepIds.isEmpty {
+      let workflowOrder = workflow.steps.map(\.id).filter { plan.failingStepIds.contains($0) }
+      // A failing id that is no longer a workflow step (an upgraded workflow)
+      // still has to be reported; never index into an empty ordering.
+      let orderedFailures = workflowOrder + plan.failingStepIds.subtracting(workflowOrder).sorted()
+      let firstFailure = orderedFailures.first ?? targetStepId
+      throw DeterministicWorkflowRunnerError.rerunValidation(
+        "cannot rerun \(targetStepId): protected git finalization evidence for \(orderedFailures.joined(separator: ",")) " +
+          "is not bound in the source session; rerun from \(firstFailure) or use session resume --retry-failed-step"
+      )
     }
-    let edgesBySource = Dictionary(grouping: graphEdges, by: \.fromStepId)
-    let planningPreparationStepIds = Set(workflow.steps.compactMap { step in
-      step.transitions?.contains(where: { $0.toStepId == policy.commitStepId }) == true ? step.id : nil
-    })
-    let planningRoutes = Set(workflow.steps.flatMap { step in
-      (step.transitions ?? []).compactMap { transition -> RerunFinalizationGraphEdge? in
-        guard policy.planningModeStepIds.contains(step.id),
-              planningPreparationStepIds.contains(transition.toStepId),
-              transition.label?.contains("planning_only") == true,
-              let destination = transition.toWorkflowId == nil ? transition.toStepId : transition.resumeStepId else {
-          return nil
-        }
-        return RerunFinalizationGraphEdge(fromStepId: step.id, toStepId: destination, label: transition.label)
-      }
-    })
+    return available.filter { plan.boundExecutionIds.contains($0.executionId) }
+  }
+
+  private static func rerunFinalizationEvidencePlan(
+    workflow: WorkflowDefinition,
+    source: WorkflowSession,
+    targetStepId: String,
+    available: [WorkflowStepExecution]
+  ) -> RerunFinalizationEvidencePlan? {
+    guard let terminalStep = workflow.steps.first(where: { $0.id == WorkflowGitFinalizationEvidencePolicy.terminalStepId }),
+          let policy = gitFinalizationEvidencePolicy(workflow: workflow, terminalStep: terminalStep) else {
+      return nil
+    }
+
+    let edgesBySource = Dictionary(grouping: rerunGraphEdges(workflow: workflow), by: \.fromStepId)
+    let planningRoutes = Set(policy.planningRoutes(in: workflow))
 
     func reachable(from start: String, removing removed: String? = nil, filteringPlanningRoutes: Bool = false) -> Set<String> {
       guard start != removed else { return [] }
@@ -81,21 +98,12 @@ extension DeterministicWorkflowRunner {
       return latest
     }
 
-    let modeStepIds = Set(policy.planningModeStepIds)
-      .union(["step6-implement"])
-      .union(policy.implementationReviewStepId.map { [$0] } ?? [])
+    let modeStepIds = policy.modeStepIds(in: workflow)
     let modeExecutions = modeStepIds.compactMap { stepId -> WorkflowStepExecution? in
       guard !reexecuted.contains(stepId) else { return nil }
       return latestBindable(stepId)
     }
-    let gitStepIds = Set([
-      policy.commitStepId,
-      policy.pushStepId,
-      policy.integrationStepId,
-      policy.planCommitStepId,
-      policy.planPushStepId
-    ].compactMap { $0 })
-    let bindableGitExecutions = gitStepIds.compactMap(latestBindable)
+    let bindableGitExecutions = policy.gitEvidenceStepIds.compactMap(latestBindable)
 
     var failingStepIds: Set<String> = []
     for stepId in modeStepIds where !reexecuted.contains(stepId) {
@@ -129,16 +137,9 @@ extension DeterministicWorkflowRunner {
       }
     }
 
-    if !failingStepIds.isEmpty {
-      let orderedFailures = workflow.steps.map(\.id).filter { failingStepIds.contains($0) }
-      let firstFailure = orderedFailures[0]
-      throw DeterministicWorkflowRunnerError.rerunValidation(
-        "cannot rerun \(targetStepId): protected git finalization evidence for \(orderedFailures.joined(separator: ",")) " +
-          "is not bound in the source session; rerun from \(firstFailure) or use session resume --retry-failed-step"
-      )
-    }
-
-    let boundIds = Set(modeExecutions.map(\.executionId) + bindableGitExecutions.map(\.executionId))
-    return available.filter { boundIds.contains($0.executionId) }
+    return RerunFinalizationEvidencePlan(
+      boundExecutionIds: Set(modeExecutions.map(\.executionId) + bindableGitExecutions.map(\.executionId)),
+      failingStepIds: failingStepIds
+    )
   }
 }

@@ -97,11 +97,12 @@ Hourly X follower-post digest for Telegram:
   must use an ignored artifact root such as
   `.riela-artifact/x-follower-ai-business-digest`
 
-Required live-run environment variables:
+Required live-run environment variables. The X reader receives only the four
+OAuth1 credentials. `riela/x-digest` reads `X_GW_ACCOUNT_USERNAME` from the
+runtime environment to label the digest account.
 
 ```bash
 export X_GW_ACCOUNT_USERNAME=@yu_kawa_taco
-export X_GW_AUTH_MODE=oauth1
 export X_GW_ACCESS_TOKEN=<x-access-token>
 export X_GW_ACCESS_TOKEN_SECRET=<x-access-token-secret>
 export X_GW_CONSUMER_KEY=<x-consumer-key>

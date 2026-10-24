@@ -17,13 +17,17 @@ remain available; Gmail's legacy `variablesTemplate` remains rejected while
 operation mode passes typed variables to its async SDK.
 
 X's SDK currently exposes SDL rather than a kit catalog. Its bounded literal
-codec lives alongside the common request builder; `selection` field paths and
-existing nested `select` objects address the same read-only SDK. Operation and
-selection names stay literal. Arguments render once, and source text containing
-template syntax stays data. No extra gateway executable is spawned.
+document serializer lives alongside the common request builder. Since the
+2026-10-24 review it renders `arguments` through the shared
+`renderGatewayJSONArguments` (8 MiB bound), parses `selection` with the shared
+`BuiltinGatewayJSONRequest.fieldPaths` validator, and reports `policyBlocked`
+like the other gateways. Existing nested `select` objects remain an X-only
+compatibility form. Operation and selection names stay literal. Arguments render
+once, and source text containing template syntax stays data. No extra gateway
+executable is spawned.
 
 Every built-in resolver accepts optional `config.postprocess`. It precompiles
-the same finite instructions used by `riela/data-transform` before calling a
+the same finite instructions used by `riela/json-transform` before calling a
 provider. The outer container resolver removes the instructions from its leaf
 request, so transformation runs once and preserves finalization receipts.
 
@@ -52,6 +56,31 @@ replays a successful write. Invalid instruction syntax fails before the effect.
   legacy container gateways and already structured product-specific nodes.
 - **Complete for catalog-backed built-ins covered by the Riela CLI production context (V0–V5).** `riela workflow validate` now checks operation/legacy mode conflicts, operation and selection literal bounds, non-templated postprocess programs, and known operations when a pinned SDK catalog is available. Notion read/write are included; aliases and legacy modes remain valid. `GatewaySchemaCatalog.operations` publicly lists GraphQL root operations and full document command names; production projection uses these names. Verification: see `impl-plans/progress/issue-sweep-20261024-176-gateway-validation.md`.
 - **Still open:** X readers, legacy container readers (`riela/x-gateway-read`, `riela/gmail-gateway-read`), Google Service and Kaiba nested-argument validation remain runtime-only.
+- **Review fixes (2026-10-24):** validation accepts a missing `arguments` like the
+  runtime (`{}`) and still rejects a present non-object; a parity table test checks
+  that validation and runtime agree. Postprocess bounds the picked values instead of
+  the provider payload, so container readers that repeat the response in
+  `xGateway.data` and `xGateway.response` no longer fail at about 4 MB. One shared
+  8 MiB constant (`GatewayJSONLimits.maximumEncodedBytes`) bounds arguments and
+  transforms. The non-existent `riela/gmail-gateway-threads` and
+  `riela/gmail-gateway-message-box` validation entries are removed (the gateway
+  schema tiers stay). The builtin-addons image now pins the same Analytics and
+  Documents revisions as `Package.resolved`, and `scripts/check-container-pins.py`
+  checks every Containerfile pin in the Linux CI build.
+- **What remains of #176, by requirement:**
+  - Requirement 1 (common validation): argument names and types, X readers,
+    legacy container readers, Google Service and Kaiba nested arguments are
+    validated only at runtime. The production validation context is applied only by
+    `riela workflow validate`, not by `workflow run`, GraphQL, registry activation or
+    the console.
+  - Requirement 3 (no X-only converter or notation): X keeps its own SDL document
+    serializer and the nested `select` form until the X SDK exports a catalog.
+  - Requirement 4 (workflow-controlled retry): X failures are all
+    `providerError`; spend cap, rate limit and transient errors are not yet
+    structured error metadata.
+  - Completion criteria: practical X and Notion workflow examples without Python
+    (only a Gmail `accounts` mock example exists), ART Python removal, private image
+    adoption, App cutover and release-deployment acceptance.
 - Reconcile named operations and compatibility surfaces in the final matrix;
   preserve fixed operations of product-specific Apple nodes.
 - Complete the provider matrix, workflow examples and user-facing reference.

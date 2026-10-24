@@ -154,10 +154,14 @@ to access the process-locked queue.
 RielaApp automatically hosts the same controller from the active profile's
 `controller.json`, normally under `~/.riela/rielaapp/profiles/default/`.
 Adjacent `controller.env` supplies credentials for Finder launches;
-`RIELA_CONTROLLER_CONFIG` overrides the configuration location. The native
-**Worker Controller Settings...** window edits this configuration and provides
-**Edit Credentials…** and **Save and Restart**. No separate serve process or
-web assets are required.
+`RIELA_CONTROLLER_CONFIG` overrides the configuration location. Since
+7857167b (2026-10-22) the console **Settings > Worker Controller** panel edits
+this configuration (**Save and restart controller**), starts and stops the
+controller, and lists configured workers with their connection state. When the
+controller store cannot be read, the panel shows "Unable to read worker
+status" instead of an empty worker list. Worker keys are issued in **API Keys**.
+The status menu no longer has worker items. No separate serve process is
+required.
 
 App start/stop, settings saves and profile switches are serialized. Configuration
 replacement requires an idle queue, including when the listener is stopped;

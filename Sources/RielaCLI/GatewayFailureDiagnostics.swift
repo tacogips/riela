@@ -34,9 +34,15 @@ enum GatewayFailureDiagnostics {
     "timeout", "missingResponse", "cancelled", "dns", "connect", "connectionLost", "tls", "offline", "transport"
   ]
 
+  /// Largest failure envelope inspected as-is.
+  static let maximumEnvelopeBytes = 65_536
+  /// Largest envelope inspected when its size comes from X `error.resourceUsage`
+  /// telemetry; the rest of the envelope must still fit `maximumEnvelopeBytes`.
+  static let maximumTelemetryEnvelopeBytes = XGatewayUsageCacheExchange.maximumEnvelopeBytes
+
   static func suffix(stdout: String, stderr: String = "") -> String {
-    for text in [stderr, stdout] where text.utf8.count <= 65_536 {
-      guard let response = try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8)) else { continue }
+    for text in [stderr, stdout] {
+      guard let response = boundedEnvelope(text) else { continue }
       var errors: [JSONObject] = []
       if case let .object(error)? = response["error"] { errors.append(error) }
       if case let .array(values)? = response["errors"] {
@@ -50,6 +56,24 @@ enum GatewayFailureDiagnostics {
       }
     }
     return ""
+  }
+
+  /// X SDK 0.1.24 attaches one `resourceUsage` entry per observed resource to
+  /// execution errors, so a spend-cap or rate-limit failure after a large page
+  /// can exceed the plain bound. Strip that telemetry before the size check;
+  /// other oversized envelopes stay ignored.
+  private static func boundedEnvelope(_ text: String) -> JSONObject? {
+    let size = text.utf8.count
+    if size <= maximumEnvelopeBytes {
+      return try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8))
+    }
+    guard size <= maximumTelemetryEnvelopeBytes, text.contains("\"resourceUsage\""),
+          var response = try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8)),
+          case var .object(error)? = response["error"], error.removeValue(forKey: "resourceUsage") != nil else { return nil }
+    response["error"] = .object(error)
+    guard let stripped = try? JSONValue.object(response).compactJSONString(),
+          stripped.utf8.count <= maximumEnvelopeBytes else { return nil }
+    return response
   }
 
   private static func suffix(error: JSONObject) -> String? {
@@ -102,7 +126,7 @@ enum GatewayFailureDiagnostics {
   private static func invalidXRequestParameter(_ error: JSONObject) -> String? {
     // Only finite parameter NAMES cross the reader boundary, never their values,
     // query text, tokens or free-form provider messages.
-    guard case let .string(details)? = error["details"], details.utf8.count <= 65_536,
+    guard case let .string(details)? = error["details"], details.utf8.count <= maximumEnvelopeBytes,
           let provider = try? JSONDecoder().decode(JSONObject.self, from: Data(details.utf8)),
           case let .array(errors)? = provider["errors"] else { return nil }
     let allowed: Set<String> = ["query", "since_id", "until_id", "start_time", "end_time",

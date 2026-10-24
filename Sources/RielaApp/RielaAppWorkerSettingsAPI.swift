@@ -3,6 +3,11 @@ import Foundation
 import RielaCore
 import RielaServer
 
+struct DistributedWorkerStatusRow {
+  let id: String
+  let worker: DistributedWorkerStatus?
+}
+
 private struct WorkerSettingsUpdate: Decodable {
   let expectedProfile: String
   let expectedConfiguration: DistributedControllerConfiguration?
@@ -28,12 +33,15 @@ extension RielaApp {
           let encoder = JSONEncoder()
           let encoded = try JSONDecoder().decode(JSONValue.self, from: encoder.encode(configuration))
           let original = try saved.map { try JSONDecoder().decode(JSONValue.self, from: encoder.encode($0)) }
+          let workerStatus = await distributedWorkerStatusJSON()
           return .json(status: 200, .object([
             "profile": .string(daemonProfileName.rawValue), "configuration": encoded,
             "savedConfiguration": original ?? .null,
             "status": .string(distributedControllerStatus),
             "running": .bool(distributedController != nil),
-            "workers": .array(await distributedWorkerStatusJSON())
+            "workers": .array(workerStatus.workers),
+            // A store read failure must not look like "no workers connected".
+            "workerStatusError": workerStatus.error.map(JSONValue.string) ?? .null
           ]))
         }
         guard request.method == "PUT" else { return .text(status: 405, "Method not allowed") }
@@ -73,12 +81,17 @@ extension RielaApp {
     }
   }
 
-  private func distributedWorkerStatusJSON() async -> [JSONValue] {
-    guard let host = distributedController,
-          let workers = try? await host.controller.workers(now: Date()) else { return [] }
-    return host.configuration.workers.sorted { $0.id < $1.id }.map { configured in
-      guard let worker = workers.first(where: { $0.workerId == configured.id }) else {
-        return .object(["id": .string(configured.id), "connected": .bool(false)])
+  private func distributedWorkerStatusJSON() async -> (workers: [JSONValue], error: String?) {
+    guard let host = distributedController else { return ([], nil) }
+    let rows: [DistributedWorkerStatusRow]
+    do {
+      rows = try await distributedWorkerStatusRows(of: host)
+    } catch {
+      return ([], RielaApp.distributedWorkerStatusReadFailure)
+    }
+    return (rows.map { row in
+      guard let worker = row.worker else {
+        return .object(["id": .string(row.id), "connected": .bool(false)])
       }
       return .object([
         "id": .string(worker.workerId),
@@ -88,6 +101,17 @@ extension RielaApp {
         "capacity": .number(Double(worker.capacity)),
         "groups": .array(worker.groups.sorted().map(JSONValue.string))
       ])
+    }, nil)
+  }
+
+  static let distributedWorkerStatusReadFailure = "Unable to read worker status. Check controller storage."
+
+  /// Configured workers in id order, each with its live registration when connected.
+  /// Shared by the console Settings API and the --open-worker-status alert.
+  func distributedWorkerStatusRows(of host: DistributedControllerHost) async throws -> [DistributedWorkerStatusRow] {
+    let workers = try await host.controller.workers(now: Date())
+    return host.configuration.workers.sorted { $0.id < $1.id }.map { configured in
+      DistributedWorkerStatusRow(id: configured.id, worker: workers.first { $0.workerId == configured.id })
     }
   }
 }

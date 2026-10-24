@@ -183,54 +183,40 @@ public enum EventContractValidator {
     index: Int,
     diagnostics: inout [EventValidationDiagnostic]
   ) {
-    let policy = binding.overlapPolicy
     let basePath = "bindings[\(index)]"
-    if let policy, EventOverlapPolicy(rawValue: policy) == nil {
-      diagnostics.append(.init(
-        code: "INVALID_EVENT_OVERLAP_POLICY",
-        path: "\(basePath).overlapPolicy",
-        message: "overlapPolicy must be one of \(EventOverlapPolicy.allowedValuesText); got '\(policy)'"
-      ))
-    }
-    if policy != nil, let source, source.kind != .cron {
-      diagnostics.append(.init(
-        code: "INVALID_EVENT_OVERLAP_POLICY",
-        path: "\(basePath).overlapPolicy",
-        message: "overlapPolicy is only supported on bindings whose source kind is cron"
-      ))
-    }
-    if let maxQueuedRuns = binding.maxQueuedRuns {
-      if maxQueuedRuns < 1 {
+    let settings = EventOverlapSettings(
+      overlapPolicy: binding.overlapPolicy,
+      maxQueuedRuns: binding.maxQueuedRuns,
+      maxConcurrentRuns: binding.maxConcurrentRuns
+    )
+    var cronOnlyReported = false
+    func reportCronOnlyIfNeeded() {
+      guard !cronOnlyReported else { return }
+      cronOnlyReported = true
+      if binding.overlapPolicy != nil, let source, source.kind != .cron {
         diagnostics.append(.init(
           code: "INVALID_EVENT_OVERLAP_POLICY",
-          path: "\(basePath).maxQueuedRuns",
-          message: "maxQueuedRuns must be an integer >= 1"
-        ))
-      }
-      if policy != EventOverlapPolicy.queue.rawValue {
-        diagnostics.append(.init(
-          code: "INVALID_EVENT_OVERLAP_POLICY",
-          path: "\(basePath).maxQueuedRuns",
-          message: "maxQueuedRuns requires overlapPolicy queue on the same binding"
+          path: "\(basePath).overlapPolicy",
+          message: "overlapPolicy is only supported on bindings whose source kind is cron"
         ))
       }
     }
-    if let maxConcurrentRuns = binding.maxConcurrentRuns {
-      if maxConcurrentRuns < 1 {
-        diagnostics.append(.init(
-          code: "INVALID_EVENT_OVERLAP_POLICY",
-          path: "\(basePath).maxConcurrentRuns",
-          message: "maxConcurrentRuns must be an integer >= 1"
-        ))
+    for issue in eventOverlapSettingsIssues(settings) {
+      let path = "\(basePath).\(issue.field.rawValue)"
+      let message: String
+      switch issue {
+      case let .unknownPolicy(raw):
+        message = "overlapPolicy must be one of \(EventOverlapPolicy.allowedValuesText); got '\(raw)'"
+      case let .capBelowMinimum(field, _):
+        reportCronOnlyIfNeeded()
+        message = "\(field.rawValue) must be an integer >= 1"
+      case let .capRequiresPolicy(field, required):
+        reportCronOnlyIfNeeded()
+        message = "\(field.rawValue) requires overlapPolicy \(required.rawValue) on the same binding"
       }
-      if policy != EventOverlapPolicy.concurrent.rawValue {
-        diagnostics.append(.init(
-          code: "INVALID_EVENT_OVERLAP_POLICY",
-          path: "\(basePath).maxConcurrentRuns",
-          message: "maxConcurrentRuns requires overlapPolicy concurrent on the same binding"
-        ))
-      }
+      diagnostics.append(.init(code: "INVALID_EVENT_OVERLAP_POLICY", path: path, message: message))
     }
+    reportCronOnlyIfNeeded()
   }
 
   private static func isValidEnvironmentName(_ value: String) -> Bool {

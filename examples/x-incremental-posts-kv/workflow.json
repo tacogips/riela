@@ -36,12 +36,6 @@
           "X_GW_ACCESS_TOKEN_SECRET": {
             "fromEnv": "X_GW_ACCESS_TOKEN_SECRET"
           },
-          "X_GW_ACCOUNT_USERNAME": {
-            "fromEnv": "X_GW_ACCOUNT_USERNAME"
-          },
-          "X_GW_AUTH_MODE": {
-            "fromEnv": "X_GW_AUTH_MODE"
-          },
           "X_GW_CONSUMER_KEY": {
             "fromEnv": "X_GW_CONSUMER_KEY"
           },

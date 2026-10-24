@@ -3,6 +3,23 @@
 Issues: https://github.com/tacogips/riela/issues/135,
 https://github.com/tacogips/riela/issues/104
 
+Status: implemented (868faf01), amended by the 2026-10-24 review follow-up.
+The amendments supersede the matching D2 text below:
+
+- D2 carries a time cut, not only the target inbox. With `cut` = the newest
+  `createdOrder` among `T`'s recorded ids, every resolvable workflow message
+  with `createdOrder <= cut` addressed to another step in the re-executed set
+  is carried when its producer is an accepted completed execution. The target
+  inbox is read from `mergedVariables` (agent) or `resolvedInputPayload`
+  (command, container, add-on).
+- Step 3/4: a recorded target id whose producer is a source execution that is
+  not completed with accepted output is rejected; only ids with no producing
+  execution are skipped.
+- The created/running source guard applies only when something would be
+  imported. Plain reruns keep the caller's session lineage; the import never
+  rewrites lineage for session sources.
+- Imported executions do not seed the rerun's execution counts.
+
 Baseline: `docs/preserved-history-recovery.md` (preserve-history import) and
 the runtime-owned import path `importAcceptedHistory`
 (`Sources/RielaCore/RuntimeHistoryImport.swift`). This design reuses that
@@ -186,7 +203,7 @@ Rules:
   | Rerun target | Mode steps | Plan evidence | commit/push/integrate | Result |
   | --- | --- | --- | --- | --- |
   | `dispatch-plans` | `step6-implement` and `integration-review` in R, re-executed | in R only through back-edges, not Guaranteed → bound | Guaranteed; source copy superseded | passes; rejected in preflight if latest `plan-git-commit` not accepted |
-  | `reconcile-implementations`, `integration-review` | in R (`plans_remaining` back-edge reaches `step6-implement`) | bound | Guaranteed | passes; same plan rejection |
+  | `reconcile-implementations`, `integration-review` | in R (`plans_remaining` back-edge reaches `step6-implement`) | bound | Guaranteed | passes; same plan rejection. The `plans_remaining` revisit of `dispatch-plans` needs the D2 time cut, which carries the `plan-git-push` message; D3 binds executions only |
   | `step7b-e2e-evidence` | same as above; a multi-branch fanout target is rejected first by `describeAmbiguousFanoutBranchRerunTarget` | bound | Guaranteed | passes or the existing fanout rejection |
   | `step10-git-commit`, `workflow-output` | outside R → bound (rule 1 rejects a non-bindable review) | outside R → bound | commit Guaranteed for `step10`; for `workflow-output`, bound or rejected | passes or preflight rejection |
   | `step4-impl-plan-create`, `step5-impl-plan-review`, `plan-checkpoint`, `plan-contract-validate` | in R, never bound | Guaranteed (planning routes removed; every remaining path traverses `plan-git-commit` -> `plan-git-push`); source copy bound when Bindable, superseded on re-execution | Guaranteed | passes even when the source's latest `plan-git-commit` failed |

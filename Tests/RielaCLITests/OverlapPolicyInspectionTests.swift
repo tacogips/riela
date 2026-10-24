@@ -66,6 +66,101 @@ final class OverlapPolicyInspectionTests: XCTestCase {
     XCTAssertFalse(legacyLine.contains(" binding="), String(legacyLine))
   }
 
+  func testReplayOfCronReceiptsIsPerBindingAndCarriesOverlapMetadata() async throws {
+    let root = try temporaryDirectory()
+    let receipts = root.appendingPathComponent("receipts", isDirectory: true)
+    try FileManager.default.createDirectory(at: receipts, withIntermediateDirectories: true)
+    let envelope = ExternalEventEnvelope(
+      sourceId: "cron", eventId: "cron-100", provider: "riela", eventType: "cron.tick",
+      receivedAt: Date(timeIntervalSince1970: 100), input: [:]
+    )
+    var originalIds: [String: String] = [:]
+    for (bindingId, policy) in [("binding-a", "queue"), ("binding-b", "skip")] {
+      let receiptId = cronOverlapReceiptId(sourceId: "cron", eventId: "cron-100", bindingId: bindingId)
+      originalIds[bindingId] = receiptId
+      let receipt = PersistedEventReceipt(
+        receiptId: receiptId, sourceId: "cron", eventId: "cron-100", status: "completed", duplicate: false,
+        workflowExecutionId: "session-\(bindingId)", workflowName: "workflow", replayedFromReceiptId: nil,
+        reason: nil, updatedAt: Date(timeIntervalSince1970: 100), envelope: envelope,
+        bindingId: bindingId, overlapPolicy: policy, overlapPolicySource: "binding"
+      )
+      try writeReceipt(receipt, to: receipts.appendingPathComponent("\(receiptId).json"))
+    }
+
+    var replayIds: [String: String] = [:]
+    for bindingId in ["binding-a", "binding-b"] {
+      let replayed = await RielaCLIApplication().run([
+        "events", "replay", try XCTUnwrap(originalIds[bindingId]), "--event-root", root.path, "--output", "text"
+      ])
+      XCTAssertEqual(replayed.exitCode, .success, replayed.stderr)
+      replayIds[bindingId] = cronOverlapReceiptId(sourceId: "cron", eventId: "cron-100-replay", bindingId: bindingId)
+      XCTAssertTrue(replayed.stdout.contains("receipt=\(replayIds[bindingId] ?? "")"), replayed.stdout)
+    }
+    XCTAssertNotEqual(replayIds["binding-a"], replayIds["binding-b"])
+    let store = EventReceiptStore(eventRoot: root)
+    for (bindingId, policy) in [("binding-a", "queue"), ("binding-b", "skip")] {
+      let replay = try XCTUnwrap(store.load(try XCTUnwrap(replayIds[bindingId])))
+      XCTAssertEqual(replay.replayedFromReceiptId, originalIds[bindingId])
+      XCTAssertEqual(replay.bindingId, bindingId)
+      XCTAssertEqual(replay.overlapPolicy, policy)
+      XCTAssertEqual(replay.overlapPolicySource, "binding")
+      XCTAssertEqual(replay.status, "replayed")
+    }
+  }
+
+  func testReceiptFormatStaysBackwardReadableWithServeInstanceId() throws {
+    // A receipt written before serveInstanceId existed still decodes.
+    let legacy = Data("""
+    {"duplicate":false,"envelope":{"eventId":"e","eventType":"cron.tick","input":{},"provider":"riela",
+    "receivedAt":"2025-08-06T00:00:00Z","sourceId":"cron"},"eventId":"e","receiptId":"legacy-receipt",
+    "sourceId":"cron","status":"completed","updatedAt":"2025-08-06T00:00:00Z"}
+    """.utf8)
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decoded = try decoder.decode(PersistedEventReceipt.self, from: legacy)
+    XCTAssertNil(decoded.serveInstanceId)
+    XCTAssertEqual(decoded.status, "completed")
+
+    // Without a stamp the key is omitted, so the on-disk format is unchanged.
+    let root = try temporaryDirectory()
+    let store = EventReceiptStore(eventRoot: root)
+    try store.save(decoded)
+    let raw = try String(contentsOf: store.url(for: "legacy-receipt"), encoding: .utf8)
+    XCTAssertFalse(raw.contains("serveInstanceId"), raw)
+    var stamped = decoded
+    stamped.serveInstanceId = "123-abcd"
+    try store.save(stamped)
+    XCTAssertEqual(try store.load("legacy-receipt")?.serveInstanceId, "123-abcd")
+  }
+
+  func testEventsListIsNewestFirstSoLimitReturnsRecentReceipts() async throws {
+    let root = try temporaryDirectory()
+    let receipts = root.appendingPathComponent("receipts", isDirectory: true)
+    try FileManager.default.createDirectory(at: receipts, withIntermediateDirectories: true)
+    let envelope = ExternalEventEnvelope(
+      sourceId: "cron", eventId: "event", provider: "riela", eventType: "cron.tick",
+      receivedAt: Date(timeIntervalSince1970: 10), input: [:]
+    )
+    // Receipt ids sort opposite to their age, like random cron hash ids can.
+    for (receiptId, updatedAt) in [("a-oldest", 10.0), ("b-newest", 30.0), ("c-middle", 20.0)] {
+      let receipt = PersistedEventReceipt(
+        receiptId: receiptId, sourceId: "cron", eventId: receiptId, status: "skipped", duplicate: false,
+        workflowExecutionId: nil, workflowName: "workflow", replayedFromReceiptId: nil, reason: nil,
+        updatedAt: Date(timeIntervalSince1970: updatedAt), envelope: envelope
+      )
+      try writeReceipt(receipt, to: receipts.appendingPathComponent("\(receiptId).json"))
+    }
+
+    let listed = await RielaCLIApplication().run([
+      "events", "list", "--event-root", root.path, "--limit", "2", "--output", "text"
+    ])
+    XCTAssertEqual(listed.exitCode, .success, listed.stderr)
+    let ids = listed.stdout.split(separator: "\n").compactMap { line in
+      line.split(separator: " ").first { $0.hasPrefix("receipt=") }.map { String($0.dropFirst("receipt=".count)) }
+    }
+    XCTAssertEqual(ids, ["b-newest", "c-middle"], listed.stdout)
+  }
+
   func testWorkflowInspectShowsTriggerDefaultsInJSONAndTextAndOmitsAbsentValue() async throws {
     let withDefaults = try await inspectWorkflow(triggerDefaults: ["overlapPolicy": "queue", "maxQueuedRuns": 2])
     let summary = try JSONDecoder().decode(WorkflowInspectionSummary.self, from: Data(withDefaults.stdout.utf8))

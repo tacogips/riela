@@ -40,21 +40,26 @@ extension DefaultEventLiveServer {
     eventRoot: URL
   ) -> [Task<Void, Never>] {
     sources.map { source in
-      Task { [webhookyStreamer, telemetry] in
+      Task { [webhookyStreamer, telemetry, runtimeEnvironment] in
         while !Task.isCancelled {
           do {
-            let stream = try webhookyStreamer.stream(
-              source: source,
-              environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            // Each (re)connect reads the latest accepted runtime-environment
+            // generation, and a newer generation closes the stream so the
+            // reconnect presents the reloaded credentials.
+            let (environment, generation) = try await runtimeEnvironment?.captureWithGeneration()
+              ?? (CLIRuntimeEnvironment.mergedProcessEnvironment(), 0)
+            let stream = try webhookyStreamer.stream(source: source, environment: environment)
+            let outcome = try await consumeWebhookyStream(
+              stream, sourceId: source.id, buffer: buffer,
+              runtimeEnvironment: runtimeEnvironment, generation: generation
             )
-            for try await record in stream {
-              await buffer.append(sourceId: source.id, record: record)
-            }
+            if outcome == .environmentChanged { continue }
             // A cleanly finished stream (for example a fake in tests, or a
             // server-side normal close without reconnect) ends the task.
             await buffer.markFinished(sourceId: source.id)
             return
           } catch {
+            if Task.isCancelled { return }
             try? writeServeRecord(
               eventRoot: eventRoot,
               status: "ready",
@@ -75,6 +80,35 @@ extension DefaultEventLiveServer {
           }
         }
       }
+    }
+  }
+
+  enum WebhookyStreamOutcome: Sendable { case finished, environmentChanged }
+
+  private func consumeWebhookyStream(
+    _ stream: AsyncThrowingStream<WebhookRecord, Error>,
+    sourceId: String,
+    buffer: WebhookyRecordBuffer,
+    runtimeEnvironment: EventRuntimeEnvironment?,
+    generation: UInt64
+  ) async throws -> WebhookyStreamOutcome {
+    try await withThrowingTaskGroup(of: WebhookyStreamOutcome.self) { group in
+      group.addTask {
+        for try await record in stream {
+          await buffer.append(sourceId: sourceId, record: record)
+        }
+        return .finished
+      }
+      if let runtimeEnvironment {
+        group.addTask {
+          try await runtimeEnvironment.awaitGeneration(after: generation)
+          return .environmentChanged
+        }
+      }
+      let outcome = try await group.next() ?? .finished
+      // Cancelling the consumer terminates the SDK stream, closing its socket.
+      group.cancelAll()
+      return outcome
     }
   }
 

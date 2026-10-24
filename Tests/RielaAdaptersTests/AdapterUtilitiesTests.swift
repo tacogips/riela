@@ -522,4 +522,67 @@ final class AdapterUtilitiesTests: XCTestCase {
     XCTAssertEqual(object["payload"], .object(["text": .string(#"brace } and escaped quote " still string"#)]))
     XCTAssertEqual(object["when"], .object(["done": .bool(true)]))
   }
+
+  func testRedactingAdapterKeepsCodeAndRetryMetadataAndRedactsSnapshotAndAgentValues() async throws {
+    let snapshotToken = "snapshot-token-canary-\(UUID().uuidString)"
+    let agentToken = "agent-token-canary-\(UUID().uuidString)"
+    let shortPublic = "true"
+    let primary = FailingRecordingAdapter(error: AdapterExecutionError(
+      .timeout, "failed with \(snapshotToken) and \(agentToken) flag=\(shortPublic)",
+      isRetryable: true, retryAfter: .seconds(3)
+    ))
+    let adapter = AdapterFailureRedactingNodeAdapter(
+      primary: primary, environment: ["SERVICE_TOKEN": snapshotToken, "FEATURE_TOKEN_ENABLED": shortPublic]
+    )
+    var input = AdapterExecutionInput(node: AgentNodePayload(id: "worker", model: "gpt-5"), promptText: "hello")
+    input.agentEnvironment = ["AGENT_API_KEY": agentToken]
+    do {
+      _ = try await adapter.execute(input, context: AdapterExecutionContext())
+      XCTFail("expected failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .timeout)
+      XCTAssertEqual(error.isRetryable, true)
+      XCTAssertEqual(error.retryAfter, .seconds(3))
+      XCTAssertFalse(error.message.contains(snapshotToken))
+      XCTAssertFalse(error.message.contains(agentToken))
+      XCTAssertTrue(error.message.contains("flag=true"), error.message)
+    }
+    await adapter.workflowRunDidEnd(WorkflowRunLifecycleContext(workflowRunId: "run-1"))
+    let ended = await primary.endedRuns()
+    XCTAssertEqual(ended, ["run-1"])
+  }
+
+  func testRedactingAdapterPassesCancellationThrough() async {
+    let adapter = AdapterFailureRedactingNodeAdapter(
+      primary: FailingRecordingAdapter(error: CancellationError()), environment: [:]
+    )
+    do {
+      _ = try await adapter.execute(
+        AdapterExecutionInput(node: AgentNodePayload(id: "worker", model: "gpt-5"), promptText: "hello"),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected cancellation")
+    } catch {
+      XCTAssertTrue(error is CancellationError)
+    }
+  }
+}
+
+private actor FailingRecordingAdapter: NodeAdapter {
+  let error: any Error
+  private var ended: [String] = []
+
+  init(error: any Error) {
+    self.error = error
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    throw error
+  }
+
+  func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {
+    ended.append(context.workflowRunId)
+  }
+
+  func endedRuns() -> [String] { ended }
 }

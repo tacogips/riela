@@ -54,8 +54,6 @@ private let graphQLAddons: [String: (WorkflowGatewayProvider, String)] = [
   "riela/gmail-gateway-reader": (.gmail, "reader"),
   "riela/gmail-gateway-draft": (.gmail, "draft"),
   "riela/gmail-gateway-sender": (.gmail, "sender"),
-  "riela/gmail-gateway-threads": (.gmail, "threads"),
-  "riela/gmail-gateway-message-box": (.gmail, "message-box"),
   "riela/notion-gateway-read": (.notion, "reader"),
   "riela/notion-gateway-write": (.notion, "writer")
 ]
@@ -152,6 +150,14 @@ private func requireObject(_ value: JSONValue?, path: String, diagnostics: inout
   }
 }
 
+/// Runtime treats a missing `arguments` value as an empty object
+/// (`renderGatewayJSONArguments`), so only a present non-object is an error.
+private func optionalArgumentsObject(_ values: JSONObject, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  if let arguments = values["arguments"] {
+    requireObject(arguments, path: "\(path).arguments", diagnostics: &diagnostics)
+  }
+}
+
 private func forbid(_ keys: [String], in values: JSONObject, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
   for key in keys where values[key] != nil {
     diagnostics.append(gatewayError("\(path).\(key)", "is not allowed in this mode"))
@@ -196,7 +202,7 @@ private func validateGatewayModes(
   }
   if hasOperation {
     let operation = literalOperation(values["operation"], path: "\(path).operation", commandOperation: passthrough == "command", diagnostics: &diagnostics)
-    requireObject(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
+    optionalArgumentsObject(values, path: path, diagnostics: &diagnostics)
     forbid(["queryTemplate", "variablesTemplate", "command", "argsTemplate", "select"], in: values,
            path: path, diagnostics: &diagnostics)
     if passthrough == "command" {
@@ -253,7 +259,7 @@ private func validateAppleGateway(
   let passthroughKeys = ["queryFile", "query", "variablesFile", "variables"]
   if values["operation"] != nil {
     let operation = literalOperation(values["operation"], path: "\(path).operation", diagnostics: &diagnostics)
-    requireObject(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
+    optionalArgumentsObject(values, path: path, diagnostics: &diagnostics)
     forbid(passthroughKeys + ["queryTemplate", "variablesTemplate", "command", "argsTemplate", "select"], in: values, path: path, diagnostics: &diagnostics)
     if let selection = values["selection"] {
       validateSelection(selection, path: "\(path).selection", diagnostics: &diagnostics)

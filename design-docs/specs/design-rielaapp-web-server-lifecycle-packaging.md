@@ -22,7 +22,15 @@ No native window, store, CLI command, or existing concept is removed or replaced
 
 ### 2.1 Menu journey
 
-After RielaApp initializes its active profile, the status menu contains:
+> Superseded (7857167b, 2026-10-22): the status menu now holds only Open
+> Console, Launch on Login, About and Quit. Start, Stop and Open in Browser moved
+> to the console **Settings > Web Config server** panel, which reports listener
+> failures through the `updateHTTPServer` mutation error. Copy URL and the
+> replacement-listener port handoff were never carried over: a port change while
+> running reports `restartRequired`. The original menu contract follows for
+> history.
+
+After RielaApp initializes its active profile, the status menu contained:
 
 - `Start Web Server`: enabled only when the listener is stopped or failed.
 - `Stop Web Server`: enabled while starting or running; a stop requested during startup cancels that generation.

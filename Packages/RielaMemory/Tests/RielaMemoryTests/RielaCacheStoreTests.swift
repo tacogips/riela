@@ -89,11 +89,98 @@ final class RielaCacheStoreTests: XCTestCase {
       to: root.appendingPathComponent("hardlink.cache.sqlite"))
     let result = try store.maintain(cacheIds: ["cache", "missing", "foreign", "symlink", "hardlink"])
     XCTAssertEqual(result.status, "ok"); XCTAssertEqual(result.cacheCount, 1)
+    XCTAssertEqual(result.skippedCacheCount, 4, "missing, foreign, symlink and hard link are counted as skipped")
     XCTAssertEqual(result.expiredEntryCount, 1)
     XCTAssertEqual(try Data(contentsOf: foreign), foreignBytes)
     XCTAssertEqual(try store.get(cacheId: "unowned", scope: "s", keys: ["kept"]).stats.policy,
       CachePolicy(ttlSeconds: 3600, maxBytes: 3000))
     XCTAssertEqual(try store.prune(cacheId: "cache").stats.policy, CachePolicy(ttlSeconds: 2, maxBytes: 2000))
+  }
+
+  func testMaintenanceReportsFailedStoreIdsAndBusyStoresAsDeferred() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.put(cacheId: "good", scope: "s", entries: [entry("a", clock)])
+    try Data("not a sqlite database, just bytes".utf8).write(to: root.appendingPathComponent("bad.cache.sqlite"))
+    let failed = try store.maintain(cacheIds: ["good", "bad", "missing"])
+    XCTAssertEqual(failed.status, "failed")
+    XCTAssertEqual(failed.failedCacheCount, 1)
+    XCTAssertEqual(failed.failedCacheIds, ["bad"])
+    XCTAssertEqual(failed.cacheCount, 1)
+    XCTAssertEqual(failed.skippedCacheCount, 1)
+
+    // A store locked by another writer past the busy timeout is deferred, not failed.
+    var holder: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(try store.databasePath(cacheId: "good"), &holder), SQLITE_OK)
+    defer { sqlite3_close(holder) }
+    try execute(holder, "BEGIN EXCLUSIVE")
+    let busy = try store.maintain(cacheIds: ["good"])
+    try execute(holder, "ROLLBACK")
+    XCTAssertEqual(busy.status, "deferred")
+    XCTAssertEqual(busy.deferredCacheCount, 1)
+    XCTAssertEqual(busy.failedCacheCount, 0)
+    XCTAssertEqual(busy.failedCacheIds, [])
+  }
+
+  func testMaintenanceTimeBudgetDefersRemainingStores() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.put(cacheId: "a", scope: "s", entries: [entry("x", clock)])
+    _ = try store.put(cacheId: "b", scope: "s", entries: [entry("x", clock)])
+    // started = 0, store "a" checked at 0 (within budget), store "b" checked at 10.
+    var readings: [TimeInterval] = [0, 0, 10]
+    let result = try store.maintain(cacheIds: ["b", "a"], maxDurationSeconds: 1) {
+      readings.isEmpty ? 10 : readings.removeFirst()
+    }
+    XCTAssertEqual(result.status, "deferred")
+    XCTAssertEqual(result.cacheCount, 1)
+    XCTAssertEqual(result.deferredCacheCount, 1)
+    XCTAssertEqual(result.entryCount, 1)
+  }
+
+  func testReconcileReportsDanglingReferencesAndSkipsOtherScopeReceipts() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let saved = try store.put(cacheId: "cache", scope: "s", entries: [entry("live", clock)]).results[0].entry!
+    let zero = String(repeating: "0", count: 64)
+    let references: MemoryJSONValue = .array([
+      .object(["key": .string("live"), "revision": .string(saved.revision)]),
+      .object(["key": .string("gone"), "revision": .string(zero)]),
+      // A receipt from another scope with a conflicting revision is not a reference here.
+      .object(["key": .string("live"), "scope": .string("other"), "revision": .string(zero)])
+    ])
+    let result = try store.reconcile(cacheId: "cache", scope: "s", references: references)
+    XCTAssertEqual(result.results.map(\.key), ["live", "gone"])
+    XCTAssertEqual(result.results.map(\.status), ["protected", "missing"])
+    XCTAssertEqual(result.results[1].reason, "notFound")
+    XCTAssertEqual(result.stats.protectedByteCount, saved.byteCount)
+    // A second identical reconcile changes nothing but still reports the dangling key.
+    let again = try store.reconcile(cacheId: "cache", scope: "s", references: references)
+    XCTAssertEqual(again.results.map(\.status), ["missing"])
+  }
+
+  func testPutWithReferencesExpiresBeforeReconcilingLikeReconcile() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "cache", policy: .init(ttlSeconds: 2, maxBytes: 4000))
+    _ = try store.put(cacheId: "cache", scope: "s", entries: [entry("old", clock)])
+    clock.advance(3)
+    // The row for "old" is expired; a reference to another revision of it must not
+    // conflict with the dead row (reconcile() already expires first).
+    let staleReference: MemoryJSONValue = .object(["key": .string("old"), "revision": .string(String(repeating: "a", count: 64))])
+    XCTAssertNoThrow(try store.reconcile(cacheId: "cache", scope: "s", references: staleReference))
+    _ = try store.put(cacheId: "cache", scope: "s", entries: [entry("old", clock)])
+    clock.advance(3)
+    let saved = try store.put(cacheId: "cache", scope: "s", entries: [entry("new", clock)], retaining: staleReference)
+    XCTAssertEqual(saved.stats.expiredCount, 1)
+    XCTAssertEqual(saved.results.map(\.key), ["new"])
+  }
+
+  func testReservedBuiltinCacheIdsArePrefixMatched() {
+    XCTAssertTrue(RielaCacheStore.isReservedBuiltinCacheId("x-gateway-users"))
+    XCTAssertTrue(RielaCacheStore.isReservedBuiltinCacheId("x-gateway-api-usage"))
+    XCTAssertFalse(RielaCacheStore.isReservedBuiltinCacheId("retrieval-cache"))
+    XCTAssertFalse(RielaCacheStore.isReservedBuiltinCacheId("my-x-gateway-users"))
   }
 
   func testReferenceSnapshotReleasesSupersededArtifactsAndAtomicAdmissionSurvivesFullCache() throws {

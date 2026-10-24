@@ -203,9 +203,20 @@ public enum RielaTelemetryRedactor {
     "error_class", "error_code", "environment", "profile"
   ]
   private static let allowedValueKeyPattern = #"(?i)(^|\.)(\#(allowedValueKeys.joined(separator: "|")))$"#
+  /// Exact keys whose values are finite tokens (enum raw values or reason
+  /// kinds such as `cancelRunning` or `overlap-queue-full`). A value is kept
+  /// only when it is a short token without spaces or separators and does not
+  /// look secret, so free text written under these keys is still redacted.
+  private static let tokenValueKeys: Set<String> = ["overlap.policy", "overlap.reason"]
+  private static let tokenValuePattern = #"^[A-Za-z][A-Za-z0-9-]{0,63}$"#
 
   public static func redactedAttributes(_ attributes: [String: String]) -> [String: String] {
     attributes.reduce(into: [:]) { result, pair in
+      if tokenValueKeys.contains(pair.key) {
+        let isToken = pair.value.range(of: tokenValuePattern, options: .regularExpression) != nil
+        result[pair.key] = isToken && !looksSecret(pair.value) ? pair.value : "[redacted]"
+        return
+      }
       guard isAllowedKey(pair.key), !looksSecret(pair.key), !looksSecret(pair.value) else {
         result[pair.key] = "[redacted]"
         return

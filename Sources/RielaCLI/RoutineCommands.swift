@@ -141,15 +141,13 @@ extension ScopedParityCommandRunner {
             "routine set-overlap-policy requires exactly one of --overlap-policy or --clear-overlap-policy"
           )
         }
-        let hasRunCap = parsed.maxQueuedRuns != nil || parsed.maxConcurrentRuns != nil
-        if parsed.clearOverlapPolicy && hasRunCap {
-          throw CLIUsageError("routine set-overlap-policy --clear-overlap-policy cannot be combined with a run cap")
-        }
+        // The service owns the clear-with-cap rule and every policy/cap rule,
+        // so the CLI, GraphQL and add-on surfaces report the same message.
         let result = try service.setOverlapPolicy(
           routineId: routineId,
           overlapPolicy: parsed.clearOverlapPolicy ? nil : parsed.overlapPolicy,
-          maxQueuedRuns: parsed.clearOverlapPolicy ? nil : parsed.maxQueuedRuns,
-          maxConcurrentRuns: parsed.clearOverlapPolicy ? nil : parsed.maxConcurrentRuns,
+          maxQueuedRuns: parsed.maxQueuedRuns,
+          maxConcurrentRuns: parsed.maxConcurrentRuns,
           routineStoreRoot: parsed.routineStore
         )
         return routineCommandResult(

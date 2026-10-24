@@ -844,6 +844,8 @@ private struct GmailDigestEngine {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = command
     process.environment = environment
+    // Never inherit this process's stdin (for example a private channel).
+    process.standardInput = FileHandle.nullDevice
     let outputPipe = Pipe()
     let errorPipe = Pipe()
     process.standardOutput = outputPipe

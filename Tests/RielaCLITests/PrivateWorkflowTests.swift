@@ -12,36 +12,21 @@ final class PrivateWorkflowTests: XCTestCase {
     for invalid in [false, true] {
       let root = try makeRielaCLITestTemporaryDirectory("private-usage-export")
       defer { try? FileManager.default.removeItem(at: root) }
-      let telemetry = #"""
-      {
-        "data": {
-          "extensions": {
-            "resourceUsage": {
-              "version": 1,
-              "basis": "upstream-response",
-              "billingStatus": "not-reported",
-              "httpResponses": 1,
-              "successfulResponses": 1,
-              "unclassifiedResources": 0,
-              "resources": [
-                {
-                  "kind": "post",
-                  "idHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                  "utcDay": "2026-10-24"
-                }
-              ]
-            }
-          }
-        }
-      }
-      """#
+      // The guest emits one compact JSON line per observation; the host reads stderr line by line.
+      let telemetry: JSONValue = .object(["data": .object(["extensions": .object(["resourceUsage": .object([
+        "version": .integer(1), "basis": .string("upstream-response"), "billingStatus": .string("not-reported"),
+        "httpResponses": .integer(1), "successfulResponses": .integer(1), "unclassifiedResources": .integer(0),
+        "resources": .array([.object(["kind": .string("post"), "idHash": .string(String(repeating: "a", count: 64)),
+          "utcDay": .string("2026-10-24")])])])])])])
       let runner = PrivateWorkflowFixtureRunner(invalidPayload: invalid,
-        usageLine: XGatewayUsageTransport.prefix + telemetry)
+        usageLine: XGatewayUsageTransport.prefix + (try telemetry.compactJSONString()))
       var controller = host(runner, root: root)
       controller.environment["RIELA_CACHE_ROOT"] = root.appendingPathComponent("host-cache").path
       var request = input(); request.addon.config?["xUsageScope"] = .string("fixture-app")
+      let events = PrivateWorkflowEventRecorder()
+      let context = AdapterExecutionContext(backendEventHandler: { await events.append($0) })
       do {
-        let output = try await controller.execute(request, context: .init())
+        let output = try await controller.execute(request, context: context)
         XCTAssertFalse(invalid)
         XCTAssertEqual(output.payload, ["status": .string("ok")])
       } catch { XCTAssertTrue(invalid) }
@@ -49,8 +34,21 @@ final class PrivateWorkflowTests: XCTestCase {
         addon: .init(name: "riela/x-gateway-read", config: ["usageCache": .bool(true), "usageScope": .string("fixture-app")]))
       let cache = try XCTUnwrap(XGatewayUsageCacheExchange(input: usageInput, workingDirectory: root,
         environment: controller.environment))
-      XCTAssertEqual(try cache.store.keys(cacheId: XGatewayUsageCacheExchange.cacheId,
-        scope: XGatewayUsageCacheExchange.scope).count, 1)
+      let keys = try cache.store.keys(cacheId: XGatewayUsageCacheExchange.cacheId, scope: XGatewayUsageCacheExchange.scope)
+      XCTAssertEqual(keys.count, 1)
+      let rows = try cache.store.get(cacheId: XGatewayUsageCacheExchange.cacheId,
+        scope: XGatewayUsageCacheExchange.scope, keys: keys)
+      let entry = try JSONDecoder().decode(JSONObject.self,
+        from: JSONEncoder().encode(try XCTUnwrap(rows.results.first?.entry?.payload)))
+      XCTAssertEqual(entry["telemetryStatus"], .string("stored"))
+      guard case let .object(observation)? = entry["observation"], case let .array(resources)? = observation["resources"] else {
+        return XCTFail("stored usage row has no normalized observation")
+      }
+      XCTAssertEqual(resources.count, 1)
+      let recorded = await events.events
+      XCTAssertEqual(recorded.count, 1)
+      XCTAssertEqual(recorded.first?.eventType, "x-resource-usage-cache")
+      XCTAssertEqual(recorded.first?.metadata?["statuses"], .object(["stored": .integer(1)]))
     }
   }
 
@@ -70,6 +68,7 @@ final class PrivateWorkflowTests: XCTestCase {
       XCTAssertFalse(configuration.environment.values.contains(where: { $0.contains("SYNTHETIC_SECRET") }))
     }
     let request = try JSONDecoder().decode(PrivateWorkflowRequest.self, from: Data(calls[1].1.utf8))
+    XCTAssertEqual(request.version, PrivateWorkflowRequest.currentVersion)
     XCTAssertEqual(request.credentials.first?.value, "SYNTHETIC_SECRET_FILE")
     XCTAssertEqual(request.environment, ["X_GW_TOKEN": "SYNTHETIC_SECRET_TOKEN"])
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
@@ -118,6 +117,98 @@ final class PrivateWorkflowTests: XCTestCase {
         _ = try await host(runner, root: root).execute(input(), context: .init()); XCTFail("must reject")
       } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidOutput) }
     }
+  }
+
+  func testHostForcesRoutingAndModelMetadataInsteadOfTrustingGuest() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-metadata")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = PrivateWorkflowFixtureRunner(when: ["PRIVATE SOURCE SENTENCE": true], model: "PRIVATE MODEL TEXT",
+      provider: "PRIVATE PROVIDER")
+    let output = try await host(runner, root: root).execute(input(), context: .init())
+    XCTAssertEqual(output.when, ["always": true])
+    XCTAssertEqual(output.model, "synthetic")
+    XCTAssertEqual(output.provider, "riela-private-workflow")
+    XCTAssertFalse(try XCTUnwrap(String(data: JSONEncoder().encode(output), encoding: .utf8)).contains("PRIVATE"))
+  }
+
+  func testWorkerExitStatusesUseSharedFixedMapping() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-exit")
+    defer { try? FileManager.default.removeItem(at: root) }
+    for (status, expected) in [
+      (PrivateWorkflowWorker.guestRefusalStatus,
+        AdapterExecutionError(.policyBlocked, "private worker refused the guest identity or resource limits")),
+      (Int32(137), AdapterExecutionError(.providerError, "private workflow worker exited with status 137"))
+    ] {
+      let runner = PrivateWorkflowFixtureRunner(status: status)
+      do {
+        _ = try await host(runner, root: root).execute(input(), context: .init()); XCTFail("non-zero exit accepted")
+      } catch let error as AdapterExecutionError { XCTAssertEqual(error, expected) }
+    }
+  }
+
+  func testHostRefusesRecordsFromOlderPrivateWorker() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-old-worker")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = PrivateWorkflowFixtureRunner(recordVersion: 1)
+    do {
+      _ = try await host(runner, root: root).execute(input(), context: .init()); XCTFail("old worker record accepted")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("older record protocol"))
+    }
+  }
+
+  func testStaticRefusalDoesNotWaitForBusyAdmissionPool() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-admission-order")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pool = root.appendingPathComponent("pool")
+    let policy = WorkflowExecutionAdmission(directoryEnvironment: "MODEL_POOL", capacity: 1)
+    let held = try await SandboxExecutionAdmission.acquire(policy, environment: ["MODEL_POOL": pool.path], deadline: nil)
+    defer { withExtendedLifetime(held) {} }
+    let runner = PrivateWorkflowFixtureRunner()
+    var controller = host(runner, root: root)
+    controller.environment["MODEL_POOL"] = pool.path
+    controller.environment["RIELA_SANDBOX_WORKER_EXECUTABLE"] = root.appendingPathComponent("missing-worker").path
+    var request = input(); request.addon.sandbox?.admission = policy
+    let started = Date()
+    do {
+      _ = try await controller.execute(request, context: .init(deadline: Date().addingTimeInterval(5)))
+      XCTFail("missing worker accepted")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked) }
+    XCTAssertLessThan(Date().timeIntervalSince(started), 2, "static refusal must not wait for a pool slot")
+    let calls = await runner.calls
+    XCTAssertTrue(calls.isEmpty)
+  }
+
+  func testInnerTimeoutKeepsTimeoutClassAndFailuresStayFinite() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-timeout")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definitions = root.appendingPathComponent("definitions/slow")
+    try FileManager.default.createDirectory(at: definitions.appendingPathComponent("nodes"), withIntermediateDirectories: true)
+    let workflow: JSONObject = ["workflowId": .string("slow"), "description": .string("synthetic slow private graph"),
+      "defaults": .object(["nodeTimeoutMs": .number(30000), "maxLoopIterations": .number(1)]), "entryStepId": .string("wait"),
+      "nodes": .array([.object(["id": .string("wait"), "nodeFile": .string("nodes/wait.json")])]),
+      "steps": .array([.object(["id": .string("wait"), "nodeId": .string("wait")])])]
+    let node: JSONObject = ["id": .string("wait"), "nodeType": .string("command"), "model": .string(""),
+      "command": .object(["executable": .string("/bin/sleep"), "arguments": .array([.string("20")])])]
+    try JSONEncoder().encode(workflow).write(to: definitions.appendingPathComponent("workflow.json"))
+    try JSONEncoder().encode(node).write(to: definitions.appendingPathComponent("nodes/wait.json"))
+    let plan = try PrivateWorkflowPlan(config: ["workflowId": .string("slow"),
+      "definitionRoot": .string(definitions.deletingLastPathComponent().path), "outputSchema": .object(schema)])
+    let started = Date()
+    do {
+      _ = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan, deadline: Date().addingTimeInterval(1.5),
+        environment: [:], credentials: []), root: root.appendingPathComponent("guest"))
+      XCTFail("slow inner graph completed")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .timeout)
+    }
+    XCTAssertLessThan(Date().timeIntervalSince(started), 15)
+    XCTAssertEqual(PrivateWorkflowWorker.failure(for: WorkflowPublicationError.validationRejected("PRIVATE")),
+      AdapterExecutionError(.invalidOutput, "private workflow execution failed"))
+    XCTAssertEqual(PrivateWorkflowWorker.failure(for: AdapterExecutionError(.timeout, "PRIVATE")),
+      AdapterExecutionError(.timeout, "private workflow execution failed"))
+    XCTAssertEqual(PrivateWorkflowWorker.failure(for: CocoaError(.fileNoSuchFile)).code, .providerError)
   }
 
   func testGuestPrivilegeAndMountChecksRejectUnsafeBoundaries() throws {
@@ -226,24 +317,38 @@ final class PrivateWorkflowTests: XCTestCase {
   }
 }
 
+private actor PrivateWorkflowEventRecorder {
+  var events: [AdapterBackendEvent] = []
+  func append(_ event: AdapterBackendEvent) { events.append(event) }
+}
+
 private actor PrivateWorkflowFixtureRunner: LocalProcessRunning {
   var calls: [(LocalProcessConfiguration, String)] = []
   var cancel: Bool
   var invalidPayload: Bool
   var event: Bool
   var usageLine: String?
-  init(cancel: Bool = false, invalidPayload: Bool = false, event: Bool = false, usageLine: String? = nil) {
+  var when: [String: Bool]
+  var model: String
+  var provider: String
+  var status: Int32
+  var recordVersion: Int
+  init(cancel: Bool = false, invalidPayload: Bool = false, event: Bool = false, usageLine: String? = nil,
+       when: [String: Bool] = ["always": true], model: String = "fixture", provider: String = "fixture",
+       status: Int32 = 0, recordVersion: Int = SandboxNodeRecord.currentVersion) {
     self.cancel = cancel; self.invalidPayload = invalidPayload; self.event = event
-    self.usageLine = usageLine
+    self.usageLine = usageLine; self.when = when; self.model = model; self.provider = provider
+    self.status = status; self.recordVersion = recordVersion
   }
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
     calls.append((configuration, stdin))
     guard configuration.arguments.contains("exec") else { return .init(stdout: "", stderr: "", terminationStatus: 0) }
     if cancel { throw CancellationError() }
-    let output = AdapterExecutionOutput(provider: "fixture", model: "fixture", promptText: "", completionPassed: true,
+    let output = AdapterExecutionOutput(provider: provider, model: model, promptText: "", completionPassed: true, when: when,
       payload: invalidPayload ? ["raw": .string("RAW_UNAPPROVED")] : ["status": .string("ok")])
-    let record = SandboxNodeRecord(kind: event ? .event : .result, output: event ? nil : output)
+    var record = SandboxNodeRecord(kind: event ? .event : .result, output: event ? nil : output)
+    record.version = recordVersion
     let stdout = try XCTUnwrap(String(data: JSONEncoder().encode(record), encoding: .utf8))
-    return .init(stdout: stdout + "\n", stderr: usageLine.map { $0 + "\n" } ?? "", terminationStatus: 0)
+    return .init(stdout: stdout + "\n", stderr: usageLine.map { $0 + "\n" } ?? "", terminationStatus: status)
   }
 }

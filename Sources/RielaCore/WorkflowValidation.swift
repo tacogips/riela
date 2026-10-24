@@ -164,6 +164,12 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
         diagnostics.append(error("workflow.steps.\(step.id).placement", "output projection steps execute on the controller and cannot specify worker placement"))
       }
       let effectivePolicy = step.sessionPolicy ?? nodePayloads[step.nodeId]?.sessionPolicy
+      // The runner uses the step-level policy first; a reused vendor session
+      // cannot take a fresh native output schema file.
+      if step.sessionPolicy?.mode == .reuse, nodePayloads[step.nodeId]?.output?.nativeStructuredOutput == true {
+        diagnostics.append(error("workflow.steps.\(step.id).sessionPolicy",
+          "node '\(step.nodeId)' uses output.nativeStructuredOutput, which requires a fresh codex-agent session"))
+      }
       validateEffectiveSessionPolicy(
         effectivePolicy,
         path: "workflow.steps.\(step.id).sessionPolicy",

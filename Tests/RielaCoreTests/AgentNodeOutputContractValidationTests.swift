@@ -203,6 +203,49 @@ final class AgentNodeOutputContractValidationTests: XCTestCase {
     XCTAssertFalse(diagnostics.contains { $0.path.hasSuffix("properties.git") })
   }
 
+  func testNativeStructuredOutputRejectsComposedSchemaAndStepLevelReuse() {
+    let schema: JSONObject = ["type": .string("object")]
+    let composed = validate(singleAgent: compliantAgent(output: .init(jsonSchema: schema,
+      jsonSchemaFrom: "/runtimeVariables/schema", nativeStructuredOutput: true)))
+    XCTAssertTrue(composed.contains {
+      $0.severity == .error && $0.path == "workflow.nodes.agent.output.nativeStructuredOutput"
+        && $0.message.contains("cannot combine jsonSchema with jsonSchemaFrom")
+    }, "\(composed)")
+    let single = validate(singleAgent: compliantAgent(output: .init(jsonSchemaFrom: "/runtimeVariables/schema",
+      nativeStructuredOutput: true)))
+    XCTAssertFalse(single.contains { $0.path.hasSuffix("nativeStructuredOutput") }, "\(single)")
+
+    // The runner prefers the step-level session policy, so validation must too.
+    let reused = DefaultWorkflowValidator().validate(
+      baseWorkflow(registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],
+        steps: [WorkflowStepRef(id: "only", nodeId: "agent", sessionPolicy: .init(mode: .reuse))]),
+      nodePayloads: ["agent": compliantAgent(output: .init(jsonSchema: schema, nativeStructuredOutput: true))])
+    XCTAssertTrue(reused.contains {
+      $0.severity == .error && $0.path == "workflow.steps.only.sessionPolicy" && $0.message.contains("nativeStructuredOutput")
+    }, "\(reused)")
+  }
+
+  func testCommandFailureDiagnosticsWarnsAboutSettingsThatAlwaysReject() {
+    var command = AgentNodePayload(id: "agent", model: "model")
+    command.command = WorkflowCommandExecution(executable: "/bin/echo", failureDiagnostics: .init(
+      schema: ["type": .string("object")], maxBytes: 70_000, path: Array(repeating: "k", count: 9)))
+    let warnings = validateAgentNodePayload(command, path: "node").filter { $0.severity == .warning }
+    XCTAssertTrue(warnings.allSatisfy { $0.path == "node.command.failureDiagnostics" }, "\(warnings)")
+    for subject in ["maxBytes", "path", "schema"] {
+      XCTAssertTrue(warnings.contains { $0.message.hasPrefix(subject) }, "missing \(subject) warning: \(warnings)")
+    }
+    // A schema the restricted checker rejects below the root is also caught.
+    command.command?.failureDiagnostics = .init(schema: ["type": .string("object"),
+      "properties": .object(["note": .object(["type": .string("string")])]),
+      "required": .array([]), "additionalProperties": .bool(false)])
+    XCTAssertTrue(validateAgentNodePayload(command, path: "node").contains {
+      $0.severity == .warning && $0.message.contains("schema/properties/note")
+    })
+    command.command?.failureDiagnostics = .init(schema: ["type": .string("object"), "properties": .object([:]),
+      "required": .array([]), "additionalProperties": .bool(false)])
+    XCTAssertFalse(validateAgentNodePayload(command, path: "node").contains { $0.path.contains("failureDiagnostics") })
+  }
+
   private func validate(singleAgent payload: AgentNodePayload) -> [WorkflowValidationDiagnostic] {
     DefaultWorkflowValidator().validate(
       baseWorkflow(

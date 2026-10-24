@@ -123,6 +123,8 @@ final class DistributedControllerSettingsTests: XCTestCase {
     let app = RielaApp()
     addTeardownBlock { @MainActor in await app.stopDistributedController() }
     app.profileStore = RielaAppProfileStore(appRootURL: root)
+    // Keep capabilityStoreRoot (runtime-records) under the scratch root, never ~/.riela.
+    app.appHomeDirectory = root.appendingPathComponent("home")
     let url = app.distributedControllerConfigurationURL
     guard url.path.hasPrefix(root.path) else { throw XCTSkip("Controller environment override is active") }
     let wrongMethod = await app.workerSettingsResponse(for: .init(method: "GET", path: "/api/v1/settings/workers/start"))
@@ -138,9 +140,33 @@ final class DistributedControllerSettingsTests: XCTestCase {
     XCTAssertEqual(body["running"] as? Bool, true)
     let workers = try XCTUnwrap(body["workers"] as? [[String: Any]])
     XCTAssertEqual(workers.first?["connected"] as? Bool, false)
+    XCTAssertTrue(body["workerStatusError"] is NSNull)
+    XCTAssertTrue(app.daemonSessionStoreRoot(profileName: app.daemonProfileName).hasPrefix(root.path))
     let stopped = await app.workerSettingsResponse(for: .init(method: "POST", path: "/api/v1/settings/workers/stop"))
     XCTAssertEqual(stopped?.status, 200)
     XCTAssertNil(app.distributedController)
+  }
+
+  func testWorkerStatusReadFailureIsReportedInsteadOfNoWorkers() async throws {
+    let root = try scratch()
+    let app = RielaApp()
+    addTeardownBlock { @MainActor in await app.stopDistributedController() }
+    app.profileStore = RielaAppProfileStore(appRootURL: root)
+    app.appHomeDirectory = root.appendingPathComponent("home")
+    let url = app.distributedControllerConfigurationURL
+    guard url.path.hasPrefix(root.path) else { throw XCTSkip("Controller environment override is active") }
+    _ = try writeProfile(config: try await availableConfiguration(), url: url, app: app)
+    await app.startDistributedController()
+    XCTAssertNotNil(app.distributedController)
+    // Corrupt the controller job store so reading worker registrations fails.
+    try Data("not a controller snapshot".utf8).write(to: url.deletingLastPathComponent().appendingPathComponent("jobs.json"))
+    let read = await app.workerSettingsResponse(for: .init(method: "GET", path: "/api/v1/settings/workers"))
+    XCTAssertEqual(read?.status, 200)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(read?.body)) as? [String: Any])
+    XCTAssertEqual(body["running"] as? Bool, true)
+    XCTAssertEqual((body["workers"] as? [Any])?.count, 0)
+    XCTAssertEqual(body["workerStatusError"] as? String, RielaApp.distributedWorkerStatusReadFailure)
+    await app.stopDistributedController()
   }
 
   func testSaveAndProfileSwitchWaitForSuspendedControllerTransition() async throws {

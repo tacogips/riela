@@ -125,6 +125,72 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
     let requests = await calls.values
     XCTAssertEqual(requests, ["GET /api/v1/bootstrap", "POST /api/v1/instances/fixture/actions", "GET /api/v1/instances/fixture/environment"])
   }
+
+  /// Transport answering bootstrap with a matching profile, then `reply` for
+  /// the reload POST (when non-nil) and the status GET.
+  private func environmentCommand(post: (Data, Int)?, status: (Data, Int)) -> EnvironmentCommand {
+    EnvironmentCommand(transport: { request in
+      if request.url?.path == "/api/v1/bootstrap" {
+        return (Data(#"{"profile":"default","revision":1,"csrfToken":"fixture-csrf"}"#.utf8), 200)
+      }
+      if request.httpMethod == "POST" { return post ?? (Data("{}".utf8), 200) }
+      return status
+    })
+  }
+
+  private func statusBody(lastError: String) -> Data {
+    Data(("{\"names\":[\"API_KEY\"],\"configuredNames\":[],\"missingNames\":[\"API_KEY\"],\"sourceIDs\":[\"vault\"],"
+      + "\"generation\":3,\"readiness\":\"failed\",\"lastError\":\"" + lastError + "\",\"leak\":\"DO_NOT_FORWARD\"}").utf8)
+  }
+
+  func testEnvironmentReload422PrintsStatusLastErrorInsteadOfHTTPCode() async throws {
+    for code in ["environment_source_failed", "environment_restart_required", "environment_reload_in_progress",
+                 "environment_instance_changed"] {
+      let command = environmentCommand(post: (statusBody(lastError: code), 422),
+                                       status: (Data(), 500))
+      let result = await command.run(["reload", "--instance", "fixture", "--profile", "default"])
+      XCTAssertEqual(result.exitCode, .failure)
+      XCTAssertEqual(result.stderr, code + "\n")
+      XCTAssertTrue(result.stdout.contains(#""generation":3"#), result.stdout)
+      XCTAssertFalse(result.stdout.contains("DO_NOT_FORWARD"))
+    }
+  }
+
+  func testEnvironmentErrorEnvelopeCodesAndFallbacks() async throws {
+    let conflict = Data(#"{"error":{"code":"configuration_conflict","message":"Configuration changed."}}"#.utf8)
+    let notFound = Data(#"{"error":{"code":"instance_not_found","message":"Execution configuration was not found."}}"#.utf8)
+    let unsafe = Data(#"{"error":{"code":"Secret Value 123","message":"x"}}"#.utf8)
+    let cases: [EnvironmentResponseCase] = [
+      EnvironmentResponseCase(post: (conflict, 409), status: (Data(), 500), expected: "configuration_conflict"),
+      EnvironmentResponseCase(post: nil, status: (notFound, 404), expected: "instance_not_found"),
+      EnvironmentResponseCase(post: nil, status: (Data("not json".utf8), 404), expected: "environment_http_404"),
+      EnvironmentResponseCase(post: nil, status: (unsafe, 409), expected: "environment_http_409"),
+      EnvironmentResponseCase(post: (statusBody(lastError: "Not A Code!"), 422), status: (Data(), 500),
+                              expected: "environment_request_failed")
+    ]
+    for testCase in cases {
+      let command = environmentCommand(post: testCase.post, status: testCase.status)
+      let result = await command.run(["reload", "--instance", "fixture", "--profile", "default"])
+      XCTAssertEqual(result.exitCode, .failure)
+      XCTAssertEqual(result.stderr, testCase.expected + "\n")
+      XCTAssertFalse((result.stdout + result.stderr).contains("Secret Value"))
+      XCTAssertFalse((result.stdout + result.stderr).contains("Not A Code"))
+    }
+  }
+
+  func testEnvironmentStatusDecodesUnknownLastErrorTolerantly() async throws {
+    let command = environmentCommand(post: nil, status: (statusBody(lastError: "environment_restart_required"), 200))
+    let result = await command.run(["status", "--instance", "fixture", "--profile", "default"])
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    XCTAssertTrue(result.stdout.contains(#""lastError":"environment_restart_required""#), result.stdout)
+    XCTAssertFalse(result.stdout.contains("DO_NOT_FORWARD"))
+  }
+}
+
+private struct EnvironmentResponseCase {
+  var post: (Data, Int)?
+  var status: (Data, Int)
+  var expected: String
 }
 
 private actor EnvironmentHTTPCalls {

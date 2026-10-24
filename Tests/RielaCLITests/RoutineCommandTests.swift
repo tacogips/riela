@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaEvents
+import RielaGraphQL
 import RielaWorkflowRegistry
 import XCTest
 @testable import RielaCLI
@@ -350,6 +351,142 @@ final class RoutineCommandTests: XCTestCase {
     let sourceDirectory = eventRoot.appendingPathComponent("sources", isDirectory: true)
     let sourceFiles = try FileManager.default.contentsOfDirectory(atPath: sourceDirectory.path)
     XCTAssertEqual(sourceFiles, [])
+  }
+
+  func testSetOverlapPolicyPreservesBindingFileEnabledStateAndHandEdits() throws {
+    let workingDirectory = temporaryDirectory()
+    let eventRoot = workingDirectory.appendingPathComponent("events", isDirectory: true)
+    let routineStore = workingDirectory.appendingPathComponent("routines", isDirectory: true)
+    let service = RoutineService(workingDirectory: workingDirectory.path, environment: [:])
+    let record = try service.create(RoutineCreateRequest(
+      name: "hand edited", task: "run task", every: "30m", workflowName: "wf",
+      eventRoot: eventRoot.path, routineStoreRoot: routineStore.path
+    )).routine
+    XCTAssertEqual(record.status, .active)
+    // The binding was disabled by hand (record still active) and its template edited.
+    let bindingURL = service.bindingFileURL(for: record)
+    guard case var .object(object) = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: bindingURL)) else {
+      return XCTFail("binding file is not an object")
+    }
+    object["enabled"] = .bool(false)
+    object["note"] = .string("operator hand edit")
+    try JSONEncoder().encode(JSONValue.object(object)).write(to: bindingURL)
+
+    _ = try service.setOverlapPolicy(
+      routineId: record.routineId, overlapPolicy: "queue", maxQueuedRuns: 3, maxConcurrentRuns: nil,
+      routineStoreRoot: routineStore.path
+    )
+    let binding = try JSONDecoder().decode(EventBindingContract.self, from: Data(contentsOf: bindingURL))
+    XCTAssertFalse(binding.enabled)
+    XCTAssertEqual(binding.overlapPolicy, "queue")
+    XCTAssertEqual(binding.maxQueuedRuns, 3)
+    let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: bindingURL)) as? [String: Any])
+    XCTAssertEqual(raw["note"] as? String, "operator hand edit")
+
+    // Replacing the policy removes caps that the new call omits.
+    _ = try service.setOverlapPolicy(
+      routineId: record.routineId, overlapPolicy: "queue", maxQueuedRuns: nil, maxConcurrentRuns: nil,
+      routineStoreRoot: routineStore.path
+    )
+    let replaced = try JSONDecoder().decode(EventBindingContract.self, from: Data(contentsOf: bindingURL))
+    XCTAssertEqual(replaced.overlapPolicy, "queue")
+    XCTAssertNil(replaced.maxQueuedRuns)
+    XCTAssertNil(try service.get(routineId: record.routineId, routineStoreRoot: routineStore.path).maxQueuedRuns)
+  }
+
+  func testSetOverlapPolicyLeavesRecordUnchangedWhenBindingWriteFails() throws {
+    let workingDirectory = temporaryDirectory()
+    let eventRoot = workingDirectory.appendingPathComponent("events", isDirectory: true)
+    let routineStore = workingDirectory.appendingPathComponent("routines", isDirectory: true)
+    let service = RoutineService(workingDirectory: workingDirectory.path, environment: [:])
+    let record = try service.create(RoutineCreateRequest(
+      name: "write failure", task: "run task", every: "30m", workflowName: "wf",
+      eventRoot: eventRoot.path, routineStoreRoot: routineStore.path
+    )).routine
+    // A directory where the binding file belongs makes the atomic write fail.
+    let bindingURL = service.bindingFileURL(for: record)
+    try FileManager.default.removeItem(at: bindingURL)
+    try FileManager.default.createDirectory(
+      at: bindingURL.appendingPathComponent("blocker", isDirectory: true), withIntermediateDirectories: true
+    )
+
+    XCTAssertThrowsError(try service.setOverlapPolicy(
+      routineId: record.routineId, overlapPolicy: "concurrent", maxQueuedRuns: nil, maxConcurrentRuns: 2,
+      routineStoreRoot: routineStore.path
+    ))
+    let unchanged = try service.get(routineId: record.routineId, routineStoreRoot: routineStore.path)
+    XCTAssertNil(unchanged.overlapPolicy)
+    XCTAssertNil(unchanged.maxConcurrentRuns)
+  }
+
+  func testRoutineOverlapPolicyThroughGraphQLFileProvider() async throws {
+    let workingDirectory = temporaryDirectory()
+    let eventRoot = workingDirectory.appendingPathComponent("events", isDirectory: true)
+    let routineStore = workingDirectory.appendingPathComponent("routines", isDirectory: true)
+    try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+    let executor = RoutineGraphQLDocumentExecutor(
+      provider: FileRoutineGraphQLProvider(workingDirectory: workingDirectory.path, environment: [:])
+    )
+    func execute(_ query: String) async -> JSONObject {
+      await executor.execute(GraphQLDocumentRequest(
+        query: query, variables: [:], operationName: nil, environment: [:], isLocallyTrusted: true
+      )).body
+    }
+    let roots = "routineStoreRoot: \"\(routineStore.path)\""
+
+    let created = await execute("""
+    mutation {
+      createRoutine(input: {name: "gql policy", task: "run", every: "30m", workflowName: "wf",
+        eventRoot: "\(eventRoot.path)", \(roots), overlapPolicy: queue, maxQueuedRuns: 2}) {
+        accepted
+        routine { routineId overlapPolicy maxQueuedRuns }
+      }
+    }
+    """)
+    XCTAssertNil(created["errors"], "\(created)")
+    guard case let .object(data)? = created["data"], case let .object(payload)? = data["createRoutine"],
+          case let .object(routine)? = payload["routine"], case let .string(routineId)? = routine["routineId"] else {
+      return XCTFail("unexpected createRoutine response: \(created)")
+    }
+    XCTAssertEqual(routine["overlapPolicy"], .string("queue"))
+    XCTAssertEqual(routine["maxQueuedRuns"], .integer(2))
+    let service = RoutineService(workingDirectory: workingDirectory.path, environment: [:])
+    let record = try service.get(routineId: routineId, routineStoreRoot: routineStore.path)
+    let bindingURL = service.bindingFileURL(for: record)
+    var binding = try JSONDecoder().decode(EventBindingContract.self, from: Data(contentsOf: bindingURL))
+    XCTAssertEqual(binding.overlapPolicy, "queue")
+    XCTAssertEqual(binding.maxQueuedRuns, 2)
+
+    let queried = await execute("""
+    { routine(routineId: "\(routineId)", \(roots)) { routine { overlapPolicy maxQueuedRuns maxConcurrentRuns } } }
+    """)
+    guard case let .object(queryData)? = queried["data"], case let .object(queryPayload)? = queryData["routine"],
+          case let .object(queriedRoutine)? = queryPayload["routine"] else {
+      return XCTFail("unexpected routine response: \(queried)")
+    }
+    XCTAssertEqual(queriedRoutine["overlapPolicy"], .string("queue"))
+    XCTAssertEqual(queriedRoutine["maxQueuedRuns"], .integer(2))
+
+    let invalidCombination = await execute("""
+    mutation { setRoutineOverlapPolicy(input: {routineId: "\(routineId)", \(roots), overlapPolicy: skip, maxQueuedRuns: 2}) { accepted } }
+    """)
+    XCTAssertTrue("\(invalidCombination["errors"] ?? .null)".contains("INVALID_ROUTINE"), "\(invalidCombination)")
+    XCTAssertTrue("\(invalidCombination["errors"] ?? .null)".contains("requires overlapPolicy queue"), "\(invalidCombination)")
+
+    let unknownValue = await execute("""
+    mutation { setRoutineOverlapPolicy(input: {routineId: "\(routineId)", \(roots), overlapPolicy: bogus}) { accepted } }
+    """)
+    XCTAssertTrue("\(unknownValue["errors"] ?? .null)".contains("INVALID_ROUTINE"), "\(unknownValue)")
+    XCTAssertEqual(try service.get(routineId: routineId, routineStoreRoot: routineStore.path).overlapPolicy, "queue")
+
+    let cleared = await execute("""
+    mutation { setRoutineOverlapPolicy(input: {routineId: "\(routineId)", \(roots), overlapPolicy: null}) { accepted routine { overlapPolicy } } }
+    """)
+    XCTAssertNil(cleared["errors"], "\(cleared)")
+    binding = try JSONDecoder().decode(EventBindingContract.self, from: Data(contentsOf: bindingURL))
+    XCTAssertNil(binding.overlapPolicy)
+    XCTAssertNil(binding.maxQueuedRuns)
+    XCTAssertNil(try service.get(routineId: routineId, routineStoreRoot: routineStore.path).overlapPolicy)
   }
 
   private func temporaryDirectory() -> URL {

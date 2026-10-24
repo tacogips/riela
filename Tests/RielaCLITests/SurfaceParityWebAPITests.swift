@@ -9,12 +9,20 @@ import XCTest
 /// enumeration; the catalog is the declaration; the gate is their bijection,
 /// backed by owner-file checks and live dispatch spot tests.
 final class SurfaceParityWebAPITests: XCTestCase {
-  func testEnvironmentStatusIsDeclaredAsDesktopOwnedRead() throws {
+  /// Both hosts run loaders through the daemon runtime, so both must serve the
+  /// status read (and the reload action) instead of a 404 / no-op on `riela serve`.
+  func testEnvironmentStatusIsServedByBothHosts() throws {
     let route = "GET /api/v1/instances/{identity}/environment"
-    let declaration = try XCTUnwrap(RielaWebAPIRouteTable.desktopOnly.first { $0.route == route })
-    XCTAssertEqual(declaration.owner, "Sources/RielaApp/RielaAppInstanceAPI.swift")
+    XCTAssertFalse(RielaWebAPIRouteTable.desktopOnly.contains { $0.route == route })
+    let declaration = try XCTUnwrap(RielaWebAPIRouteTable.instanceEnvironment.first { $0.route == route })
+    XCTAssertEqual(declaration.owner, "Sources/RielaCLI/ServeWebHost+Instances.swift")
     XCTAssertTrue(SurfaceCatalog.declaredWebAPIRoutes.contains(route))
     XCTAssertTrue(SurfaceCatalog.all.contains { $0.id == "console.instance-environment" })
+    for owner in [declaration.owner, RielaWebAPIRouteTable.desktopInstanceWriteOwner] {
+      let contents = try String(contentsOf: Self.repositoryRoot().appendingPathComponent(owner), encoding: .utf8)
+      XCTAssertTrue(contents.contains(RielaWebAPIRouteTable.instanceEnvironmentMarker), owner)
+      XCTAssertTrue(contents.contains(".reloadEnvironment"), "\(owner) must perform the reload action")
+    }
   }
 
   func testDesktopAPIKeyMethodsMatchTheirActualDispatcher() {

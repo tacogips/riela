@@ -81,7 +81,7 @@ specified; an explicit null remains null. Empty arrays remain empty.
 
 There are no embedded expressions, scripts, subprocesses, or recursive template
 evaluation. Pipelines allow at most 32 steps, array operations at most 10,000
-entries, and values at most 8 MB at each boundary. Optional standalone
+entries, and values at most 8 MiB (8,388,608 bytes) of encoded JSON at each boundary. Optional standalone
 `config.jsonSchema` validates the final `{ "value": ... }` output envelope.
 Editorial decisions (for example, preserving an opinion as an opinion and adding
 an unverified-context notice) belong to the review/workflow nodes rather than

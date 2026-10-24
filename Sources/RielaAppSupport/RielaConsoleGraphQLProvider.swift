@@ -188,8 +188,8 @@ public struct RielaConsoleGraphQLProvider {
     )
   }
 
-  private func safeEnvironmentStatus(identity: String) -> JSONObject? {
-    guard let data = try? JSONEncoder().encode(environmentStatus(identity)),
+  private func safeEnvironmentStatus(_ status: RuntimeEnvironmentStatus) -> JSONObject? {
+    guard let data = try? JSONEncoder().encode(status),
           case let .object(value)? = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
     return value
   }
@@ -200,6 +200,9 @@ public struct RielaConsoleGraphQLProvider {
     let snapshot = runtimeSnapshot(instance.identity)
     let preference = instance.preference
     let effectiveEnvironment = environment(instance)
+    // One status read per instance: the DTO and every requirement row agree.
+    let status = environmentStatus(instance.identity)
+    let resolution = preference.configuration.environmentResolution
     return GraphQLConsoleInstanceDTO(
       id: instance.identity,
       sourceId: instance.sourceIdentity,
@@ -215,16 +218,17 @@ public struct RielaConsoleGraphQLProvider {
       workingDirectory: preference.workingDirectory,
       environmentFilePath: preference.environmentFilePath,
       environmentResolution: preference.configuration.environmentResolution,
-      environmentStatus: safeEnvironmentStatus(identity: instance.identity),
+      environmentStatus: safeEnvironmentStatus(status),
       environmentVariables: maskedEnvironmentVariables(preference.environmentVariables),
       requiredEnvironment: instance.candidate.requiredEnvironment.map { requirement in
-        let value = effectiveEnvironment[requirement.name]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return GraphQLConsoleRequiredEnvironmentDTO(
+        GraphQLConsoleRequiredEnvironmentDTO(
           name: requirement.name,
           description: requirement.description,
           secret: requirement.secret,
           source: "workflow",
-          present: value?.isEmpty == false || environmentStatus(instance.identity).configuredNames.contains(requirement.name)
+          present: RielaAppEnvironmentPresence.isPresent(
+            requirement.name, environment: effectiveEnvironment, resolution: resolution, status: status
+          )
         )
       },
       workflowVariables: preference.defaultVariables,

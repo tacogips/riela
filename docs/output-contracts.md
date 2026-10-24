@@ -1,6 +1,6 @@
 # Node output contracts
 
-Declare `output.jsonSchema` in the node payload. Riela appends that authored schema to the agent's system prompt after rendering workflow and persona templates. Schema strings such as `{{example}}` remain literal. Keep persona prompts focused on the task; duplicating the output shape there is unnecessary. The agent should return the JSON object directly, without prose or fences. When authored instructions require routing metadata, the existing `{ "when": { "condition": true }, "payload": {...} }` envelope remains supported: the schema validates `payload`, not the envelope. If an agent returns a valid boolean `when` map but places its business fields beside it instead of under `payload`, Riela normalizes those sibling fields (excluding `when` and `completionPassed`) as the payload, records a routing diagnostic, and still validates them against the schema. A non-object `payload` or a non-boolean `when` value is still rejected.
+Declare `output.jsonSchema` in the node payload. Riela appends that authored schema to the agent's system prompt after rendering workflow and persona templates. Schema strings such as `{{example}}` remain literal. Keep persona prompts focused on the task; duplicating the output shape there is unnecessary. The agent should return the JSON object directly, without prose or fences. When authored instructions require routing metadata, the existing `{ "when": { "condition": true }, "payload": {...} }` envelope remains supported: the schema validates `payload`, not the envelope. If an agent returns a valid boolean `when` map but places its business fields beside it instead of under `payload`, Riela normalizes those sibling fields (excluding `when` and `completionPassed`) as the payload, records a routing diagnostic on the accepted output (also on the in-process agent-gateway path), and still validates them against the schema. A non-object `payload` or a non-boolean `when` value is still rejected. Because of this, a top-level `when` key is reserved for routing: a schema property named `when` that holds a boolean map, without a `payload` beside it, is treated as routing and removed from the payload. Name such a business field differently.
 
 Both workflow bundle validation and runtime preflight use the same dialect checker as output publication. Invalid or unsupported contracts fail before an adapter runs, including unsupported keywords nested in properties, items, additional properties, or combinators.
 
@@ -39,3 +39,20 @@ delivering step, template path, consumer step, and add-on. Optional context
 namespaces—`event`, `workflowInput`, `runtime`, `upstream`, and `_rielaInput`
 (including runtime roots under `input`)—remain lenient and render missing
 values as an empty string. Agent prompt templates remain lenient.
+
+## Data-dependent schemas and native structured output
+
+`output.jsonSchemaFrom` reads an object schema from the step's merged prompt
+variables at run time. When a static `output.jsonSchema` is also declared,
+both apply through a root `allOf`. Static validation cannot inspect a
+request-bound schema: when a node declares only `jsonSchemaFrom`, payload
+fields that downstream templates or conditional labels use are checked only at
+run time. Declare a static `jsonSchema` for the fields you want proven by
+`workflow validate`.
+
+`output.nativeStructuredOutput: true` hands the schema to Codex as
+`--output-schema`. It requires a fresh `codex-agent` session (validation also
+checks a step-level `sessionPolicy`) and exactly one schema source: combining
+`jsonSchema` with `jsonSchemaFrom` would give the vendor a root `allOf`, which
+strict structured output does not accept, so validation and the runtime both
+reject it.

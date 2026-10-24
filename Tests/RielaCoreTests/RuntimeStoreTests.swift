@@ -1014,3 +1014,43 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
     nil
   }
 }
+
+extension RuntimeStoreTests {
+  func testCommandFailureDiagnosticsMetadataIsDroppedUnlessItHasTheReceiptShape() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(WorkflowStepExecutionRecordInput(
+      sessionId: session.sessionId, stepId: "start", nodeId: "node", attempt: 1))
+    let eventType = WorkflowFailureDiagnostics.eventType
+    XCTAssertEqual(eventType, "command_failure_diagnostics")
+    let rejected = WorkflowFailureDiagnostics.eventMetadata(exitCode: 3, diagnostics: nil)
+    let oversized: JSONObject = ["authoritative": .bool(false), "exitCode": .integer(1),
+      "captureStatus": .string("validated"),
+      "diagnostics": .object(["blob": .array(Array(repeating: .integer(1_000_000), count: 9_000))])]
+    let invalid: [JSONObject] = [
+      ["authoritative": .bool(false), "exitCode": .integer(1), "captureStatus": .string("rejected"),
+       "extra": .string("worker supplied")],
+      ["authoritative": .bool(true), "exitCode": .integer(1), "captureStatus": .string("rejected")],
+      ["authoritative": .bool(false), "exitCode": .string("1"), "captureStatus": .string("rejected")],
+      ["authoritative": .bool(false), "exitCode": .integer(1), "captureStatus": .string("validated")],
+      ["authoritative": .bool(false), "exitCode": .integer(1), "captureStatus": .string("rejected"),
+       "diagnostics": .object([:])],
+      ["authoritative": .bool(false), "exitCode": .integer(1), "captureStatus": .string("other")],
+      oversized
+    ]
+    for metadata in invalid {
+      _ = try await store.recordStepBackendEvent(WorkflowStepBackendEventInput(sessionId: session.sessionId,
+        executionId: execution.executionId, eventType: eventType, channel: .lifecycle, metadata: metadata))
+    }
+    _ = try await store.recordStepBackendEvent(WorkflowStepBackendEventInput(sessionId: session.sessionId,
+      executionId: execution.executionId, eventType: eventType, channel: .lifecycle, metadata: rejected))
+    let updated = try await store.updateStepExecution(WorkflowStepExecutionUpdateInput(sessionId: session.sessionId,
+      executionId: execution.executionId, status: .failed, failureReason: "command failed"))
+    let events = try XCTUnwrap(updated.recentBackendEvents)
+    XCTAssertEqual(events.count, invalid.count + 1)
+    XCTAssertTrue(events.dropLast().allSatisfy { $0.metadata == nil })
+    XCTAssertEqual(events.last?.metadata, rejected)
+    let oversizedBytes = try JSONEncoder().encode(oversized).count
+    XCTAssertGreaterThan(oversizedBytes, WorkflowFailureDiagnostics.eventMetadataByteLimit)
+  }
+}

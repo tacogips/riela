@@ -123,6 +123,23 @@ private final class GatewayStubExecutor: GatewayExecuting, @unchecked Sendable {
 
 private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { params.arguments }
 
+@Test func flattenedEnvelopeDiagnosticSurvivesTheGatewayPath() async throws {
+  let executor = GatewayStubExecutor(resultText: #"{"when":{"approved":true},"status":"done"}"#)
+  let output = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+    .init(node: .init(id: "worker", executionBackend: .codexAgent, model: "fixture",
+      output: .init(jsonSchema: ["type": .string("object")])), promptText: "fixture"), context: .init())
+  #expect(output.payload == ["status": .string("done")])
+  #expect(output.when == ["approved": true])
+  #expect(output.routingDiagnostics.count == 1)
+  #expect(output.routingDiagnostics.first?.contains("returned `when` without `payload`") == true)
+  // The runtime re-normalizes the stripped payload; the adapter's note must survive it.
+  let candidate = try normalizeRuntimeAdapterOutput(output)
+  #expect(candidate.routingDiagnostics == output.routingDiagnostics)
+  // Runtime-local only: never on the wire.
+  let decoded = try JSONDecoder().decode(AdapterExecutionOutput.self, from: JSONEncoder().encode(output))
+  #expect(decoded.routingDiagnostics.isEmpty)
+}
+
 @Test func gatewayAdapterSelectsVendorAndStreamsACPEvents() async throws {
   let executor = GatewayStubExecutor(
     steps: [.delta("hello")],

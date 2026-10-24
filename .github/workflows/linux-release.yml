@@ -103,14 +103,7 @@ jobs:
               bun --version
               # A macOS-only pin in the shared lock must not trigger a private
               # fetch when SwiftPM resolves the Linux package graph.
-              swift -e '\''import Foundation
-                let file = URL(fileURLWithPath: "Package.resolved")
-                var lock = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-                let pins = lock["pins"] as! [[String: Any]]
-                lock["pins"] = pins.filter { $0["identity"] as? String != "notion-gateway" }
-                lock.removeValue(forKey: "originHash")
-                try JSONSerialization.data(withJSONObject: lock, options: [.prettyPrinted, .sortedKeys]).write(to: file)
-              '\''
+              swift scripts/strip-macos-only-pins.swift Package.resolved
               scripts/build-homebrew-release.sh "linux-$RELEASE_ARCH"
             '
 

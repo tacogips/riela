@@ -7,6 +7,12 @@ import Glibc
 
 enum PrivateWorkflowWorker {
   static let command = "__riela-private-workflow-worker"
+  /// `_exit` status of the pre-main shim (CRielaPrivateWorker.c) when the guest
+  /// identity or process limits are unacceptable.
+  static let guestRefusalStatus: Int32 = 112
+  /// The inner run's timer is derived from the outer deadline and truncated to
+  /// milliseconds, so it can fire marginally before that deadline.
+  static let deadlineTolerance: TimeInterval = 0.25
 
   static func run() async {
     let writer = SandboxNodeRecordWriter()
@@ -15,7 +21,13 @@ enum PrivateWorkflowWorker {
         // Check the boundary before reading any credential or private input.
         try verifyGuest()
         let request = try readRequest()
-        guard request.version == 1 else { throw PrivateWorkflowPlan.invalid() }
+        guard request.version == PrivateWorkflowRequest.currentVersion else {
+          var record = SandboxNodeRecord(kind: .failure, failure: .init(.init(.policyBlocked,
+            "private workflow execution failed")))
+          if request.version < PrivateWorkflowRequest.currentVersion { record.version = 1 }
+          writer.emit(record)
+          return
+        }
         try request.plan.validate()
         try PrivateWorkflowPlan.validateEnvironment(request.environment)
         try SandboxNodeWorker.preparePrivateHome(credentials: request.credentials)
@@ -29,13 +41,23 @@ enum PrivateWorkflowWorker {
         let result = try await executeWorkflow(request, root: root)
         writer.emit(.init(kind: .result, output: result))
       } catch {
-        let code = (error as? AdapterExecutionError)?.code ?? .providerError
-        writer.emit(.init(kind: .failure, failure: .init(.init(code, "private workflow execution failed"))))
+        writer.emit(.init(kind: .failure, failure: .init(failure(for: error))))
       }
     }
     let cancellation = CLISignalCancellation { _ in operation.cancel() }
     await operation.value
     cancellation.cancel()
+  }
+
+  /// Finite code, fixed text: inner diagnostics never cross the boundary.
+  static func failure(for error: Error) -> AdapterExecutionError {
+    let code: AdapterExecutionErrorCode
+    switch error {
+    case let error as AdapterExecutionError: code = error.code
+    case WorkflowPublicationError.validationRejected: code = .invalidOutput
+    default: code = .providerError
+    }
+    return .init(code, "private workflow execution failed")
   }
 
   /// Embedded Riela owns dispatch/fanout, model execution and builtin calls.
@@ -56,11 +78,15 @@ enum PrivateWorkflowWorker {
       maxSteps: request.plan.maxSteps ?? 1000, maxConcurrency: request.plan.maxConcurrency ?? 4,
       maxLoopIterations: 1000, timeoutMs: milliseconds, artifactRoot: root.appendingPathComponent("artifacts").path,
       sessionStore: root.appendingPathComponent("sessions").path, workingDirectory: work.path))
-    guard result.exitCode == .success,
-          let bytes = result.stdout.data(using: .utf8), bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes,
-          case let .object(envelope)? = try? JSONDecoder().decode(JSONValue.self, from: bytes),
-          case let .object(payload)? = envelope["rootOutput"] else {
-      throw AdapterExecutionError(.providerError, "private inner workflow did not complete")
+    let bytes = result.stdout.data(using: .utf8) ?? Data()
+    let envelope: JSONObject? = bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes
+      ? (try? JSONDecoder().decode(JSONObject.self, from: bytes)) : nil
+    guard result.exitCode == .success, case let .object(payload)? = envelope?["rootOutput"] else {
+      // A timed-out inner graph keeps the timeout class so the outer step's
+      // nodeTimeout retry policy can apply.
+      let timedOut = envelope?["failureKind"] == .string(WorkflowSessionFailureKind.nodeTimeout.rawValue)
+        || request.deadline.timeIntervalSinceNow <= deadlineTolerance
+      throw AdapterExecutionError(timedOut ? .timeout : .providerError, "private inner workflow did not complete")
     }
     let output = AdapterExecutionOutput(provider: "riela-private-workflow", model: request.plan.workflowId,
       promptText: "", completionPassed: true, payload: payload)

@@ -58,6 +58,55 @@ public struct EventOverlapPolicyError: Error, Equatable, Sendable, CustomStringC
 
 public let defaultEventOverlapMaxQueuedRuns = 1
 
+public enum EventOverlapSettingsField: String, Equatable, Sendable {
+  case overlapPolicy
+  case maxQueuedRuns
+  case maxConcurrentRuns
+}
+
+/// One semantic problem with a set of overlap settings. Every surface (event
+/// contract validation, workflow `triggerDefaults` validation, serve-time
+/// resolution, routine mutations) derives its diagnostics from this single
+/// rule set and only maps each issue to its own path and wording.
+public enum EventOverlapSettingsIssue: Equatable, Sendable {
+  /// `overlapPolicy` is not one of `EventOverlapPolicy.allCases`.
+  case unknownPolicy(String)
+  /// A run cap is below 1.
+  case capBelowMinimum(EventOverlapSettingsField, value: Int)
+  /// A run cap is set but the policy on the same layer is not the one it applies to.
+  case capRequiresPolicy(EventOverlapSettingsField, required: EventOverlapPolicy)
+
+  public var field: EventOverlapSettingsField {
+    switch self {
+    case .unknownPolicy:
+      .overlapPolicy
+    case let .capBelowMinimum(field, _), let .capRequiresPolicy(field, _):
+      field
+    }
+  }
+}
+
+/// Validates one layer of overlap settings. Issues are ordered: policy first,
+/// then `maxQueuedRuns`, then `maxConcurrentRuns` (minimum before policy match).
+public func eventOverlapSettingsIssues(_ settings: EventOverlapSettings) -> [EventOverlapSettingsIssue] {
+  var issues: [EventOverlapSettingsIssue] = []
+  if let raw = settings.overlapPolicy, EventOverlapPolicy(rawValue: raw) == nil {
+    issues.append(.unknownPolicy(raw))
+  }
+  for field in [EventOverlapSettingsField.maxQueuedRuns, .maxConcurrentRuns] {
+    let value = field == .maxQueuedRuns ? settings.maxQueuedRuns : settings.maxConcurrentRuns
+    let required: EventOverlapPolicy = field == .maxQueuedRuns ? .queue : .concurrent
+    guard let value else { continue }
+    if value < 1 {
+      issues.append(.capBelowMinimum(field, value: value))
+    }
+    if settings.overlapPolicy != required.rawValue {
+      issues.append(.capRequiresPolicy(field, required: required))
+    }
+  }
+  return issues
+}
+
 public func resolveEventOverlapPolicy(
   binding: EventOverlapSettings?,
   workflow: EventOverlapSettings?
@@ -74,16 +123,22 @@ public func resolveEventOverlapPolicy(
     return EffectiveEventOverlapPolicy(policy: .skip, source: .default)
   }
 
-  guard let rawPolicy = winner.overlapPolicy, let policy = EventOverlapPolicy(rawValue: rawPolicy) else {
-    let rawPolicy = winner.overlapPolicy ?? ""
-    throw EventOverlapPolicyError(
-      "overlapPolicy must be one of \(EventOverlapPolicy.allowedValuesText); got '\(rawPolicy)'"
-    )
-  }
-  for (name, cap) in [("maxQueuedRuns", winner.maxQueuedRuns), ("maxConcurrentRuns", winner.maxConcurrentRuns)] {
-    if let cap, cap < 1 {
-      throw EventOverlapPolicyError("\(name) must be an integer >= 1; got \(cap)")
+  // Resolution is lenient about caps that do not match the winning policy
+  // (they are ignored); validators report that mismatch before serve starts.
+  for issue in eventOverlapSettingsIssues(winner) {
+    switch issue {
+    case let .unknownPolicy(raw):
+      throw EventOverlapPolicyError(
+        "overlapPolicy must be one of \(EventOverlapPolicy.allowedValuesText); got '\(raw)'"
+      )
+    case let .capBelowMinimum(field, value):
+      throw EventOverlapPolicyError("\(field.rawValue) must be an integer >= 1; got \(value)")
+    case .capRequiresPolicy:
+      continue
     }
+  }
+  guard let rawPolicy = winner.overlapPolicy, let policy = EventOverlapPolicy(rawValue: rawPolicy) else {
+    return EffectiveEventOverlapPolicy(policy: .skip, source: .default)
   }
   return EffectiveEventOverlapPolicy(
     policy: policy,

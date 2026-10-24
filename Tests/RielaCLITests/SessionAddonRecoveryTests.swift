@@ -114,6 +114,41 @@ final class SessionAddonRecoveryTests: XCTestCase {
     XCTAssertEqual(executions[0].importedFrom?.communicationIds[rerunCommunicationId], sourceCommunicationId)
   }
 
+  /// #135 reproduction with command nodes: rerunning `review` routes back
+  /// through `dispatch`, which requires the checkpoint message.
+  func testPlainRerunOfReviewCarriesCheckpointForCommandDispatchOnLoopBackEdge() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("session-rerun-review-loop")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let workflowRoot = root.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("review-loop", isDirectory: true)
+    let state = root.appendingPathComponent("state", isDirectory: true)
+    let sessionStore = root.appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory.appendingPathComponent("nodes"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+    try writeReviewLoopWorkflow(workflowDirectory: workflowDirectory, state: state)
+
+    let app = RielaCLIApplication()
+    let common = ["--workflow-definition-dir", workflowRoot.path, "--working-dir", root.path,
+                  "--session-store", sessionStore.path, "--output", "json"]
+    let initialRun = await app.run(["workflow", "run", "review-loop"] + common)
+    XCTAssertEqual(initialRun.exitCode, .failure, initialRun.stderr + initialRun.stdout)
+    let sourceSessionId = try XCTUnwrap(try decode(WorkflowRunFailureResult.self, from: initialRun.stdout).sessionId)
+
+    try Data().write(to: state.appendingPathComponent("repaired"))
+    let rerun = await app.run(["session", "rerun", sourceSessionId, "review"] + common)
+    XCTAssertEqual(rerun.exitCode, .success, rerun.stderr + rerun.stdout)
+    let result = try decode(SessionRerunCommandResult.self, from: rerun.stdout)
+    XCTAssertEqual(result.status, .completed)
+
+    let persisted = try CLIWorkflowSessionStore(rootDirectory: sessionStore.path).load(sessionId: result.sessionId)
+    let executions = persisted.session.executions
+    XCTAssertEqual(executions.filter { $0.importedFrom == nil }.map(\.stepId), ["review", "dispatch", "work", "review", "done"])
+    XCTAssertEqual(Set(executions.filter { $0.importedFrom != nil }.map(\.stepId)), ["checkpoint", "dispatch", "work"])
+    XCTAssertTrue(executions.filter { $0.importedFrom != nil }.allSatisfy { $0.importedFrom?.sessionId == sourceSessionId })
+    let newDispatch = try XCTUnwrap(executions.first { $0.stepId == "dispatch" && $0.importedFrom == nil })
+    XCTAssertEqual(newDispatch.attempt, 1, "imported evidence does not shift attempt numbers")
+  }
+
   func testSessionResumeRetriesPolicyBlockedAddonAfterRepair() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("session-policy-retry")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -221,6 +256,45 @@ final class SessionAddonRecoveryTests: XCTestCase {
       "promptTemplate": "Consume the upstream status {{_rielaInput.latest.payload.status}}.", "variables": {}
     }
     """.write(to: nodesDirectory.appendingPathComponent("consumer.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func writeReviewLoopWorkflow(workflowDirectory: URL, state: URL) throws {
+    let workflow: [String: Any] = [
+      "workflowId": "review-loop",
+      "defaults": ["maxLoopIterations": 3, "nodeTimeoutMs": 30_000],
+      "entryStepId": "checkpoint",
+      "nodes": ["checkpoint", "dispatch", "work", "review", "done"].map { ["id": $0, "nodeFile": "nodes/\($0).json"] },
+      "steps": [
+        ["id": "checkpoint", "nodeId": "checkpoint", "transitions": [["toStepId": "dispatch"]]],
+        ["id": "dispatch", "nodeId": "dispatch", "transitions": [["toStepId": "work"]]],
+        ["id": "work", "nodeId": "work", "transitions": [["toStepId": "review"]]],
+        ["id": "review", "nodeId": "review", "transitions": [
+          ["toStepId": "dispatch", "label": "plans_remaining"],
+          ["toStepId": "done", "label": "!(plans_remaining)"]
+        ]],
+        ["id": "done", "nodeId": "done"]
+      ]
+    ]
+    try JSONSerialization.data(withJSONObject: workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+    let scripts: [String: String] = [
+      "checkpoint": "printf '{\"checkpoint\":\"ready\"}\\n'",
+      // Mirrors dispatch-plans.py: fail unless a checkpoint message is in the inbox.
+      "dispatch": "input=$(cat); printf '%s' \"$input\" | grep -Eq '\"fromStepId\" ?: ?\"checkpoint\"' || " +
+        "{ echo 'dispatch requires a checkpoint message' >&2; exit 3; }; printf '{\"dispatched\":true}\\n'",
+      "work": "printf '{\"worked\":true}\\n'",
+      "review": "[ -e \"$1/repaired\" ] || { echo 'review broken' >&2; exit 2; }; " +
+        "if [ -e \"$1/looped\" ]; then printf '{\"when\":{\"plans_remaining\":false},\"payload\":{\"review\":\"done\"}}\\n'; " +
+        "else : > \"$1/looped\"; printf '{\"when\":{\"plans_remaining\":true},\"payload\":{\"review\":\"more\"}}\\n'; fi",
+      "done": "printf '{\"done\":true}\\n'"
+    ]
+    for (id, script) in scripts {
+      let node: [String: Any] = [
+        "id": id, "nodeType": "command", "modelFreeze": false,
+        "command": ["executable": "/bin/sh", "arguments": ["-c", script, id, state.path]]
+      ]
+      try JSONSerialization.data(withJSONObject: node)
+        .write(to: workflowDirectory.appendingPathComponent("nodes/\(id).json"))
+    }
   }
 
   private func decode<T: Decodable>(_ type: T.Type, from value: String) throws -> T {

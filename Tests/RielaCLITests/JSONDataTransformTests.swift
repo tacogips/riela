@@ -1,3 +1,4 @@
+import RielaAddonSupport
 import RielaCore
 import RielaAddons
 import XCTest
@@ -26,6 +27,22 @@ final class JSONDataTransformTests: XCTestCase {
       .object(["id": .string("1"), "text": .string("{{secret}}"), "opinion": .bool(true)]),
       .object(["id": .string("3"), "text": .string("missing"), "opinion": .bool(true)])]))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/json-transform", version: "1"))
+  }
+
+  func testSizeLimitIsTheSharedEightMiBBoundAndStandaloneInputIsChecked() throws {
+    XCTAssertEqual(GatewayJSONLimits.maximumEncodedBytes, 8 * 1_024 * 1_024)
+    // 8,100,000 bytes exceeds the former 8,000,000-byte limit but fits 8 MiB.
+    let fits: JSONValue = .string(String(repeating: "a", count: 8_100_000))
+    XCTAssertEqual(try JSONDataTransform.run(fits, steps: .array([.object(["pick": .string("")])])), fits)
+    let large: JSONValue = .object([
+      "big": .string(String(repeating: "b", count: GatewayJSONLimits.maximumEncodedBytes)), "small": .integer(1)
+    ])
+    let program = try JSONDataTransform.compile(.array([.object(["pick": .string("/small")])]))
+    // `riela/json-transform` input is a workflow boundary and stays checked.
+    XCTAssertThrowsError(try program.run(large))
+    // Runtime-owned inputs bound the picked value instead of the whole input.
+    XCTAssertEqual(try program.run(large, checkInputSize: false), .integer(1))
+    XCTAssertThrowsError(try JSONDataTransform.compile(.array([])).run(large, checkInputSize: false))
   }
 
   func testRejectsExpressionsMalformedPointersAndInvalidEmptyArrayOperations() throws {

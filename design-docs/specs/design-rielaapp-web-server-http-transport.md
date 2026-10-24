@@ -232,17 +232,18 @@ riela workflow status <session-id> --output table
 
 RielaApp owns an app-local HTTP service that binds only `127.0.0.1`, defaults to `19091`, serves bundled Bun/SolidJS/Tailwind assets from `Resources/Web`, and exposes versioned `/api/v1` JSON backed by in-process app state. It is separate from `RielaServerConfiguration`; the CLI/server default remains `127.0.0.1:8787`.
 
-Menu states must be truthful:
-
-| State | Primary item | Open in Browser | Status copy |
-| --- | --- | --- | --- |
-| Stopped | Start Web Server | disabled | `Web Server: Off · Configured 127.0.0.1:<port>` |
-| Starting | Starting Web Server... | disabled | `Web Server: Starting 127.0.0.1:<port>` |
-| Running | Stop Web Server | enabled | `Web Server: On · 127.0.0.1:<actual-port>` |
-| Stopping | Stopping Web Server... | disabled | `Web Server: Stopping <actual-address>` |
-| Failed | Start Web Server | disabled | `Web Server failed: <safe reason>. <next action>` |
-
-Open in Browser never starts a stopped server. Stop does not claim success until the listener has released the port.
+Since 7857167b (2026-10-22) the status menu has no web server items. The
+console **Settings > Web Config server** panel owns start, stop and Open in
+Browser, and only when the console is not served by that listener. The panel
+shows the controller state (`stopped`, `starting`, `running`, `stopping`,
+`failed`) as a status chip. Start and Stop go through the `updateHTTPServer`
+configuration mutation. When the listener fails to bind, or the app has no
+server controller (for example missing web assets), the mutation fails with
+`SERVER_START_FAILED` or `SERVER_UNAVAILABLE` and the listener's safe reason,
+and the panel shows that reason. Open in Browser (`POST
+/api/v1/settings/server/open`) never starts a stopped server and answers 409
+until the listener is running. Stop does not claim success until the listener
+has released the port.
 
 ### Workflow/package list
 

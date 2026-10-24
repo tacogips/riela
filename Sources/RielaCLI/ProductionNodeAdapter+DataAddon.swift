@@ -15,8 +15,23 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.invalidInput, "unsupported data add-on version")
     }
+    // The contract schema stays literal (like agent output schemas) and is
+    // checked before any work, so an unsupported schema is an input error.
+    var templatedConfig = input.addon.config ?? [:]
+    let schemaObject: JSONObject?
+    switch templatedConfig.removeValue(forKey: "jsonSchema") {
+    case nil:
+      schemaObject = nil
+    case let .object(schema)?:
+      guard DefaultWorkflowOutputValidator().validateContractSchema(schema) == nil else {
+        throw AdapterExecutionError(.invalidInput, "data add-on jsonSchema is not a supported output schema")
+      }
+      schemaObject = schema
+    default:
+      throw AdapterExecutionError(.invalidInput, "data add-on jsonSchema must be an object")
+    }
     let variables = try addonVariables(for: input)
-    guard case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: variables) else {
+    guard case let .object(config) = try renderAddonConfig(.object(templatedConfig), variables: variables) else {
       throw AdapterExecutionError(.invalidInput, "data add-on requires an object config")
     }
     let payload: JSONObject
@@ -65,10 +80,7 @@ extension BuiltinWorkflowAddonResolver {
     guard try JSONEncoder().encode(payload).count <= 8_000_000 else {
       throw AdapterExecutionError(.invalidOutput, "data add-on output exceeds the size limit")
     }
-    if let schema = config["jsonSchema"] {
-      guard case let .object(schemaObject) = schema else {
-        throw AdapterExecutionError(.invalidInput, "data add-on jsonSchema must be an object")
-      }
+    if let schemaObject {
       let result = try DefaultWorkflowOutputValidator().validate(
         RuntimeOutputCandidate(source: .inlineCandidate, payload: payload, completionPassed: true),
         contract: .init(schema: schemaObject, requiredObject: true))

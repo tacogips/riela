@@ -69,15 +69,21 @@ extension RielaApp {
     let selectedProfile = daemonProfileName
     let runtimeIdentity = profileRuntimeIdentity(profileName: selectedProfile, localIdentity: identity)
     if input.action == .reloadEnvironment {
-      guard let approved = await approvedDaemonWorkflowInstance(identity: runtimeIdentity) else {
+      // Reload refreshes credentials only; it is not gated by start readiness
+      // (a loader-managed Kaiba token must be reloadable while start is blocked).
+      guard let resolved = resolveDaemonWorkflowInstance(identity: runtimeIdentity) else {
         return instanceAPIError("instance_not_ready", "Configuration is not ready.", status: 422)
       }
-      let configuration = daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference)
+      let configuration = daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference)
       do {
-        _ = try await daemonRuntime.reloadEnvironment(for: approved.candidate, configuration: configuration)
-        // An initially locked loader must not require an App restart after unlock.
-        if approved.preference.active, daemonRuntime.snapshot(for: runtimeIdentity).status != .running {
-          await daemonRuntime.start(approved.candidate, configuration: configuration,
+        _ = try await daemonRuntime.reloadEnvironment(for: resolved.candidate, configuration: configuration)
+        // An initially locked loader must not require an App restart after unlock;
+        // the start itself still passes readiness approval.
+        if resolved.preference.active, daemonRuntime.snapshot(for: runtimeIdentity).status != .running,
+           let approved = await approvedDaemonWorkflowInstance(identity: runtimeIdentity),
+           daemonProfileName == selectedProfile, !terminationShutdownStarted {
+          await daemonRuntime.start(approved.candidate,
+            configuration: daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
             server: daemonServerConfiguration(profileName: selectedProfile),
             sessionStoreRoot: daemonSessionStoreRoot(profileName: selectedProfile))
         }

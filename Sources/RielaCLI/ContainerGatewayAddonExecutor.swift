@@ -29,10 +29,24 @@ enum ContainerGatewayAddon: String, Sendable {
     }
   }
 
-  func arguments(document: String) -> [String] {
+  /// The X reader uses the same transport contract as the embedded SDK: no SDK
+  /// retries and a per-request timeout bounded by the node deadline.
+  func arguments(document: String, deadline: Date? = nil) -> [String] {
     switch self {
-    case .xRead: ["graphql", "query", document, "--json"]
+    case .xRead: XGatewayReaderSDK.arguments(document: document, deadline: deadline)
     case .gmailRead: ["graphql", "--query", document]
+    }
+  }
+
+  /// JSON documents must fit one Linux argv entry for the legacy reader CLIs.
+  static let legacyDocumentByteLimit = 120_000
+
+  /// addon.env targets: the X reader accepts exactly the embedded reader's
+  /// credential names; the Gmail reader keeps its provider-namespace rule.
+  func allowsEnvironmentTarget(_ name: String) -> Bool {
+    switch self {
+    case .xRead: xGatewayReaderCredentialEnvironment.contains(name)
+    case .gmailRead: name.range(of: #"^(X_GW_|GMAIL_GATEWAY_)[A-Z0-9_]+\z"#, options: .regularExpression) != nil
     }
   }
 }
@@ -76,7 +90,7 @@ struct ContainerGatewayAddonExecutor {
       }
       document = renderPromptTemplate(template, variables: try addonVariables(for: input))
     }
-    if config["operation"] != nil, document.utf8.count > 120_000 {
+    if config["operation"] != nil, document.utf8.count > ContainerGatewayAddon.legacyDocumentByteLimit {
       throw AdapterExecutionError(.policyBlocked, "gateway JSON document exceeds the legacy container argument limit")
     }
     let driver = try runtimeDriver(config: config)
@@ -101,13 +115,14 @@ struct ContainerGatewayAddonExecutor {
     // Docker/Podman name-only forwarding also puts keys in the host runtime process.
     // Restrict targets to provider namespaces so bindings cannot override PATH,
     // runtime connection settings, dynamic loaders, or interpreter startup hooks.
-    for name in input.addon.env?.keys ?? [:].keys {
-      guard name.range(of: #"^(X_GW_|GMAIL_GATEWAY_)[A-Z0-9_]+\z"#, options: .regularExpression) != nil else {
-        throw AdapterExecutionError(.policyBlocked, "gateway addon.env targets must use X_GW_ or GMAIL_GATEWAY_ uppercase names")
-      }
+    // X transport controls (retry, timeout, media root) stay runtime-owned.
+    for name in input.addon.env?.keys ?? [:].keys where !gateway.allowsEnvironmentTarget(name) {
+      throw AdapterExecutionError(.policyBlocked, gateway == .xRead
+        ? "X reader addon.env targets must be X credential variables (\(xGatewayReaderCredentialEnvironment.sorted().joined(separator: ", ")))"
+        : "gateway addon.env targets must use X_GW_ or GMAIL_GATEWAY_ uppercase names")
     }
-    let userCache = try gateway == .xRead ? XGatewayUserCacheExchange(input: input, workingDirectory: workingDirectory, environment: environment) : nil
-    let usageCache = try gateway == .xRead ? XGatewayUsageCacheExchange(input: input, workingDirectory: workingDirectory, environment: environment) : nil
+    let userCache = try gateway == .xRead ? XGatewayUserCacheExchange(input: input, environment: environment) : nil
+    let usageCache = try gateway == .xRead ? XGatewayUsageCacheExchange(input: input, environment: environment) : nil
     let gatewayEnvironment = try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment)
       .merging(userCache?.bindings() ?? [:]) { _, memory in memory }
     let result: LocalProcessResult
@@ -127,7 +142,7 @@ struct ContainerGatewayAddonExecutor {
         environmentValuesFromProcess: true,
         disablePersistentLogs: true
       ))
-      arguments += gateway.arguments(document: document)
+      arguments += gateway.arguments(document: document, deadline: context.deadline)
       let executable = driver.executable
       let configuration = LocalProcessConfiguration(
         executableURL: URL(fileURLWithPath: executable.hasPrefix("/") ? executable : "/usr/bin/env"),
@@ -139,20 +154,23 @@ struct ContainerGatewayAddonExecutor {
       )
       result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
     }
-    let usageStatus = usageCache?.record(stdout: result.stdout, stderr: result.stderr, environment: gatewayEnvironment)
+    // Decode stdout once for telemetry, the user cache and validation. The
+    // reader response itself has no size bound here (unchanged contract).
+    let decodedStdout = try? JSONDecoder().decode(JSONObject.self, from: Data(result.stdout.utf8))
+    let usageStatus = usageCache.map { cache in
+      cache.record(envelopes: [decodedStdout, XGatewayUsageCacheExchange.decodeBoundedEnvelope(result.stderr)].compactMap { $0 },
+        environment: gatewayEnvironment)
+    }
     // Do not surface raw gateway stderr: it may contain provider credentials.
     guard result.terminationStatus == 0 else {
       throw AdapterExecutionError(.providerError, "\(input.addon.name) container failed with exit code \(result.terminationStatus)"
         + (usageStatus.map { " usageCacheStatus=\($0.rawValue)" } ?? "")
         + GatewayFailureDiagnostics.suffix(stdout: result.stdout, stderr: result.stderr))
     }
-    let response: JSONObject
-    let stdout = try userCache?.consume(result.stdout) ?? result.stdout
-    do {
-      response = try JSONDecoder().decode(JSONObject.self, from: Data(stdout.utf8))
-    } catch {
+    guard var response = decodedStdout else {
       throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) container must return one JSON object")
     }
+    if let userCache { response = try userCache.consume(envelope: response) }
     guard response["ok"] != .bool(false), response["error"] == nil,
           nonEmptyString(response["status"]) != "error", !containsGraphQLErrors(response) else {
       throw AdapterExecutionError(.providerError, "\(input.addon.name) gateway returned an error"
@@ -178,11 +196,21 @@ struct ContainerGatewayAddonExecutor {
         gateway.namespace: .object([
           "data": gatewayData,
           "response": .object(response),
-          "runtime": .object(["kind": .string(driver.kind.rawValue), "image": .string(image)]
-            .merging(usageStatus.map { ["usageCacheStatus": .string($0.rawValue)] } ?? [:]) { _, value in value })
+          "runtime": .object(runtimeMetadata(driver: driver, image: image, usageStatus: usageStatus, response: response))
         ])
       ]
     )
+  }
+
+  private func runtimeMetadata(driver: any ContainerRuntimeDriver, image: String,
+                               usageStatus: XGatewayUsageCacheExchange.Status?, response: JSONObject) -> JSONObject {
+    var runtime: JSONObject = ["kind": .string(driver.kind.rawValue), "image": .string(image)]
+    if let usageStatus { runtime["usageCacheStatus"] = .string(usageStatus.rawValue) }
+    if case let .object(graphQL)? = response["data"], case let .object(extensions)? = graphQL["extensions"],
+       let status = nonEmptyString(extensions["userCacheStatus"]), XGatewayUserCacheExchange.statuses.contains(status) {
+      runtime["userCacheStatus"] = .string(status)
+    }
+    return runtime
   }
 
   // Runtime connection/configuration variables are host concerns; unrelated workflow

@@ -84,7 +84,7 @@ extension RielaApp {
     rebuildMenu()
   }
 
-  @objc func showDistributedControllerSettings() {
+  func showDistributedControllerSettings() {
     openSettingsFromMenu()
   }
 
@@ -127,36 +127,25 @@ extension RielaApp {
     }
   }
 
-  @objc func showDistributedWorkerStatus() {
+  /// Native alert for the debug --open-worker-status launch option; the console
+  /// Settings page shows the same rows.
+  func showDistributedWorkerStatus() {
     Task {
       guard let host = distributedController else { return }
       let alert = NSAlert()
       alert.messageText = "Worker Status"
       do {
-        let workers = try await host.controller.workers(now: Date())
+        let rows = try await distributedWorkerStatusRows(of: host)
         guard host === distributedController else { return }
-        let rows = host.configuration.workers.sorted { $0.id < $1.id }.map { configured in
-          guard let worker = workers.first(where: { $0.workerId == configured.id }) else {
-            return "\(configured.id): not connected"
-          }
+        alert.informativeText = rows.isEmpty ? "No workers configured." : rows.map { row in
+          guard let worker = row.worker else { return "\(row.id): not connected" }
           return "\(worker.workerId): \(worker.online ? "online" : "offline"), \(worker.activeJobIds.count)/\(worker.capacity) running\nGroups: \(worker.groups.sorted().joined(separator: ", "))"
-        }
-        alert.informativeText = rows.isEmpty ? "No workers configured." : rows.joined(separator: "\n\n")
+        }.joined(separator: "\n\n")
       } catch {
-        alert.informativeText = "Unable to read worker status. Check controller storage."
+        alert.informativeText = RielaApp.distributedWorkerStatusReadFailure
       }
       NSApp.activate(ignoringOtherApps: true)
       alert.runModal()
-    }
-  }
-
-  @objc func revealDistributedControllerConfiguration() {
-    let url = distributedControllerConfigurationURL
-    if FileManager.default.fileExists(atPath: url.path) {
-      NSWorkspace.shared.activateFileViewerSelecting([url])
-    } else {
-      try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      NSWorkspace.shared.open(url.deletingLastPathComponent())
     }
   }
 }

@@ -112,6 +112,8 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       } catch {
         let exited = !process.isRunning
         await process.terminate()
+        // An oversized snapshot is rejected before any byte reaches the child.
+        if error as? RuntimeEnvironmentError == .outputTooLarge { throw RuntimeEnvironmentError.outputTooLarge }
         // A child that died before acknowledging (missing or incompatible riela)
         // is a startup failure, not an environment preparation failure.
         if exited {
@@ -305,6 +307,9 @@ public struct DefaultEventServeProcessLauncher: RielaAppDaemonEventServeProcessL
     if let input {
       process.standardInput = input
       disableSigpipe(input.fileHandleForWriting.fileDescriptor)
+      // Frame writes are bounded by the ACK deadline instead of blocking on a full pipe.
+      let descriptor = input.fileHandleForWriting.fileDescriptor
+      _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
     }
     let output = Pipe()
     let error = Pipe()
@@ -347,6 +352,9 @@ private final class EventServeSourceHandle: WorkflowServeEventSourceHandle, @unc
   public func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
     do {
       try await process.updateRuntimeEnvironment(generation: generation, names: names, values: values)
+    } catch let error as RuntimeEnvironmentError where error == .outputTooLarge || error == .reloadInProgress {
+      // Rejected before any byte reached the child: it still runs its current generation.
+      throw error
     } catch {
       // An ACK may be lost after installation. Reap the uncertain child before
       // keeping the parent's previous snapshot; never leave split generations.
@@ -368,6 +376,11 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   private var acknowledgementBuffer = Data()
   private var acknowledgements: [UInt64: Bool] = [:]
   private var acknowledgedNames: [UInt64: [String]] = [:]
+  /// Managed children: partial stderr line and the bounded tail of safe codes.
+  private var diagnosticBuffer = Data()
+  private var diagnosticCodes: [String] = []
+  private var frameWriteInProgress = false
+  private var inputClosed = false
   private let lock = NSLock()
   private var outputBuffer = Data()
   private var errorBuffer = Data()
@@ -392,7 +405,14 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   }
 
   var capturedOutput: String {
-    lock.withLock {
+    let running = process.isRunning
+    return lock.withLock {
+      if inputPipe != nil {
+        // Managed children only surface stable safe codes, never raw output.
+        var codes = diagnosticCodes
+        if !running, let code = managedChildDiagnosticCode(diagnosticBuffer) { codes.append(code) }
+        return codes.joined(separator: "\n")
+      }
       let data = outputBuffer + errorBuffer
       return String(data: data, encoding: .utf8) ?? ""
     }
@@ -412,10 +432,19 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
 
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
     guard let inputPipe, isRunning, Set(values.keys).isSubset(of: Set(names)) else { throw RuntimeEnvironmentError.notPrepared }
-    let frame: [String: Any] = ["generation": generation, "managedNames": names, "values": values]
-    var data = try JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys]); data.append(10)
-    do { try inputPipe.fileHandleForWriting.write(contentsOf: data) } catch { throw RuntimeEnvironmentError.sourceFailed }
-    for _ in 0..<500 {
+    // The child closes its channel permanently on an oversized frame; reject it here first.
+    let data = try RuntimeEnvironmentChannelFrame(generation: generation, managedNames: names, values: values).encodedLine()
+    // Interleaved partial writes would corrupt both frames.
+    let claimed = lock.withLock { () -> Bool in
+      guard !frameWriteInProgress else { return false }
+      frameWriteInProgress = true
+      return true
+    }
+    guard claimed else { throw RuntimeEnvironmentError.reloadInProgress }
+    defer { lock.withLock { frameWriteInProgress = false } }
+    let deadline = ProcessInfo.processInfo.systemUptime + Self.acknowledgementTimeoutSeconds
+    try await writeFrame(data, to: inputPipe.fileHandleForWriting.fileDescriptor, deadline: deadline)
+    while ProcessInfo.processInfo.systemUptime < deadline {
       let result = lock.withLock { acknowledgements[generation].map { ($0, acknowledgedNames[generation] ?? []) } }
       if let result {
         guard result.0, Set(result.1) == Set(names) else { throw RuntimeEnvironmentError.outputInvalid }
@@ -427,8 +456,29 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     throw RuntimeEnvironmentError.sourceTimeout
   }
 
+  static let acknowledgementTimeoutSeconds: TimeInterval = 10
+
+  /// Non-blocking write bounded by the ACK deadline; a child that stops reading
+  /// cannot park this task on a full pipe.
+  private func writeFrame(_ data: Data, to descriptor: Int32, deadline: TimeInterval) async throws {
+    var offset = 0
+    while offset < data.count {
+      guard !lock.withLock({ inputClosed }) else { throw RuntimeEnvironmentError.sourceFailed }
+      let written = data.withUnsafeBytes { bytes in
+        write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+      }
+      if written > 0 { offset += written; continue }
+      let code = errno
+      guard written < 0, code == EAGAIN || code == EWOULDBLOCK || code == EINTR else { throw RuntimeEnvironmentError.sourceFailed }
+      guard isRunning else { throw RuntimeEnvironmentError.sourceFailed }
+      guard ProcessInfo.processInfo.systemUptime < deadline else { throw RuntimeEnvironmentError.sourceTimeout }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+  }
+
   func terminate() async {
     // EOF releases a managed child still waiting for its first frame.
+    lock.withLock { inputClosed = true }
     try? inputPipe?.fileHandleForWriting.close()
     guard process.isRunning else {
       closePipes()
@@ -447,19 +497,30 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
       return
     }
     if inputPipe != nil {
-      // A managed child can print arbitrary diagnostics. Retain only typed ACKs.
-      guard !isError else { return }
+      // A managed child can print arbitrary diagnostics. Retain only typed ACKs
+      // and a bounded tail of stderr lines that are stable safe codes.
+      guard !isError else {
+        lock.withLock {
+          diagnosticBuffer.append(data)
+          while let end = diagnosticBuffer.firstIndex(of: 10) {
+            let line = diagnosticBuffer.prefix(upTo: end); diagnosticBuffer.removeSubrange(...end)
+            guard let code = managedChildDiagnosticCode(line) else { continue }
+            diagnosticCodes.append(code)
+            if diagnosticCodes.count > 8 { diagnosticCodes.removeFirst(diagnosticCodes.count - 8) }
+          }
+          if diagnosticBuffer.count > 4_096 { diagnosticBuffer.removeAll() }
+        }
+        return
+      }
       lock.withLock {
         acknowledgementBuffer.append(data)
         if acknowledgementBuffer.count > 1_048_576 { acknowledgementBuffer.removeAll(); return }
         while let end = acknowledgementBuffer.firstIndex(of: 10) {
           let line = acknowledgementBuffer.prefix(upTo: end); acknowledgementBuffer.removeSubrange(...end)
-          guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-            object["type"] as? String == "runtime-environment-ack",
-            let generation = object["generation"] as? UInt64,
-            let accepted = object["accepted"] as? Bool else { continue }
-          acknowledgements[generation] = accepted
-          acknowledgedNames[generation] = object["names"] as? [String] ?? []
+          guard let ack = RuntimeEnvironmentChannelAcknowledgement.decodeLine(Data(line)),
+            let generation = ack.generation else { continue }
+          acknowledgements[generation] = ack.accepted
+          acknowledgedNames[generation] = ack.names
           if acknowledgements.count > 8, let first = acknowledgements.keys.min() {
             acknowledgements.removeValue(forKey: first); acknowledgedNames.removeValue(forKey: first)
           }
@@ -500,6 +561,18 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     outputPipe.fileHandleForReading.readabilityHandler = nil
     errorPipe.fileHandleForReading.readabilityHandler = nil
   }
+}
+
+/// Managed-child stderr is reduced to stable safe codes such as
+/// `environment_required_missing`; anything else (free text, values) is dropped.
+func managedChildDiagnosticCode(_ line: Data) -> String? {
+  guard line.count <= 160, var text = String(data: line, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+    return nil
+  }
+  if text.hasPrefix("error: ") { text.removeFirst("error: ".count) }
+  guard text.count <= 96, ["environment_", "event_", "workflow_"].contains(where: { text.hasPrefix($0) && text.count > $0.count }),
+    text.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || $0 == "_" }) else { return nil }
+  return text
 }
 
 /// A child that exits before reading its frame must fail the write, not kill the app.

@@ -188,6 +188,14 @@ final class EventLiveServeCronTests: XCTestCase {
     XCTAssertEqual(skipped, 0)
     var requests = await workflowRunner.requests
     XCTAssertEqual(requests.count, 0)
+    // The submit-time gate skip is persisted like a deferred-start gate skip.
+    let gateReceipt = try XCTUnwrap(EventReceiptStore(eventRoot: root).load(cronOverlapReceiptId(
+      sourceId: "cron-live", eventId: "cron-live-\(Int(now.timeIntervalSince1970))", bindingId: "cron-to-workflow"
+    )))
+    XCTAssertEqual(gateReceipt.status, "skipped")
+    XCTAssertEqual(gateReceipt.reason, "routine-disabled:routine-a")
+    XCTAssertEqual(gateReceipt.bindingId, "cron-to-workflow")
+    XCTAssertEqual(gateReceipt.overlapPolicy, "skip")
 
     routine.status = .active
     try store.save(routine)

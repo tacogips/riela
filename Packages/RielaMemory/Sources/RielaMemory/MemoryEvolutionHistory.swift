@@ -123,22 +123,7 @@ extension RielaMemoryStore {
     guard version > 0, version <= head else {
       throw EvolutionReverseDelta.ValidationError.invalidVersion
     }
-    var bytes = Data(try encodedJSONString(current).utf8)
-    var expected = head
-    try streamRows(db, sql: """
-      SELECT version, reverse_delta_json FROM memory_evolution
-      WHERE record_id = ? AND version > ? ORDER BY version DESC
-      """, bindings: [.int64(recordId), .int64(version)]) { row in
-      guard row.columns["version"].flatMap(Int64.init) == expected,
-        let encoded = row.columns["reverse_delta_json"] else {
-        throw RielaMemoryError.sqliteFailed("evolution history has a missing edge")
-      }
-      let delta = try JSONDecoder().decode(EvolutionReverseDelta.self, from: Data(encoded.utf8))
-      bytes = try delta.reconstructPrevious(from: bytes, version: expected)
-      expected -= 1
-      return true
-    }
-    guard expected == version else { throw EvolutionReverseDelta.ValidationError.invalidVersion }
+    let bytes = try walkReverseChain(current: current, head: head, floor: version, db: db) { _, _ in true }.bytes
     let restored = try JSONDecoder().decode(MemoryRecord.self, from: bytes)
     try verifyEvolutionAttachments(restored.files, db: db, recordMissing: false)
     return restored
@@ -146,8 +131,23 @@ extension RielaMemoryStore {
 
   // Visit each historical snapshot once, following the reverse chain from the
   // current head. Reconstructing each version independently repeats every edge.
-  func walkHistoricalRecords(current: MemoryRecord, head: Int64, floor: Int64,
-                             db: OpaquePointer?, visit: (MemoryRecord) throws -> Bool) throws -> Bool {
+  func walkHistoricalRecords(current: MemoryRecord, head: Int64, floor: Int64, db: OpaquePointer?,
+                             onEdge: ((Int64) -> Void)? = nil,
+                             visit: (MemoryRecord) throws -> Bool) throws -> Bool {
+    try walkReverseChain(current: current, head: head, floor: floor, db: db, onEdge: onEdge) { bytes, _ in
+      let restored = try JSONDecoder().decode(MemoryRecord.self, from: bytes)
+      try verifyEvolutionAttachments(restored.files, db: db, recordMissing: false)
+      return try visit(restored)
+    }.completed
+  }
+
+  /// The single reverse-delta walker: applies each edge from `head` down to
+  /// `floor + 1` exactly once, in descending order, handing every reconstructed
+  /// snapshot (and the version it now represents) to `visit`. A gap in the chain
+  /// throws; stopping early (visit returns false) skips the final floor check.
+  private func walkReverseChain(current: MemoryRecord, head: Int64, floor: Int64, db: OpaquePointer?,
+                                onEdge: ((Int64) -> Void)? = nil,
+                                visit: (Data, Int64) throws -> Bool) throws -> (bytes: Data, completed: Bool) {
     var bytes = Data(try encodedJSONString(current).utf8)
     var expected = head
     var completed = true
@@ -161,14 +161,13 @@ extension RielaMemoryStore {
       }
       let delta = try JSONDecoder().decode(EvolutionReverseDelta.self, from: Data(encoded.utf8))
       bytes = try delta.reconstructPrevious(from: bytes, version: expected)
+      onEdge?(expected)
       expected -= 1
-      let restored = try JSONDecoder().decode(MemoryRecord.self, from: bytes)
-      try verifyEvolutionAttachments(restored.files, db: db, recordMissing: false)
-      if try !visit(restored) { completed = false; return false }
+      if try !visit(bytes, expected) { completed = false; return false }
       return true
     }
     if completed && expected != floor { throw EvolutionReverseDelta.ValidationError.invalidVersion }
-    return completed
+    return (bytes, completed)
   }
 
   func recordEvolution(previous: MemoryRecord?, next: MemoryRecord, db: OpaquePointer?, forceRevision: Bool = false) throws {

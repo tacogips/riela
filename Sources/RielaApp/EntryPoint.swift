@@ -435,7 +435,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       refreshDaemonWorkflowWindow()
       return
     }
+    let previousProfileName = daemonProfileName
     await performDistributedControllerStop()
+    await daemonRuntime.evictEnvironment(profile: previousProfileName.rawValue)
     daemonProfileName = profileName
     await performDistributedControllerStart()
     webRevision += 1

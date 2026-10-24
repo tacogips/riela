@@ -14,52 +14,50 @@ func validateRawTriggerDefaults(_ raw: Any?, diagnostics: inout [WorkflowValidat
     diagnostics.append(error("workflow.triggerDefaults.\(key)", "is not a supported triggerDefaults field"))
   }
 
+  // Type checks stay here because only this surface sees raw JSON values;
+  // value rules come from the shared `eventOverlapSettingsIssues`.
   let rawOverlapPolicy = defaults["overlapPolicy"]
   let overlapPolicy = rawOverlapPolicy as? String
-  if let rawOverlapPolicy {
-    if let value = rawOverlapPolicy as? String, EventOverlapPolicy(rawValue: value) == nil {
-      diagnostics.append(error(
-        "workflow.triggerDefaults.overlapPolicy",
-        "must be one of \(EventOverlapPolicy.allowedValuesText)"
-      ))
-    } else if overlapPolicy == nil {
-      diagnostics.append(error(
-        "workflow.triggerDefaults.overlapPolicy",
-        "must be one of \(EventOverlapPolicy.allowedValuesText)"
-      ))
+  if rawOverlapPolicy != nil, overlapPolicy == nil {
+    diagnostics.append(error(
+      "workflow.triggerDefaults.overlapPolicy",
+      "must be one of \(EventOverlapPolicy.allowedValuesText)"
+    ))
+  }
+  let maxQueuedRuns = triggerDefaultsInteger(defaults["maxQueuedRuns"], key: "maxQueuedRuns", diagnostics: &diagnostics)
+  let maxConcurrentRuns = triggerDefaultsInteger(
+    defaults["maxConcurrentRuns"], key: "maxConcurrentRuns", diagnostics: &diagnostics
+  )
+  let settings = EventOverlapSettings(
+    overlapPolicy: overlapPolicy, maxQueuedRuns: maxQueuedRuns, maxConcurrentRuns: maxConcurrentRuns
+  )
+  for issue in eventOverlapSettingsIssues(settings) {
+    let path = "workflow.triggerDefaults.\(issue.field.rawValue)"
+    switch issue {
+    case .unknownPolicy:
+      diagnostics.append(error(path, "must be one of \(EventOverlapPolicy.allowedValuesText)"))
+    case .capBelowMinimum:
+      diagnostics.append(error(path, "must be an integer >= 1"))
+    case let .capRequiresPolicy(_, required):
+      diagnostics.append(error(path, "requires workflow.triggerDefaults.overlapPolicy \(required.rawValue)"))
     }
-  }
-
-  validateTriggerDefaultsCap(defaults["maxQueuedRuns"], key: "maxQueuedRuns", diagnostics: &diagnostics)
-  validateTriggerDefaultsCap(defaults["maxConcurrentRuns"], key: "maxConcurrentRuns", diagnostics: &diagnostics)
-
-  if defaults["maxQueuedRuns"] != nil, overlapPolicy != EventOverlapPolicy.queue.rawValue {
-    diagnostics.append(error(
-      "workflow.triggerDefaults.maxQueuedRuns",
-      "requires workflow.triggerDefaults.overlapPolicy queue"
-    ))
-  }
-  if defaults["maxConcurrentRuns"] != nil, overlapPolicy != EventOverlapPolicy.concurrent.rawValue {
-    diagnostics.append(error(
-      "workflow.triggerDefaults.maxConcurrentRuns",
-      "requires workflow.triggerDefaults.overlapPolicy concurrent"
-    ))
   }
 }
 
-private func validateTriggerDefaultsCap(
+/// Returns the integer value of a cap, or nil after recording a type
+/// diagnostic for a boolean, fractional or non-numeric value.
+private func triggerDefaultsInteger(
   _ value: Any?,
   key: String,
   diagnostics: inout [WorkflowValidationDiagnostic]
-) {
-  guard let value else { return }
-  let path = "workflow.triggerDefaults.\(key)"
+) -> Int? {
+  guard let value else { return nil }
   guard let number = value as? NSNumber,
     CFGetTypeID(number) != CFBooleanGetTypeID(),
-    number.doubleValue == Double(number.intValue),
-    number.intValue >= 1
+    number.doubleValue == Double(number.intValue)
   else {
-    diagnostics.append(error(path, "must be an integer >= 1"))
-    return
+    diagnostics.append(error("workflow.triggerDefaults.\(key)", "must be an integer >= 1"))
+    return nil
   }
+  return number.intValue
 }

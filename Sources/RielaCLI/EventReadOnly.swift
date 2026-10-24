@@ -25,7 +25,7 @@ struct EventReadOnlyDispatchBlocked: Error {}
 extension DefaultEventLiveServer {
   /// Every live workflow entry passes this boundary, including injected runners.
   func runEventWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
-    let captured = try await runtimeEnvironment?.capture() ?? CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let captured = try await currentEnvironment()
     return try await CLIRuntimeEnvironment.$overrides.withValue(nil) {
       try await CLIRuntimeEnvironment.$captured.withValue(captured) {
         guard try !EventReadOnlyPolicy.isEnabled(parsed: request.parsed, environment: captured) else {
@@ -52,30 +52,22 @@ extension DefaultEventLiveServer {
     let idBytes = Data((envelope.sourceId + "\u{0}" + envelope.eventId).utf8)
     let digest = SHA256.hash(data: idBytes).map { String(format: "%02x", $0) }.joined()
     let receiptId = "event-readonly-" + digest
-    let root = eventRoot.appendingPathComponent("receipts", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    let url = root.appendingPathComponent(receiptId + ".json")
-    if FileManager.default.fileExists(atPath: url.path) {
-      let decoder = JSONDecoder()
-      decoder.dateDecodingStrategy = .iso8601
-      let existing = try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: url))
+    // The shared receipt store applies the safe-id/containment check and the
+    // private permissions used by every other receipt writer.
+    let store = EventReceiptStore(eventRoot: eventRoot)
+    if let existing = try store.load(receiptId) {
       guard existing.receiptId == receiptId, existing.sourceId == envelope.sourceId, existing.eventId == envelope.eventId,
         existing.reason == "read-only", existing.workflowExecutionId == nil else {
         throw CLIUsageError("Read-only receipt identity mismatch; refusing to advance ingestion")
       }
     } else {
-      let receipt = PersistedEventReceipt(
+      try store.save(PersistedEventReceipt(
         receiptId: receiptId, sourceId: envelope.sourceId, eventId: envelope.eventId,
         status: triggerResult.accepted ? "skipped" : (triggerResult.diagnostics.isEmpty ? "ignored" : "failed"),
         duplicate: false, workflowExecutionId: nil, workflowName: triggerResult.triggers.first?.workflowName,
         replayedFromReceiptId: nil, reason: "read-only", updatedAt: observedAt, envelope: envelope,
         readOnlyTriggers: triggerResult.triggers, readOnlyDiagnostics: triggerResult.diagnostics
-      )
-      let encoder = JSONEncoder()
-      encoder.dateEncodingStrategy = .iso8601
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      try encoder.encode(receipt).write(to: url, options: .atomic)
-      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+      ))
     }
     try writeServeRecord(
       eventRoot: eventRoot, status: "ready", pollingTarget: envelope.sourceId,
@@ -105,4 +97,8 @@ struct PersistedEventReceipt: Codable, Equatable, Sendable {
   var overlapPolicySource: String?
   var cancelledSessionIds: [String]?
   var coalescedTickCount: Int?
+  /// The `events serve` dispatcher instance (`<pid>-<random>`) that wrote a
+  /// cron overlap receipt; absent on CLI-written and older receipts, which
+  /// still decode. Used to reconcile receipts a dead serve abandoned.
+  var serveInstanceId: String?
 }

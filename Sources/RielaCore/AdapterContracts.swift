@@ -221,6 +221,12 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
   public var payload: JSONObject
   public var usage: AdapterUsage?
   public var runtimeFinalizationToken: WorkflowAddonFinalizationToken?
+  /// Normalization notes the adapter produced before handing over the payload
+  /// (for example a flattened `when` envelope). The runtime merges them into
+  /// the accepted output's routing diagnostics. Like the finalization token,
+  /// they are runtime-local and never encoded, so no worker or guest can
+  /// smuggle free text through them.
+  public var routingDiagnostics: [String]
 
   public init(
     provider: String,
@@ -230,7 +236,8 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     when: [String: Bool] = ["always": true],
     payload: JSONObject,
     usage: AdapterUsage? = nil,
-    runtimeFinalizationToken: WorkflowAddonFinalizationToken? = nil
+    runtimeFinalizationToken: WorkflowAddonFinalizationToken? = nil,
+    routingDiagnostics: [String] = []
   ) {
     self.provider = provider
     self.model = model
@@ -240,6 +247,7 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     self.payload = payload
     self.usage = usage
     self.runtimeFinalizationToken = runtimeFinalizationToken
+    self.routingDiagnostics = routingDiagnostics
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -262,6 +270,7 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     payload = try container.decode(JSONObject.self, forKey: .payload)
     usage = try container.decodeIfPresent(AdapterUsage.self, forKey: .usage)
     runtimeFinalizationToken = nil
+    routingDiagnostics = []
   }
 
   public func encode(to encoder: Encoder) throws {

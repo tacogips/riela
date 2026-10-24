@@ -23,7 +23,10 @@ struct BuiltinPostprocessPlan {
     guard let program else { return original }
     var output = original
     do {
-      output.payload["processed"] = try program.run(.object(original.payload))
+      // The provider payload is already held in memory and may repeat the
+      // response (`data` and `response`); bound the picked values, not the
+      // whole duplicated envelope.
+      output.payload["processed"] = try program.run(.object(original.payload), checkInputSize: false)
       output.payload["postprocess"] = .object(["status": .string("ok")])
       output.when["postprocessPassed"] = true
       output.when["postprocessFailed"] = false

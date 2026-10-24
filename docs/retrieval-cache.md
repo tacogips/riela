@@ -20,10 +20,21 @@ riela cache get inspected-retrieval --scope x-following --keys-file -
 riela cache prune inspected-retrieval
 ```
 
-All commands accept `--cache-root DIR` (default `.riela/cache`) and output one
-JSON object (`--output json` or `jsonl`). Use `--help` for options. TTL accepts
-1...31,536,000 seconds; for *n* hours pass *n × 3600*. The live budget accepts
+All commands accept `--cache-root DIR` (default `.riela/cache`) and print one
+compact JSON value per line with sorted keys, so repeated runs print identical
+bytes. Most commands print one result object. `cache keys CACHE --scope S`
+prints a JSON array of keys with `--output json` (the default) and one JSON
+string per key with `--output jsonl`. Every command except `maintain` needs the
+positional cache ID. Use `--help` for options. TTL accepts 1...31,536,000
+seconds; for *n* hours pass *n × 3600*. The live budget accepts
 1...68,719,476,736 bytes. Invalid settings fail before eviction.
+
+Cache IDs starting with `x-gateway-` are reserved for built-in runtime caches
+(the X gateway user cache and API-usage cache). `configure`, `put`, `protect`,
+`reconcile`, `delete` and `prune` refuse them with a usage error, and every
+workflow add-on except `riela/cache-maintain` refuses them with
+`policy_blocked`. Operators can still inspect them with `cache keys` and
+`cache get`.
 
 Put stdin/file JSON is an array:
 
@@ -115,13 +126,22 @@ ephemeral workflow-result persistence.
 
 ## Built-in add-ons and Swift API
 
-`riela/cache-configure`, `cache-put`, `cache-get`, `cache-delete`, and
-`cache-prune` (all version `1`) expose the same operations. Config accepts
-`cacheId`, `cacheRoot`, `scope` (default workflow ID), `ttlSeconds`, `maxBytes`,
-`maxOutputBytes`, and typed `entries`/`keys` arrays. Single-entry fields are
-`key`, `fetchedAt`, `payload`, and `expectedRevision`. Results use the same
-JSON shape as the CLI. Settings apply only to explicitly selected cache
-operations, never to memory or persona add-ons.
+All cache add-ons are version `1` and return the same JSON shape as the CLI:
+
+| Add-on | Config beyond `cacheId`, `cacheRoot`, `scope` |
+| --- | --- |
+| `riela/cache-configure` | `ttlSeconds`, `maxBytes` |
+| `riela/cache-put` | `entries` or `key`/`fetchedAt`/`payload`; optional `retainedReferences` |
+| `riela/cache-get` | `keys` or `key`; `maxOutputBytes` |
+| `riela/cache-delete` | `entries` or `key`/`expectedRevision` |
+| `riela/cache-prune` | none |
+| `riela/cache-protect` | `entries` of `{key, revision, protectFromEviction}` |
+| `riela/cache-reconcile` | `references` |
+| `riela/cache-maintain` | `cacheIds` array, optional `maxDurationSeconds` (no `cacheId`/`scope`) |
+
+`cacheId` defaults to `retrieval-cache` and `scope` to the workflow ID. The
+reference and maintenance add-ons are described below. Settings apply only to
+explicitly selected cache operations, never to memory or persona add-ons.
 
 Swift callers use `RielaCacheStore(rootDirectory:clock:)`, with an injectable
 clock for deterministic expiry tests. `configure`, `put`, `get`, `delete`, and
@@ -135,9 +155,17 @@ The references are a committed metadata object/array containing nested `{key,
 revision}` cache references. Riela protects the referenced live revisions and
 releases capacity protection on other entries **in that scope only**. It does
 not delete payloads or extend their TTL or LRU timestamps. Missing/expired
-references remain missing; a changed live revision rejects the entire operation.
+references remain missing, and the result lists each of them as
+`{"key":…,"status":"missing","reason":"notFound"}` after the changed rows
+(`protected`/`released`). A changed live revision rejects the entire operation.
 Hold the metadata producer's exclusive lock through reconciliation. Do not pass
 an incomplete projection of a shared scope.
+
+Any object with both `key` and `revision` members is treated as a cache
+reference, and its revision must be a SHA256 hex digest. Keep unrelated
+metadata (for example a git revision) out of that shape. An object whose string
+`scope` member names another scope, such as a put receipt from a different
+scope, is ignored, so receipts can be stored and passed back verbatim.
 
 `riela/cache-put` additionally accepts `retainedReferences`. Its reconciliation
 and new-entry admission share one SQLite transaction: capacity rejection or an
@@ -150,11 +178,31 @@ The CLI equivalent is `cache put ... --request-file -`, with a bounded JSON
 --references-file -` accepts the snapshot alone.
 
 `riela/cache-protect` exposes explicit revision-checked protection changes.
-`riela/cache-maintain` takes an explicit `cacheIds` array, `cacheRoot` and optional
-`maxDurationSeconds` (default 120). It prunes existing owned stores using their
-own policies, skips missing/foreign/link files, and returns finite aggregate
-counts without creating missing stores. No Python or shell node is needed.
-The CLI equivalent is `cache maintain maintenance --keys-file -`.
+
+`riela/cache-maintain` takes an explicit `cacheIds` array, `cacheRoot` and
+optional `maxDurationSeconds` (default 120, fractions allowed). It prunes
+existing owned stores using their own policies and never creates a missing
+store. It returns finite aggregate counts plus:
+
+- `skippedCacheCount`: missing, foreign, symlinked or hard-linked stores, so a
+  typo in `cacheIds` is visible.
+- `deferredCacheCount`: stores left for a later run because the time budget was
+  used up or another writer held the store past the 5-second busy timeout.
+- `failedCacheCount` and `failedCacheIds`: stores that could not be maintained,
+  such as a corrupt database. At most 32 IDs are listed.
+
+`status` is `failed` when any store failed, `deferred` when any store was
+deferred, and `ok` otherwise. A `failed` status fails the add-on node
+(`completionPassed: false`) and makes the CLI exit non-zero while still
+printing the summary. `deferred` is a success. The time budget is checked
+before each store, not inside one: a store that starts within the budget
+finishes its expire/evict pass even if that overruns the budget. No Python or
+shell node is needed. The CLI equivalent is `cache maintain CACHE_ID` for one
+store or `cache maintain --cache-ids-file -` with a JSON array on stdin.
+
+Cache stores are not touched by `riela gc` or automatic retention (see
+[terminal-retention.md](terminal-retention.md)). Schedule `cache maintain` or a
+cron-triggered workflow with `riela/cache-maintain` to reclaim idle caches.
 
 See `examples/managed-cache-checkpoint` for a workflow made entirely of built-in
 nodes. Application-specific generation checks and publication acknowledgements

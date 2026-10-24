@@ -15,7 +15,7 @@ final class WorkflowValidateGatewayContextTests: XCTestCase {
       entryStepId: "step",
       nodeRegistry: [WorkflowNodeRegistryRef(id: "node", addon: addon)],
       steps: [WorkflowStepRef(id: "step", nodeId: "node")],
-      nodes: [WorkflowNodeRef(id: "step", addon: addon)]
+      nodes: [WorkflowNodeRef(id: "node", addon: addon)]
     )
     let bundle = ResolvedWorkflowBundle(workflow: workflow, nodePayloads: [:], sourceScope: .project, workflowDirectory: "/tmp")
     let command = WorkflowValidateCommand(
@@ -74,7 +74,7 @@ final class WorkflowValidateGatewayContextTests: XCTestCase {
       entryStepId: "step",
       nodeRegistry: [WorkflowNodeRegistryRef(id: "node", addon: addon)],
       steps: [WorkflowStepRef(id: "step", nodeId: "node")],
-      nodes: [WorkflowNodeRef(id: "step", addon: addon)]
+      nodes: [WorkflowNodeRef(id: "node", addon: addon)]
     )
     let bundle = ResolvedWorkflowBundle(workflow: workflow, nodePayloads: [:], sourceScope: .project, workflowDirectory: "/tmp")
     let command = WorkflowValidateCommand(

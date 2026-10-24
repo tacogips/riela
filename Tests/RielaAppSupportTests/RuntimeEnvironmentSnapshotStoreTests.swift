@@ -19,12 +19,15 @@ private actor EnvironmentRunnerStub: RuntimeEnvironmentCommandRunning {
 final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
   func testErrorsRenderOnlyStableSafeCodes() {
     let errors: [RuntimeEnvironmentError] = [.notPrepared, .invalidConfiguration, .sourceFailed,
-      .sourceTimeout, .outputTooLarge, .outputInvalid, .requiredMissing]
+      .sourceTimeout, .outputTooLarge, .outputInvalid, .requiredMissing, .restartRequired, .reloadInProgress, .instanceChanged]
     for error in errors {
       XCTAssertEqual(String(describing: error), error.rawValue)
       XCTAssertEqual(error.localizedDescription, error.rawValue)
     }
     XCTAssertEqual(String(describing: RuntimeEnvironmentError.requiredMissing), "environment_required_missing")
+    XCTAssertEqual(RuntimeEnvironmentError.restartRequired.rawValue, "environment_restart_required")
+    XCTAssertEqual(RuntimeEnvironmentError.reloadInProgress.rawValue, "environment_reload_in_progress")
+    XCTAssertEqual(RuntimeEnvironmentError.instanceChanged.rawValue, "environment_instance_changed")
   }
 
   private let scope = RuntimeEnvironmentScope(profile: "default", instanceIdentity: "fixture")
@@ -163,6 +166,112 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
       do { _ = try await runner.run(source: source, baseEnvironment: [:], maxOutputBytes: limit); XCTFail("expected failure") } catch {
       XCTAssertEqual(error as? RuntimeEnvironmentError, expected); XCTAssertFalse(String(describing: error).contains("canary"))
       }
+    }
+  }
+
+  /// B8: a concurrent reload is a precondition failure with its own code and
+  /// never overwrites the in-flight reload's status.
+  func testConcurrentReloadReportsInProgressWithoutTouchingStatus() async throws {
+    let runner = EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\"slow\"}".utf8))], delay: 200_000_000)
+    let store = RuntimeEnvironmentSnapshotStore(runner: runner)
+    let scope = self.scope
+    let config = configuration()
+    let first = Task { try await store.reload(scope: scope, configuration: config, requiredNames: [], baseEnvironment: [:]) }
+    var attempts = 0
+    while await runner.count() < 1, attempts < 200 { attempts += 1; try await Task.sleep(nanoseconds: 2_000_000) }
+    let before = await store.status(scope: scope)
+    do {
+      _ = try await store.reload(scope: scope, configuration: config, requiredNames: [], baseEnvironment: [:])
+      XCTFail("second reload must report in-progress")
+    } catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .reloadInProgress) }
+    let during = await store.status(scope: scope)
+    XCTAssertEqual(during, before, "busy path must not write status")
+    let finished = try await first.value
+    XCTAssertEqual(finished.readiness, .ready)
+    XCTAssertNil(finished.lastError)
+    XCTAssertEqual(finished.generation, 1)
+    let status = await store.status(scope: scope)
+    XCTAssertEqual(status, finished)
+    let calls = await runner.count(); XCTAssertEqual(calls, 1)
+  }
+
+  /// Descriptor-change rule: without a live child the previous entry is dropped
+  /// on failure; with one (`retainPreviousOnFailure`) it is kept.
+  func testChangedDescriptorFailureRetainsPreviousOnlyForLiveChild() async throws {
+    let runner = EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\"old\"}".utf8)), .failure(.sourceFailed)])
+    let store = RuntimeEnvironmentSnapshotStore(runner: runner)
+    _ = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:])
+    var changed = configuration(); changed.sources[0].command = ["/changed"]
+    do {
+      _ = try await store.reload(scope: scope, configuration: changed, requiredNames: [], baseEnvironment: [:], retainPreviousOnFailure: true)
+      XCTFail("changed loader fails")
+    } catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .sourceFailed) }
+    let kept = try await store.capture(scope: scope)
+    XCTAssertEqual(kept.runtimeEnvironment()["TOKEN"], "old")
+    let status = await store.status(scope: scope)
+    XCTAssertEqual(status.readiness, .ready); XCTAssertEqual(status.generation, 1); XCTAssertEqual(status.lastError, .sourceFailed)
+  }
+
+  /// Eviction drops credentials and status, cancels nothing it does not own,
+  /// leaves other profiles alone, and an in-flight reload publishes nothing.
+  func testEvictDropsScopeAndInFlightReloadPublishesNothing() async throws {
+    let runner = EnvironmentRunnerStub([
+      .success(Data("{\"TOKEN\":\"one\"}".utf8)), .success(Data("{\"TOKEN\":\"other\"}".utf8)),
+      .success(Data("{\"TOKEN\":\"late\"}".utf8))
+    ])
+    let store = RuntimeEnvironmentSnapshotStore(runner: runner)
+    let other = RuntimeEnvironmentScope(profile: "work", instanceIdentity: "fixture")
+    _ = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:])
+    _ = try await store.prepare(scope: other, configuration: configuration(), requiredNames: [], baseEnvironment: [:])
+    await store.evict(profile: "default")
+    do { _ = try await store.capture(scope: scope); XCTFail("evicted") } catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .notPrepared) }
+    let evictedStatus = await store.status(scope: scope)
+    XCTAssertEqual(evictedStatus, RuntimeEnvironmentStatus())
+    let untouched = try await store.capture(scope: other)
+    XCTAssertEqual(untouched.runtimeEnvironment()["TOKEN"], "other")
+
+    let scope = self.scope
+    let config = configuration()
+    let reload = Task {
+      try await store.reload(scope: scope, configuration: config, requiredNames: [], baseEnvironment: [:], install: { _ in
+        await store.evict(scope: scope)
+      })
+    }
+    do { _ = try await reload.value; XCTFail("evicted during install") } catch {
+      XCTAssertEqual(error as? RuntimeEnvironmentError, .notPrepared) }
+    do { _ = try await store.capture(scope: scope); XCTFail("nothing published") } catch {}
+    let after = await store.status(scope: scope)
+    XCTAssertEqual(after, RuntimeEnvironmentStatus())
+  }
+
+  func testChannelWireTypesMatchChildEncodingAndNeverRenderValues() throws {
+    // Byte layout the CLI child writes today (RielaCLI RuntimeEnvironmentAcknowledgement).
+    let childLine = Data(#"{"type":"runtime-environment-ack","generation":3,"names":["A","B"],"accepted":true}"#.utf8)
+    let ack = try XCTUnwrap(RuntimeEnvironmentChannelAcknowledgement.decodeLine(childLine))
+    XCTAssertEqual(ack, RuntimeEnvironmentChannelAcknowledgement(generation: 3, names: ["A", "B"], accepted: true))
+    let rejected = Data(#"{"type":"runtime-environment-ack","names":[],"accepted":false,"error":"environment_channel_invalid"}"#.utf8)
+    XCTAssertEqual(RuntimeEnvironmentChannelAcknowledgement.decodeLine(rejected)?.error, "environment_channel_invalid")
+    XCTAssertNil(RuntimeEnvironmentChannelAcknowledgement.decodeLine(Data(#"{"type":"log","generation":1,"names":[],"accepted":true}"#.utf8)))
+    XCTAssertNil(RuntimeEnvironmentChannelAcknowledgement.decodeLine(Data("not json".utf8)))
+    let canary = "frame-canary-" + UUID().uuidString
+    let frame = RuntimeEnvironmentChannelFrame(generation: 4, managedNames: ["TOKEN"], values: ["TOKEN": canary])
+    let line = try frame.encodedLine()
+    XCTAssertEqual(line.last, 10)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: line.dropLast()) as? [String: Any])
+    XCTAssertEqual(Set(object.keys), ["generation", "managedNames", "values"])
+    XCTAssertFalse(String(describing: frame).contains(canary))
+    XCTAssertFalse(String(reflecting: frame).contains(canary))
+    let huge = RuntimeEnvironmentChannelFrame(generation: 5, managedNames: ["TOKEN"],
+      values: ["TOKEN": String(repeating: "x", count: RuntimeEnvironmentChannelWire.maxFrameBytes)])
+    XCTAssertThrowsError(try huge.encodedLine()) { XCTAssertEqual($0 as? RuntimeEnvironmentError, .outputTooLarge) }
+  }
+
+  func testManagedChildDiagnosticsKeepOnlySafeCodes() {
+    XCTAssertEqual(managedChildDiagnosticCode(Data("environment_required_missing".utf8)), "environment_required_missing")
+    XCTAssertEqual(managedChildDiagnosticCode(Data("error: environment_channel_closed\r".utf8)), "environment_channel_closed")
+    for line in ["private-canary-never-retained", "TOKEN=secret", "environment_", "my_password_value",
+                 "environment_required_missing: TOKEN", "Environment_required_missing", "environment_9"] {
+      XCTAssertNil(managedChildDiagnosticCode(Data(line.utf8)), line)
     }
   }
 }

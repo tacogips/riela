@@ -274,9 +274,10 @@ extension SurfaceCatalog {
       ("configure", SurfaceOperation.Kind.mutation, ["--ttl-seconds", "--max-bytes"]),
       ("put", .mutation, ["--scope", "--entries-file", "--key", "--fetched-at", "--payload-file", "--references-file", "--request-file"]),
       ("get", .query, ["--scope", "--keys-file", "--key", "--max-output-bytes"]),
+      ("keys", .query, ["--scope"]),
       ("protect", .mutation, ["--scope", "--entries-file"]),
       ("reconcile", .mutation, ["--scope", "--references-file"]),
-      ("maintain", .mutation, ["--keys-file", "--max-duration-seconds"]),
+      ("maintain", .mutation, ["--cache-ids-file", "--max-duration-seconds"]),
       ("delete", .mutation, ["--scope", "--entries-file", "--key", "--expected-revision"]),
       ("prune", .mutation, [])
     ].map { name, kind, options in

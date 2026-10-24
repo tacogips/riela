@@ -47,7 +47,10 @@ struct PrivateWorkflowPlan: Codable, Sendable {
 }
 
 struct PrivateWorkflowRequest: Codable, Sendable {
-  var version = 1
+  /// v2 pairs with worker record v2 (SandboxNodeRecord.currentVersion). A v1
+  /// worker refuses v2 before reading private input or starting the graph.
+  static let currentVersion = 2
+  var version = currentVersion
   var plan: PrivateWorkflowPlan
   var deadline: Date
   var environment: [String: String]

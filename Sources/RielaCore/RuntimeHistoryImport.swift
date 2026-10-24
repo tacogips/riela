@@ -149,7 +149,13 @@ extension InMemoryWorkflowRuntimeStore {
       messages.append(imported)
     }
     session.executions = executions
-    session.parentSessionId = input.sourceSessionId
+    // Session lineage belongs to whoever created the session: a rerun decides
+    // it in `resolveRerunEntry`, so a session-source import never rewrites it.
+    // A handover successor is linked to its handover source unless the caller
+    // already set a parent.
+    if case .bundle = input.source, session.parentSessionId == nil {
+      session.parentSessionId = input.sourceSessionId
+    }
     sessions[input.sessionId] = session
     messagesBySession[input.sessionId] = messages
     createdOrder = max(createdOrder, messages.map(\.createdOrder).max() ?? 0)

@@ -28,7 +28,7 @@ public protocol WorkflowServeEventSourceHandle: Sendable {
 
 public extension WorkflowServeEventSourceHandle {
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
-    throw NSError(domain: "RielaRuntimeEnvironment", code: 1)
+    throw WorkflowServeRuntimeEnvironmentError.unsupported
   }
 }
 
@@ -84,10 +84,22 @@ public actor WorkflowServingController {
   }
 
   public func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
-    guard let current = activeGeneration else { return }
+    // A stopped or replaced controller has no child to update; reporting success
+    // here would let the caller publish a generation no live child runs.
+    guard let current = activeGeneration else { throw WorkflowServeRuntimeEnvironmentError.noActiveGeneration }
+    let managedValues = values.filter { names.contains($0.key) }
     for handle in current.eventSources {
-      try await handle.updateRuntimeEnvironment(generation: generation, names: names, values: values.filter { names.contains($0.key) })
+      try await handle.updateRuntimeEnvironment(generation: generation, names: names, values: managedValues)
     }
+    guard var active = activeGeneration, active.stateGeneration.generationId == current.stateGeneration.generationId else {
+      throw WorkflowServeRuntimeEnvironmentError.noActiveGeneration
+    }
+    // Later generations (restart, reload) start from the snapshot the children now run.
+    active.request.configuration.runtimeEnvironmentGeneration = generation
+    active.request.configuration.runtimeEnvironmentNames = names
+    active.request.configuration.runtimeEnvironmentValues = managedValues
+    activeGeneration = active
+    lastAcceptedStartRequest = active.request
   }
 
   public func currentState() -> WorkflowServeState {

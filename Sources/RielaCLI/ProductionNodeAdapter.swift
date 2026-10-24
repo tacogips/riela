@@ -32,8 +32,8 @@ public func makeProductionNodeAdapter(
       ]
     )
   )
-  return SandboxingNodeAdapter(primary: primary, environment: environment, workingDirectory: workingDirectory,
-    supervisorMode: codexSupervisorModeEnabled)
+  return AdapterFailureRedactingNodeAdapter(primary: SandboxingNodeAdapter(primary: primary, environment: environment,
+    workingDirectory: workingDirectory, supervisorMode: codexSupervisorModeEnabled), environment: environment)
 }
 
 func makeScenarioBackedNodeAdapter(

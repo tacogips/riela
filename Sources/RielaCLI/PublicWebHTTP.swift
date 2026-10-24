@@ -23,7 +23,7 @@ struct PublicWebHTTPResponse: Sendable {
 
 typealias PublicWebTransport = @Sendable (PublicWebHTTPRequest) async throws -> PublicWebHTTPResponse
 
-private final class PublicWebCancellation: @unchecked Sendable {
+final class PublicWebCancellation: @unchecked Sendable {
   let value: OpaquePointer
   init() throws {
     guard let value = riela_web_cancel_create() else { throw PublicWebError.transport }

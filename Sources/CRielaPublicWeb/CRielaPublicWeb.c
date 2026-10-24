@@ -202,8 +202,8 @@ allocation_failed:
   pthread_mutex_lock(&resolver_lock);active_resolvers--;pthread_mutex_unlock(&resolver_lock);return 3;
 }
 
-riela_web_response riela_web_fetch(const char *url,const char *host,const char *conditional_headers,
-    size_t max_body_bytes,long timeout_ms,riela_web_cancel *cancel) {
+static riela_web_response fetch(const char *url,const char *host,const char *conditional_headers,
+    const char *post_body,size_t post_length,size_t max_body_bytes,long timeout_ms,riela_web_cancel *cancel) {
   pthread_once(&initialized,initialize);
   transfer value={0};value.maximum=max_body_bytes;value.cancel=cancel;
   value.response.error=1;
@@ -224,8 +224,8 @@ riela_web_response riela_web_fetch(const char *url,const char *host,const char *
     resolves=curl_slist_append(NULL,resolve);
     if (!resolves) { value.response.error=3;goto cleanup; }
   }
-  // The caller allows conditional GET headers only; no auth/cookies can cross
-  // this native public reader, including from environment or redirect policy.
+  // Entry points constrain headers: public GET allows conditionals only;
+  // authenticated discovery uses a fixed origin and never follows redirects.
   if (conditional_headers&&*conditional_headers) {
     char *copy=strdup(conditional_headers),*save=NULL;
     if (!copy) { value.response.error=3;goto cleanup; }
@@ -256,6 +256,11 @@ riela_web_response riela_web_fetch(const char *url,const char *host,const char *
   SET(CURLOPT_ACCEPT_ENCODING,"identity");
   SET(CURLOPT_RESOLVE,resolves);
   SET(CURLOPT_HTTPHEADER,headers);
+  if (post_body) {
+    SET(CURLOPT_POST,1L);
+    SET(CURLOPT_POSTFIELDS,post_body);
+    SET(CURLOPT_POSTFIELDSIZE_LARGE,(curl_off_t)post_length);
+  }
   SET(CURLOPT_WRITEFUNCTION,body);
   SET(CURLOPT_WRITEDATA,&value);
   SET(CURLOPT_HEADERFUNCTION,header);
@@ -275,6 +280,28 @@ cleanup:
   curl_slist_free_all(resolves);curl_slist_free_all(headers);curl_easy_cleanup(curl);
   return value.response;
 }
+riela_web_response riela_web_fetch(const char *url,const char *host,const char *conditional_headers,
+    size_t max_body_bytes,long timeout_ms,riela_web_cancel *cancel) {
+  return fetch(url,host,conditional_headers,NULL,0,max_body_bytes,timeout_ms,cancel);
+}
+
+// Separate capability: no caller-controlled URL/host/headers and no redirect.
+riela_web_response riela_discovery_exa(const char *token,const char *json,size_t json_length,
+    long timeout_ms,riela_web_cancel *cancel) {
+  riela_web_response denied={0};denied.error=1;
+  if (!token||!json||!json_length||json_length>50000) return denied;
+  size_t length=strnlen(token,8193);
+  if (!length||length>8192) return denied;
+  for (size_t i=0;i<length;i++) if ((unsigned char)token[i]<33||(unsigned char)token[i]>126) return denied;
+  char *headers=malloc(length+80);
+  if (!headers) return denied;
+  snprintf(headers,length+80,"Authorization: Bearer %s\nContent-Type: application/json",token);
+  riela_web_response response=fetch("https://openrouter.ai/api/v1/chat/completions","openrouter.ai",headers,
+    json,json_length,500000,timeout_ms,cancel);
+  memset(headers,0,length+80);free(headers);
+  return response;
+}
+
 void riela_web_response_free(riela_web_response *response) {
   if (!response) return;free(response->body);free(response->headers);memset(response,0,sizeof(*response));
 }

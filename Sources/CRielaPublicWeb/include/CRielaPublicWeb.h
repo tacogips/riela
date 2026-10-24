@@ -21,6 +21,9 @@ void riela_web_cancel_free(riela_web_cancel *value);
 int riela_web_public_ip(const char *ip);
 riela_web_response riela_web_fetch(const char *url, const char *host, const char *conditional_headers,
   size_t max_body_bytes, long timeout_ms, riela_web_cancel *cancel);
+/* Fixed-origin authenticated discovery; never available through public-web. */
+riela_web_response riela_discovery_exa(const char *token, const char *json, size_t json_length,
+  long timeout_ms, riela_web_cancel *cancel);
 void riela_web_response_free(riela_web_response *response);
 xmlDocPtr riela_web_parse_html(const char *bytes, int count);
 xmlDocPtr riela_web_parse_xml(const char *bytes, int count);

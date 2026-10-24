@@ -40,6 +40,7 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.cacheExchangeRegistration,
     BuiltinWorkflowAddonResolver.recordManifestRegistration,
     BuiltinWorkflowAddonResolver.publicWebRegistration,
+    BuiltinWorkflowAddonResolver.publicDiscoveryRegistration,
     BuiltinWorkflowAddonResolver.webCollectionRegistration,
     BuiltinWorkflowAddonResolver.xDigestRegistration,
     BuiltinWorkflowAddonResolver.gmailDigestRegistration

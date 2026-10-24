@@ -9,14 +9,15 @@ struct WebCollectionTimestamp: Sendable {
   init?(_ source: String) {
     let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
     guard source.utf8.count <= 200 else { return nil }
-    let iso = #"^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}:\d{2})(?:[.,](\d{1,9}))?(Z|[+-]\d{2}:?\d{2})$"#
+    let iso = #"^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}(?::\d{2})?)(?:[.,](\d{1,9}))?(Z|[+-]\d{2}:?\d{2})$"#
     if let fields = Self.capture(source, iso) {
       let rawOffset = fields[4]
       let offset = rawOffset == "Z" ? "+00:00" : rawOffset.count == 5 ?
         String(rawOffset.prefix(3)) + ":" + String(rawOffset.suffix(2)) : rawOffset
       let fraction = String((fields[3] + "000000").prefix(6))
       let suffix = fraction == "000000" ? "" : "." + fraction
-      let normalized = fields[1] + "T" + fields[2] + suffix + (offset == "-00:00" ? "+00:00" : offset)
+      let time = fields[2].count == 5 ? fields[2] + ":00" : fields[2]
+      let normalized = fields[1] + "T" + time + suffix + (offset == "-00:00" ? "+00:00" : offset)
       let formatter = ISO8601DateFormatter()
       if !suffix.isEmpty { formatter.formatOptions.insert(.withFractionalSeconds) }
       guard let date = formatter.date(from: normalized) else { return nil }
@@ -24,7 +25,7 @@ struct WebCollectionTimestamp: Sendable {
       guard let hours = Int(numericOffset.dropFirst().prefix(2)), let minutes = Int(numericOffset.suffix(2)),
         hours <= 23, minutes < 60,
         let zone = TimeZone(secondsFromGMT: (offset.first == "-" ? -1 : 1) * (hours * 3600 + minutes * 60)) else { return nil }
-      let expected = fields[1] + "T" + fields[2]
+      let expected = fields[1] + "T" + time
       let wholeSecond = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
       guard String(Self.wire(wholeSecond, timezone: zone).prefix(19)) == expected else { return nil }
       self.date = date; self.wire = normalized; return

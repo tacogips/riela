@@ -36,7 +36,7 @@ extension WebCollector {
       identities = result
     }
     let frozenSeen = seen
-    let stories = try await bounded(identities) { index, identity in
+    let stories: [WebCollectionItemResult] = try await bounded(identities) { index, identity in
       if options.historical, frozenSeen[identity] != nil {
         return .init(index: index, candidate: nil, record: [:], articleFailed: false)
       }

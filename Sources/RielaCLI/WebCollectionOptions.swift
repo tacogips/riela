@@ -20,12 +20,13 @@ struct WebCollectionOptions: Sendable {
   let pageOptions: PublicWebPageOptions
   let previous: JSONObject
   let scope: String
+  let index: WebCollectionIndexOptions?
 
   init(_ values: JSONObject) throws {
     guard Set(values.keys).isSubset(of: ["kind", "url", "start", "end", "timezone", "maximumItems", "minimumPoints",
       "maxConcurrency", "fetchArticles", "historical", "selectionPolicy", "selectionKeyPrefix", "selectionSignature",
-      "xmlEntities", "blockedHosts", "pageOptions", "previous"]),
-      let kind = webCollectionText(values["kind"]), ["feed", "hackernews"].contains(kind),
+      "xmlEntities", "blockedHosts", "pageOptions", "previous", "index"]),
+      let kind = webCollectionText(values["kind"]), ["feed", "hackernews", "index"].contains(kind),
       let rawStart = webCollectionText(values["start"]), let start = WebCollectionTimestamp(rawStart),
       let rawEnd = webCollectionText(values["end"]), let end = WebCollectionTimestamp(rawEnd), start.date < end.date,
       case let .object(previous) = values["previous"] ?? .object([:]) else { throw PublicWebError.invalidInput }
@@ -33,10 +34,18 @@ struct WebCollectionOptions: Sendable {
     guard TimeZone(identifier: timezone) != nil else { throw PublicWebError.invalidInput }
     let url = webCollectionText(values["url"])
     let blocked = try values["blockedHosts"].map { try JSONDecoder().decode([String].self, from: JSONEncoder().encode($0)) } ?? []
-    if kind == "feed" {
+    if kind != "hackernews" {
       guard let url else { throw PublicWebError.invalidInput }
       _ = try PublicWebHTTP.destination(url, blockedHosts: blocked)
     } else { guard values["url"] == nil, blocked.isEmpty, values["xmlEntities"] == nil else { throw PublicWebError.invalidInput } }
+    let index: WebCollectionIndexOptions?
+    if kind == "index" {
+      guard case let .object(value)? = values["index"], values["xmlEntities"] == nil else { throw PublicWebError.invalidInput }
+      index = try WebCollectionIndexOptions(value)
+    } else {
+      guard values["index"] == nil else { throw PublicWebError.invalidInput }
+      index = nil
+    }
     let policy = try Self.text(values, "selectionPolicy", fallback: "publisher-order-v1")
     let prefix = try Self.text(values, "selectionKeyPrefix", fallback: "", allowEmpty: true)
     let signature = try Self.text(values, "selectionSignature", fallback: "", allowEmpty: true)
@@ -62,13 +71,15 @@ struct WebCollectionOptions: Sendable {
     let fetch = try Self.boolean(values, "fetchArticles", fallback: true)
     let historical = try Self.boolean(values, "historical", fallback: false)
     guard !historical || kind != "hackernews" || end.date.timeIntervalSince(start.date) <= 25 * 3600 else { throw PublicWebError.invalidInput }
-    let scopeValues: JSONObject = ["kind": .string(kind), "url": url.map(JSONValue.string) ?? .null,
+    var scopeValues: JSONObject = ["kind": .string(kind), "url": url.map(JSONValue.string) ?? .null,
       "timezone": .string(timezone), "maximum": .integer(Int64(maximum)), "minimumPoints": .integer(Int64(minimum)),
       "fetchArticles": .bool(fetch), "historical": .bool(historical), "policy": .string(policy),
       "selectionPrefix": .string(prefix), "entities": .object(entities.mapValues(JSONValue.string)),
       "blockedHosts": .array(blocked.map(JSONValue.string)), "page": .object(["mode": .string(page.mode),
         "minimum": .integer(Int64(page.minimumTextCharacters)), "waitMs": .integer(Int64(page.waitMs)),
         "timeoutMs": .integer(Int64(page.timeoutMs)), "maximum": .integer(Int64(page.maximumTextCharacters))])]
+    if let index { scopeValues["index"] = .object(index.scope) }
+    self.index = index
     self.scope = JSONCanonical.sha256Hex(try JSONCanonical.encode(scopeValues))
     self.kind = kind; self.url = url; self.start = start; self.end = end; self.timezone = timezone
     self.maximum = maximum; self.minimumPoints = minimum

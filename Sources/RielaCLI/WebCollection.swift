@@ -29,16 +29,18 @@ struct WebCollector: Sendable {
 
   func collect() async throws -> JSONObject {
     try checkDeadline()
-    guard try recordBudget(state: options.previous) >= Self.minimumRecordBudget else { throw PublicWebError.invalidInput }
+    guard try recordBudget(state: initialState()) >= Self.minimumRecordBudget else { throw PublicWebError.invalidInput }
     if options.kind == "feed" { return try await collectFeed() }
+    if options.kind == "index" { return try await collectIndex() }
     return try await collectHackerNews()
   }
 
   func initialState() -> JSONObject {
     var value = options.previous
     if case let .object(marker)? = value["_webCollection"], marker["scope"] != .string(options.scope) {
-      for key in ["seen", "etag", "last_modified", "candidate_selection", "ranked_selection"] { value.removeValue(forKey: key) }
+      for key in ["seen", "etag", "last_modified", "candidate_selection", "ranked_selection", "after_window", "article_attempts", "last_scan"] { value.removeValue(forKey: key) }
     }
+    if let policy = options.index, case let .object(seen)? = value["seen"] { value["seen"] = .object(policy.boundedSeen(seen)) }
     return value
   }
 
@@ -78,21 +80,21 @@ struct WebCollector: Sendable {
     }
   }
 
-  func bounded<Input: Sendable>(
-    _ values: [Input], operation: @escaping @Sendable (Int, Input) async -> WebCollectionItemResult
-  ) async throws -> [WebCollectionItemResult] {
-    let results = await withTaskGroup(of: WebCollectionItemResult.self) { group in
-      var next = 0, results: [WebCollectionItemResult] = []
+  func bounded<Input: Sendable, Output: Sendable>(
+    _ values: [Input], operation: @escaping @Sendable (Int, Input) async -> Output
+  ) async throws -> [Output] {
+    let results = await withTaskGroup(of: IndexedCollectionResult<Output>.self) { group in
+      var next = 0, results: [IndexedCollectionResult<Output>] = []
       func add() {
         let index = next; next += 1
-        group.addTask { await operation(index, values[index]) }
+        group.addTask { .init(index: index, value: await operation(index, values[index])) }
       }
       for _ in 0..<min(options.concurrency, values.count) { add() }
       while let result = await group.next() {
         results.append(result)
         if next < values.count { add() }
       }
-      return results.sorted { $0.index < $1.index }
+      return results.sorted { $0.index < $1.index }.map(\.value)
     }
     try Task.checkCancellation()
     return results
@@ -117,4 +119,9 @@ func webCollectionKey(_ value: String) -> String { String(JSONCanonical.sha256He
 
 func webCollectionText(_ value: JSONValue?) -> String? {
   guard case let .string(text)? = value, !text.isEmpty else { return nil }; return text
+}
+
+private struct IndexedCollectionResult<Value: Sendable>: Sendable {
+  let index: Int
+  let value: Value
 }

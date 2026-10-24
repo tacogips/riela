@@ -70,6 +70,11 @@ enum GatewayFailureDiagnostics {
     if let providerCode = boundedInteger(error: error, key: "providerErrorCode", range: 0...99_999) {
       fields.append("providerErrorCode=\(providerCode)")
     }
+    if code == "UPSTREAM_FAILURE",
+       boundedInteger(error: error, key: "httpStatus", range: 100...599) == 400,
+       let parameter = invalidXRequestParameter(error) {
+      fields.append("xInvalidRequestParameter=\(parameter)")
+    }
     if case let .bool(retryable)? = error["retryable"] { fields.append("retryable=\(retryable)") }
     for (key, bound) in [("requestAttempts", Int64(11)), ("retryAttempts", Int64(10)), ("backoffMs", Int64(6_000_000))] {
       if case let .integer(value)? = error[key], (0...bound).contains(value) { fields.append("\(key)=\(value)") }
@@ -92,6 +97,23 @@ enum GatewayFailureDiagnostics {
       }
     }
     return " (\(fields.joined(separator: ", ")))"
+  }
+
+  private static func invalidXRequestParameter(_ error: JSONObject) -> String? {
+    // Only finite parameter NAMES cross the reader boundary, never their values,
+    // query text, tokens or free-form provider messages.
+    guard case let .string(details)? = error["details"], details.utf8.count <= 65_536,
+          let provider = try? JSONDecoder().decode(JSONObject.self, from: Data(details.utf8)),
+          case let .array(errors)? = provider["errors"] else { return nil }
+    let allowed: Set<String> = ["query", "since_id", "until_id", "start_time", "end_time",
+      "next_token", "pagination_token", "max_results", "expansions", "tweet.fields", "user.fields", "media.fields"]
+    var parameters = Set<String>()
+    for value in errors.prefix(16) {
+      guard case let .object(item) = value, case let .object(values)? = item["parameters"] else { continue }
+      parameters.formUnion(values.keys.filter { allowed.contains($0) })
+    }
+    if parameters.count == 1 { return parameters.first }
+    return parameters.isEmpty ? nil : "multiple"
   }
 
   private static func gmailDecodedSizeCounts(_ message: String) -> (Int, Int)? {

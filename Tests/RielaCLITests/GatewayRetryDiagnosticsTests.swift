@@ -4,6 +4,33 @@ import RielaCore
 @testable import RielaCLI
 
 final class GatewayRetryDiagnosticsTests: XCTestCase {
+  func testInvalidXRequestRetainsOnlyFiniteParameterName() throws {
+    let details = #"{"errors":[{"parameters":{"since_id":["PRIVATE_ID"]},"message":"PRIVATE_QUERY_TOKEN"}]}"#
+    let envelope: [String: Any] = ["error": ["code": "UPSTREAM_FAILURE", "httpStatus": 400,
+      "retryable": false, "details": details]]
+    let text = String(decoding: try JSONSerialization.data(withJSONObject: envelope), as: UTF8.self)
+    let suffix = GatewayFailureDiagnostics.suffix(stdout: text)
+    XCTAssertEqual(suffix, " (code=UPSTREAM_FAILURE, httpStatus=400, xInvalidRequestParameter=since_id, retryable=false)")
+    XCTAssertFalse(suffix.contains("PRIVATE"))
+  }
+
+  func testInvalidXParameterDoesNotParseMessagesOrUnknownNames() throws {
+    for details in [#"{"errors":[{"message":"next_token PRIVATE"}]}"#,
+      #"{"errors":[{"parameters":{"PRIVATE_TOKEN":["SECRET"]}}]}"#,
+      String(repeating: "x", count: 65_537)] {
+      let envelope: [String: Any] = ["error": ["code": "UPSTREAM_FAILURE", "httpStatus": 400, "details": details]]
+      let text = String(decoding: try JSONSerialization.data(withJSONObject: envelope), as: UTF8.self)
+      let expected = text.utf8.count > 65_536 ? "" : " (code=UPSTREAM_FAILURE, httpStatus=400)"
+      XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: text), expected)
+    }
+  }
+
+  func testMultipleInvalidXParametersAreBounded() throws {
+    let details = #"{"errors":[{"parameters":{"start_time":["PRIVATE"],"end_time":["PRIVATE"]}}]}"#
+    let envelope: [String: Any] = ["error": ["code": "UPSTREAM_FAILURE", "httpStatus": 400, "details": details]]
+    let text = String(decoding: try JSONSerialization.data(withJSONObject: envelope), as: UTF8.self)
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: text), " (code=UPSTREAM_FAILURE, httpStatus=400, xInvalidRequestParameter=multiple)")
+  }
   func testFailedSDKTransportEvidenceSurvivesWithoutProviderText() {
     let error = #"{"error":{"code":"RATE_LIMITED","httpStatus":429,"retryable":true,"requestAttempts":3,"retryAttempts":2,"backoffMs":450,"retryStopReason":"retry-exhausted","details":"PRIVATE_BODY_TOKEN"}}"#
     let suffix = GatewayFailureDiagnostics.suffix(stdout: "", stderr: error)

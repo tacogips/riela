@@ -534,7 +534,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if KaibaAddonCatalog.handles(input.addon.name) {
       return try await KaibaAddonCatalog.execute(input, environment: environment)
     }
-    if let output = try await executeStatefulAddonIfSupported(input) {
+    if let output = try await executeStatefulAddonIfSupported(input, context: context) {
       return output
     }
     if let gateway = ContainerGatewayAddon(rawValue: input.addon.name) {

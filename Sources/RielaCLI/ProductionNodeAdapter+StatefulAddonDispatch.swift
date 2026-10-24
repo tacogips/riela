@@ -2,8 +2,9 @@ import RielaCore
 
 extension BuiltinWorkflowAddonResolver {
   func executeStatefulAddonIfSupported(
-    _ input: WorkflowAddonExecutionInput
+    _ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext
   ) async throws -> AdapterExecutionOutput? {
+    if input.addon.name == "riela/x-collect" { return try await executeXCollect(input, context: context) }
     if input.addon.name == "riela/json-route" { return try executeJSONRoute(input) }
     if input.addon.name == "riela/page-state" { return try executePageState(input) }
     if input.addon.name == "riela/collection-checkpoint" {

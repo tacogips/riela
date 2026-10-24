@@ -93,3 +93,25 @@ and independent scheduling in the authored graph, legacy metadata import,
 matching host/guest release and install, idle deployment, and two hours of real
 post-cutover collection plus Notion verification. Existing production monitoring
 and examples remain insufficient for those gates.
+
+## Native X author collector and ART source migration
+
+`riela/x-collect` now owns authenticated account verification, 512-byte author
+query packing, exact legacy shard/cursor import, frozen windows, page budgets,
+deduplication and independent fresh-head probes. It invokes the linked native
+gateway reader through the normal addon execution path. ART's new source graph
+replaces Python per-page callbacks and removes the read/turn workflows; its
+remaining adapter normalizes records, binds source identity and screens content.
+The new collector returns metadata for a subsequent inspected durable commit;
+it does not yet replace ART's durable source writer.
+
+Actual Opus 5.5 medium review identified three compatibility differences: original
+requested start in head receipt signatures, nonfresh shard budgets below nominal
+page size, and imported page sizes 5–9. These are corrected with a legacy Python
+signature golden and a five-shard/small-budget cursor continuation test. Nine
+focused native tests pass, including the optional real metadata-only cursor
+fixture (no provider I/O). ART's domain suite passes with its private guest gate
+still pending. The matching Linux runtime and guest must be rebuilt and checked
+before this source change is deployed. Full remaining Gmail/Web coordination,
+durable ownership, release/install, deployment and the final two-hour check
+remain required for the original goal.

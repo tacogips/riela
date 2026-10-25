@@ -85,6 +85,7 @@ enum PrivateWorkflowWorker {
       workflowDefinitionDir: request.plan.definitionRoot, workingDirectory: work.path)
     var command = WorkflowRunCommand()
     command.outputProjection = rootResult
+    command.entryStepOverride = request.plan.entryStepId
     let result = await command.runWithoutSpecialistMonitor(.init(target: request.plan.workflowId,
       resolution: resolution, variables: try JSONValue.object(request.plan.variables).compactJSONString(), output: .json,
       maxSteps: request.plan.maxSteps ?? 1000, maxConcurrency: request.plan.maxConcurrency ?? 4,

@@ -79,6 +79,12 @@ the guest environment directly and do not declare another container. Their model
 prompt, output contract and tool policy remain ordinary authored node settings.
 Gateway and deterministic data nodes run within the same guest runtime.
 
+`config.entryStepId` optionally selects a declared entry step inside that same
+workflow definition. Use it to keep a provider's public controller and private
+collection/inspection subgraph together. Same-workflow native fanout can run
+inspection batches without separate helper workflows. The ordinary CLI entry
+is unchanged; the embedded override rejects missing steps before execution.
+
 Only the inner root output is returned. Every intermediate step's session,
 artifact, working directory and memory reside under a private guest tmpfs root.
 Embedded execution renders only the root and finite lifecycle metadata rather

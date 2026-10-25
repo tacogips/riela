@@ -26,6 +26,8 @@ public struct WorkflowRunCommand: Sendable {
   /// An embedded caller can return a bounded result without serializing the
   /// complete execution transcript. Canonical persistence is unchanged.
   var outputProjection: (@Sendable (WorkflowRunResult) throws -> JSONObject)?
+  /// Embedded callers can enter a declared subgraph without another workflow.
+  var entryStepOverride: String?
   /// Projects loop evidence for required-gate enforcement; injectable so a
   /// projector failure can be exercised without a broken evidence fixture.
   var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
@@ -60,6 +62,12 @@ public struct WorkflowRunCommand: Sendable {
       let resolution = options.resolution
         ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
       var bundle = try resolveRunBundle(options: options, resolution: resolution, taskContext: taskContext)
+      if let entryStepOverride {
+        guard bundle.workflow.steps.contains(where: { $0.id == entryStepOverride }) else {
+          throw AdapterExecutionError(.invalidInput, "embedded workflow entry step does not exist")
+        }
+        bundle.workflow.entryStepId = entryStepOverride
+      }
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
       let prepared = try await prepareRunExecution(
         options: options,

@@ -319,6 +319,40 @@ final class PrivateWorkflowTests: XCTestCase {
     } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked) }
   }
 
+  func testPrivateEntrySelectsDeclaredSubgraphWithoutAnotherWorkflow() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-entry")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definitions = root.appendingPathComponent("definitions/shared")
+    try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
+    let workflow: JSONObject = ["workflowId": .string("shared"), "entryStepId": .string("public"),
+      "nodes": .array(["public", "private"].map { id in
+        .object(["id": .string(id), "addon": .object(["name": .string("riela/json-compose"),
+          "version": .string("1"), "config": .object(["payload": .object([
+            "status": .string(id == "private" ? "ok" : "public")])])])])
+      }), "steps": .array(["public", "private"].map { .object(["id": .string($0), "nodeId": .string($0)]) })]
+    try JSONEncoder().encode(workflow).write(to: definitions.appendingPathComponent("workflow.json"))
+    var config: JSONObject = ["workflowId": .string("shared"),
+      "definitionRoot": .string(definitions.deletingLastPathComponent().path),
+      "outputSchema": .object(schema), "entryStepId": .string("private")]
+    let plan = try PrivateWorkflowPlan(config: config)
+    let output = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan,
+      deadline: Date().addingTimeInterval(30), environment: [:], credentials: []), root: root.appendingPathComponent("guest"))
+    XCTAssertEqual(output.payload, ["status": .string("ok")])
+    let snapshots = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+      canonicalRuntimeStoreRoot(sessionStoreRoot: root.appendingPathComponent("guest/sessions").path)).loadAll()
+    XCTAssertEqual(snapshots.first?.session.entryStepId, "private")
+    for invalid in ["", "../private", "private/child"] {
+      config["entryStepId"] = .string(invalid)
+      XCTAssertThrowsError(try PrivateWorkflowPlan(config: config))
+    }
+    config["entryStepId"] = .string("absent")
+    do {
+      _ = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: try .init(config: config),
+        deadline: Date().addingTimeInterval(30), environment: [:], credentials: []), root: root.appendingPathComponent("missing"))
+      XCTFail("undeclared private entry accepted")
+    } catch { XCTAssertTrue(error is AdapterExecutionError) }
+  }
+
   func testInvalidPlansAndEnvironmentAreRefusedBeforeContainerLaunch() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("private-workflow-invalid")
     defer { try? FileManager.default.removeItem(at: root) }

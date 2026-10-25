@@ -179,7 +179,7 @@ to failed branches) and `failedBatchCount`. Failed outputs are never interpreted
 as selections or successful model receipts. Cancellation, running or missing
 branches, inconsistent completion flags and modified failed batches are rejected.
 The default remains a complete successful join. This option is available in
-Riela 0.2.61 and later.
+Riela 0.2.62 and later.
 
 The result is `{items, itemCount, selectedCount, context}`. Empty input returns
 zero items and its original context without invoking workers or waiting for a

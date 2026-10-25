@@ -352,7 +352,7 @@ public struct RielaCacheStore: Sendable {
 
   private func validate(scope: String, keys: [String], allowingEmpty: Bool = false) throws {
     try validate(scope: scope)
-    guard (allowingEmpty || !keys.isEmpty), keys.count <= 1024, Set(keys).count == keys.count,
+    guard allowingEmpty || !keys.isEmpty, keys.count <= 1024, Set(keys).count == keys.count,
       keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 && !$0.contains("\0") && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }) else {
       throw RielaCacheError.invalid("scope/key invalid, duplicate key, or batch outside 1...1024")
     }

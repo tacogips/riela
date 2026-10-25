@@ -6,6 +6,22 @@ import XCTest
 @testable import RielaCLI
 
 final class ContainerWorkflowAddonResolverTests: XCTestCase {
+  func testAppleIPv4DNSCompatibilityKeepsDeniedNetworkIsolated() {
+    let driver = AppleContainerDriver(executable: "/usr/bin/container")
+    var options = ContainerRuntimeRunOptions(environment: [:], mounts: [], entrypoint: nil,
+      workingDirectory: nil, networkAllowed: true, readOnlyRootFilesystem: true)
+    let allowed = driver.runArguments(image: "fixture:local", options: options)
+    XCTAssertEqual(Array(allowed.suffix(3)), ["--dns-option", "no-aaaa", "fixture:local"])
+    XCTAssertFalse(allowed.contains("--dns"))
+    options.networkAllowed = false
+    let denied = driver.runArguments(image: "fixture:local", options: options)
+    XCTAssertEqual(Array(denied.suffix(4)), ["--network", "none", "--no-dns", "fixture:local"])
+    XCTAssertFalse(denied.contains("--dns-option"))
+    options.networkAllowed = true
+    let docker = DockerContainerDriver(executable: "/usr/bin/docker").runArguments(image: "fixture:local", options: options)
+    XCTAssertFalse(docker.contains("--dns-option"))
+  }
+
   func testContainerRuntimeDiscoveryPrefersAppleContainerThenDockerThenPodman() throws {
     let root = try makeRielaCLITestTemporaryDirectory("riela-container-runtime-discovery")
     defer { try? FileManager.default.removeItem(at: root) }

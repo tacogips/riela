@@ -59,7 +59,10 @@ struct AppleContainerDriver: ContainerRuntimeDriver {
     var arguments = baseRunArguments(options: options, volumeFlag: "--mount") { mount in
       mount.mountArgument
     }
-    if !options.networkAllowed {
+    if options.networkAllowed {
+      // Apple default networking is IPv4; failed AAAA replies can hide valid A records.
+      arguments += ["--dns-option", "no-aaaa"]
+    } else {
       arguments += ["--network", "none", "--no-dns"]
     }
     arguments.append(image)

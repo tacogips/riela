@@ -288,7 +288,9 @@ extension DeterministicWorkflowRunner {
         crossWorkflowDispatchDepth: directive.workflowId == nil
           ? request.crossWorkflowDispatchDepth
           : request.crossWorkflowDispatchDepth + 1,
-        stopBeforeStepId: directive.joinStepId
+        // Local branches stop before their caller's join. A cross-workflow
+        // callee owns its complete graph, including identically named steps.
+        stopBeforeStepId: directive.workflowId == nil ? directive.joinStepId : nil
       )
       branchRequest.workflowRunId = request.workflowRunId
       branchRequest.parentSessionId = parentSessionId

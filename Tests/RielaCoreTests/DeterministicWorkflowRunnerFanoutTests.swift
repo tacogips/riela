@@ -270,6 +270,26 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     XCTAssertFalse(reason.isEmpty)
   }
 
+  func testCrossWorkflowFanoutExecutesCalleeStepWithSameNameAsParentJoin() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [:])
+    let payloads = fanoutPayloads()
+    var callee = fanoutCalleeWorkflow()
+    callee.steps[0].transitions = [WorkflowStepTransition(toStepId: "join")]
+    callee.steps.append(WorkflowStepRef(id: "join", nodeId: "branch-node"))
+    let store = InMemoryWorkflowRuntimeStore()
+    let runner = DeterministicWorkflowRunner(store: store, adapter: FanoutTestAdapter(tracker: tracker),
+      calleeResolver: FanoutCalleeResolver(callee: .init(workflow: callee,
+        nodePayloads: ["branch-node": try XCTUnwrap(payloads["branch-node"])])))
+    let result = try await runner.run(.init(
+      workflow: fanoutWorkflow(concurrency: 2, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads))
+    XCTAssertEqual(result.status, .completed)
+    let latest = await store.latestSession(workflowId: callee.workflowId)
+    let child = try XCTUnwrap(latest)
+    XCTAssertEqual(child.executions.map(\.stepId), ["branch", "join"],
+      "a parent join name must not truncate a different workflow's branch")
+  }
+
   func testCrossWorkflowFanoutRunsCalleesAndJoinsInParent() async throws {
     let tracker = FanoutBranchTracker(delaysByIndex: [0: 30_000_000, 1: 10_000_000, 2: 20_000_000])
     let adapter = FanoutTestAdapter(tracker: tracker)

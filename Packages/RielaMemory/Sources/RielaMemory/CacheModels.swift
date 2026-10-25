@@ -70,6 +70,10 @@ public struct CacheLookup: Codable, Equatable, Sendable {
   public var entry: CacheEntry?
 }
 
+public enum CacheReferenceStatus: String, Codable, Sendable {
+  case hit, missing, expired
+}
+
 public struct CacheStats: Codable, Equatable, Sendable {
   public var entryCount: Int
   public var byteCount: Int

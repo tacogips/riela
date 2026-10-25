@@ -5,6 +5,44 @@ import XCTest
 @testable import RielaCLI
 
 final class CacheReadSetTests: XCTestCase {
+  func testMetadataOnlyReadSetVerifiesLargeBodiesWithoutExportingThem() async throws {
+    let root = scratch(); defer { try? FileManager.default.removeItem(at: root) }
+    let maximum = 32 * 1024 * 1024
+    let cache = try RielaCacheExchange(store: .init(rootDirectory: root.path), cacheId: "bodies", scope: "account",
+      policy: .init(ttlSeconds: 86_400, maxBytes: maximum))
+    let time = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-5))
+    let body = "PRIVATE_LARGE_CACHE_BODY_CANARY" + String(repeating: "x", count: 6 * 1024 * 1024)
+    var refs: [CacheBodyReference] = []
+    for index in 0..<3 {
+      let key = String(index)
+      refs.append(try cache.put([.init(key: key, fetchedAt: time, payload: .string(body))])[key]!)
+    }
+    guard case var .object(settings) = storage(root, "bodies") else { return XCTFail("fixture") }
+    settings["maxBytes"] = .integer(Int64(maximum))
+    let config: JSONObject = ["action": .string("read-set"), "includePayload": .bool(false),
+      "stores": .object(["source": .object(settings)]),
+      "requests": .array(try refs.enumerated().map { try request(String($0.offset), "source", $0.element) })]
+    let result = try await run(config)
+    XCTAssertEqual(result["results"], .array((0..<3).map {
+      .object(["id": .string(String($0)), "status": .string("hit")])
+    }))
+    XCTAssertLessThan(try JSONEncoder().encode(result).count, 1024)
+    XCTAssertFalse(try JSONValue.object(result).compactJSONString().contains("PRIVATE"))
+    var invalid = refs[0]; invalid.payloadSHA256 = String(repeating: "0", count: 64)
+    let availability = try cache.availability([invalid])
+    XCTAssertEqual(availability[invalid.key], .missing)
+  }
+
+  func testMetadataOnlyFlagMustBeBooleanBeforeAnyCacheIO() async throws {
+    let root = scratch(); defer { try? FileManager.default.removeItem(at: root) }
+    do {
+      _ = try await run(["action": .string("read-set"), "includePayload": .string("false"),
+        "stores": .object(["source": storage(root, "bodies")]), "requests": .array([])])
+      XCTFail("invalid flag accepted")
+    } catch {}
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+  }
+
   func testFailureLabelsRemainFiniteAndDoNotExposeNativeDetails() {
     let failures: [(RielaCacheError, String)] = [(.busy, "busy"), (.foreignDatabase, "foreignDatabase"),
       (.protectedCapacityExceeded(limit: 1), "protectedCapacityExceeded"), (.oversized(bytes: 2, limit: 1), "oversized"),

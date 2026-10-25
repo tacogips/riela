@@ -124,16 +124,8 @@ public struct RielaCacheExchange: Sendable {
     var found = CacheBodyRead()
     // Bound batches by bytes as well as count; storage bytes leave headroom
     // for SDK serialization. Do not prune before reading expired statuses.
-    var batches: [[CacheBodyReference]] = [], batch: [CacheBodyReference] = [], charge = 0
-    for ref in references {
-      if !batch.isEmpty && (batch.count == 1024 || charge + ref.byteCount > Self.frame / 2 - 65_536) {
-        batches.append(batch); batch = []; charge = 0
-      }
-      batch.append(ref); charge += ref.byteCount
-    }
-    if !batch.isEmpty { batches.append(batch) }
     var bytes = 0
-    for batch in batches {
+    for batch in referenceBatches(references) {
       let response = try store.get(cacheId: cacheId, scope: scope, keys: batch.map(\.key), maxOutputBytes: maxLookupBytes)
       let desired = Dictionary(uniqueKeysWithValues: batch.map { ($0.key, $0) })
       guard response.results.count == batch.count, Set(response.results.map(\.key)) == Set(desired.keys) else { throw Self.invalid() }
@@ -161,6 +153,37 @@ public struct RielaCacheExchange: Sendable {
     }
     guard try JSONEncoder().encode(found).count <= Self.frame - 4096 else { throw Self.invalid() }
     return found
+  }
+
+  /// Verify exact body references without retaining or exporting their bodies.
+  /// Each bounded read keeps the normal revision, timestamp and payload hash
+  /// checks. Aggregate body size does not become a status-output frame limit.
+  public func availability(_ references: [CacheBodyReference]) throws -> [String: CacheReferenceStatus] {
+    try validateReferences(references)
+    var statuses: [String: CacheReferenceStatus] = [:]
+    for batch in referenceBatches(references) {
+      let read = try get(batch)
+      let missing = Set(read.missing), expired = Set(read.expired)
+      for ref in batch {
+        if read.hits[ref.key] != nil { statuses[ref.key] = .hit
+        } else if missing.contains(ref.key) { statuses[ref.key] = .missing
+        } else if expired.contains(ref.key) { statuses[ref.key] = .expired
+        } else { throw Self.invalid() }
+      }
+    }
+    return statuses
+  }
+
+  private func referenceBatches(_ references: [CacheBodyReference]) -> [[CacheBodyReference]] {
+    var batches: [[CacheBodyReference]] = [], batch: [CacheBodyReference] = [], charge = 0
+    for ref in references {
+      if !batch.isEmpty && (batch.count == 1024 || charge + ref.byteCount > Self.frame / 2 - 65_536) {
+        batches.append(batch); batch = []; charge = 0
+      }
+      batch.append(ref); charge += ref.byteCount
+    }
+    if !batch.isEmpty { batches.append(batch) }
+    return batches
   }
 
   public func protect(_ references: [CacheBodyReference], enabled: Bool) throws {

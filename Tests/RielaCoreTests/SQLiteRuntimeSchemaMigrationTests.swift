@@ -15,6 +15,7 @@ import XCTest
 ///    pre-generation-5 session store is discarded and recreated instead.
 final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
   private static let nestedInvocationGeneration: Int64 = 4
+  private static let definitionStoreBaseGeneration: Int64 = 9
 
   func testGeneration2UpgradesThrough3To4WithoutLosingSnapshot() throws {
     try assertUpgrade(startingAt: 2)
@@ -33,7 +34,17 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
   func testNoGenerationBelowTheCurrentOneHasAMigrationPath() {
     let current = SQLiteWorkflowRuntimePersistenceStore.schemaGeneration
     XCTAssertGreaterThan(current, Self.nestedInvocationGeneration)
-    for stamped in 1..<current {
+    // Generation 9 → 10 only adds the definition store tables, so existing
+    // session stores upgrade in place; every older generation is still discarded.
+    XCTAssertTrue(
+      SQLiteSchemaMigrator.hasCompletePath(
+        from: Self.definitionStoreBaseGeneration,
+        to: current,
+        migrations: SQLiteWorkflowRuntimePersistenceStore.schemaMigrations
+      ),
+      "generation \(Self.definitionStoreBaseGeneration) must migrate to \(current) by adding the definition store tables"
+    )
+    for stamped in 1..<Self.definitionStoreBaseGeneration {
       XCTAssertFalse(
         SQLiteSchemaMigrator.hasCompletePath(
           from: stamped,

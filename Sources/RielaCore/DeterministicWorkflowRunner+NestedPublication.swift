@@ -156,7 +156,8 @@ extension DeterministicWorkflowRunner {
         createdAt: now,
         updatedAt: now,
         parentSessionId: context.session.sessionId,
-        rootSessionId: request.rootSessionId ?? context.session.rootSessionId ?? context.session.sessionId
+        rootSessionId: request.rootSessionId ?? context.session.rootSessionId ?? context.session.sessionId,
+        definitionSource: callee.definitionSource
       )
       let plan = WorkflowNestedPublicationPlan(reservation: WorkflowNestedInvocationReservation(
         parentSessionId: context.session.sessionId,
@@ -187,7 +188,8 @@ extension DeterministicWorkflowRunner {
         parentStepId: step.id,
         resumeStepId: resumeStepId,
         sourceExecutionId: context.stepExecution.executionId,
-        branchId: "cross-workflow"
+        branchId: "cross-workflow",
+        definitionSource: callee.definitionSource
       )
       return nil
     }

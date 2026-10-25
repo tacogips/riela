@@ -6,13 +6,16 @@ import Foundation
 public struct ResolvedWorkflowCallee: Sendable {
   public var workflow: WorkflowDefinition
   public var nodePayloads: [String: AgentNodePayload]
+  public var definitionSource: WorkflowDefinitionSource?
 
   public init(
     workflow: WorkflowDefinition,
-    nodePayloads: [String: AgentNodePayload] = [:]
+    nodePayloads: [String: AgentNodePayload] = [:],
+    definitionSource: WorkflowDefinitionSource? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
+    self.definitionSource = definitionSource
   }
 }
 

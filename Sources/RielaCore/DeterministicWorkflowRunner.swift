@@ -18,6 +18,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var preserveHistory: Bool
   public var resumeSessionId: String?
   public var retryFailedStep: Bool
+  public var definitionSource: WorkflowDefinitionSource?
   /// Recovery lineage recorded on the source session's evidence manifest,
   /// supplied by callers that can read persisted manifests (the CLI). Rerun
   /// entries derive `rootSessionId`/`attemptNumber` from it; absent lineage is
@@ -75,7 +76,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     cancellationCause: (@Sendable () -> WorkflowSessionFailureKind?)? = nil,
     crossWorkflowDispatchDepth: Int = 0,
     stopBeforeStepId: String? = nil,
-    stopAfterStepId: String? = nil
+    stopAfterStepId: String? = nil,
+    definitionSource: WorkflowDefinitionSource? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -93,6 +95,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.preserveHistory = preserveHistory
     self.resumeSessionId = resumeSessionId
     self.retryFailedStep = retryFailedStep
+    self.definitionSource = definitionSource
     self.sourceRecoveryLineage = sourceRecoveryLineage
     self.memoryRootDirectory = memoryRootDirectory
     self.agentSilenceWarningMs = agentSilenceWarningMs

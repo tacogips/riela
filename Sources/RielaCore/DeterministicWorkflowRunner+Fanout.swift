@@ -218,6 +218,7 @@ extension DeterministicWorkflowRunner {
       try Task.checkCancellation()
       var branchWorkflow = request.workflow
       var branchNodePayloads = request.nodePayloads
+      var branchDefinitionSource = request.definitionSource
       if let workflowId = directive.workflowId {
         guard let calleeResolver else {
           return .failure(
@@ -249,6 +250,7 @@ extension DeterministicWorkflowRunner {
         }
         branchWorkflow = callee.workflow
         branchNodePayloads = callee.nodePayloads
+        branchDefinitionSource = callee.definitionSource
       }
       branchWorkflow.entryStepId = directive.targetStepId
       var branchVariables = request.variables
@@ -290,7 +292,8 @@ extension DeterministicWorkflowRunner {
           : request.crossWorkflowDispatchDepth + 1,
         // Local branches stop before their caller's join. A cross-workflow
         // callee owns its complete graph, including identically named steps.
-        stopBeforeStepId: directive.workflowId == nil ? directive.joinStepId : nil
+        stopBeforeStepId: directive.workflowId == nil ? directive.joinStepId : nil,
+        definitionSource: branchDefinitionSource
       )
       branchRequest.workflowRunId = request.workflowRunId
       branchRequest.parentSessionId = parentSessionId
@@ -304,7 +307,8 @@ extension DeterministicWorkflowRunner {
         parentStepId: directive.sourceStepId,
         resumeStepId: directive.joinStepId,
         sourceExecutionId: directive.sourceStepExecutionId,
-        branchId: "fanout-\(branchId)"
+        branchId: "fanout-\(branchId)",
+        definitionSource: branchDefinitionSource
       )
       reservedChildSessionId = branchRequest.resumeSessionId
       if let changeEvidence, let tracking = directive.changeTracking {

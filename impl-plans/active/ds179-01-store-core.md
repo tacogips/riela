@@ -1,7 +1,7 @@
 # DS179-01 Definition Store Core (RielaCore)
 
 **planId**: `ds179-01-store-core`
-**Status**: Ready for implementation
+**Status**: Implemented; pending review and verification blockers
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy + (A) whole-workflow update + (B) improvement node
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §3, §5, §6, §13 (accepted by Step 3)
@@ -319,6 +319,18 @@ Create `tmp/ds179/` first (`mkdir -p tmp/ds179`).
 - All verification commands exit 0.
 - The progress log records each command, its exitStatus, testsRun,
   failureCount and the log path.
+
+## Step 6 handoff
+
+The store schema, commit/read API, deterministic diff, session pin threading,
+and focused store/session tests are implemented. The current source passes the
+arm64 build and the store/session/message-log/WorkStore focused tests. Two
+gates remain unresolved: strict SwiftLint flags the plan-pinned three-value
+`current` tuple and nested `WorkflowDefinitionDiffEntry.Op` name, and
+`SQLiteRuntimeSchemaMigrationTests.testNoGenerationBelowTheCurrentOneHasAMigrationPath`
+still asserts that generation 9 cannot migrate to 10. That test is outside
+this plan's `writePaths`; update it only after an integration checkpoint
+extends ownership. See the progress log for exits and full logs.
 
 ## Progress log expectations
 

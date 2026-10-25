@@ -36,6 +36,12 @@ enum PrivateWorkflowWorker {
         #if os(Linux)
         for (name, value) in request.environment { setenv(name, value, 1) }
         setenv("RIELA_MEMORY_ROOT", root.appendingPathComponent("memory").path, 1)
+        if let names = request.plan.cacheSpaces, !names.isEmpty {
+          setenv("RIELA_CACHE_ROOT", root.appendingPathComponent("cache").path, 1)
+          let spaces = PrivateWorkflowCacheSpaces(names: names, environment: ProcessInfo.processInfo.environment)
+          spaces.seed(request.cacheSeeds ?? [:])
+          setenv(PrivateWorkflowCacheTransport.environmentKey, names.joined(separator: ","), 1)
+        }
         if request.plan.xUsageScope != nil { setenv("RIELA_X_USAGE_EXPORT", "1", 1) }
         #endif
         let result = try await executeWorkflow(request, root: root)

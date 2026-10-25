@@ -375,6 +375,53 @@ final class PrivateWorkflowTests: XCTestCase {
     }
   }
 
+  func testPublicUserCacheSeedsAndDeltasSurviveRejectedPrivateResults() async throws {
+    for invalid in [false, true] {
+      let root = try makeRielaCLITestTemporaryDirectory("private-user-cache-host")
+      defer { try? FileManager.default.removeItem(at: root) }
+      let environment = ["RIELA_CACHE_ROOT": root.appendingPathComponent("cache").path]
+      let cache = XUserPrivateCacheSpace(environment: environment)
+      XCTAssertEqual(cache.consume(.array([.object(["id": .string("1"), "username": .string("first")])])), "stored")
+      let line = try XCTUnwrap(PrivateWorkflowCacheTransport.line(cache: "x-gateway-users", payload:
+        .array([.object(["id": .string("2"), "username": .string("second")])])))
+      let runner = PrivateWorkflowFixtureRunner(invalidPayload: invalid, usageLine: line)
+      var controller = host(runner, root: root)
+      controller.environment.merge(environment) { _, new in new }
+      var request = input(); request.addon.config?["cacheSpaces"] = .array([.string("x-gateway-users")])
+      let events = PrivateWorkflowEventRecorder()
+      do {
+        _ = try await controller.execute(request, context: .init(backendEventHandler: { await events.append($0) }))
+        XCTAssertFalse(invalid)
+      } catch { XCTAssertTrue(invalid) }
+      let calls = await runner.calls
+      let stdin = try XCTUnwrap(calls.first { $0.0.arguments.contains("exec") }?.1)
+      let captured = try JSONDecoder().decode(PrivateWorkflowRequest.self, from: Data(stdin.utf8))
+      let seed = try JSONValue.object(try XCTUnwrap(captured.cacheSeeds?["x-gateway-users"])).compactJSONString()
+      XCTAssertTrue(seed.contains("first"));XCTAssertFalse(seed.contains("second"))
+      let after = try JSONValue.object(cache.snapshot() ?? [:]).compactJSONString()
+      XCTAssertTrue(after.contains("first"));XCTAssertTrue(after.contains("second"))
+      for (configuration, _) in calls {
+        XCTAssertFalse(configuration.arguments.joined().contains("first"))
+        XCTAssertFalse(configuration.environment.values.contains { $0.contains("first") })
+      }
+      let recorded = await events.events
+      XCTAssertEqual(recorded.filter { $0.eventType == "private-cache-exchange" }.count, 1)
+      XCTAssertFalse(String(describing: recorded).contains("second"))
+    }
+  }
+
+  func testUnregisteredOrDuplicateCacheSpacesRefuseBeforeLaunch() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-cache-config")
+    defer { try? FileManager.default.removeItem(at: root) }
+    for names in [["article-bodies"], ["x-gateway-users", "x-gateway-users"]] {
+      let runner = PrivateWorkflowFixtureRunner()
+      var request = input();request.addon.config?["cacheSpaces"] = .array(names.map(JSONValue.string))
+      do { _ = try await host(runner, root: root).execute(request, context: .init());XCTFail("invalid cache configuration accepted") }
+      catch { XCTAssertTrue(error is AdapterExecutionError) }
+      let calls = await runner.calls;XCTAssertTrue(calls.isEmpty)
+    }
+  }
+
   private func input() -> WorkflowAddonExecutionInput {
     .init(workflowId: "outer", stepId: "private", nodeId: "private", addon: .init(name: "riela/private-workflow", version: "1",
       config: ["workflowId": .string("synthetic"), "outputSchema": .object(schema)],

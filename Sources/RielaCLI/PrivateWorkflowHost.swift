@@ -33,8 +33,10 @@ struct PrivateWorkflowHost {
     let deadline = min(context.deadline ?? .distantFuture,
       Date().addingTimeInterval(TimeInterval(plan.timeoutSeconds ?? 600)))
     guard deadline > Date() else { throw AdapterExecutionError(.timeout, "private workflow deadline expired") }
+    let cacheSpaces = PrivateWorkflowCacheSpaces(names: plan.cacheSpaces ?? [], environment: environment)
+    let cacheSeeds = cacheSpaces.snapshot()
     let request = PrivateWorkflowRequest(plan: plan, deadline: deadline,
-      environment: projectedEnvironment, credentials: credentials)
+      environment: projectedEnvironment, credentials: credentials, cacheSeeds: cacheSeeds.isEmpty ? nil : cacheSeeds)
     let bytes = try JSONEncoder().encode(request)
     guard bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes, let stdin = String(data: bytes, encoding: .utf8) else {
       throw PrivateWorkflowPlan.invalid()
@@ -60,22 +62,30 @@ struct PrivateWorkflowHost {
       configuration.arguments[index + 1] = "/tmp:rw,nosuid,nodev,noexec,size=256m"
       let records = SandboxNodeRecordCollector(privateOutput: true)
       let usageExports = XGatewayUsageExportCollector(cache: usageCache)
+      let cacheExports = PrivateWorkflowCacheExportCollector(spaces: cacheSpaces, seeds: cacheSeeds)
+      func recordCacheMetadata() async {
+        if !cacheSpaces.isEmpty { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
+          eventType: "private-cache-exchange", metadata: cacheExports.metadata)) }
+      }
       let result: LocalProcessResult
       do {
         result = try await EphemeralContainerNodeProcess(runner: runner).run(configuration: configuration,
           stdin: stdin + "\n", deadline: deadline) { event in
             if event.stream == .stdout { _ = records.accept(event.line) }
-            if event.stream == .stderr { usageExports.accept(event.line) }
+            if event.stream == .stderr { usageExports.accept(event.line); cacheExports.accept(event.line) }
           }
       } catch is CancellationError {
+        await recordCacheMetadata()
         if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
           eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
         throw CancellationError()
       } catch {
+        await recordCacheMetadata()
         if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
           eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
         throw AdapterExecutionError(deadline <= Date() ? .timeout : .providerError, "private workflow transport failed")
       }
+      await recordCacheMetadata()
       if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
         eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
       guard result.terminationStatus == 0 else {

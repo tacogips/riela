@@ -96,6 +96,25 @@ Exception: with `config.xUsageScope`, normalized X resource-usage telemetry (no
 source data or credentials) is forwarded to the host's `x-gateway-api-usage` cache
 over a bounded stderr marker channel (at most 2,000,000 bytes per line, 10,000
 resources per record and 256 records per run).
+
+Optional `config.cacheSpaces: ["x-gateway-users"]` bridges the builtin author
+cache across ephemeral guests. The host seeds only validated public user IDs,
+usernames and display names, with their original provider-fetch timestamps.
+The guest uses a separate native cache root; no host database or cache directory
+is mounted. New author metadata is validated and merged into the host cache even
+when the private workflow's final result is rejected. Cache reads and seeds do
+not renew the original TTL. Article bodies and authentication data are never
+accepted in this channel.
+
+The builtin registry owns each approved space's schema and storage. Unknown or
+duplicate space names are refused before container launch. The transport admits
+at most 64 records, 1,000,000 bytes per line and 8,000,000 bytes per run. Optional
+cache failures become cache misses; normal provider output retains its own
+validation. The `private-cache-exchange` backend event contains only configured
+space names, finite statuses and counts. Omitting `cacheSpaces` disables both
+seed transfer and delta export. Matching host and guest binaries with this
+capability are required.
+
 Optional `config.failureStages` maps root step IDs to public diagnostic labels:
 
 ```json

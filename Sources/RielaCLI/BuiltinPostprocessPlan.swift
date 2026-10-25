@@ -22,6 +22,12 @@ struct BuiltinPostprocessPlan {
   func apply(to original: AdapterExecutionOutput) -> AdapterExecutionOutput {
     guard let program else { return original }
     var output = original
+    if original.when["providerFailed"] == true {
+      output.payload["postprocess"] = .object(["status": .string("skipped")])
+      output.when["postprocessPassed"] = false
+      output.when["postprocessFailed"] = false
+      return output
+    }
     do {
       // The provider payload is already held in memory and may repeat the
       // response (`data` and `response`); bound the picked values, not the

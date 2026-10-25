@@ -1,6 +1,6 @@
 {
   "workflowId": "builtin-gateway-json",
-  "description": "Read configured Gmail account metadata and project IDs using built-in JSON input and finite postprocess; no scripts.",
+  "description": "Read Gmail accounts and one cursor-controlled thread page, then create one draft using built-in JSON input and finite postprocess; no scripts.",
   "defaults": {
     "maxLoopIterations": 1,
     "nodeTimeoutMs": 30000
@@ -36,12 +36,104 @@
           ]
         }
       }
+    },
+    {
+      "id": "threads",
+      "addon": {
+        "name": "riela/gmail-gateway-reader",
+        "version": "1",
+        "env": {
+          "GMAIL_GATEWAY_CONFIG": {
+            "fromEnv": "GMAIL_GATEWAY_CONFIG",
+            "required": false
+          }
+        },
+        "config": {
+          "operation": "threads",
+          "arguments": {
+            "input": {
+              "accountId": "{{workflowInput.accountId}}",
+              "first": 10,
+              "after": "{{workflowInput.cursor}}"
+            }
+          },
+          "selection": [
+            "edges.node.id",
+            "pageInfo.hasNextPage",
+            "pageInfo.endCursor"
+          ],
+          "postprocess": [
+            {
+              "pick": "/data/threads/edges"
+            },
+            {
+              "map": {
+                "id": "/node/id"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "draft",
+      "addon": {
+        "name": "riela/gmail-gateway-draft",
+        "version": "1",
+        "env": {
+          "GMAIL_GATEWAY_CONFIG": {
+            "fromEnv": "GMAIL_GATEWAY_CONFIG",
+            "required": false
+          }
+        },
+        "config": {
+          "operation": "createDraft",
+          "arguments": {
+            "input": {
+              "accountId": "{{workflowInput.accountId}}",
+              "to": ["review@example.invalid"],
+              "subject": "Thread page collected",
+              "textBody": "A page of thread identifiers is ready for review."
+            }
+          },
+          "selection": [
+            "draftId",
+            "messageId",
+            "status"
+          ],
+          "postprocess": [
+            {
+              "pick": "/data/createDraft/draftId"
+            }
+          ]
+        }
+      }
     }
   ],
   "steps": [
     {
       "id": "accounts",
       "nodeId": "accounts",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "threads"
+        }
+      ]
+    },
+    {
+      "id": "threads",
+      "nodeId": "threads",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "draft"
+        }
+      ]
+    },
+    {
+      "id": "draft",
+      "nodeId": "draft",
       "role": "worker"
     }
   ]

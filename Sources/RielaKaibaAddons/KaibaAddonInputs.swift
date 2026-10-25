@@ -2,6 +2,51 @@ import Foundation
 import RielaAddonSupport
 import RielaCore
 
+public enum KaibaNestedArgumentRules {
+  public static let connectionKeys: Set<String> = [
+    "kaibaInstanceId", "endpoint", "apiKey", "apiKeyEnv", "allowUnauthenticated", "mode", "backend"
+  ]
+  public static let literalGraphQLKeys: [String] = ["query", "document", "operationName"]
+  public static let graphQLDocumentAddonNames: Set<String> = [
+    "kaiba/note-graphql-document", "kaiba/note-graphql-remote"
+  ]
+
+  public static func issues(
+    addonName: String,
+    config: JSONObject,
+    inputs: JSONObject?
+  ) -> [WorkflowGatewayRequestIssue] {
+    guard config["arguments"] != nil else { return [] }
+    guard Set(config.keys).isSubset(of: ["arguments", "kaibaInstanceId"]), inputs?.isEmpty != false else {
+      return [issue(addonName, "arguments cannot be combined with flat config or addon.inputs")]
+    }
+    if exactPlaceholder(config["arguments"]) { return [] }
+    guard case let .object(arguments)? = config["arguments"] else {
+      return [issue(addonName, "arguments must be an object")]
+    }
+    guard Set(arguments.keys).isDisjoint(with: connectionKeys) else {
+      return [issue(addonName, "arguments cannot change the captured Kaiba connection")]
+    }
+    if graphQLDocumentAddonNames.contains(addonName) {
+      for key in literalGraphQLKeys where arguments[key] != nil {
+        guard case let .string(value)? = arguments[key], !value.contains("{{") else {
+          return [issue(addonName, "GraphQL document and operation name must remain literal; use variables for data")]
+        }
+      }
+    }
+    return []
+  }
+
+  private static func issue(_ addonName: String, _ detail: String) -> WorkflowGatewayRequestIssue {
+    WorkflowGatewayRequestIssue(relativePath: "", message: "\(addonName) \(detail)")
+  }
+
+  private static func exactPlaceholder(_ value: JSONValue?) -> Bool {
+    guard case let .string(template)? = value else { return false }
+    return template.range(of: #"^\s*\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}\s*$"#, options: .regularExpression) != nil
+  }
+}
+
 /// Config/input lookup shared by every kaiba add-on, local or remote.
 ///
 /// A node may carry a value either in `addon.config` (authored, template
@@ -23,14 +68,14 @@ struct KaibaAddonInputs {
         throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments cannot be combined with flat config or addon.inputs")
       }
       let arguments = try renderGatewayJSONArguments(rawConfig["arguments"], variables: templateVariables, addonName: addonName)
-      guard Set(arguments.keys).isDisjoint(with: ["kaibaInstanceId", "endpoint", "apiKey", "apiKeyEnv", "allowUnauthenticated", "mode", "backend"]) else {
+      guard Set(arguments.keys).isDisjoint(with: KaibaNestedArgumentRules.connectionKeys) else {
         throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments cannot change the captured Kaiba connection")
       }
-      if input.addon.name == "kaiba/note-graphql-document" || input.addon.name == "kaiba/note-graphql-remote" {
+      if KaibaNestedArgumentRules.graphQLDocumentAddonNames.contains(input.addon.name) {
         guard case let .object(rawArguments)? = rawConfig["arguments"] else {
           throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments must be an object")
         }
-        for key in ["query", "document", "operationName"] where rawArguments[key] != nil {
+        for key in KaibaNestedArgumentRules.literalGraphQLKeys where rawArguments[key] != nil {
           guard case .string? = rawArguments[key], rawArguments[key] == arguments[key] else {
             throw AdapterExecutionError(.policyBlocked, "\(addonName) GraphQL document and operation name must remain literal; use variables for data")
           }

@@ -485,15 +485,29 @@ collide.
   `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's own
   role, plus `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`.
 
-`riela workflow validate` checks catalog-backed built-in gateway JSON
-`operation` requests when the SDK catalog is available. It rejects an
-operation mixed with legacy request keys, a non-literal or malformed
-operation/selection, Gmail `variablesTemplate` passthrough, an invalid
-non-templated `config.postprocess` program, and an unknown catalog operation.
-Aliases and legacy modes stay valid; `inspect`, run preflight, the registry and
-the server do not apply these checks. See
-[built-in gateway JSON requests](docs/builtin-gateway-json.md) for the matrix
-and the cases that remain runtime-only.
+`riela workflow validate` checks built-in gateway JSON `operation` requests with
+the same checker the runtime uses. It covers the catalog-backed gateways, both X
+readers (`riela/x-gateway-reader` and container `riela/x-gateway-read`),
+`riela/gmail-gateway-read`, Google Service read/write and nested `kaiba/*`
+arguments, and checks argument names against the catalog when the SDK catalog
+is available. It rejects an operation mixed with legacy request keys, a
+non-literal or malformed operation/selection, Gmail `variablesTemplate`
+passthrough, an invalid non-templated `config.postprocess` program, and an
+unknown catalog or X SDL operation. Templated argument values are only
+key-checked statically. `riela workflow run` reports the same findings as
+non-blocking `warning:` lines on stderr. `inspect`, the registry and the server
+do not apply these checks. Aliases and legacy modes, including the X nested
+`select` form, stay valid.
+
+X readers also accept `providerFailure: "output"`. A recognized provider
+failure then completes with `xGateway.failure.{category,retryable}` and the
+`providerFailed` / `providerRetryable` / `spendCapReached` / `rateLimited`
+`when` flags, so the workflow can branch on it. Riela never retries the call.
+See [built-in gateway JSON requests](docs/builtin-gateway-json.md) for the
+matrix, the cases that remain runtime-only, and the script-free
+[X](examples/x-gateway-json-search/README.md),
+[Notion](examples/notion-gateway-json-sync/README.md) and
+[Gmail](examples/builtin-gateway-json/README.md) examples.
 
 ### Native command outcomes
 

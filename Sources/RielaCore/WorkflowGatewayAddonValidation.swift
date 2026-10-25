@@ -31,16 +31,29 @@ public struct WorkflowGatewayCatalogProjection: Sendable {
   }
 }
 
+public struct WorkflowGatewayRequestIssue: Equatable, Sendable {
+  public var relativePath: String
+  public var message: String
+
+  public init(relativePath: String, message: String) {
+    self.relativePath = relativePath
+    self.message = message
+  }
+}
+
 public struct WorkflowValidationContext: Sendable {
   public var gatewayCatalog: (@Sendable (WorkflowGatewayProvider, String) -> WorkflowGatewayCatalogProjection?)?
   public var postprocessCompiler: (@Sendable (JSONValue) -> String?)?
+  public var addonRequestChecker: (@Sendable (WorkflowNodeAddonRef) -> [WorkflowGatewayRequestIssue])?
 
   public init(
     gatewayCatalog: (@Sendable (WorkflowGatewayProvider, String) -> WorkflowGatewayCatalogProjection?)? = nil,
-    postprocessCompiler: (@Sendable (JSONValue) -> String?)? = nil
+    postprocessCompiler: (@Sendable (JSONValue) -> String?)? = nil,
+    addonRequestChecker: (@Sendable (WorkflowNodeAddonRef) -> [WorkflowGatewayRequestIssue])? = nil
   ) {
     self.gatewayCatalog = gatewayCatalog
     self.postprocessCompiler = postprocessCompiler
+    self.addonRequestChecker = addonRequestChecker
   }
 }
 
@@ -105,6 +118,14 @@ func validateGatewayAddon(
     validateGatewaySchema(effective, path: fieldPath, diagnostics: &diagnostics)
   } else if addon.name == "riela/apple-gateway-schema" {
     validateGatewaySearchOptions(effective, path: fieldPath, diagnostics: &diagnostics)
+  }
+  if diagnostics.isEmpty,
+     addon.name.hasPrefix("riela/") || addon.name.hasPrefix("kaiba/"),
+     let issues = context.addonRequestChecker?(addon) {
+    diagnostics.append(contentsOf: issues.map { issue in
+      let issuePath = issue.relativePath.isEmpty ? fieldPath : "\(fieldPath).\(issue.relativePath)"
+      return gatewayError(issuePath, issue.message)
+    })
   }
   return diagnostics
 }

@@ -68,27 +68,28 @@ replays a successful write. Invalid instruction syntax fails before the effect.
   Documents revisions as `Package.resolved`, and `scripts/check-container-pins.py`
   checks every Containerfile pin in the Linux CI build.
 - **What remains of #176, by requirement:**
-  - Requirement 1 (common validation): argument names and types, X readers,
-    legacy container readers, Google Service and Kaiba nested arguments are
-    validated only at runtime. The production validation context is applied only by
-    `riela workflow validate`, not by `workflow run`, GraphQL, registry activation or
-    the console.
-  - Requirement 3 (no X-only converter or notation): X keeps its own SDL document
-    serializer and the nested `select` form until the X SDK exports a catalog.
-  - Requirement 4 (workflow-controlled retry): X failures are all
-    `providerError`; spend cap, rate limit and transient errors are not yet
-    structured error metadata.
-  - Completion criteria: practical X and Notion workflow examples without Python
-    (only a Gmail `accounts` mock example exists), ART Python removal, private image
-    adoption, App cutover and release-deployment acceptance.
-- Reconcile named operations and compatibility surfaces in the final matrix;
-  preserve fixed operations of product-specific Apple nodes.
-- Complete the provider matrix, workflow examples and user-facing reference.
-- Run the requested actual Claude Opus review; resolve actionable findings.
-- Release/install the verified runtime and align ART workflow, private guests,
-  configuration and App execution before claiming deployment.
-- Finish removing ART Python that merely prepares model input, invokes built-ins
-  or validates outputs. Preserve source state, receipts and publication behavior.
+  - Requirement 1 (common validation): **implemented on this branch**. The
+    production checker covers X, legacy container readers, Google Service and
+    Kaiba nested arguments; `workflow validate` blocks and `workflow run` emits
+    non-blocking warnings. See [gwjson176-01](progress/gwjson176-01.md),
+    [gwjson176-02](progress/gwjson176-02.md), and [gwjson176-03](progress/gwjson176-03.md).
+  - Requirement 3 (X request-path review): **implemented on this branch**.
+    Outcome B (SDL only) keeps the X literal serializer, adds the bounded
+    operation-name scanner and retains nested `select` as a compatibility alias.
+    See [gwjson176-02](progress/gwjson176-02.md).
+  - Requirement 4 (workflow-controlled retry): **implemented on this branch**
+    for X provider-failure output. Failure categories and flags are opt-in; Riela
+    does not retry. See [gwjson176-03](progress/gwjson176-03.md).
+  - Examples criterion: **implemented on this branch**. X and Notion examples
+    and the Gmail accounts → threads → draft example have mock scenarios,
+    README/expected results and registrations. See [gwjson176-05](progress/gwjson176-05.md)
+    and [gwjson176-06](progress/gwjson176-06.md).
+  - The outside-riela items remain open: ART Python removal, private image
+    adoption, App production cutover, and release/deployment acceptance.
+- The provider matrix and user-facing reference are updated on this branch;
+  fixed operations of product-specific Apple nodes remain preserved.
+- Independent review, release/install, ART workflow and private-guest alignment,
+  and App execution are downstream work; do not claim deployment here.
 
 ## Verification checkpoint (2026-10-23)
 

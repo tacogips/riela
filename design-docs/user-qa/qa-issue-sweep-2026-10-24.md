@@ -17,4 +17,6 @@ adopted, so the user can overturn it later.
 4. **#176: gateway validation runs only in `riela workflow validate`.** Run
    preflight, inspect, the registry and the server remain context-free.
    Default: explicit validate only (V0 in
-   `design-docs/specs/design-gateway-sdk-addons.md`).
+   `design-docs/specs/design-gateway-sdk-addons.md`). Superseded for
+   `workflow run` by non-blocking warnings; see
+   `qa-issue-176-gateway-json-remainder.md` item 1.

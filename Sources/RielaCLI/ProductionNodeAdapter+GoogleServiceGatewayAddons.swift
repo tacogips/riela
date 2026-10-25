@@ -94,10 +94,40 @@ extension BuiltinWorkflowAddonResolver {
   }
 }
 
-private struct GoogleServiceGatewayAddonEngine {
+struct GoogleServiceMutationValues: Sendable {
+  var wait: Bool
+  var waitError: AdapterExecutionError?
+  var timeoutSeconds: Double
+  var pollIntervalSeconds: Double
+}
+
+enum GoogleServiceOperationRequest: Sendable {
+  case listServices(ListServicesRequest)
+  case getService(project: String, service: String)
+  case getOperation(name: String)
+  case enable(project: String, service: String, mutation: GoogleServiceMutationValues)
+  case disable(
+    project: String,
+    service: String,
+    disableDependents: Bool,
+    checkUsage: Bool,
+    mutation: GoogleServiceMutationValues
+  )
+  case batchEnable(project: String, services: [String], mutation: GoogleServiceMutationValues)
+
+  var deferredValueError: AdapterExecutionError? {
+    switch self {
+    case let .enable(_, _, mutation), let .batchEnable(_, _, mutation): mutation.waitError
+    case let .disable(_, _, _, _, mutation): mutation.waitError
+    case .listServices, .getService, .getOperation: nil
+    }
+  }
+}
+
+struct GoogleServiceGatewayAddonEngine {
   private static let accessTokenEnvironmentName = "GOOGLE_SERVICE_GATEWAY_ACCESS_TOKEN"
 
-  private static let operationArguments: [String: Set<String>] = [
+  static let operationArguments: [String: Set<String>] = [
     "services.list": ["project", "state", "pageSize", "pageToken", "allPages"],
     "services.get": ["project", "service"],
     "operations.get": ["operationName"],
@@ -105,6 +135,99 @@ private struct GoogleServiceGatewayAddonEngine {
     "services.disable": ["project", "service", "disableDependentServices", "checkUsage", "wait", "timeoutSeconds", "pollIntervalSeconds"],
     "services.batchEnable": ["project", "services", "wait", "timeoutSeconds", "pollIntervalSeconds"]
   ]
+
+  static func requestShapeIssue(
+    capability: BuiltinGoogleServiceGatewayAddon,
+    config: JSONObject,
+    inputs: JSONObject?,
+    addonName: String
+  ) throws {
+    guard let operation = nonEmptyString(config["operation"]) else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) config.operation is required")
+    }
+    try validate(operation: operation, capability: capability, addonName: addonName)
+    guard config["arguments"] != nil else { return }
+    guard Set(config.keys).isSubset(of: ["operation", "arguments"]), inputs?.isEmpty != false else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments cannot be combined with flat configuration or selection")
+    }
+    if BuiltinGatewayRequestChecks.isExactPlaceholder(config["arguments"]) { return }
+    guard case let .object(arguments)? = config["arguments"] else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments must be an object")
+    }
+    guard Set(arguments.keys).isSubset(of: operationArguments[operation] ?? []) else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) contains arguments outside its operation")
+    }
+  }
+
+  static func parse(
+    operation: String,
+    values: GatewayAddonValues,
+    addonName: String
+  ) throws -> GoogleServiceOperationRequest {
+    switch operation {
+    case "services.list":
+      let stateText = try values.optionalString("state") ?? "all"
+      guard let state = ServiceListState(rawValue: stateText) else {
+        throw AdapterExecutionError(.invalidInput, "\(addonName) state must be enabled, disabled, or all")
+      }
+      return .listServices(ListServicesRequest(
+        project: try values.requiredString("project", addonName: addonName),
+        state: state,
+        pageSize: try values.optionalInt("pageSize") ?? 50,
+        pageToken: try values.optionalString("pageToken"),
+        allPages: try values.optionalBool("allPages") ?? false
+      ))
+    case "services.get":
+      return .getService(
+        project: try values.requiredString("project", addonName: addonName),
+        service: try values.requiredString("service", addonName: addonName)
+      )
+    case "operations.get":
+      return .getOperation(name: try values.requiredString("operationName", addonName: addonName))
+    case "services.enable":
+      let project = try values.requiredString("project", addonName: addonName)
+      let service = try values.requiredString("service", addonName: addonName)
+      return .enable(project: project, service: service, mutation: try mutationValues(values))
+    case "services.disable":
+      let project = try values.requiredString("project", addonName: addonName)
+      let service = try values.requiredString("service", addonName: addonName)
+      return .disable(
+        project: project,
+        service: service,
+        disableDependents: try values.optionalBool("disableDependentServices") ?? false,
+        checkUsage: try values.optionalBool("checkUsage") ?? false,
+        mutation: try mutationValues(values)
+      )
+    case "services.batchEnable":
+      let project = try values.requiredString("project", addonName: addonName)
+      let services = try values.requiredStringArray("services", addonName: addonName)
+      return .batchEnable(project: project, services: services, mutation: try mutationValues(values))
+    default:
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) operation is not supported")
+    }
+  }
+
+  private static func mutationValues(_ values: GatewayAddonValues) throws -> GoogleServiceMutationValues {
+    let timeoutSeconds = try values.optionalDouble("timeoutSeconds") ?? 120
+    let pollIntervalSeconds = try values.optionalDouble("pollIntervalSeconds") ?? 1
+    let wait: Bool
+    let waitError: AdapterExecutionError?
+    do {
+      wait = try values.optionalBool("wait") ?? true
+      waitError = nil
+    } catch let error as AdapterExecutionError {
+      wait = true
+      waitError = error
+    } catch {
+      throw error
+    }
+    return GoogleServiceMutationValues(
+      wait: wait,
+      waitError: waitError,
+      timeoutSeconds: timeoutSeconds,
+      pollIntervalSeconds: pollIntervalSeconds
+    )
+  }
 
   var environment: [String: String]
   var clientFactory: GoogleServiceGatewayAddonClientFactory
@@ -124,13 +247,12 @@ private struct GoogleServiceGatewayAddonEngine {
     guard let operation = nonEmptyString(config["operation"]) else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.operation is required")
     }
-    try validate(operation: operation, capability: capability, addonName: input.addon.name)
+    try Self.requestShapeIssue(
+      capability: capability, config: config, inputs: input.addon.inputs, addonName: input.addon.name
+    )
     let variables = try addonVariables(for: input)
     let values: GatewayAddonValues
     if config["arguments"] != nil {
-      guard Set(config.keys).isSubset(of: ["operation", "arguments"]), input.addon.inputs?.isEmpty != false else {
-        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) arguments cannot be combined with flat configuration or selection")
-      }
       let arguments = try BuiltinGatewayJSONRequest.renderedArguments(config: config, variables: variables, addonName: input.addon.name)
       guard Set(arguments.keys).isSubset(of: Self.operationArguments[operation] ?? []) else {
         throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) contains arguments outside its operation")
@@ -141,9 +263,9 @@ private struct GoogleServiceGatewayAddonEngine {
     }
     let token = try accessToken(from: input)
     let client = clientFactory(token)
+    let request = try Self.parse(operation: operation, values: values, addonName: input.addon.name)
     let result = try await invoke(
-      operation: operation,
-      values: values,
+      request: request,
       client: client,
       context: context,
       addonName: input.addon.name
@@ -187,7 +309,7 @@ private struct GoogleServiceGatewayAddonEngine {
     return token
   }
 
-  private func validate(
+  private static func validate(
     operation: String,
     capability: BuiltinGoogleServiceGatewayAddon,
     addonName: String
@@ -208,65 +330,47 @@ private struct GoogleServiceGatewayAddonEngine {
   }
 
   private func invoke(
-    operation: String,
-    values: GatewayAddonValues,
+    request: GoogleServiceOperationRequest,
     client: any GoogleServiceGatewayAddonClient,
     context: AdapterExecutionContext,
     addonName: String
   ) async throws -> GoogleServiceGatewayCore.JSONValue {
-    switch operation {
-    case "services.list":
-      let stateText = try values.optionalString("state") ?? "all"
-      guard let state = ServiceListState(rawValue: stateText) else {
-        throw AdapterExecutionError(.invalidInput, "\(addonName) state must be enabled, disabled, or all")
-      }
-      return try await client.listServices(ListServicesRequest(
-        project: try values.requiredString("project", addonName: addonName),
-        state: state,
-        pageSize: try values.optionalInt("pageSize") ?? 50,
-        pageToken: try values.optionalString("pageToken"),
-        allPages: try values.optionalBool("allPages") ?? false
-      ))
-    case "services.get":
-      return try await client.getService(
-        project: try values.requiredString("project", addonName: addonName),
-        service: try values.requiredString("service", addonName: addonName)
-      )
-    case "operations.get":
-      return try await client.getOperation(try values.requiredString("operationName", addonName: addonName))
-    case "services.enable":
+    switch request {
+    case let .listServices(request):
+      return try await client.listServices(request)
+    case let .getService(project, service):
+      return try await client.getService(project: project, service: service)
+    case let .getOperation(name):
+      return try await client.getOperation(name)
+    case let .enable(project, service, mutation):
       return try await client.enable(
-        project: try values.requiredString("project", addonName: addonName),
-        service: try values.requiredString("service", addonName: addonName),
-        options: try mutationOptions(values: values, context: context, addonName: addonName)
+        project: project,
+        service: service,
+        options: try Self.mutationOptions(values: mutation, context: context, addonName: addonName)
       )
-    case "services.disable":
+    case let .disable(project, service, disableDependents, checkUsage, mutation):
       return try await client.disable(
-        project: try values.requiredString("project", addonName: addonName),
-        service: try values.requiredString("service", addonName: addonName),
-        disableDependents: try values.optionalBool("disableDependentServices") ?? false,
-        checkUsage: try values.optionalBool("checkUsage") ?? false,
-        options: try mutationOptions(values: values, context: context, addonName: addonName)
+        project: project,
+        service: service,
+        disableDependents: disableDependents,
+        checkUsage: checkUsage,
+        options: try Self.mutationOptions(values: mutation, context: context, addonName: addonName)
       )
-    case "services.batchEnable":
+    case let .batchEnable(project, services, mutation):
       return try await client.batchEnable(
-        project: try values.requiredString("project", addonName: addonName),
-        services: try values.requiredStringArray("services", addonName: addonName),
-        options: try mutationOptions(values: values, context: context, addonName: addonName)
+        project: project,
+        services: services,
+        options: try Self.mutationOptions(values: mutation, context: context, addonName: addonName)
       )
-    default:
-      throw AdapterExecutionError(.policyBlocked, "\(addonName) operation is not supported")
     }
   }
 
-  private func mutationOptions(
-    values: GatewayAddonValues,
+  static func mutationOptions(
+    values: GoogleServiceMutationValues,
     context: AdapterExecutionContext,
     addonName: String
   ) throws -> MutationOptions {
-    let configuredTimeout = try values.optionalDouble("timeoutSeconds") ?? 120
-    let pollInterval = try values.optionalDouble("pollIntervalSeconds") ?? 1
-    var timeout = configuredTimeout
+    var timeout = values.timeoutSeconds
     if let deadline = context.deadline {
       let remaining = deadline.timeIntervalSinceNow
       guard remaining > 0 else {
@@ -274,15 +378,16 @@ private struct GoogleServiceGatewayAddonEngine {
       }
       timeout = min(timeout, remaining)
     }
+    if let waitError = values.waitError { throw waitError }
     return MutationOptions(
-      wait: try values.optionalBool("wait") ?? true,
-      pollInterval: pollInterval,
+      wait: values.wait,
+      pollInterval: values.pollIntervalSeconds,
       timeout: timeout
     )
   }
 }
 
-private struct GatewayAddonValues {
+struct GatewayAddonValues {
   var config: JSONObject
   var variables: JSONObject
 

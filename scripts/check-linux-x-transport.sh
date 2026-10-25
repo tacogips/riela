@@ -26,5 +26,6 @@ import json,sys
 value=json.load(open(sys.argv[1]))
 assert isinstance(value,dict) and value.get('ok') is False and isinstance(value.get('error'),dict), 'missing SDK error envelope'
 assert value['error'].get('code') in {'AUTH_MISSING','AUTH_INVALID','AUTH_EXPIRED','AUTH_REVOKED','PERMISSION_DENIED','UPSTREAM_FAILURE','NETWORK_FAILURE','INTERNAL_ERROR','RATE_LIMITED'}, 'unexpected SDK failure code'
+assert value['error'].get('requestAttempts') == 1 and value['error'].get('retryAttempts') == 0, 'HTTP attempt was not exercised'
 PY
 echo "Linux X HTTPS probe returned a controlled error (status $status)"

@@ -14,7 +14,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/gwjson176-06.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "implemented; awaiting independent review and gwjson176-05 catalog parity"
 }
 ```
 
@@ -105,15 +105,20 @@ writePaths as in the JSON header; no sharedPaths.
      - `/opt/homebrew/bin/riela addon schema notion-gateway --tier reader --grep '(?i)(query|search|database|page)' --output json`
      - `--tier writer --grep '(?i)create'`
    - If that CLI form fails, run `/opt/homebrew/bin/riela addon schema --help`
-     and adapt. Record it.
-   - Node `query` is `riela/notion-gateway-read`. It uses a cursor-bearing
-     read operation with the cursor argument `"{{workflowInput.cursor}}"`, a
+     and adapt. Record it. On installed Riela 0.2.60 the `addon schema`
+     command is not present; `riela gateway notion --role reader|writer schema`
+     and the forwarded Gmail `graphql schema` subcommand provide the operation
+     definitions without credentials.
+   - Node `query` is `riela/notion-gateway-read`. It uses
+     `searchPages(query, startCursor, pageSize)` with the cursor argument
+     `"{{workflowInput.cursor}}"`, a
      `selection` that includes the result ids/titles and the next-cursor/
      has-more fields, and a postprocess `pick` + `map` + `take: 10`.
-   - Node `create` is `riela/notion-gateway-write`. It creates one page under
-     `"{{workflowInput.parentPageId}}"`, with typed data taken from
-     `{{input.processed}}` (exact placeholder). Its postprocess picks the
-     created id.
+   - Node `create` is `riela/notion-gateway-write`. It uses `createPage` with
+     typed arguments produced from `{{input.processed}}` through an exact
+     placeholder in `arguments`. The mock uses a fixture parent ID; replace it
+     with a page ID connected to the integration for real use. Its postprocess
+     picks the created id.
    - Both nodes bind `NOTION_API_KEY` with `fromEnv: NOTION_API_KEY` and
      `required: false`.
    - The mock scenario mocks both nodes.
@@ -129,10 +134,10 @@ writePaths as in the JSON header; no sharedPaths.
      `/opt/homebrew/bin/riela addon schema gmail-gateway --tier reader --grep '(?i)thread'`.
      Selection: `edges.node.id`, `pageInfo.hasNextPage`, `pageInfo.endCursor`.
      Postprocess: pick `/data/threads/edges`, map `{id: "/node/id"}`.
-   - Add `draft`: `riela/gmail-gateway-draft` with `operation: "sendMessage"`.
-     Use input fields from `--tier draft --grep '(?i)sendMessage'`. The
-     subject is literal; the body text summarizes nothing (deterministic
-     literal). Postprocess picks the returned `messageId`.
+   - Add `draft`: `riela/gmail-gateway-draft` with `operation: "createDraft"`.
+     The draft role explicitly rejects `sendMessage` and cannot send mail.
+     Use the discovered `SendMessageInput` fields with literal subject and
+     deterministic body text. Postprocess picks the returned `draftId`.
    - Chain `accounts` → `threads` → `draft` with unlabeled transitions.
    - The mock scenario mocks all three nodes. `threads` must include
      `pageInfo.endCursor`, following the shape
@@ -151,7 +156,7 @@ writePaths as in the JSON header; no sharedPaths.
   default.
 - Do not add `postprocess` steps beyond pick/filter/map/unique/take/project.
 - Mock `payload` must not contain secrets. Use fixture ids only.
-- The installed CLI (0.2.59) predates `providerFailure`. The key is ignored
+- The installed CLI (0.2.60) predates `providerFailure`. The key is ignored
   when unknown, and in the mock path the node is mocked, so it is not
   executed.
 
@@ -184,13 +189,16 @@ dependency object for gwjson176-05 instead of changing the design.
 
 ## Done criteria
 
-- [ ] Three bundles, each with workflow.json, mock-scenario.json, README.md
+- [x] Three bundles, each with workflow.json, mock-scenario.json, README.md
       and EXPECTED_RESULTS.md.
-- [ ] All JSON parses. No script or command nodes.
-- [ ] The installed-CLI validate and mock run exit 0 with status `completed`.
-- [ ] The progress log records the discovered operation names (commands and
+- [x] All JSON parses. No script or command nodes.
+- [x] The installed-CLI validate and mock run exit 0 with status `completed`.
+- [x] The progress log records the discovered operation names (commands and
       output log paths) and all verification records with integer exitStatus
       (testsRun 0 and failureCount 0 for non-test commands).
+
+Implementation status: complete for gwjson176-06; pending independent review
+and the downstream gwjson176-05 example-catalog registration/parity checks.
 
 ## Progress log expectations
 

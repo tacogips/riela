@@ -21,7 +21,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/gwjson176-01.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "implemented; Step 6 complete (pending downstream review); design accepted (Step 3 comm-008838)"
 }
 ```
 
@@ -284,14 +284,14 @@ classes executed.
 
 ## Done criteria
 
-- [ ] The contract symbols exist with the exact names and signatures above.
-- [ ] All seven commands exit 0, with test counts > 0 and 0 failures, and
+- [x] The contract symbols exist with the exact names and signatures above.
+- [x] All seven commands exit 0, with test counts > 0 and 0 failures, and
       lint reports no violations in the owned files.
-- [ ] The progress log records the `buildArgv` purity finding, pre/post
+- [x] The progress log records the `buildArgv` purity finding, pre/post
       sha256 for every edited file, and one verification record per command
       (`command`, `logPath`, `exitStatus`, `testsRun`, `failureCount`, all
       integers).
-- [ ] `git diff --name-only` contains only writePaths.
+- [x] `git diff --name-only` contains only writePaths.
 
 ## Progress log expectations
 

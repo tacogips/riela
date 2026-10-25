@@ -1,0 +1,38 @@
+{
+  "query": {
+    "provider": "scenario-mock",
+    "when": {"always": true},
+    "payload": {
+      "data": {
+        "searchPages": {
+          "object": "list",
+          "results": [
+            {
+              "object": "page",
+              "id": "fixture-notion-page",
+              "properties": {"title": {"id": "title", "type": "title", "title": [
+                {"type": "text", "plain_text": "Mock page to sync"}
+              ]}}
+            },
+            {
+              "object": "page",
+              "id": "fixture-notion-page-2",
+              "properties": {"title": {"id": "title", "type": "title", "title": [
+                {"type": "text", "plain_text": "Second mock page"}
+              ]}}
+            }
+          ],
+          "has_more": true,
+          "next_cursor": "mock-notion-next"
+        }
+      }
+    }
+  },
+  "create": {
+    "provider": "scenario-mock",
+    "when": {"always": true},
+    "payload": {
+      "data": {"createPage": {"id": "fixture-created-page", "url": "https://example.invalid/page"}}
+    }
+  }
+}

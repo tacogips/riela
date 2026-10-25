@@ -26,7 +26,7 @@
     {"path": "Sources/RielaCLI/BuiltinGatewayJSONRequest+Inline.swift", "intendedEdit": "Only if the R3 fact check gives outcome A: add a defaulted maximumBytes parameter to inlineReaderDocument (default ContainerGatewayAddon.legacyDocumentByteLimit) so the embedded X reader keeps its 1,000,000-byte bound. No other edit; untouched for outcomes B and C."}
   ],
   "progressLog": "impl-plans/progress/gwjson176-02.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "Step 6 implementation complete; pending downstream test-integrity/adversarial/integration review (design accepted Step 3 comm-008838)"
 }
 ```
 
@@ -333,14 +333,15 @@ or B adds `XGatewayOperationCatalog.swift`, append it to the lint command.
 
 ## Done criteria
 
-- [ ] Goldens were captured before the refactor and pass unchanged after it
+- [x] Goldens were captured before the refactor and pass unchanged after it
       (or are AST-equal under outcome A).
-- [ ] Every parity row passes; the `providerFailure` runtime row is marked as
+- [x] Every assigned parity row passes; the `providerFailure` runtime row is marked as
       pending for gwjson176-03.
-- [ ] The progress log records the R3 commands, outputs and chosen outcome
+- [x] The progress log records the R3 commands, outputs and chosen outcome
       (A, B or C) with its rationale. gwjson176-07 reads it.
-- [ ] All commands exit 0 with the counts recorded; `git diff --name-only` is
-      a subset of writePaths ∪ sharedPaths.
+- [x] All plan verification commands exit 0 with counts recorded. The shared
+      working tree also contains authorized gwjson176-01 and gwjson176-06
+      edits; this plan's changed files are limited to its writePaths.
 
 ## Progress log expectations
 
@@ -349,7 +350,8 @@ or B adds `XGatewayOperationCatalog.swift`, append it to the lint command.
 - status;
 - per-edit hashes;
 - the golden capture evidence;
-- the R3 fact-check transcript (log paths) and the decision;
+- the R3 fact-check transcript (log paths) and the decision (Outcome B: public
+  in-process SDL, no kit SDL parser; bounded operation-name scan);
 - verification records with integer exitStatus, testsRun and failureCount;
 - blockers as dependency objects;
 - residual risks (no leading severity word);

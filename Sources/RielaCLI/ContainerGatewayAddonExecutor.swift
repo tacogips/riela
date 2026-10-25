@@ -59,6 +59,41 @@ struct ContainerGatewayAddonExecutor {
   var runner: any LocalProcessRunning
   var hostPlatform: RielaHostPlatform = .current
 
+  static func operationDocument(
+    gateway: ContainerGatewayAddon,
+    config: JSONObject,
+    variables: JSONObject,
+    addonName: String
+  ) throws -> String? {
+    guard config["operation"] != nil else { return nil }
+    let document: String
+    if gateway == .xRead {
+      guard let built = try xGatewayJSONDocument(config: config, variables: variables, addonName: addonName) else {
+        throw AdapterExecutionError(.policyBlocked, "X JSON operation is missing")
+      }
+      document = built
+    } else {
+      guard let catalog = try BuiltinGmailGatewayCLIAddon.reader.descriptor.catalog?() else {
+        throw AdapterExecutionError(.policyBlocked, "Gmail reader catalog is unavailable")
+      }
+      let built = try BuiltinGatewayJSONRequest.document(
+        config: config, variables: variables, catalog: catalog, addonName: addonName
+      )
+      document = try BuiltinGatewayJSONRequest.inlineReaderDocument(built, catalog: catalog)
+    }
+    guard document.utf8.count <= ContainerGatewayAddon.legacyDocumentByteLimit else {
+      throw AdapterExecutionError(.policyBlocked, "gateway JSON document exceeds the legacy container argument limit")
+    }
+    return document
+  }
+
+  static func legacyModeIssue(config: JSONObject, addonName: String) throws {
+    guard config["arguments"] == nil, config["selection"] == nil, config["select"] == nil,
+          nonEmptyString(config["queryTemplate"]) != nil else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) config.queryTemplate is required; JSON arguments require operation")
+    }
+  }
+
   func execute(
     _ input: WorkflowAddonExecutionInput,
     gateway: ContainerGatewayAddon,
@@ -70,28 +105,19 @@ struct ContainerGatewayAddonExecutor {
     let config = input.addon.config ?? [:]
     let document: String
     if config["operation"] != nil {
-      if gateway == .xRead {
-        guard let built = try builtinGatewayXJSONDocument(input) else {
-          throw AdapterExecutionError(.policyBlocked, "X JSON operation is missing")
-        }
-        document = built
-      } else {
-        guard let catalog = try BuiltinGmailGatewayCLIAddon.reader.descriptor.catalog?() else {
-          throw AdapterExecutionError(.policyBlocked, "Gmail reader catalog is unavailable")
-        }
-        let built = try BuiltinGatewayJSONRequest.document(config: config, variables: addonVariables(for: input),
-          catalog: catalog, addonName: input.addon.name)
-        document = try BuiltinGatewayJSONRequest.inlineReaderDocument(built, catalog: catalog)
+      if gateway == .xRead { _ = try xGatewayJSONShape(config: config, addonName: input.addon.name) }
+      guard let operationDocument = try Self.operationDocument(
+        gateway: gateway, config: config, variables: addonVariables(for: input), addonName: input.addon.name
+      ) else {
+        throw AdapterExecutionError(.policyBlocked, "X JSON operation is missing")
       }
+      document = operationDocument
     } else {
-      guard config["arguments"] == nil, config["selection"] == nil, config["select"] == nil,
-            let template = nonEmptyString(config["queryTemplate"]) else {
+      try Self.legacyModeIssue(config: config, addonName: input.addon.name)
+      guard let template = nonEmptyString(config["queryTemplate"]) else {
         throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.queryTemplate is required; JSON arguments require operation")
       }
       document = renderPromptTemplate(template, variables: try addonVariables(for: input))
-    }
-    if config["operation"] != nil, document.utf8.count > ContainerGatewayAddon.legacyDocumentByteLimit {
-      throw AdapterExecutionError(.policyBlocked, "gateway JSON document exceeds the legacy container argument limit")
     }
     let driver = try runtimeDriver(config: config)
     if let value = config["image"], nonEmptyString(value) == nil {

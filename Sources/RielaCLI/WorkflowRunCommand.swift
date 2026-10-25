@@ -49,6 +49,7 @@ public struct WorkflowRunCommand: Sendable {
     taskContext: TaskPlacementExecutionContext? = nil
   ) async -> CLICommandResult {
     var livePersistenceState: WorkflowRunLivePersistenceState?, pendingLease: WorkflowRunPendingLease?
+    var gatewayValidationWarnings: [String] = []
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       try rejectUnsupportedRunOptions(options)
@@ -64,6 +65,7 @@ public struct WorkflowRunCommand: Sendable {
         variables: variables,
         taskContext: taskContext
       )
+      gatewayValidationWarnings = prepared.gatewayValidationWarnings
       let effectiveInstance = prepared.instance
       let effectiveVariables = effectiveInstance.configuration.defaultVariables
       let runContext = prepared.context
@@ -89,7 +91,11 @@ public struct WorkflowRunCommand: Sendable {
       let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       switch try runConcurrencyPreflight(bundle: bundle, storeRoot: storeRoot, options: options) {
       case let .finish(result):
-        return result
+        return CLICommandResult(
+          exitCode: result.exitCode,
+          stdout: result.stdout,
+          stderr: gatewayValidationWarnings.map { $0 + "\n" }.joined() + result.stderr
+        )
       case let .proceed(lease, takeoverDiagnostic):
         pendingLease = lease
         if let jsonlRecorder, let takeoverDiagnostic {
@@ -217,7 +223,8 @@ public struct WorkflowRunCommand: Sendable {
           persistedIdentity: persistedIdentity,
           storeRoot: storeRoot,
           telemetry: telemetry,
-          jsonlRecorder: jsonlRecorder
+          jsonlRecorder: jsonlRecorder,
+          gatewayValidationWarnings: gatewayValidationWarnings
         )
       )
     } catch let error as CLIUsageError {
@@ -227,7 +234,8 @@ public struct WorkflowRunCommand: Sendable {
         exitCode: .usage,
         error: error.message,
         state: livePersistenceState,
-        jsonlRecorder: jsonlRecorder
+        jsonlRecorder: jsonlRecorder,
+        gatewayValidationWarnings: gatewayValidationWarnings
       )
     } catch {
       releasePendingLease(pendingLease)
@@ -236,7 +244,8 @@ public struct WorkflowRunCommand: Sendable {
         exitCode: .failure,
         error: "\(error)",
         state: livePersistenceState,
-        jsonlRecorder: jsonlRecorder
+        jsonlRecorder: jsonlRecorder,
+        gatewayValidationWarnings: gatewayValidationWarnings
       )
     }
   }
@@ -296,7 +305,8 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws {
+  @discardableResult
+  func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws -> [String] {
     let diagnostics = DefaultWorkflowValidator().validate(
       bundle.workflow,
       nodePayloads: bundle.nodePayloads
@@ -304,6 +314,13 @@ public struct WorkflowRunCommand: Sendable {
     if diagnostics.contains(where: { $0.severity == .error }) {
       throw WorkflowResolutionError.invalidWorkflow(diagnostics)
     }
+    let productionDiagnostics = DefaultWorkflowValidator(context: .production()).validate(
+      bundle.workflow,
+      nodePayloads: bundle.nodePayloads
+    )
+    return productionDiagnostics
+      .filter { !diagnostics.contains($0) }
+      .map { "warning: \($0.path): \($0.message)" }
   }
 
   private func makeTelemetry(environment: [String: String]) -> any RielaTelemetry {
@@ -760,10 +777,12 @@ public struct WorkflowRunCommand: Sendable {
     exitCode: CLIExitCode,
     error: String,
     state: WorkflowRunLivePersistenceState?,
-    jsonlRecorder: WorkflowRunJSONLRecorder?
+    jsonlRecorder: WorkflowRunJSONLRecorder?,
+    gatewayValidationWarnings: [String]
   ) async -> CLICommandResult {
+    let stderrPrefix = gatewayValidationWarnings.map { $0 + "\n" }.joined()
     guard options.output.isStructured else {
-      return CLICommandResult(exitCode: exitCode, stderr: error)
+      return CLICommandResult(exitCode: exitCode, stderr: stderrPrefix + error)
     }
     let persistence = await state?.snapshot()
     let termination = workflowRunTerminationDiagnostic(from: error)
@@ -787,9 +806,9 @@ public struct WorkflowRunCommand: Sendable {
     let stdout = (try? jsonString(result)) ?? #"{"error":"failed to encode run failure","exitCode":1,"status":"failed","target":"workflow run"}"# + "\n"
     if options.output == .jsonl, let jsonlRecorder {
       await jsonlRecorder.append(stdout)
-      return CLICommandResult(exitCode: exitCode, stdout: await jsonlRecorder.bufferedOutput())
+      return CLICommandResult(exitCode: exitCode, stdout: await jsonlRecorder.bufferedOutput(), stderr: stderrPrefix)
     }
-    return CLICommandResult(exitCode: exitCode, stdout: stdout)
+    return CLICommandResult(exitCode: exitCode, stdout: stdout, stderr: stderrPrefix)
   }
 
   private func workflowRunFailureSnapshot(
@@ -891,6 +910,7 @@ struct RunFinalizeContext {
   var storeRoot: String
   var telemetry: any RielaTelemetry
   var jsonlRecorder: WorkflowRunJSONLRecorder?
+  var gatewayValidationWarnings: [String]
 }
 
 private func failsRequiredGate(_ gate: LoopGateResult, in workflow: WorkflowDefinition) -> Bool {
@@ -966,7 +986,7 @@ extension WorkflowRunCommand {
     return CLICommandResult(
       exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
       stdout: try await renderRunResult(finalResult, output: context.options.output, jsonlRecorder: context.jsonlRecorder),
-      stderr: loopEvidenceDiagnostic + (
+      stderr: context.gatewayValidationWarnings.map { $0 + "\n" }.joined() + loopEvidenceDiagnostic + (
         context.options.output.isStructured || finalResult.session.suspend == nil
           ? ""
           : workflowSuspendHint(finalResult.session)

@@ -11,6 +11,7 @@ struct PreparedWorkflowRunExecution {
   let instance: EffectiveWorkflowInstance
   let calleeResolver: FileSystemWorkflowCalleeResolver
   let context: KaibaPreflightedRunContext
+  let gatewayValidationWarnings: [String]
 }
 
 extension WorkflowRunCommand {
@@ -21,12 +22,13 @@ extension WorkflowRunCommand {
     variables: JSONObject,
     taskContext: TaskPlacementExecutionContext? = nil
   ) async throws -> PreparedWorkflowRunExecution {
-    let instance = try prepareEffectiveRunBundle(
+    let preparedBundle = try prepareEffectiveRunBundle(
       options: options,
       resolution: resolution,
       bundle: &bundle,
       variables: variables
     )
+    let instance = preparedBundle.instance
     if let taskContext {
       bundle = try applyingTaskPlacement(taskContext, to: bundle)
     }
@@ -46,7 +48,8 @@ extension WorkflowRunCommand {
     return PreparedWorkflowRunExecution(
       instance: instance,
       calleeResolver: calleeResolver,
-      context: context
+      context: context,
+      gatewayValidationWarnings: preparedBundle.gatewayValidationWarnings
     )
   }
 
@@ -55,7 +58,7 @@ extension WorkflowRunCommand {
     resolution: WorkflowResolutionOptions,
     bundle: inout ResolvedWorkflowBundle,
     variables: JSONObject
-  ) throws -> EffectiveWorkflowInstance {
+  ) throws -> (instance: EffectiveWorkflowInstance, gatewayValidationWarnings: [String]) {
     let resolutionResult = try resolveEffectiveInstance(
       options: options,
       workflowId: bundle.workflow.workflowId,
@@ -67,14 +70,14 @@ extension WorkflowRunCommand {
       resolutionResult.instance.configuration.nodePatches,
       to: bundle.workflow.nodes
     )
-    try validateEffectiveSessionPolicies(bundle)
+    let gatewayValidationWarnings = try validateEffectiveSessionPolicies(bundle)
     try saveRequestedEffectiveInstance(
       options: options,
       resolution: resolution,
       bundle: bundle,
       effectiveInstance: resolutionResult.instance
     )
-    return resolutionResult.instance
+    return (resolutionResult.instance, gatewayValidationWarnings)
   }
 
   func saveRequestedEffectiveInstance(

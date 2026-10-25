@@ -825,7 +825,7 @@ Command:
 
 ## 13. Plan mapping (serial DAG)
 
-The existing `impl-plans/active/ds179-01..06` stay the baseline and keep
+The plans `impl-plans/completed/ds179-01..07` (archived after acceptance) keep
 one serial chain over the shared SwiftPM tree:
 
 - **01, store core.** Adds operation `update` and actor kind

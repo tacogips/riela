@@ -24,6 +24,7 @@ public struct WorkflowRunCommand: Sendable {
   var sessionStartedObserver: (@Sendable (String) -> Void)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
+  var improvementCLIProcessRunnerOverride: (any LocalProcessRunning)?
   /// Projects loop evidence for required-gate enforcement; injectable so a
   /// projector failure can be exercised without a broken evidence fixture.
   var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
@@ -40,7 +41,7 @@ public struct WorkflowRunCommand: Sendable {
     self.jsonLoader = jsonLoader
     self.graphQLTransport = graphQLTransport
     self.jsonlRecordWriter = jsonlRecordWriter
-    (beforeTerminalPersistence, afterTerminalPersistence, taskNodeAdapterOverride) = (nil, nil, nil)
+    (beforeTerminalPersistence, afterTerminalPersistence, taskNodeAdapterOverride, improvementCLIProcessRunnerOverride) = (nil, nil, nil, nil)
     deferTerminalPersistence = nil
   }
 
@@ -80,12 +81,17 @@ public struct WorkflowRunCommand: Sendable {
         workingDirectory: runWorkingDirectory,
         environment: runEnvironment
       )
+      let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
-        environment: runEnvironment
+        environment: runEnvironment,
+        definitionRunContext: .init(
+          definitionSource: definitionSource,
+          sessionStoreRoot: storeRoot,
+          cliProcessRunner: improvementCLIProcessRunnerOverride
+        )
       )
-      let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       switch try runConcurrencyPreflight(bundle: bundle, storeRoot: storeRoot, options: options) {
       case let .finish(result):
         return CLICommandResult(

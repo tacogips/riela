@@ -1,7 +1,7 @@
 # DS179-06 Documentation: Definition Store and Execution-Mode Policy
 
 **planId**: `ds179-06-docs`
-**Status**: Ready for implementation
+**Status**: Implementation complete; formal review pending
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy + (A) whole-workflow update + (B) improvement node
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §1, §5, §7, §8, §9, §10, §11
@@ -98,6 +98,20 @@ topic sections such as `## Runtime Data Retention` (around line 676) and
 
 Log both file edits in `impl-plans/progress/ds179-06-docs.md` with the
 pre-edit and post-edit sha256. Re-read `README.md` fresh before editing.
+
+## Implementation completion
+
+- Added `docs/workflow-definition-store.md` from the implemented CLI, GraphQL
+  schema and improvement example. It documents the service/file policy, store
+  seeding and force operations, audited definition and prompt writes, addon
+  behavior, pins, export, GraphQL fields and schema generation 10.
+- Added the README policy section before Runtime Data Retention with the guide
+  link and CLI examples. `riela workflow update` is explicitly described as a
+  file-based mutable-registry command.
+- Build, CLI help and command coverage, documentation checks, diff check and
+  `SurfaceParitySkillTests` passed; see
+  `impl-plans/progress/ds179-06-docs.md` for command exits, counts and logs.
+- Formal review and workflow finalization are downstream steps.
 
 
 ## Operator amendment 1 (after session-494 blocked wave)

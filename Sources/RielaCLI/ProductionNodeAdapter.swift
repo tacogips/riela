@@ -76,13 +76,15 @@ func makeScenarioBackedStdioNodeExecutor(
 func makeScenarioBackedAddonResolver(
   scenarioPath: String?,
   workingDirectory: String,
-  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+  definitionRunContext: BuiltinDefinitionRunContext? = nil
 ) async throws -> any WorkflowAddonResolving {
   let workingDirectoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
   let fallback = try await makeProductionAddonResolver(
     workingDirectory: workingDirectoryURL,
     environment: environment,
-    mockScenarioPath: scenarioPath
+    mockScenarioPath: scenarioPath,
+    definitionRunContext: definitionRunContext
   )
   guard let scenarioPath else {
     return fallback
@@ -97,17 +99,20 @@ func makeScenarioBackedAddonResolver(
 func makeProductionAddonResolver(
   workingDirectory: URL,
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-  mockScenarioPath: String? = nil
+  mockScenarioPath: String? = nil,
+  definitionRunContext: BuiltinDefinitionRunContext? = nil
 ) async throws -> any WorkflowAddonResolving {
   try await makeProductionAddonResolver(workingDirectory: workingDirectory, environment: environment,
-    mockScenarioPath: mockScenarioPath, processRunner: FoundationLocalProcessRunner())
+    mockScenarioPath: mockScenarioPath, processRunner: FoundationLocalProcessRunner(),
+    definitionRunContext: definitionRunContext)
 }
 
 func makeProductionAddonResolver(
   workingDirectory: URL,
   environment: [String: String],
   mockScenarioPath: String?,
-  processRunner: any LocalProcessRunning
+  processRunner: any LocalProcessRunning,
+  definitionRunContext: BuiltinDefinitionRunContext? = nil
 ) async throws -> any WorkflowAddonResolving {
   let workflowTaskExecutor = DefaultGeneratedWorkflowTaskExecutor(
     runner: CommandGeneratedWorkflowTaskRunner(mockScenarioPath: mockScenarioPath)
@@ -116,7 +121,8 @@ func makeProductionAddonResolver(
     environment: environment,
     workingDirectory: workingDirectory,
     workflowTaskExecutor: workflowTaskExecutor,
-    containerProcessRunner: processRunner
+    containerProcessRunner: processRunner,
+    definitionRunContext: definitionRunContext
   )
   let registrations = try await installedContainerAddonRegistrations(workingDirectory: workingDirectory)
   var primary: any WorkflowAddonResolving = builtin
@@ -376,6 +382,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   /// machine's real Notes, Mail, Calendars, and Reminders.
   var appleGatewayRunner: AppleGatewayRunner?
   var containerProcessRunner: any LocalProcessRunning
+  var definitionRunContext: BuiltinDefinitionRunContext?
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -397,7 +404,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil,
     googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil,
     appleGatewayRunner: AppleGatewayRunner? = nil,
-    containerProcessRunner: any LocalProcessRunning = FoundationLocalProcessRunner()
+    containerProcessRunner: any LocalProcessRunning = FoundationLocalProcessRunner(),
+    definitionRunContext: BuiltinDefinitionRunContext? = nil
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -417,6 +425,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.googleDocumentsGatewayRunner = googleDocumentsGatewayRunner
     self.appleGatewayRunner = appleGatewayRunner
     self.containerProcessRunner = containerProcessRunner
+    self.definitionRunContext = definitionRunContext
   }
 
   private func validateBuiltinWorkerInput(_ input: WorkflowAddonExecutionInput) throws {
@@ -442,17 +451,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if let sdkWorker = BuiltinSDKWorker(rawValue: input.addon.name) {
       return try await executeSDKWorker(input, sdkWorker: sdkWorker, context: context)
     }
-    if input.addon.name == "riela/chat-persona-router" {
-      return try executeChatPersonaRouter(input)
-    }
-    if input.addon.name == "riela/chat-reply-worker" {
-      return try executeChatReplyWorker(input)
-    }
-    if input.addon.name == "riela/chat-persona-memory-read" {
-      return try executeChatPersonaMemoryRead(input)
-    }
-    if input.addon.name == "riela/chat-persona-memory-write" {
-      return try executeChatPersonaMemoryWrite(input)
+    if let personaOutput = try executePersonaAddonIfSupported(input) {
+      return personaOutput
     }
     if let output = try await executeTaskWorkflowAddonIfSupported(input) {
       return output
@@ -552,6 +552,22 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       .providerError,
       "missing add-on resolver for '\(input.addon.name)'"
     )
+  }
+
+  private func executePersonaAddonIfSupported(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput? {
+    if input.addon.name == "riela/chat-persona-router" {
+      return try executeChatPersonaRouter(input)
+    }
+    if input.addon.name == "riela/chat-reply-worker" {
+      return try executeChatReplyWorker(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-read" {
+      return try executeChatPersonaMemoryRead(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-write" {
+      return try executeChatPersonaMemoryWrite(input)
+    }
+    return nil
   }
 
   private static let renamedAddons: [String: String] = [

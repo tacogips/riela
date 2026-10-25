@@ -1,0 +1,11 @@
+{
+  "id": "improve-propose",
+  "description": "Propose one bounded whole-workflow improvement with a reason.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/improve-propose.md",
+  "variables": {},
+  "output": { "description": "JSON Patch proposal and mandatory reason.", "schema": { "type": "object" } }
+}

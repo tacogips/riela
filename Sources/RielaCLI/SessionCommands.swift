@@ -549,7 +549,8 @@ public struct SessionRerunCommand: Sendable {
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: effectiveMockScenarioPath,
         workingDirectory: kaibaContext.workingDirectory,
-        environment: kaibaContext.environment
+        environment: kaibaContext.environment,
+        definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot)
       )
       // Rerun re-acquires the same advisory per-workflow lease as a fresh run
       // (design S11); the lease binds to the new session on its first save.
@@ -814,7 +815,8 @@ public struct SessionResumeCommand: Sendable {
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: effectiveMockScenarioPath,
         workingDirectory: kaibaContext.workingDirectory,
-        environment: kaibaContext.environment
+        environment: kaibaContext.environment,
+        definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot)
       )
       // Resume re-acquires the same advisory per-workflow lease as a fresh
       // run (design S11); the lease binds to the resumed session on its

@@ -19,6 +19,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "claude-riela-codex-coding",
     "codex-codex-topic-debate",
     "collection-checkpoint",
+    "definition-store-self-improvement",
     "design-and-implement-review-loop",
     "design-and-implement-review-loop-feature-plan",
     "discord-agent-trio-chat",

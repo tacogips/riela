@@ -1,7 +1,7 @@
 # DS179-07 Builtin Improvement Node Add-ons and Example
 
 **planId**: `ds179-07-improvement-node`
-**Status**: Ready for implementation
+**Status**: Implemented — pending review
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 3, (B) builtin self-improvement node, definitions and prompts only
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §1 (one-time runs do not improve), §9 (the whole section), §12 (`WorkflowImprovementNodeTests`); QA Q5 and Q6
@@ -471,22 +471,26 @@ Run `mkdir -p tmp/ds179` first.
   the new example is a residual risk with the exact test name.
 - `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowDefinitionServiceResolutionTests|WorkflowDefinitionCommandTests" 2>&1 | tee tmp/ds179/07-chain-regression.log'`.
   This shows the moved resolver construction did not break earlier plans.
-- `arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaAddons/RielaAddons.swift Sources/RielaCLI/ProductionNodeAdapter+WorkflowImprovementAddon.swift Sources/RielaCLI/WorkflowImprovementDigest.swift Sources/RielaCLI/BuiltinStatefulAddonRegistry.swift Sources/RielaCLI/ProductionNodeAdapter.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCLI/SessionCommands.swift Tests/RielaCLITests/WorkflowImprovementNodeTests.swift Tests/RielaCLITests/RielaExampleCatalog.swift Tests/RielaCLITests/RielaExampleParityTests.swift'`
-  must print no violations.
+- Write the exact changed Swift files as a NUL-delimited manifest under
+  `tmp/ds179/ds179-07-improvement-node/`, then run strict selected-file
+  lint with `xargs -0 swiftlint lint --strict --quiet --no-cache` through
+  that manifest. The progress log records the command and complete log.
 
 ## Done criteria
 
-- `grep -n "riela/improve-workflow-context\|riela/improve-workflow-apply" Sources/RielaAddons/RielaAddons.swift`
+- [x] `grep -n "riela/improve-workflow-context\|riela/improve-workflow-apply" Sources/RielaAddons/RielaAddons.swift`
   shows both names.
-- `grep -n "definition-store-self-improvement" Tests/RielaCLITests/RielaExampleCatalog.swift`
+- [x] `grep -n "definition-store-self-improvement" Tests/RielaCLITests/RielaExampleCatalog.swift`
   matches, and `grep -n "expectedMockScenarioCount = 48" Tests/RielaCLITests/RielaExampleParityTests.swift`
   matches.
-- `grep -nE "\.commit\(|\.update\(workflowName|\.updatePrompt\(" Sources/RielaCLI/ProductionNodeAdapter+WorkflowImprovementAddon.swift`
+- [x] `grep -nE "\.commit\(|\.update\(workflowName|\.updatePrompt\(" Sources/RielaCLI/ProductionNodeAdapter+WorkflowImprovementAddon.swift`
   returns nothing, so there are no direct store writes.
-- `examples/definition-store-self-improvement/mock-scenario.json` has no
+- [x] `examples/definition-store-self-improvement/mock-scenario.json` has no
   key that starts with `improve-context` or `improve-apply`.
-- All verification commands exit 0. The progress log records each
+- [x] All implementation verification commands exit 0. The progress log records each
   command's exitStatus, testsRun, failureCount and log path.
+- Formal review and downstream plan `ds179-06` remain pending their assigned
+  workflow steps.
 
 ## Progress log expectations
 

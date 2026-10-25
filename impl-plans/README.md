@@ -69,6 +69,25 @@ front door. The user guide is in the README section
 review. The dispatch manifest `active/automatic-retention-dispatch.json` stays
 active until the dispatch run closes. The final commit remains a workflow step.
 
+Issue [#179](https://github.com/tacogips/riela/issues/179) workflow definition
+store (2026-10-26) is implemented and accepted on `feat/definition-store-179`.
+Its serial plans `ds179-01` … `ds179-07` are archived under
+[`completed/ds179-*.md`](completed/). Service runs (RielaApp API, `riela serve`
+GraphQL, daemon, events serve, cron) resolve workflows from an audited SQLite
+definition store (schema generation 10) seeded from the file on first use;
+one-time `riela workflow run` stays file-only. It adds the
+`riela workflow definition history|show|diff|update|update-prompt|restore|import|export`
+CLI, GraphQL parity (3 queries, 5 mutations), and the
+`riela/improve-workflow-context` / `riela/improve-workflow-apply` improvement
+add-ons with the `definition-store-self-improvement` example. User docs are in
+[`docs/workflow-definition-store.md`](../docs/workflow-definition-store.md) and
+the README section
+[Workflow Definition Store](../README.md#workflow-definition-store-service-vs-one-time-runs).
+The [progress logs](progress/) `ds179-01` … `ds179-07` record focused
+verification and review. The dispatch manifest `active/ds179-dispatch.json`
+stays active until the dispatch run closes. The final commit remains a
+workflow step.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

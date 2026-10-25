@@ -55,6 +55,8 @@ enum BuiltinStatefulAddonRegistry {
     try resolver.executeKeyValueAddon(input, operation: operation)
   } + BuiltinAddonHandlerRegistration.family(BuiltinRoutineAddon.self) { resolver, input, operation, _ in
     try resolver.executeRoutineAddon(input, operation: operation)
+  } + BuiltinAddonHandlerRegistration.family(BuiltinWorkflowImprovementAddon.self) { resolver, input, operation, context in
+    try await resolver.executeWorkflowImprovementAddon(input, operation: operation, context: context)
   }
 
   static let handlers = Dictionary(uniqueKeysWithValues: registrations.map { ($0.name, $0.handler) })

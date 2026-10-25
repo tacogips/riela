@@ -39,7 +39,7 @@ extension RielaMemoryStore {
       tag: tag, maxPayloadBytes: maxPayloadBytes, db: db), selected.head == expectedHead else { throw MemorySnapshotError.conflict }
     let now = snapshotRetentionNow()
     try execute(db, "DELETE FROM memory_snapshot_retention WHERE expires_at<=?", bindings: [.int64(now)])
-    let existing = try retainedSnapshotHead(scope: expectedHead.scope, label: label, db: db)
+    let existing = try retainedSnapshotHead(scope: expectedHead.scope, label: label, db: db, includeExpired: true)
     guard existing == nil || existing == expectedHead else { throw MemorySnapshotError.conflict }
     let count = try queryRows(db, sql: "SELECT COUNT(*) AS count FROM memory_snapshot_retention", bindings: [])
       .first?.columns["count"].flatMap(Int.init) ?? 256

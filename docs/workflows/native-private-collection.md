@@ -189,3 +189,43 @@ This foundation is not an ART deployment or completion of Python minimization.
 Host-side pending metadata discovery and fair recovery turns can use
 [`snapshot-scan` and `snapshot-rotate`](native-metadata-queues.md). These builtins
 retain exact scoped heads and legacy cursors without a per-file Python/CLI loop.
+
+
+### Bounded cache availability scan
+
+`riela/cache-exchange` version 1 supports `action: "read-scan"`. It uses the
+same named `stores` and ordered `{id, store, reference}` requests as `read-set`.
+All stores, alias policies and references (including the unread tail) are
+validated before cache configuration or reads. The node owns the finite scan;
+a worker does not need to start one CLI process for each missing body.
+
+```json
+{
+  "action": "read-scan",
+  "stores": "{{bodyStores}}",
+  "requests": "{{orderedBodyRequests}}",
+  "startIndex": 0,
+  "maxHits": 12,
+  "maxExamined": 256,
+  "maxItemBytes": 1000000,
+  "maxOutputBytes": 7991808
+}
+```
+
+The response contains ordered `results` with `id`, `status` (`hit`, `missing`,
+`expired`, `oversized`) and a payload only for hits. It also reports `nextIndex`,
+`examinedCount`, `hitCount`, `complete` and `stopReason` (`end`, `hit-limit`,
+`scan-limit`, `output-budget`). Resume with the same request list and
+`startIndex: nextIndex`. An output limit leaves the next unconsumed item at
+that index; a body too large for an entire response is classified oversized,
+so it cannot cause an endless resume at the same item.
+
+`maxHits` is an upper bound: two available bodies are returned immediately,
+even when it is twelve. Missing/expired bodies never acknowledge durable work,
+advance a provider cursor or renew TTL. `complete` means the requested cache
+scan ended; it says nothing about collection or publication completion.
+Cancellation and the execution deadline are checked before mutations and at
+each scan iteration. Per-item byte metadata is checked before large payloads
+are loaded. Limits are 10,000 requests, 1,024 examined items per invocation,
+8 MB per item/output (with protocol envelope reserve); defaults are 40 hits,
+256 examined items, 1 MB per item, and 7,991,808 output bytes.

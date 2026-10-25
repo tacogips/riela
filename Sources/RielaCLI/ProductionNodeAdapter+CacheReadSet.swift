@@ -11,31 +11,8 @@ extension BuiltinWorkflowAddonResolver {
       case let .array(requests)? = config["requests"], requests.count <= 10_000,
       try JSONEncoder().encode(config).count <= RielaCacheStore.maximumFrameBytes - 8192 else { throw cacheReadSetInvalid() }
     do {
-      let exchanges = try stores.mapValues { try cacheReadExchange($0, workflowId: input.workflowId) }
-      var policies: [String: CachePolicy] = [:]
-      var protection: [String: [Data: Bool]] = [:]
-      for exchange in exchanges.values {
-        let path = try cacheReadPolicyKey(exchange.store.databasePath(cacheId: exchange.cacheId))
-        if let previous = policies[path] {
-          guard previous.ttlSeconds == exchange.policy.ttlSeconds, previous.maxBytes == exchange.policy.maxBytes else { throw cacheReadSetInvalid() }
-        }
-        policies[path] = exchange.policy
-        let scope = Data(exchange.scope.utf8)
-        if let previous = protection[path]?[scope], previous != exchange.capacityProtection { throw cacheReadSetInvalid() }
-        protection[path, default: [:]][scope] = exchange.capacityProtection
-      }
-      var identities = Set<Data>(), groups: [String: [CacheReadRequest]] = [:], ordered: [CacheReadRequest] = []
-      for raw in requests {
-        guard case let .object(row) = raw, Set(row.keys) == ["id", "store", "reference"],
-          case let .string(identity)? = row["id"], !identity.isEmpty, identity.utf8.count <= 1024,
-          !identity.unicodeScalars.contains(where: { $0.value < 32 }), identities.insert(Data(identity.utf8)).inserted,
-          case let .string(store)? = row["store"], exchanges[store] != nil, let reference = row["reference"] else { throw cacheReadSetInvalid() }
-        let ref = try JSONDecoder().decode(CacheBodyReference.self, from: JSONEncoder().encode(reference))
-        let request = CacheReadRequest(id: identity, store: store, reference: ref)
-        groups[store, default: []].append(request); ordered.append(request)
-      }
-      // Validate the entire set before configuration can expire or evict a body.
-      for (name, rows) in groups { try exchanges[name]!.validateReferences(rows.map(\.reference)) }
+      let plan = try cacheReadPlan(stores: stores, requests: requests, workflowId: input.workflowId)
+      let exchanges = plan.exchanges, groups = plan.groups, ordered = plan.ordered
       var results: [Data: JSONObject] = [:], bytes = 2
       for name in groups.keys.sorted() {
         let exchange = exchanges[name]!
@@ -70,6 +47,35 @@ extension BuiltinWorkflowAddonResolver {
     } catch { throw cacheReadSetInvalid() }
   }
 
+  func cacheReadPlan(stores: JSONObject, requests: [JSONValue], workflowId: String) throws -> CacheReadPlan {
+      let exchanges = try stores.mapValues { try cacheReadExchange($0, workflowId: workflowId) }
+      var policies: [String: CachePolicy] = [:]
+      var protection: [String: [Data: Bool]] = [:]
+      for exchange in exchanges.values {
+        let path = try cacheReadPolicyKey(exchange.store.databasePath(cacheId: exchange.cacheId))
+        if let previous = policies[path] {
+          guard previous.ttlSeconds == exchange.policy.ttlSeconds, previous.maxBytes == exchange.policy.maxBytes else { throw cacheReadSetInvalid() }
+        }
+        policies[path] = exchange.policy
+        let scope = Data(exchange.scope.utf8)
+        if let previous = protection[path]?[scope], previous != exchange.capacityProtection { throw cacheReadSetInvalid() }
+        protection[path, default: [:]][scope] = exchange.capacityProtection
+      }
+      var identities = Set<Data>(), groups: [String: [CacheReadRequest]] = [:], ordered: [CacheReadRequest] = []
+      for raw in requests {
+        guard case let .object(row) = raw, Set(row.keys) == ["id", "store", "reference"],
+          case let .string(identity)? = row["id"], !identity.isEmpty, identity.utf8.count <= 1024,
+          !identity.unicodeScalars.contains(where: { $0.value < 32 }), identities.insert(Data(identity.utf8)).inserted,
+          case let .string(store)? = row["store"], exchanges[store] != nil, let reference = row["reference"] else { throw cacheReadSetInvalid() }
+        let ref = try JSONDecoder().decode(CacheBodyReference.self, from: JSONEncoder().encode(reference))
+        let request = CacheReadRequest(id: identity, store: store, reference: ref)
+        groups[store, default: []].append(request); ordered.append(request)
+      }
+      // Validate the entire set before configuration can expire or evict a body.
+      for (name, rows) in groups { try exchanges[name]!.validateReferences(rows.map(\.reference)) }
+      return CacheReadPlan(exchanges: exchanges, groups: groups, ordered: ordered)
+  }
+
   func cacheReadExchange(_ value: JSONValue, workflowId: String) throws -> RielaCacheExchange {
     guard case let .object(storage) = value,
       Set(storage.keys).isSubset(of: ["cacheId", "scope", "cacheRoot", "ttlSeconds", "maxBytes", "capacityProtection"]),
@@ -88,7 +94,13 @@ extension BuiltinWorkflowAddonResolver {
   }
 }
 
-private struct CacheReadRequest {
+struct CacheReadPlan {
+  var exchanges: [String: RielaCacheExchange]
+  var groups: [String: [CacheReadRequest]]
+  var ordered: [CacheReadRequest]
+}
+
+struct CacheReadRequest {
   var id: String
   var store: String
   var reference: CacheBodyReference

@@ -4,13 +4,14 @@ import RielaCore
 import RielaMemory
 
 extension BuiltinWorkflowAddonResolver {
-  static let cacheExchangeRegistration = BuiltinAddonHandlerRegistration(name: "riela/cache-exchange", bindsCLIVariablesAsInputs: false) { resolver, input, _ in
-    try resolver.executeCacheExchange(input)
+  static let cacheExchangeRegistration = BuiltinAddonHandlerRegistration(name: "riela/cache-exchange", bindsCLIVariablesAsInputs: false) { resolver, input, context in
+    try resolver.executeCacheExchange(input, deadline: context.deadline)
   }
 
-  func executeCacheExchange(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
+  func executeCacheExchange(_ input: WorkflowAddonExecutionInput, deadline: Date? = nil) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)) else { throw cacheExchangeInvalid() }
+    if config["action"] == .string("read-scan") { return try executeCacheReadScan(input, config: config, deadline: deadline) }
     if config["action"] == .string("read-set") { return try executeCacheReadSet(input, config: config) }
     guard
       Set(config.keys).isSubset(of: ["action", "storage", "entries", "references", "retainedReferences", "enabled"]),

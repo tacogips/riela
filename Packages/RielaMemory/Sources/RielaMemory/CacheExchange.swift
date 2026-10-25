@@ -118,7 +118,7 @@ public struct RielaCacheExchange: Sendable {
     return result
   }
 
-  public func get(_ references: [CacheBodyReference]) throws -> CacheBodyRead {
+  public func get(_ references: [CacheBodyReference], maxLookupBytes: Int = RielaCacheStore.maximumFrameBytes) throws -> CacheBodyRead {
     try validateReferences(references)
     if references.isEmpty { return .init() }
     var found = CacheBodyRead()
@@ -134,7 +134,7 @@ public struct RielaCacheExchange: Sendable {
     if !batch.isEmpty { batches.append(batch) }
     var bytes = 0
     for batch in batches {
-      let response = try store.get(cacheId: cacheId, scope: scope, keys: batch.map(\.key))
+      let response = try store.get(cacheId: cacheId, scope: scope, keys: batch.map(\.key), maxOutputBytes: maxLookupBytes)
       let desired = Dictionary(uniqueKeysWithValues: batch.map { ($0.key, $0) })
       guard response.results.count == batch.count, Set(response.results.map(\.key)) == Set(desired.keys) else { throw Self.invalid() }
       for row in response.results {

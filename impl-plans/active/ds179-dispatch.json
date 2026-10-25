@@ -5,7 +5,7 @@
   "baseBranch": "main",
   "remote": "origin",
   "gitPush": false,
-  "originalHead": "695c0af9d45a488588bad9b442e30ce92c006b8f",
+  "originalHead": "c0bfc8e1e4372359c41b3908b776f5df0aca39be",
   "designDocPaths": [
     "design-docs/specs/design-workflow-definition-store.md",
     "design-docs/user-qa/qa-workflow-definition-store.md",
@@ -13,7 +13,7 @@
   ],
   "evidenceRoot": "tmp/ds179",
   "reviewContext": {
-    "issueReference": "tacogips/riela#179 (https://github.com/tacogips/riela/issues/179): section 2, the execution-mode policy, (A) whole-workflow CLI/GraphQL update with a mandatory reason, and (B) the builtin improvement node; workflowExecutionId opus-luna-design-and-implement-review-loop-session-499; plans accepted by step5-impl-plan-review comm-009292 (accepted true, no repair requests); ds179-01 committed at 6337aa24, ds179-02 and ds179-03 committed at 695c0af9",
+    "issueReference": "tacogips/riela#179 (https://github.com/tacogips/riela/issues/179): section 2, the execution-mode policy, (A) whole-workflow CLI/GraphQL update with a mandatory reason, and (B) the builtin improvement node; workflowExecutionId opus-luna-design-and-implement-review-loop-session-500; plans accepted by step5-impl-plan-review comm-009325 (accepted true, no repair requests); ds179-01 committed at 6337aa24, ds179-02 and ds179-03 at 695c0af9, ds179-04 and ds179-05 at c0bfc8e1",
     "userProblem": "Long-running service runs (RielaApp API, riela serve/GraphQL, daemon, events serve, cron) read workflow definitions and prompts straight from text files. There is no durable, auditable record of which definition a run used, and no way to change prompts or structure with a recorded reason, evidence and actor. One-time `riela workflow run` must keep its file-only behavior. The user also wants whole-workflow updates through the CLI/GraphQL with a mandatory reason, and a builtin improvement node that proposes a change from the latest run's digest and applies it only through that CLI command.",
     "requiredOutcomes": [
       "SQLite definition store in the runtime records DB (schema generation 10): definition_blobs, definition_versions, definition_heads and an append-only definition_change_audit with reason, evidence, actor, before/after digest, diff, approval state and overwritten changes (ds179-01).",
@@ -107,114 +107,9 @@
   },
   "plans": [
     {
-      "planId": "ds179-04-cli-definition-commands",
-      "planPath": "impl-plans/active/ds179-04-cli-definition-commands.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
-        "Sources/RielaCLI/WorkflowDefinitionArguments.swift",
-        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
-        "Sources/RielaCLI/RielaCLIApplication.swift",
-        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-        "Sources/RielaCLI/WorkflowDefinitionCommand.swift",
-        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-        "Tests/RielaCLITests/WorkflowDefinitionCommandTests.swift",
-        "impl-plans/active/ds179-04-cli-definition-commands.md",
-        "impl-plans/progress/ds179-04-cli-definition-commands.md",
-        "Resources/skills/riela-workflow-run/SKILL.md"
-      ],
-      "sharedPaths": [
-        "Sources/RielaCLI/RielaCommand.swift",
-        "Sources/RielaCLI/WorkflowDefinitionStoreSelection.swift"
-      ],
-      "sharedPathNotes": [
-        {
-          "path": "Sources/RielaCLI/RielaCommand.swift",
-          "intendedEdit": "Add `case workflowDefinition(WorkflowDefinitionCommandOptions)` and route `.definition` in parseWorkflow. Re-read fresh; ds179-03 added WorkflowExecutionMode here."
-        },
-        {
-          "path": "Sources/RielaCLI/WorkflowDefinitionStoreSelection.swift",
-          "intendedEdit": "Add `static func rootWithHead(workflowName:sessionStore:scope:workingDirectory:environment:) throws -> String?` next to ds179-03's candidateRoots/seedRoot. No change to existing functions."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "All 8 `riela workflow definition` subcommands parse with the pinned grammar; usage errors (missing/blank reason, both or neither of --patch/--from-file, --force without --from-file, disallowed --actor-kind) exit 2 and write nothing.",
-        "update --patch / --from-file / --from-file --force write audited versions with reason, evidence and actor; stale --expected-version yields definition_conflict; unregistered yields definition_not_registered; JSON success and error shapes are exactly as pinned.",
-        "import seeded/unchanged/differs/forceUpdated, restore, history, show (--authored), diff and export (--to, --to-source --overwrite) behave per the plan.",
-        "8 SurfaceCatalog rows with GraphQL blocked; `riela workflow update` is unchanged (WorkflowRegistryCLICommand.swift has no diff).",
-        "Build, the focused filter, SurfaceParity and swiftlint exit 0 with counts recorded."
-      ],
-      "verification": [
-        "mkdir -p tmp/ds179/ds179-04-cli-definition-commands",
-        "arch -arm64 /bin/zsh -lc 'swift build > tmp/ds179/ds179-04-cli-definition-commands/build.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowDefinitionCommandTests|SurfaceParityCLITests|SurfaceCatalogTests|WorkflowVersionCommandsTests|WorkflowMutableRegistryTests|WorkflowRegistryEvolutionTests' > tmp/ds179/ds179-04-cli-definition-commands/test.log 2>&1\"",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParity > tmp/ds179/ds179-04-cli-definition-commands/parity.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/RielaClientFamilyArguments.swift Sources/RielaCLI/WorkflowDefinitionArguments.swift Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift Sources/RielaCLI/RielaCLIApplication.swift Sources/RielaCLI/CLISurfaceEnumeration.swift Sources/RielaCLI/WorkflowDefinitionCommand.swift Sources/RielaCore/SurfaceCatalog+Rows.swift Sources/RielaCLI/RielaCommand.swift Sources/RielaCLI/WorkflowDefinitionStoreSelection.swift Tests/RielaCLITests/WorkflowDefinitionCommandTests.swift > tmp/ds179/ds179-04-cli-definition-commands/lint.log 2>&1'",
-        "git diff --quiet -- Sources/RielaCLI/WorkflowRegistryCLICommand.swift"
-      ]
-    },
-    {
-      "planId": "ds179-05-graphql-definition-surface",
-      "planPath": "impl-plans/active/ds179-05-graphql-definition-surface.md",
-      "dependsOn": [
-        "ds179-04-cli-definition-commands"
-      ],
-      "writePaths": [
-        "Sources/RielaGraphQL/WorkflowDefinitionGraphQL.swift",
-        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
-        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
-        "Sources/RielaCLI/WorkflowDefinitionGraphQLProvider.swift",
-        "Sources/RielaCLI/ServeHTTPCommand.swift",
-        "Sources/RielaCLI/ServeWebHost.swift",
-        "Sources/RielaApp/RielaAppWebGraphQL.swift",
-        "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
-        "Sources/RielaCLI/RielaLibrary.swift",
-        "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift",
-        "Tests/RielaGraphQLTests/WorkflowDefinitionGraphQLContractTests.swift",
-        "Tests/RielaCLITests/WorkflowDefinitionGraphQLTests.swift",
-        "impl-plans/active/ds179-05-graphql-definition-surface.md",
-        "impl-plans/progress/ds179-05-graphql-definition-surface.md"
-      ],
-      "sharedPaths": [
-        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-        "Resources/skills/riela-workflow-run/SKILL.md"
-      ],
-      "sharedPathNotes": [
-        {
-          "path": "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-          "intendedEdit": "In the 8 workflow.definition.* rows added by ds179-04 only: replace graphqlState .blocked(...) with graphql: graphQLQuery/graphQLMutation(<field>) per the plan mapping. No other rows change."
-        },
-        {
-          "path": "Resources/skills/riela-workflow-run/SKILL.md",
-          "intendedEdit": "Only if this plan adds or renames CLI SurfaceCatalog rows: regenerate the affected generated command block so SurfaceParitySkillTests stays green. No prose edits."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "3 Query and 5 Mutation fields (including updateWorkflowDefinition) are served by WorkflowDefinitionGraphQLDocumentExecutor in every executor chain (serve HTTP, serve web host, RielaApp, scoped parity, RielaLibrary).",
-        "Actor kinds api (default) and user are accepted; cli/improvementNode/addon are rejected with INVALID_DEFINITION_INPUT before store access; missing reasons return DEFINITION_REASON_REQUIRED with no rows; stale expected versions return DEFINITION_STALE.",
-        "exportWorkflowDefinition never writes a client-supplied path; writeToSource rewrites only the head's source.",
-        "The SDL is regenerated by scripts/surface-parity/generate-sdl.sh and byte-identical to the generator; SurfaceParity (CLI, GraphQL, DTO-schema, executor coverage) passes.",
-        "Build, focused tests, parity, regressions and swiftlint exit 0 with counts recorded."
-      ],
-      "verification": [
-        "mkdir -p tmp/ds179/ds179-05-graphql-definition-surface",
-        "arch -arm64 /bin/zsh -lc 'swift build > tmp/ds179/ds179-05-graphql-definition-surface/build.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'scripts/surface-parity/generate-sdl.sh > tmp/ds179/ds179-05-graphql-definition-surface/sdl.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowDefinitionGraphQLTests|WorkflowDefinitionGraphQLContractTests' > tmp/ds179/ds179-05-graphql-definition-surface/test.log 2>&1\"",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParity > tmp/ds179/ds179-05-graphql-definition-surface/parity.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowExecutionGraphQLTests|RoutineGraphQLTests|WorkflowExecutionProviderTests' > tmp/ds179/ds179-05-graphql-definition-surface/regression.log 2>&1\"",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaGraphQL/WorkflowDefinitionGraphQL.swift Sources/RielaGraphQL/GraphQLSchemaGenerator.swift Sources/RielaCLI/WorkflowDefinitionGraphQLProvider.swift Sources/RielaCLI/ServeHTTPCommand.swift Sources/RielaCLI/ServeWebHost.swift Sources/RielaApp/RielaAppWebGraphQL.swift Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift Sources/RielaCLI/RielaLibrary.swift Sources/RielaCore/SurfaceCatalog+Rows.swift Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift Tests/RielaGraphQLTests/WorkflowDefinitionGraphQLContractTests.swift Tests/RielaCLITests/WorkflowDefinitionGraphQLTests.swift > tmp/ds179/ds179-05-graphql-definition-surface/lint.log 2>&1'",
-        "grep -n 'importWorkflowDefinition' Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift"
-      ]
-    },
-    {
       "planId": "ds179-07-improvement-node",
       "planPath": "impl-plans/active/ds179-07-improvement-node.md",
-      "dependsOn": [
-        "ds179-05-graphql-definition-surface"
-      ],
+      "dependsOn": [],
       "writePaths": [
         "Sources/RielaAddons/RielaAddons.swift",
         "Sources/RielaCLI/BuiltinStatefulAddonRegistry.swift",
@@ -338,6 +233,25 @@
         "file-only one-time workflow run with a file definitionSource",
         "WorkflowDefinitionStoreSelection candidateRoots and seedRoot",
         "WorkflowExecutionMode in RielaCommand"
+      ]
+    },
+    {
+      "planId": "ds179-04-cli-definition-commands",
+      "planPath": "impl-plans/active/ds179-04-cli-definition-commands.md",
+      "commit": "c0bfc8e1e4372359c41b3908b776f5df0aca39be",
+      "provides": [
+        "riela workflow definition history, show, diff, update, update-prompt, restore, import and export CLI with mandatory --reason",
+        "(A) whole-workflow riela workflow definition update (--patch or --from-file [--force]) with --reason, --evidence, --actor, --actor-kind and --expected-version",
+        "8 SurfaceCatalog rows and WorkflowDefinitionStoreSelection.rootWithHead"
+      ]
+    },
+    {
+      "planId": "ds179-05-graphql-definition-surface",
+      "planPath": "impl-plans/active/ds179-05-graphql-definition-surface.md",
+      "commit": "c0bfc8e1e4372359c41b3908b776f5df0aca39be",
+      "provides": [
+        "GraphQL 3 definition queries and 5 mutations including updateWorkflowDefinition",
+        "SurfaceCatalog rows bound to GraphQL fields and regenerated SDL"
       ]
     }
   ]

@@ -5,7 +5,7 @@
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 3, (B) builtin self-improvement node, definitions and prompts only
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §1 (one-time runs do not improve), §9 (the whole section), §12 (`WorkflowImprovementNodeTests`); QA Q5 and Q6
-**dependsOn**: `ds179-05-graphql-definition-surface` (serial chain 01→02→03→04→05→07→06)
+**dependsOn**: none (ds179-01..05 are accepted dependencies; ds179-04/05 at c0bfc8e1); serial chain continues 07→06
 **Branch**: `feat/definition-store-179` (local commits only; `gitPush=false`)
 **Progress log**: `impl-plans/progress/ds179-07-improvement-node.md`
 
@@ -514,3 +514,13 @@ new position" check from file change 4.
 ## Operator amendment 2 (after session-498 blocked wave)
 
 - ds179-02 and ds179-03 are accepted (commit 695c0af9). `Resources/skills/riela-workflow-run/SKILL.md` is owned by ds179-04; it is a sharedPath of this plan: if this plan adds CLI catalog rows, update the generated command blocks in that file so SurfaceParitySkillTests stays green.
+
+## Operator amendment 3 (after session-499 blocked wave)
+
+- ds179-04 and ds179-05 are accepted and committed in c0bfc8e1. The `riela workflow definition update` CLI command
+  (whole-workflow update with mandatory --reason, --evidence, --actor) and the GraphQL mutations now exist; the
+  improvement apply add-on must invoke that CLI command as a subprocess.
+- The previous attempt returned without changing any file and only ran a grep, so the progress gate blocked it with
+  "no successful behavioral test evidence with a positive test count". This attempt must actually implement every
+  file-level change in this plan, add the example and WorkflowImprovementNodeTests, and run the listed swift test
+  commands (testsRun > 0, failureCount = 0, integer exitStatus). A grep is not a behavioral test.

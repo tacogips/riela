@@ -74,7 +74,7 @@ extension RielaMemoryStore {
     defer { if !committed { try? execute(db, "ROLLBACK") } }
     let schema = try queryRows(db, sql: "PRAGMA user_version", bindings: []).first?
       .columns["user_version"].flatMap(Int.init) ?? 0
-    guard schema == 4 || schema == currentSchemaVersion else {
+    guard (4...currentSchemaVersion).contains(schema) else {
       report.status = "unsupported_schema"; return report
     }
     let row = try record(memoryId: memoryId, recordId: recordId, db: db)
@@ -94,6 +94,12 @@ extension RielaMemoryStore {
     }
     guard report.retainedFloor >= 1, report.retainedFloor <= head else {
       report.status = "invalid_floor"; return report
+    }
+    if schema >= 6 {
+      let retained = try queryRows(db, sql: """
+        SELECT 1 FROM memory_snapshot_retention WHERE record_id=? AND version<? AND expires_at>? LIMIT 1
+        """, bindings: [.int64(recordId), .int64(head), .int64(snapshotRetentionNow())])
+      guard retained.isEmpty else { report.status = "retained_snapshot"; return report }
     }
     // Load/search reference rows are immutable access audit, not version pins.
     // Preserve them; only actual related-record links protect this record.
@@ -138,6 +144,7 @@ extension RielaMemoryStore {
     guard !dryRun else { report.status = "planned"; return report }
     // Migration 4->5 only adds the floor table, inside this exclusive transaction.
     try ensureMemoryRetirementSchema(db)
+    try ensureMemorySnapshotRetentionSchema(db)
     try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
     _ = try queryRows(db, sql: "PRAGMA secure_delete = ON", bindings: [])
     // PERSIST rollback journals otherwise retain pre-retirement page images.

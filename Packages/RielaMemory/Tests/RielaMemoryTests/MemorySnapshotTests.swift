@@ -37,6 +37,10 @@ final class MemorySnapshotTests: XCTestCase {
   }
 
   func testConcurrentCreatorsHaveExactlyOneWinner() async throws {
+    for _ in 0..<12 { try await concurrentCreatorsHaveExactlyOneWinner() }
+  }
+
+  private func concurrentCreatorsHaveExactlyOneWinner() async throws {
     let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
     let store = RielaMemoryStore(rootDirectory: root.path)
     let wins = try await withThrowingTaskGroup(of: Bool.self) { group in

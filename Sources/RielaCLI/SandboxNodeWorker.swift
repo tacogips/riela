@@ -110,7 +110,10 @@ enum SandboxNodeWorker {
       }
       writer.emit(.init(kind: .result, output: output, vendorSessionId: vendorSession()))
     } catch {
-      writer.emit(.init(kind: .failure, failure: .init((error as? AdapterExecutionError)
+      let failure = error is EmptyWorkerInput
+        ? AdapterExecutionError(.invalidInput, WorkerJSONLInput.nodeEmptyMessage)
+        : (error as? AdapterExecutionError)
+      writer.emit(.init(kind: .failure, failure: .init(failure
         ?? .init(.invalidInput, "invalid isolated node worker input"))))
     }
   }
@@ -250,10 +253,8 @@ enum SandboxNodeWorker {
         throw AdapterExecutionError(.invalidInput, "isolated node request exceeds the size limit")
       }
     }
-    guard let text = String(data: bytes, encoding: .utf8), text.split(whereSeparator: \.isNewline).count == 1 else {
-      throw AdapterExecutionError(.invalidInput, "isolated node worker requires one JSONL request")
-    }
-    return try JSONDecoder().decode(SandboxNodeRequest.self, from: bytes)
+    return try WorkerJSONLInput.decode(SandboxNodeRequest.self, from: bytes,
+      framingMessage: "isolated node worker requires one JSONL request")
   }
 }
 

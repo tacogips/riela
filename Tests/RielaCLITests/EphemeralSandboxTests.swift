@@ -5,6 +5,59 @@ import XCTest
 @testable import RielaCLI
 
 final class EphemeralSandboxTests: XCTestCase {
+  func testEmptyInputRefusalReattachesOnceWithoutDuplicatingTerminalOutput() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("empty-input-reattach")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let missing = SandboxNodeRecord(kind: .failure, failure: .init(.init(.invalidInput, WorkerJSONLInput.nodeEmptyMessage)))
+    let runner = EphemeralFixtureRunner(workerRecords: [[missing], [Self.resultRecord(["status": .string("ok")])]])
+    let events = InputRetryEvents()
+    let output = try await transportOutput(runner, root: root, context: .init(backendEventHandler: { await events.append($0) }))
+    XCTAssertEqual(output.payload["status"], .string("ok"))
+    let recorded = await events.values
+    XCTAssertEqual(recorded.map(\.eventType), ["private-input-reattach"])
+    XCTAssertEqual(recorded.first?.metadata, ["attempt": .integer(2), "phase": .string("before-request"), "reason": .string("empty-request")])
+    let calls = await runner.calls
+    XCTAssertEqual(calls.count, 4)
+    XCTAssertEqual(calls[1].1, calls[2].1)
+    XCTAssertEqual(calls.filter { $0.0.arguments.contains("exec") }.count, 2)
+    XCTAssertTrue(calls.last!.0.arguments.contains("--force"))
+  }
+
+  func testStreamingReattachWithholdsTheDiscardedEmptyTerminal() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("streaming-input-reattach")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let missing = SandboxNodeRecord(kind: .failure, failure: .init(.init(.invalidInput, WorkerJSONLInput.nodeEmptyMessage)))
+    let runner = EphemeralFixtureRunner(workerRecords: [[missing], [Self.resultRecord(["status": .string("ok")])]])
+    let output = try await transportOutput(StreamingEphemeralFixture(base: runner), root: root)
+    XCTAssertEqual(output.payload["status"], .string("ok"))
+    let count = await runner.calls.count
+    XCTAssertEqual(count, 4)
+  }
+
+  func testSecondEmptyRefusalStopsAndProviderFailureNeverReattaches() async throws {
+    for message in [WorkerJSONLInput.nodeEmptyMessage, "provider execution failed"] {
+      let root = try makeRielaCLITestTemporaryDirectory("bounded-input-reattach")
+      defer { try? FileManager.default.removeItem(at: root) }
+      let record = SandboxNodeRecord(kind: .failure, failure: .init(.init(
+        message == WorkerJSONLInput.nodeEmptyMessage ? .invalidInput : .providerError, message)))
+      let runner = EphemeralFixtureRunner(workerRecords: [[record]])
+      do { _ = try await transportOutput(runner, root: root); XCTFail("failure was accepted") } catch {}
+      let calls = await runner.calls
+      XCTAssertEqual(calls.filter { $0.0.arguments.contains("exec") }.count,
+        message == WorkerJSONLInput.nodeEmptyMessage ? 2 : 1)
+      XCTAssertEqual(calls.filter { $0.0.arguments.contains("--force") }.count, 1)
+    }
+  }
+
+  private func transportOutput(_ runner: any LocalProcessRunning, root: URL, context: AdapterExecutionContext = .init()) async throws -> AdapterExecutionOutput {
+    let adapter = SandboxingNodeAdapter(primary: EphemeralForbiddenHost(), environment: [
+      "RIELA_SANDBOX_WORKER_EXECUTABLE": workerPath, "RIELA_CONTAINER_RUNTIME": "docker"
+    ], workingDirectory: root.path, runner: runner, directoryParent: root)
+    return try await adapter.execute(.init(node: .init(id: "inspect", executionBackend: .codexAgent, model: "fixture",
+      sandbox: .init(backend: .container, container: .init(image: "fixture:local"), ephemeralHome: true),
+      output: .init(jsonSchema: ["type": .string("object")])), promptText: "synthetic"), context: context)
+  }
+
   func testNativeStructuredSchemaIsAnExplicitWorkerCapability() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("native-schema-protocol")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -536,4 +589,22 @@ private struct EphemeralForbiddenHost: NodeAdapter {
     XCTFail("ephemeral sandbox must not fall back to host execution")
     throw AdapterExecutionError(.policyBlocked, "host fallback forbidden")
   }
+}
+
+private struct StreamingEphemeralFixture: LocalProcessEventStreaming {
+  let base: EphemeralFixtureRunner
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
+    try await base.run(configuration: configuration, stdin: stdin, deadline: deadline)
+  }
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?,
+           outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?) async throws -> LocalProcessResult {
+    let result = try await run(configuration: configuration, stdin: stdin, deadline: deadline)
+    for line in result.stdout.split(separator: "\n") { outputEventHandler?(.init(stream: .stdout, line: String(line))) }
+    return result
+  }
+}
+
+private actor InputRetryEvents {
+  var values: [AdapterBackendEvent] = []
+  func append(_ event: AdapterBackendEvent) { values.append(event) }
 }

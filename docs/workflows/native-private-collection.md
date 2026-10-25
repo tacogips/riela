@@ -96,6 +96,40 @@ Exception: with `config.xUsageScope`, normalized X resource-usage telemetry (no
 source data or credentials) is forwarded to the host's `x-gateway-api-usage` cache
 over a bounded stderr marker channel (at most 2,000,000 bytes per line, 10,000
 resources per record and 256 records per run).
+
+Optional `config.cacheSpaces: ["x-gateway-users"]` bridges the builtin author
+cache across ephemeral guests. The host seeds only validated public user IDs,
+usernames and display names, with their original provider-fetch timestamps.
+The guest uses a separate native cache root; no host database or cache directory
+is mounted. New author metadata is validated and merged into the host cache even
+when the private workflow's final result is rejected. Cache reads and seeds do
+not renew the original TTL. Article bodies and authentication data are never
+accepted in this channel.
+
+The builtin registry owns each approved space's schema and storage. Unknown or
+duplicate space names are refused before container launch. The transport admits
+at most 64 records, 1,000,000 bytes per line and 8,000,000 bytes per run. Optional
+cache failures become cache misses; normal provider output retains its own
+validation. The `private-cache-exchange` backend event contains only configured
+space names, finite statuses and counts. Omitting `cacheSpaces` disables both
+seed transfer and delta export. Matching host and guest binaries with this
+capability are required.
+
+Optional `config.failureStages` maps root step IDs to public diagnostic labels:
+
+```json
+"failureStages": { "collect": "acquisition", "batch": "screening", "finish": "normalization" }
+```
+
+At most 32 mappings are allowed. Public labels contain lowercase letters, digits
+and hyphens and are at most 48 characters. On failure, only a configured label and
+one of `adapterFailure`, `nodeTimeout`, `cancelled`, or `other` can leave the guest.
+The host validates both before emitting a `private-workflow-failure` backend event
+and the fixed diagnostic message. Internal step IDs, command stderr, provider
+errors, source content and paths remain private. Unknown labels/kinds and disabled
+configuration retain the original fixed failure message. This reports where the
+root graph stopped; a nested failure may be reported at its calling root step.
+
 The owned container is removed after completion, deadline or cancellation.
 
 Guest identity requirements:
@@ -155,3 +189,103 @@ This foundation is not an ART deployment or completion of Python minimization.
 Host-side pending metadata discovery and fair recovery turns can use
 [`snapshot-scan` and `snapshot-rotate`](native-metadata-queues.md). These builtins
 retain exact scoped heads and legacy cursors without a per-file Python/CLI loop.
+
+
+### Bounded cache availability scan
+
+`riela/cache-exchange` version 1 supports `action: "read-scan"`. It uses the
+same named `stores` and ordered `{id, store, reference}` requests as `read-set`.
+All stores, alias policies and references (including the unread tail) are
+validated before cache configuration or reads. The node owns the finite scan;
+a worker does not need to start one CLI process for each missing body.
+
+```json
+{
+  "action": "read-scan",
+  "stores": "{{bodyStores}}",
+  "requests": "{{orderedBodyRequests}}",
+  "startIndex": 0,
+  "maxHits": 12,
+  "maxExamined": 256,
+  "maxItemBytes": 1000000,
+  "maxOutputBytes": 7991808
+}
+```
+
+The response contains ordered `results` with `id`, `status` (`hit`, `missing`,
+`expired`, `oversized`) and a payload only for hits. It also reports `nextIndex`,
+`examinedCount`, `hitCount`, `complete` and `stopReason` (`end`, `hit-limit`,
+`scan-limit`, `output-budget`). Resume with the same request list and
+`startIndex: nextIndex`. An output limit leaves the next unconsumed item at
+that index; a body too large for an entire response is classified oversized,
+so it cannot cause an endless resume at the same item.
+
+`maxHits` is an upper bound: two available bodies are returned immediately,
+even when it is twelve. Missing/expired bodies never acknowledge durable work,
+advance a provider cursor or renew TTL. `complete` means the requested cache
+scan ended; it says nothing about collection or publication completion.
+Cancellation and the execution deadline are checked before mutations and at
+each scan iteration. Per-item byte metadata is checked before large payloads
+are loaded. Limits are 10,000 requests, 1,024 examined items per invocation,
+8 MB per item/output (with protocol envelope reserve); defaults are 40 hits,
+256 examined items, 1 MB per item, and 7,991,808 output bytes.
+
+
+### Provider-independent record admission
+
+`riela/record-manifest` action `admit` selects a bounded available batch without
+provider calls, persistence, cursor changes or publication acknowledgements.
+Use this after an availability scan for Gmail, X, Web or any other source:
+
+```json
+{
+  "action": "admit",
+  "value": {
+    "entries": [{"key": "opaque-id", "version": "opaque-version", "value": {"sourceId": "source-id"}}],
+    "available": [{"key": "opaque-id", "version": "opaque-version", "payload": {"checked": "body"}}],
+    "acknowledged": [],
+    "priority": [],
+    "examinedKeys": ["opaque-id"],
+    "maximumItems": 12,
+    "maximumBytes": 1000000
+  }
+}
+```
+
+The result contains `admitted`, `deferred`, `handled` metadata entries,
+`records` (admitted payloads), and `unavailableKeys`/`oversizedKeys`. Two ready
+items return immediately even when the limit is twelve. A byte limit may defer
+a large remaining item while admitting a later smaller one. A body individually
+larger than the byte limit is oversized; an item that only exceeds the remaining
+batch space is deferred. Unexamined items are deferred without claiming a miss.
+
+Only an explicit acknowledgement of the same key and version produces handled
+metadata. Changed versions become eligible again. An existing `priority` prefix
+is honored only if every complete descriptor still matches an unacknowledged
+entry; otherwise fresh inventory order applies. Available bodies with unknown
+keys, different versions or duplicate identities are rejected, including an
+invalid tail after the count limit. Callers retain their domain-specific source,
+account and body-digest checks. Keys and versions are opaque bounded UTF-8 values.
+Defaults are 40 items and 1,000,000 encoded payload bytes; limits are 10,000 items
+and 8,000,000 bytes. All request metadata is validated before selecting a result.
+
+
+### Private worker input delivery
+
+The native node and private-workflow workers distinguish an empty request from
+malformed JSONL, invalid UTF-8, unsupported capabilities and execution failures.
+Framing uses ASCII LF: Unicode NEL/line/paragraph separators inside JSON string
+values remain data. The builtin add-on worker uses the same framing rule.
+
+A private container may attach one additional time only after a sole, current
+worker-protocol refusal explicitly reports no request bytes. That refusal is
+emitted before request decoding, credential HOME setup and provider/model calls.
+The retry uses the identical stdin and the same owned container/deadline. Model
+failures, schema rejections, partial/unknown outcomes, nonempty stderr and legacy
+ambiguous framing failures never authorize it. Cancellation and final container
+cleanup remain owned by the original invocation. A second empty refusal stops.
+
+The host records `private-input-reattach` with only `attempt: 2`,
+`phase: "before-request"`, and `reason: "empty-request"`. Neither the first
+refusal nor private data becomes an additional terminal result. Both host and
+guest must contain this explicit refusal to enable the recovery path.

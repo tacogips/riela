@@ -115,6 +115,7 @@ struct XGatewayUserCacheExchange: Sendable {
       }
       additions[id] = user
     }
+    if !rows.isEmpty { PrivateWorkflowCacheTransport.emit(cache: Self.cacheId, payload: .array(rows)) }
     do {
       if !additions.isEmpty {
         let timestamp = ISO8601DateFormatter().string(from: clock())

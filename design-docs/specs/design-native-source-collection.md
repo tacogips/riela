@@ -225,6 +225,34 @@ observed head. Updating an existing snapshot requires an explicit prior load;
 blind writes never adopt a new head implicitly. The remaining ART body-manifest,
 missing-body recovery selection and outer coordination still need migration.
 
+### Independent producer/consumer revisions
+
+A producer may advance its checkpoint while a consumer publishes an older
+checked batch. The same builtin supports three metadata-only operations:
+
+- `retain`: requires `label` and the exact non-null `expectedHead`; creates a reference to
+  the current scoped head or renews an existing exact historical reference using
+  one SQLite transaction. References are durable by default; optional
+  `expiresInSeconds` explicitly selects ephemeral retention bounded to 60–604800.
+  Optional `retainedLabels` is the caller-owned complete live label set for this
+  storage scope; unused labels are atomically released before capacity admission.
+  The newly retained label is always included. A live label cannot be rebound
+  to a different revision, and each memory database admits at most 256 live labels.
+- `load-retained`: requires `label`; returns the exact retained `{head,value}`
+  without changing the current head. Missing/expired labels return `found:false`;
+  they never fall back to a newer version. The usual payload budget applies.
+- `release`: requires `label` and its exact non-null `expectedHead`. It returns
+  `released:true` only for the matching retained revision; a missing reference
+  is idempotent. An old consumer cannot release a reused label's newer revision.
+
+Storage scope remains memory root, memory ID, workflow, node and tag. Retention
+adds metadata in memory schema 6, not a second payload copy or a cache protection
+flag. Explicit history retirement refuses to discard an actively retained older
+revision. Explicit ephemeral expiry removes no source record, cursor, receipt or history; expired
+retention metadata is bounded and pruned on the next retain operation. Article
+TTL/LRU caches stay independently disposable. Workflows must still acknowledge
+only the exact item versions actually published, independently of newer arrivals.
+
 ## Verification and rollout scope
 
 XCollectionTests exercises the real linked SDK addon with an injected transport,
@@ -447,3 +475,9 @@ cursor. A resumed research turn reuses its selected ID prefix instead of rotatin
 its attempt journal again. The old non-native compatibility collector is not a
 fallback from this native handoff. Matching guest/release/cutover and a new real
 two-hour acquisition/publication audit still remain mandatory.
+
+
+Structured collector cursors remain literal bounded JSON (16 KiB), including
+per-author last IDs, independent page cursors and coverage metadata. Only `null`
+implicitly signals acquisition completion; a provider may explicitly set
+`acquisitionComplete`. Exact version acknowledgements never alter that cursor.

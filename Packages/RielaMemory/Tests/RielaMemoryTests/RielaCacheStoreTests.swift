@@ -23,6 +23,21 @@ final class RielaCacheStoreTests: XCTestCase {
       payload: .string(String(repeating: "x", count: count)))
   }
 
+  func testEmptyOptionalLookupIsAValidReadWithoutWeakeningMutationValidationOrTTL() throws {
+    let (store, clock, root) = fixture(); defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "m", policy: .init(ttlSeconds: 60, maxBytes: 4096))
+    let original = try store.put(cacheId: "m", scope: "account", entries: [entry("kept", clock)])
+    clock.advance(30)
+    let empty = try store.get(cacheId: "m", scope: "account", keys: [])
+    XCTAssertTrue(empty.results.isEmpty)
+    XCTAssertEqual(empty.stats, original.stats)
+    XCTAssertThrowsError(try store.put(cacheId: "m", scope: "account", entries: []))
+    XCTAssertThrowsError(try store.get(cacheId: "m", scope: "account", keys: ["kept", "kept"]))
+    XCTAssertThrowsError(try store.get(cacheId: "m", scope: " account", keys: []))
+    clock.advance(31)
+    XCTAssertEqual(try store.get(cacheId: "m", scope: "account", keys: ["kept"]).results.first?.status, "miss")
+  }
+
   func testConcurrentProtectedWritersCannotOversubscribeSharedBudget() async throws {
     let (store, clock, root) = fixture()
     defer { try? FileManager.default.removeItem(at: root) }

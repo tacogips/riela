@@ -53,10 +53,8 @@ extension BuiltinWorkflowAddonResolver {
       do { items = try rawItems.map(CollectionCheckpointItem.init) } catch { throw collectionInputError() }
       guard Set(items).count == items.count else { throw collectionInputError() }
       if action == "record" {
-        guard let cursor = config["cursor"],
-          cursor == .null || nonEmptyString(cursor) != nil,
-          (try JSONEncoder().encode(cursor)).count <= 16_384
-        else { throw collectionInputError() }
+        guard let cursor = config["cursor"] else { throw collectionInputError() }
+        try validateCollectionCursor(cursor)
         let complete: Bool
         switch config["acquisitionComplete"] {
         case nil: complete = cursor == .null
@@ -154,10 +152,18 @@ private struct CollectionCheckpointState: Codable {
   func validate() throws {
     guard format == 1, revision >= 0, pending.count <= 10_000, acknowledged.count <= 10_000,
       Set(pending).count == pending.count, Set(acknowledged).count == acknowledged.count,
-      Set(pending).isDisjoint(with: acknowledged), cursor == .null || nonEmptyString(cursor) != nil,
-      (try JSONEncoder().encode(cursor)).count <= 16_384,
+      Set(pending).isDisjoint(with: acknowledged),
       (try JSONEncoder().encode(self)).count <= Self.maximumBytes
     else { throw collectionInputError() }
+    try validateCollectionCursor(cursor)
     try (pending + acknowledged).forEach { try $0.validate() }
   }
+}
+
+private func validateCollectionCursor(_ value: JSONValue) throws {
+  // Provider checkpoints may contain per-author IDs, independent cursors or
+  // coverage windows. Keep them literal and bounded, without source-specific
+  // interpretation or treating an empty object/array as acquisition complete.
+  if case .string = value, nonEmptyString(value) == nil { throw collectionInputError() }
+  guard try JSONEncoder().encode(value).count <= 16_384 else { throw collectionInputError() }
 }

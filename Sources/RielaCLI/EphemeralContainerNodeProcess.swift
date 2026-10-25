@@ -9,6 +9,7 @@ struct EphemeralContainerNodeProcess: Sendable {
   var runner: any LocalProcessRunning
 
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?,
+           onEmptyInputRetry: (@Sendable () async -> Void)? = nil,
            outputEventHandler: @escaping @Sendable (LocalProcessOutputEvent) -> Void) async throws -> LocalProcessResult {
     let arguments = configuration.arguments
     guard let runIndex = arguments.firstIndex(of: "run"), let workerCommand = arguments.last,
@@ -45,17 +46,21 @@ struct EphemeralContainerNodeProcess: Sendable {
       guard initialized.terminationStatus == 0 else {
         throw AdapterExecutionError(.policyBlocked, "ephemeral agent container initialization failed")
       }
-      if let streaming = runner as? any LocalProcessEventStreaming {
-        result = try await streaming.run(configuration: execute, stdin: stdin, deadline: effectiveDeadline,
-          outputEventHandler: outputEventHandler)
-      } else {
-        result = try await runner.run(configuration: execute, stdin: stdin, deadline: effectiveDeadline)
-        for line in result.stdout.split(whereSeparator: \.isNewline) {
-          outputEventHandler(.init(stream: .stdout, line: String(line)))
-        }
-        for line in result.stderr.split(whereSeparator: \.isNewline) {
-          outputEventHandler(.init(stream: .stderr, line: String(line)))
-        }
+      var attached = try await attach(execute, stdin: stdin, deadline: effectiveDeadline, handler: outputEventHandler)
+      if !stdin.isEmpty, Self.refusedEmptyInput(attached, worker: workerCommand) {
+        try Task.checkCancellation()
+        guard effectiveDeadline > Date() else { throw AdapterExecutionError(.timeout, "private input transport deadline expired") }
+        await onEmptyInputRetry?()
+        // This exact worker refusal happens before request decoding, HOME
+        // setup or provider/model execution. Reattach once; never retry a
+        // model failure, output rejection or an ambiguous transport outcome.
+        attached = try await attach(execute, stdin: stdin, deadline: effectiveDeadline, handler: outputEventHandler)
+      }
+      result = attached
+      // Private workers emit only terminal stdout. Withhold the pre-request
+      // refusal so a successful reattach never emits two terminal records.
+      for line in result.stdout.split(separator: "\n") {
+        outputEventHandler(.init(stream: .stdout, line: String(line)))
       }
     } catch {
       await cleanup(remove)
@@ -63,6 +68,36 @@ struct EphemeralContainerNodeProcess: Sendable {
     }
     await cleanup(remove)
     return result
+  }
+
+  private func attach(_ configuration: LocalProcessConfiguration, stdin: String, deadline: Date,
+                      handler: @escaping @Sendable (LocalProcessOutputEvent) -> Void) async throws -> LocalProcessResult {
+    if let streaming = runner as? any LocalProcessEventStreaming {
+      return try await streaming.run(configuration: configuration, stdin: stdin, deadline: deadline) { event in
+        if event.stream == .stderr { handler(event) }
+      }
+    }
+    let result = try await runner.run(configuration: configuration, stdin: stdin, deadline: deadline)
+    for line in result.stderr.split(separator: "\n") { handler(.init(stream: .stderr, line: String(line))) }
+    return result
+  }
+
+  static func refusedEmptyInput(_ result: LocalProcessResult, worker: String) -> Bool {
+    let expected: String
+    switch worker {
+    case SandboxNodeWorker.command: expected = WorkerJSONLInput.nodeEmptyMessage
+    case PrivateWorkflowWorker.command: expected = WorkerJSONLInput.privateEmptyMessage
+    default: return false
+    }
+    guard result.terminationStatus == 0, !result.stdoutInvalidUTF8, result.stdout.utf8.count <= 4096,
+      result.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      result.stdout.split(separator: "\n").count == 1,
+      let record = try? JSONDecoder().decode(SandboxNodeRecord.self, from: Data(result.stdout.utf8)),
+      record.version == SandboxNodeRecord.currentVersion, record.kind == .failure,
+      record.output == nil, record.event == nil, record.rejection == nil, record.vendorSessionId == nil,
+      let failure = record.failure, failure.code == .invalidInput, failure.message == expected,
+      failure.isRetryable == nil, failure.retryAfterSeconds == nil else { return false }
+    return true
   }
 
   private func cleanup(_ configuration: LocalProcessConfiguration) async {

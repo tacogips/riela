@@ -138,11 +138,36 @@ extension BuiltinWorkflowAddonResolver {
   }
 }
 
-private struct GoogleDocumentsGatewayAddonEngine {
+struct GoogleDocumentsGatewayAddonEngine {
   /// `auth login` opens a browser and blocks on a loopback OAuth callback;
   /// `auth revoke` destroys stored credentials. Neither belongs in a workflow
   /// node, so both are refused before the gateway is called.
   private static let forbiddenCommands: Set<String> = ["auth login", "auth revoke"]
+
+  #if canImport(GoogleDocumentsGatewayCore)
+  static func operationArgv(
+    config: JSONObject,
+    variables: JSONObject,
+    addonName: String,
+    role: GatewayRole
+  ) throws -> (arguments: [String], commandTokens: [String]) {
+    let request = try BuiltinGatewayJSONRequest.request(
+      config: config, variables: variables, addonName: addonName, commandOperation: true
+    )
+    guard !forbiddenCommands.contains(request.operation), config["selection"] == nil else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) refuses interactive auth and command selections")
+    }
+    do {
+      let arguments = try GoogleDocumentsGatewaySDK(role: role).buildArgv(
+        operation: request.operation, variables: request.variables
+      )
+      let commandTokens = request.operation.split(separator: " ").map(String.init)
+      return (arguments: arguments, commandTokens: commandTokens)
+    } catch {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) JSON operation does not match its gateway tier catalog")
+    }
+  }
+  #endif
 
   var environment: [String: String]
   var runnerOverride: GoogleDocumentsGatewayRunner?
@@ -165,20 +190,14 @@ private struct GoogleDocumentsGatewayAddonEngine {
     let commandTokens: [String]
     if config["operation"] != nil {
       #if canImport(GoogleDocumentsGatewayCore)
-      let request = try BuiltinGatewayJSONRequest.request(
-        config: config, variables: variables, addonName: input.addon.name, commandOperation: true
+      let built = try GoogleDocumentsGatewayAddonEngine.operationArgv(
+        config: config,
+        variables: variables,
+        addonName: input.addon.name,
+        role: operation.role
       )
-      guard !Self.forbiddenCommands.contains(request.operation), config["selection"] == nil else {
-        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) refuses interactive auth and command selections")
-      }
-      do {
-        arguments = try GoogleDocumentsGatewaySDK(role: operation.role).buildArgv(
-          operation: request.operation, variables: request.variables
-        )
-        commandTokens = request.operation.split(separator: " ").map(String.init)
-      } catch {
-        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) JSON operation does not match its gateway tier catalog")
-      }
+      arguments = built.arguments
+      commandTokens = built.commandTokens
       #else
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
       #endif

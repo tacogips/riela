@@ -1,0 +1,27 @@
+{
+  "fetch": {
+    "provider": "scenario-mock",
+    "when": {"always": true},
+    "payload": {
+      "data": {
+        "searchPosts": {
+          "posts": [
+            {
+              "id": "fixture-post-1",
+              "text": "A quoted \"example\" with {{literal}} text",
+              "createdAt": "2026-10-25T00:00:00Z",
+              "author": {"username": "fixture-author"}
+            },
+            {
+              "id": "fixture-post-2",
+              "text": "A second fixture post",
+              "createdAt": "2026-10-25T00:01:00Z",
+              "author": {"username": "fixture-author"}
+            }
+          ],
+          "pageInfo": {"nextToken": "mock-next"}
+        }
+      }
+    }
+  }
+}

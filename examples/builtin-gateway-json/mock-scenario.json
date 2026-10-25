@@ -2,5 +2,20 @@
   "accounts": {
     "provider": "scenario-mock",
     "payload": {"data": {"accounts": [{"id": "fixture-account"}]}}
+  },
+  "threads": {
+    "provider": "scenario-mock",
+    "payload": {"data": {"threads": {
+      "edges": [{"node": {"id": "fixture-thread-1"}}, {"node": {"id": "fixture-thread-2"}}],
+      "pageInfo": {"hasNextPage": true, "endCursor": "mock-gmail-next"}
+    }}}
+  },
+  "draft": {
+    "provider": "scenario-mock",
+    "payload": {"data": {"createDraft": {
+      "draftId": "fixture-draft",
+      "messageId": "fixture-message",
+      "status": "draft"
+    }}}
   }
 }

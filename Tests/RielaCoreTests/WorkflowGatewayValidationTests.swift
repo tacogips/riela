@@ -173,4 +173,51 @@ final class WorkflowGatewayValidationTests: XCTestCase {
     XCTAssertFalse(errors(apple, config: ["query": .string("q")], env: ["TOKEN": .string("x")]).isEmpty)
     XCTAssertFalse(errors("riela/apple-gateway-schema", config: ["limit": .integer(0)]).isEmpty)
   }
+
+  func testAddonRequestCheckerMapsPathsAndRunsOnlyAfterCoreChecks() {
+    let checkerCalls = LockedCounter()
+    let context = WorkflowValidationContext(addonRequestChecker: { _ in
+      checkerCalls.increment()
+      return [WorkflowGatewayRequestIssue(relativePath: "arguments.accountId", message: "invalid account")]
+    })
+
+    let issue = errors("riela/x-gateway-reader", config: ["operation": .string("lookup")], context: context)
+    XCTAssertEqual(issue.map(\.path), ["workflow.nodes[0].addon.config.arguments.accountId"])
+
+    let coreInvalid = errors("riela/wrike-gateway-read", config: [
+      "queryTemplate": .string("query { tasks { id } }"), "operation": .string("tasks")
+    ], context: context)
+    XCTAssertFalse(coreInvalid.isEmpty)
+    XCTAssertEqual(checkerCalls.value, 1)
+
+    let custom = errors("custom/addon", config: [:], context: context)
+    XCTAssertTrue(custom.isEmpty)
+    XCTAssertEqual(checkerCalls.value, 1)
+    XCTAssertTrue(errors("riela/x-gateway-reader", config: [:]).isEmpty)
+  }
+
+  func testAddonRequestCheckerUsesAddonConfigPathForRootIssues() {
+    let context = WorkflowValidationContext(addonRequestChecker: { _ in
+      [WorkflowGatewayRequestIssue(relativePath: "", message: "bad request")]
+    })
+    let diagnostics = errors("riela/x-gateway-reader", config: [:], context: context)
+    XCTAssertEqual(diagnostics.map(\.path), ["workflow.nodes[0].addon.config"])
+  }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+
+  var value: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return count
+  }
+
+  func increment() {
+    lock.lock()
+    defer { lock.unlock() }
+    count += 1
+  }
 }

@@ -53,7 +53,8 @@ final class WorkflowValidateGatewayContextTests: XCTestCase {
   func testGatewayWorkflowExamplesValidate() async throws {
     let examples = [
       "builtin-gateway-json", "gmail-latest-mail-digest-telegram", "wrike-project-kanban-agent",
-      "apple-gateway-admin", "apple-gateway-packaging-plan"
+      "apple-gateway-admin", "apple-gateway-packaging-plan", "x-gateway-json-search",
+      "notion-gateway-json-sync", "x-window-checkpoint", "x-incremental-posts-kv"
     ]
     for example in examples {
       let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)

@@ -2,16 +2,27 @@ import Foundation
 import RielaAddonSupport
 import RielaCore
 
-// X exposes SDL rather than a GatewaySDKKit catalog. Keep its bounded literal
-// document serializer here until its SDK exports a catalog. Arguments and
-// field-path selections use the shared request contract
-// (`renderGatewayJSONArguments`, `BuiltinGatewayJSONRequest.fieldPaths`) and its
-// `policyBlocked` error code; only the nested `select` object is X-specific.
+// 2026-10-25 R3 outcome B: X 0.1.26 exposes SDL through its public in-process
+// read CLI, while GatewaySDKKit 0.1.1 has no SDL-to-catalog parser. A bounded
+// Query-name scanner checks operation names; this serializer stays the SDK's
+// type authority, and the reader accepts no variables. Nested `select` remains
+// a compatibility alias for `selection`.
 /// JSON mode never interprets argument strings as query source or templates a
 /// second time. The SDK schema remains the authority for operations and types.
 func builtinGatewayXJSONDocument(_ input: WorkflowAddonExecutionInput) throws -> String? {
   let config = input.addon.config ?? [:]
-  let addonName = input.addon.name
+  guard try xGatewayJSONShape(config: config, addonName: input.addon.name) != nil else { return nil }
+  return try xGatewayJSONDocument(
+    config: config, variables: addonVariables(for: input), addonName: input.addon.name
+  )
+}
+
+struct XGatewayJSONShape {
+  var operation: String
+  var selection: JSONObject
+}
+
+func xGatewayJSONShape(config: JSONObject, addonName: String) throws -> XGatewayJSONShape? {
   guard config["operation"] != nil else {
     guard config["arguments"] == nil, config["select"] == nil, config["selection"] == nil else {
       throw xJSONError("X JSON arguments and select require operation")
@@ -43,13 +54,17 @@ func builtinGatewayXJSONDocument(_ input: WorkflowAddonExecutionInput) throws ->
     // X has no catalog default selection.
     throw xJSONError("X JSON mode requires select or selection field paths")
   }
-  let arguments = try renderGatewayJSONArguments(config["arguments"], variables: addonVariables(for: input),
-                                                 addonName: addonName)
+  return XGatewayJSONShape(operation: name, selection: selection)
+}
+
+func xGatewayJSONDocument(config: JSONObject, variables: JSONObject, addonName: String) throws -> String? {
+  guard let shape = try xGatewayJSONShape(config: config, addonName: addonName) else { return nil }
+  let arguments = try renderGatewayJSONArguments(config["arguments"], variables: variables, addonName: addonName)
   let args = try arguments.keys.sorted().map { key in
     try "\(xGraphQLName(key)): \(xGraphQLLiteral(arguments[key]!, depth: 0))"
   }.joined(separator: ", ")
-  let fields = try xGraphQLSelection(selection, depth: 0)
-  let document = "query { \(name)\(args.isEmpty ? "" : "(\(args))") { \(fields) } }"
+  let fields = try xGraphQLSelection(shape.selection, depth: 0)
+  let document = "query { \(shape.operation)\(args.isEmpty ? "" : "(\(args))") { \(fields) } }"
   guard document.utf8.count <= 1_000_000 else {
     throw xJSONError("X JSON query exceeds the size limit")
   }

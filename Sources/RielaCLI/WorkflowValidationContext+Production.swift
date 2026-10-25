@@ -16,7 +16,7 @@ extension WorkflowValidationContext {
       } catch {
         return "invalid postprocess program: \(error)"
       }
-    })
+    }, addonRequestChecker: { BuiltinGatewayRequestChecks.issues($0) })
   }
 
   private static func productionGatewayCatalog(

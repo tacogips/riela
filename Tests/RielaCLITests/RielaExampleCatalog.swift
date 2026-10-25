@@ -53,6 +53,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "note-agent",
     "note-link-extract",
     "note-rag-retrieval-fusion",
+    "notion-gateway-json-sync",
     "open-model-provider-codex",
     "recent-change-quality-loop",
     "required-loop-gate-failure",
@@ -82,6 +83,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "workflow-knowledge-base",
     "wrike-project-kanban-agent",
     "x-follower-ai-business-digest",
+    "x-gateway-json-search",
     "x-incremental-posts-kv",
     "x-window-checkpoint"
   ]

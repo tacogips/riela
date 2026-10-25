@@ -10,6 +10,7 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
   ) async throws -> AdapterExecutionOutput {
+    let mode = try XGatewayProviderFailureMode.parse(input.addon.config ?? [:])
     let deadline = context.deadline
     let document = try builtinGatewayXJSONDocument(input)
     let userCache = try XGatewayUserCacheExchange(input: input, environment: environment)
@@ -30,8 +31,18 @@ extension BuiltinWorkflowAddonResolver {
             deadline: deadline, userCache: userCache, usageCache: usageCache, sdk: sdk)
         }
       })
-    return try await LocalGatewayGraphQLEngine(environment: environment, descriptor: descriptor,
-      runnerOverride: localGatewayGraphQLRunner).execute(input, context: context, documentOverride: document)
+    do {
+      var output = try await LocalGatewayGraphQLEngine(environment: environment, descriptor: descriptor,
+        runnerOverride: localGatewayGraphQLRunner).execute(input, context: context, documentOverride: document)
+      if mode == .output { xGatewayMarkProviderSuccess(&output) }
+      return output
+    } catch let error as AdapterExecutionError {
+      if mode == .output,
+         let output = xGatewayProviderFailureOutput(error, input: input, provider: "x-gateway") {
+        return output
+      }
+      throw error
+    }
   }
 }
 

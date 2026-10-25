@@ -1,0 +1,313 @@
+{
+  "taskId": "issue-176",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/issue-176-gateway-json-remainder",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "fb9286728370a2cd469a71dac4e6e8fa80433b3a",
+  "designDocPaths": [
+    "design-docs/specs/design-gateway-sdk-addons.md",
+    "design-docs/user-qa/qa-issue-176-gateway-json-remainder.md",
+    "design-docs/user-qa/qa-issue-sweep-2026-10-24.md"
+  ],
+  "evidenceRoot": "tmp/issue-176",
+  "reviewContext": {
+    "issueReference": "tacogips/riela#176 (https://github.com/tacogips/riela/issues/176); workflowExecutionId opus-luna-design-and-implement-review-loop-session-488 (continuation of session-482); plans re-accepted by step5-impl-plan-review comm-008914 (reviewDecision accept); gwjson176-01 and gwjson176-06 committed at fb928672 as acceptedDependencies",
+    "userProblem": "The shared JSON input and finite postprocess foundation for builtin gateways is on main (0.2.45, PR #177). Four gaps remain on the riela side. (1) `riela workflow validate` does not check X readers, the legacy container readers, Google Service or Kaiba nested arguments, and it does not check argument names against catalogs. (2) X provider failures are only an opaque providerError, so workflows cannot branch on them. (3) The X-only request path has not been reviewed against the common builder. (4) X and Notion have no script-free practical examples, and the Gmail example covers only `accounts`. There is also no per-gateway behavioral test matrix, and the docs do not separate what riela implements from what is outside riela.",
+    "requiredOutcomes": [
+      "R1: a pure request checker shared by the runtime and validation, exposed as WorkflowValidationContext.addonRequestChecker. It covers catalog GraphQL, Apple full, Docs/Sheets/Drive, both X readers, riela/gmail-gateway-read, Google Service read/write and named kaiba/* arguments. Literal arguments are fully built; templated arguments get key-level checks. A validate-vs-runtime parity table is added to WorkflowGatewayValidationTests.",
+      "R1 entry points: `workflow validate` blocks. `workflow run` prints the production-only findings as non-blocking `warning:` lines on stderr and leaves stdout byte-identical. Every other entry point stays context-free.",
+      "R2: X readers support opt-in `providerFailure: \"output\"`. A provider failure then becomes a completed output with a closed `category`, a `retryable` flag, allowlisted diagnostics, and the when-flags providerFailed/providerRetryable/spendCapReached/rateLimited. Postprocess is skipped on that output. The default mode is byte-identical, and riela never retries (`--retry 0`).",
+      "R3: the X builder is split into a shape phase and a render phase, guarded by golden tests. The SDK fact check picks outcome A, B or C, which is recorded. Nested `select` stays as a documented compatibility alias with a migration rule.",
+      "R4: script-free examples x-gateway-json-search and notion-gateway-json-sync are added, and builtin-gateway-json is extended to accounts → threads → draft. Each has a credential-free mock scenario, README.md and EXPECTED_RESULTS.md. The new examples are registered in rielaExampleWorkflowNames() and expectedMockScenarioCount goes from 45 to 47.",
+      "R5: BuiltinGatewayJSONBehaviorTests covers the 12 families × 9 criteria matrix (C1-C9). Each cell is either an existing test cited in the progress log or a new test.",
+      "R6: docs/builtin-gateway-json.md, docs/workflows/json-data-processing.md and impl-plans/builtin-gateway-json-176.md get the matrix, the common contract, migration notes and an explicit implemented-in-riela vs outside-riela split."
+    ],
+    "nonGoals": [
+      "ART Python migration, private image adoption, App production cutover, release, version bump or deploy.",
+      "No edits to x-gateway, gateway-sdk-kit or other sibling SDK repositories, riela-packages or Package.resolved.",
+      "No blocking gateway validation in `workflow run`, and no new CLI flag, GraphQL field or SurfaceCatalog row.",
+      "No structured failure output for non-X gateways or for writes. No retry anywhere.",
+      "No retirement of nested X `select` and no deprecation warning. Google Service `allPages` is kept but not extended.",
+      "No SDL type parser in riela. No gateway-internal pagination loops.",
+      "No fix of pre-existing red examples such as x-follower-ai-business-digest; they are attributed only."
+    ],
+    "constraints": [
+      "Every swift build/test/swiftlint command runs as `arch -arm64 /bin/zsh -lc '...'` from the repository root, in the foreground, using focused `--filter` suites. The full `swift test` is not a gate.",
+      "Swift plans are chained serially (01 → 02 → 03 → 04 → 05). Only examples-only gwjson176-06 (wave 2, no Swift build, installed /opt/homebrew/bin/riela) and docs-only gwjson176-07 (wave 4) run in parallel.",
+      "Evidence and logs go only under tmp/issue-176/<planId>/ (gitignored) and are never committed.",
+      "Verification records carry integer exitStatus, testsRun and failureCount plus the full logPath. Blockers are dependency objects. Residual-risk text does not start with a severity word. Resolved items use severity fixed.",
+      "Workers use the same branch and working directory: no worktrees, branches, stashes or index-changing git commands. Every file is read fresh before editing, with pre/post sha256 recorded; on drift, stop and hand it to serial repair.",
+      "Runtime records stay owned by the runtime store. Credentials never travel in argument data. addon.env allowlists and permission tiers do not widen.",
+      "Existing legacy modes (queryTemplate, Docs command/flags, fixed product-node inputs, X nested select, Google Service flat mode) keep working with identical errors, codes and order."
+    ],
+    "designDecisionsAndRationale": [
+      "One pure checker per family is shared by runtime and validation, so they agree by construction. Core calls it only when its own shape rules found nothing, to avoid duplicate diagnostics. RielaCore imports no gateway SDK (design R1).",
+      "The checker reads the leaf view (postprocess removed), matching BuiltinPostprocessPlan, so key-set rules agree with the runtime (design R1).",
+      "`workflow run` reports warnings instead of blocking, because a static per-node error may sit on a branch the run never takes, and blocking would need an opt-in surface change (QA item 1).",
+      "Structured failure output is X-only and opt-in. The category table is a closed first-match set and `retryable` is advice only (design R2, QA item 2).",
+      "gwjson176-03 reuses the existing GatewayFailureDiagnostics.fields(readerMessage:) instead of adding a new function. The suffix stays byte-identical by construction. The reviewer accepted this as a low-severity divergence from design R2.",
+      "The X path is decided by an SDK fact check with three outcomes. Outcome A requires AST-equivalence proof and keeps the 1,000,000-byte embedded bound; B and C leave the runtime unchanged (design R3).",
+      "Nested `select` stays silently supported, so existing examples such as x-window-checkpoint stay diagnostic-free (QA item 3)."
+    ],
+    "intentionalTradeoffs": [
+      "Kaiba named add-on argument names and types stay runtime-only, because there is no catalog.",
+      "X argument types stay SDK-side unless R3 reaches outcome A.",
+      "Templated values are checked only at key level statically; value checks are deferred to runtime.",
+      "On non-macOS or SDK-excluded builds, `#if canImport` false skips the catalog-dependent checks.",
+      "gwjson176-07 (docs) runs in wave 4, before gwjson176-05. gwjson176-05 may still make minimal example fixes, so the final integration review must confirm the docs still match any 05 example fixes (reviewer finding, low)."
+    ],
+    "supportedEdgeCases": [
+      "Quotes, newlines and literal `{{...}}` text in argument values are rendered once and reach the provider as data.",
+      "Null vs missing arguments and map fields; empty arrays preserved in arguments and in processed.",
+      "Exact-placeholder `arguments` defers everything except the mode, operation and selection checks.",
+      "8 MiB argument bound, 120,000-byte container document bound, and postprocess limits (10,000 entries / 8 MiB).",
+      "A postprocess failure after a write keeps exactly one runner call, with postprocessFailed and retryProvider false.",
+      "X output mode never converts policy errors, the node deadline timeout, invalidOutput or undiagnosed failures (for example a missing container image).",
+      "A mock-scenario output with when.providerFailed true skips postprocess shaping.",
+      "Pagination cursors (pageInfo.nextToken, endCursor, nextPageToken) are preserved next to processed."
+    ],
+    "outOfScopeEdgeCases": [
+      "Structured failure metadata for Gmail, Notion, Wrike, Apple, Google or Kaiba gateways.",
+      "Static validation in inspect, catalog commands, task dispatch, RielaWorkflowRegistry, RielaServer, GraphQL or the console.",
+      "Live credentialed runs of the new examples; only mock scenarios are verified.",
+      "An X writer tier or X write examples."
+    ],
+    "ownershipNotes": [
+      "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift was created as a stub by gwjson176-01 (now an acceptedDependency at fb928672) and is owned only by gwjson176-02 among the remaining plans. gwjson176-02 must still fix GW176-02-TI-1 (the post-render Google Service write subset guard) before it is complete.",
+      "Sources/RielaCLI/ContainerGatewayAddonExecutor.swift is in the gwjson176-02 writePaths and the gwjson176-03 sharedPaths. The handoff is serial (03 dependsOn 02).",
+      "examples/x-gateway-json-search, examples/notion-gateway-json-sync and examples/builtin-gateway-json are in the gwjson176-06 writePaths and the gwjson176-05 sharedPaths (minimal fixes only). The handoff is serial (05 dependsOn 06)."
+    ],
+    "residualRisks": [
+      "The R3 SDK fact-check outcome is unknown until gwjson176-02 runs. All three outcomes are specified, with an AST-equivalence guard for outcome A.",
+      "Pre-existing RielaExampleParityTests failures (x-follower-ai-business-digest) may recur. gwjson176-05 carries the baseline attribution (git archive of origin/main 18f22b7d) and the direct-run procedure.",
+      "Notion and Gmail draft operation and input names come from the installed 0.2.59 catalogs. gwjson176-05 re-validates them against the worktree pin."
+    ],
+    "codexAgentReferences": [],
+    "sourcePaths": [
+      "design-docs/specs/design-gateway-sdk-addons.md",
+      "design-docs/user-qa/qa-issue-176-gateway-json-remainder.md",
+      "design-docs/user-qa/qa-issue-sweep-2026-10-24.md",
+      "impl-plans/builtin-gateway-json-176.md",
+      "docs/builtin-gateway-json.md",
+      "docs/workflows/json-data-processing.md",
+      "impl-plans/active/gwjson176-01-validation-contract.md",
+      "impl-plans/active/gwjson176-02-x-legacy-gs-kaiba-checks.md",
+      "impl-plans/active/gwjson176-03-x-failure-output.md",
+      "impl-plans/active/gwjson176-04-behavior-matrix.md",
+      "impl-plans/active/gwjson176-05-example-registration.md",
+      "impl-plans/active/gwjson176-06-examples-authoring.md",
+      "impl-plans/active/gwjson176-07-docs.md"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "gwjson176-02",
+      "planPath": "impl-plans/active/gwjson176-02-x-legacy-gs-kaiba-checks.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
+        "Sources/RielaCLI/BuiltinGatewayJSONRequest+XCompatibility.swift",
+        "Sources/RielaCLI/XGatewayProviderFailureMode.swift",
+        "Sources/RielaCLI/XGatewayOperationCatalog.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GoogleServiceGatewayAddons.swift",
+        "Sources/RielaCLI/ContainerGatewayAddonExecutor.swift",
+        "Sources/RielaKaibaAddons/KaibaAddonInputs.swift",
+        "Tests/RielaCLITests/XGatewayJSONDocumentGoldenTests.swift",
+        "Tests/RielaCLITests/LegacyWorkflowGatewayValidationTests.swift",
+        "Tests/RielaKaibaAddonsTests/KaibaWorkflowGatewayValidationTests.swift",
+        "impl-plans/active/gwjson176-02-x-legacy-gs-kaiba-checks.md",
+        "impl-plans/progress/gwjson176-02.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/BuiltinGatewayJSONRequest+Inline.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/BuiltinGatewayJSONRequest+Inline.swift",
+          "intendedEdit": "Only if the R3 fact check gives outcome A: add a defaulted maximumBytes parameter to inlineReaderDocument (default ContainerGatewayAddon.legacyDocumentByteLimit) so the embedded X reader keeps its 1,000,000-byte bound. No other edit; untouched for outcomes B and C."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "X goldens are captured before the refactor and pass byte-identical after it, or are AST-equal under outcome A.",
+        "extendedIssues covers both X readers, riela/gmail-gateway-read, Google Service read/write and named kaiba/* arguments. Every LegacyWorkflowGatewayValidationTests and KaibaWorkflowGatewayValidationTests parity row passes. The providerFailure runtime row is marked pending for gwjson176-03.",
+        "Runtime errors, codes and order are unchanged, as shown by the regression filter passing.",
+        "The R3 commands, outputs and the chosen outcome (A, B or C) with rationale are recorded in impl-plans/progress/gwjson176-02.md.",
+        "x-window-checkpoint and x-incremental-posts-kv still validate. All commands exit 0 with counts recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-176/gwjson176-02",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-176/gwjson176-02/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter XGatewayJSONDocumentGoldenTests > tmp/issue-176/gwjson176-02/golden.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowGatewayValidationTests > tmp/issue-176/gwjson176-02/validation.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'BuiltinGatewayJSONRequestTests|LegacyGatewayJSONRequestTests|XGatewaySDKAddonTests|XGatewayEmbeddedReaderRuntimeTests|XGatewayContainerReaderTests|GoogleServiceGatewayAddonTests|KaibaStructuredArgumentsTests' > tmp/issue-176/gwjson176-02/regression.log 2>&1\"",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate x-window-checkpoint --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-02/validate-x-window.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate x-incremental-posts-kv --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-02/validate-x-kv.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift Sources/RielaCLI/BuiltinGatewayJSONRequest+XCompatibility.swift Sources/RielaCLI/XGatewayProviderFailureMode.swift Sources/RielaCLI/ProductionNodeAdapter+GoogleServiceGatewayAddons.swift Sources/RielaCLI/ContainerGatewayAddonExecutor.swift Sources/RielaKaibaAddons/KaibaAddonInputs.swift > tmp/issue-176/gwjson176-02/lint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "gwjson176-03",
+      "planPath": "impl-plans/active/gwjson176-03-x-failure-output.md",
+      "dependsOn": [
+        "gwjson176-02"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/XGatewayProviderFailureOutput.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+XGatewaySDKAddon.swift",
+        "Sources/RielaCLI/BuiltinPostprocessPlan.swift",
+        "Tests/RielaCLITests/XGatewayProviderFailureOutputTests.swift",
+        "impl-plans/active/gwjson176-03-x-failure-output.md",
+        "impl-plans/progress/gwjson176-03.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/ContainerGatewayAddonExecutor.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/ContainerGatewayAddonExecutor.swift",
+          "intendedEdit": "For gateway == .xRead only: parse XGatewayProviderFailureMode before launch, and wrap the existing execute body so an AdapterExecutionError(.providerError) with recognized diagnostics becomes the failure output in output mode. The gwjson176-02 operationDocument/legacyModeIssue extraction stays untouched."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "XGatewayFailureCategory.classify follows the design R2 first-match table exactly, and only rate-limited and transient are retryable.",
+        "In `providerFailure: \"output\"` mode, both X readers return a completed provider-failed output with category, retryable, diagnostics and the four when-flags. Default and explicit `\"fail\"` modes are byte-identical to the pinned pre-change message.",
+        "Timeout, policyBlocked, invalidOutput, cancellation and undiagnosed failures are still thrown. Postprocess is skipped on failure output, including mock outputs with when.providerFailed true.",
+        "No isRetryable or retryAfter is set, and `--retry 0` is unchanged. The XGatewayProviderFailureOutputTests and regression filter pass with testsRun > 0 and failureCount 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-176/gwjson176-03",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-176/gwjson176-03/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter XGatewayProviderFailureOutputTests > tmp/issue-176/gwjson176-03/failure-output.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'XGatewayEmbeddedReaderRuntimeTests|XGatewayContainerReaderTests|XGatewaySDKAddonTests|LegacyGatewayJSONRequestTests|KaibaGatewayPostprocessTests|BuiltinGatewayJSONRequestTests|JSONDataTransform|WorkflowGatewayValidationTests' > tmp/issue-176/gwjson176-03/regression.log 2>&1\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/XGatewayProviderFailureOutput.swift Sources/RielaCLI/ProductionNodeAdapter+XGatewaySDKAddon.swift Sources/RielaCLI/BuiltinPostprocessPlan.swift Sources/RielaCLI/ContainerGatewayAddonExecutor.swift > tmp/issue-176/gwjson176-03/lint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "gwjson176-04",
+      "planPath": "impl-plans/active/gwjson176-04-behavior-matrix.md",
+      "dependsOn": [
+        "gwjson176-03"
+      ],
+      "writePaths": [
+        "Tests/RielaCLITests/BuiltinGatewayJSONBehaviorTests.swift",
+        "impl-plans/active/gwjson176-04-behavior-matrix.md",
+        "impl-plans/progress/gwjson176-04.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "The progress log contains the full 12×9 family × criterion matrix. Every cell names an existing or new test (Suite/testName) or `n/a: <reason>`.",
+        "Every new test asserts provider call counts. Each C6 write-tier cell asserts exactly one write call, completionPassed, postprocessFailed and retryProvider false.",
+        "Tests only, with no source edits. A runtime bug found here is recorded as a blocker dependency object.",
+        "Build, behavior suite and lint exit 0 with testsRun > 0 and failureCount 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-176/gwjson176-04",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests > tmp/issue-176/gwjson176-04/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter BuiltinGatewayJSONBehaviorTests > tmp/issue-176/gwjson176-04/behavior.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Tests/RielaCLITests/BuiltinGatewayJSONBehaviorTests.swift > tmp/issue-176/gwjson176-04/lint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "gwjson176-05",
+      "planPath": "impl-plans/active/gwjson176-05-example-registration.md",
+      "dependsOn": [
+        "gwjson176-04"
+      ],
+      "writePaths": [
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/WorkflowValidateGatewayContextTests.swift",
+        "impl-plans/active/gwjson176-05-example-registration.md",
+        "impl-plans/progress/gwjson176-05.md"
+      ],
+      "sharedPaths": [
+        "examples/x-gateway-json-search",
+        "examples/notion-gateway-json-sync",
+        "examples/builtin-gateway-json"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "examples/x-gateway-json-search",
+          "intendedEdit": "Minimal fixes only, when validation with the production context or the Swift mock run rejects the gwjson176-06 bundle (operation, argument or selection names, payload shape). Record each fix and its cause."
+        },
+        {
+          "path": "examples/notion-gateway-json-sync",
+          "intendedEdit": "Same minimal-fix rule (for example, Notion operation or argument names rejected by the pinned catalog)."
+        },
+        {
+          "path": "examples/builtin-gateway-json",
+          "intendedEdit": "Same minimal-fix rule (for example, Gmail threads or sendMessage input fields)."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "notion-gateway-json-sync and x-gateway-json-search are registered in sorted position, expectedMockScenarioCount is 47, and x-gateway-json-search, notion-gateway-json-sync, x-window-checkpoint and x-incremental-posts-kv are added to testGatewayWorkflowExamplesValidate.",
+        "RielaExampleParityTests passes, or its only failures are pre-existing untouched examples attributed with baseline evidence from a git archive of origin/main. In that case, skip-plus-direct-run evidence is present.",
+        "The three touched examples validate and mock-run to status completed with the worktree binary, and no `warning: workflow.nodes` line appears in run stderr.",
+        "Any example fix is recorded with its cause. All verification records have integer exitStatus, testsRun and failureCount."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-176/gwjson176-05",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-176/gwjson176-05/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowValidateGatewayContextTests > tmp/issue-176/gwjson176-05/context.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RielaExampleParityTests > tmp/issue-176/gwjson176-05/parity.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate x-gateway-json-search --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-05/validate-x.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate notion-gateway-json-sync --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-05/validate-notion.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate builtin-gateway-json --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-05/validate-gmail.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run x-gateway-json-search --workflow-definition-dir ./examples --mock-scenario ./examples/x-gateway-json-search/mock-scenario.json --session-store tmp/issue-176/gwjson176-05/sessions-x --output json > tmp/issue-176/gwjson176-05/run-x.json 2> tmp/issue-176/gwjson176-05/run-x.err'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run notion-gateway-json-sync --workflow-definition-dir ./examples --mock-scenario ./examples/notion-gateway-json-sync/mock-scenario.json --session-store tmp/issue-176/gwjson176-05/sessions-notion --output json > tmp/issue-176/gwjson176-05/run-notion.json 2> tmp/issue-176/gwjson176-05/run-notion.err'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run builtin-gateway-json --workflow-definition-dir ./examples --mock-scenario ./examples/builtin-gateway-json/mock-scenario.json --session-store tmp/issue-176/gwjson176-05/sessions-gmail --output json > tmp/issue-176/gwjson176-05/run-gmail.json 2> tmp/issue-176/gwjson176-05/run-gmail.err'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Tests/RielaCLITests/RielaExampleCatalog.swift Tests/RielaCLITests/RielaExampleParityTests.swift Tests/RielaCLITests/WorkflowValidateGatewayContextTests.swift > tmp/issue-176/gwjson176-05/lint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "gwjson176-07",
+      "planPath": "impl-plans/active/gwjson176-07-docs.md",
+      "dependsOn": [
+        "gwjson176-03"
+      ],
+      "writePaths": [
+        "docs/builtin-gateway-json.md",
+        "docs/workflows/json-data-processing.md",
+        "impl-plans/builtin-gateway-json-176.md",
+        "impl-plans/active/gwjson176-07-docs.md",
+        "impl-plans/progress/gwjson176-07.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "docs/builtin-gateway-json.md has the extended matrix (Static validation, Failure metadata, Example columns) covering every design R1 family plus the Apple product nodes and Kaiba GraphQL compatibility rows. It also has the Common input/output contract, X provider failure output (category order copied from the source), X request path (R3 outcome from the gwjson176-02 log), the finite postprocess table with project and the map forms, migration notes, and an 'Implemented in riela vs outside riela' section.",
+        "docs/workflows/json-data-processing.md switches the X example to selection, with a select compatibility note and a providerFailure link.",
+        "impl-plans/builtin-gateway-json-176.md marks requirements 1, 3 and 4 and the examples criterion as implemented on the branch, and keeps the outside-riela items open. No release or deployment claim is made.",
+        "The grep checks and git diff --check exit 0, and every added relative link resolves (test -e recorded)."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-176/gwjson176-07",
+        "grep -n \"Implemented in riela vs outside riela\" docs/builtin-gateway-json.md > tmp/issue-176/gwjson176-07/split.log",
+        "grep -n \"providerFailure\" docs/builtin-gateway-json.md docs/workflows/json-data-processing.md > tmp/issue-176/gwjson176-07/failure.log",
+        "grep -n \"x-gateway-json-search\\|notion-gateway-json-sync\" docs/builtin-gateway-json.md > tmp/issue-176/gwjson176-07/examples.log",
+        "grep -n '\"project\"' docs/builtin-gateway-json.md > tmp/issue-176/gwjson176-07/project.log",
+        "git diff --check -- docs/builtin-gateway-json.md docs/workflows/json-data-processing.md impl-plans/builtin-gateway-json-176.md > tmp/issue-176/gwjson176-07/diff-check.log 2>&1"
+      ]
+    }
+  ],
+  "acceptedDependencies": [
+    {
+      "planId": "gwjson176-01",
+      "planPath": "impl-plans/active/gwjson176-01-validation-contract.md",
+      "commit": "fb9286728370a2cd469a71dac4e6e8fa80433b3a",
+      "provides": "WorkflowGatewayRequestIssue, WorkflowValidationContext.addonRequestChecker, BuiltinGatewayRequestChecks (issues, leafConfig, containsTemplate, isExactPlaceholder, catalogArgumentNameIssues), the BuiltinGatewayRequestChecks+Extended.swift extendedIssues stub that gwjson176-02 replaces, catalog-family parity rows, and non-blocking `workflow run` warning lines."
+    },
+    {
+      "planId": "gwjson176-06",
+      "planPath": "impl-plans/active/gwjson176-06-examples-authoring.md",
+      "commit": "fb9286728370a2cd469a71dac4e6e8fa80433b3a",
+      "provides": "Script-free example bundles examples/x-gateway-json-search, examples/notion-gateway-json-sync and the extended examples/builtin-gateway-json (accounts → threads → draft), each with a mock scenario, README.md and EXPECTED_RESULTS.md, validated and mock-run with the installed CLI."
+    }
+  ]
+}

@@ -390,7 +390,9 @@ contradict.
   - Apple passthrough with inputs precedence and template-dependent values;
   - empty `arguments`; the default selection;
   - renamed add-on diagnostics.
-- **Still runtime-only** (remaining #176 work):
+- **Still runtime-only** (remaining #176 work, designed in "#176 remainder"
+  below, which supersedes this list and the V0 "run preflight stays
+  context-free" sentence):
   - X readers, including the nested `select` compatibility;
   - legacy container readers (`riela/x-gateway-read`,
     `riela/gmail-gateway-read`);
@@ -405,6 +407,259 @@ example: `examples/builtin-gateway-json`, `gmail-latest-mail-digest-telegram`,
 and `apple-gateway-packaging-plan`. `docs/builtin-gateway-json.md` and
 `impl-plans/builtin-gateway-json-176.md` record V0–V5 as done. ART migration,
 release and deployment remain open.
+
+### #176 remainder (2026-10-25)
+
+Scope: the riela-side gaps in `impl-plans/builtin-gateway-json-176.md`
+("What remains of #176, by requirement"). ART Python migration, private image
+adoption, App cutover and release/deploy remain outside riela and outside this
+design. Everything not named here (V0–V5, Apple host preparation, postprocess
+semantics, user/usage caches, transport parity) is unchanged. Intake mapping:
+(A) static validation → R1, (B) X failure metadata → R2, (C) X path review →
+R3, (D) examples → R4, (E) behavioral tests → R5, (F) docs and rollout → R6.
+
+#### R1. One request checker shared by runtime and validation
+
+Each gateway's runtime pre-effect request check moves into a pure function
+(no I/O, credentials, clock or provider call). The runtime and `riela workflow
+validate` both call that same function, so they agree by construction.
+
+- `WorkflowValidationContext` gains one optional closure,
+  `addonRequestChecker: (WorkflowNodeAddonRef) -> [(relativePath, message)]`.
+  `WorkflowValidationContext.production()` implements it in `RielaCLI`.
+  `RielaCore` still imports no gateway SDK.
+- Core calls the checker for `riela/*` and `kaiba/*` add-ons only when its own
+  shape rules found no error for that node, so a node never gets duplicate
+  diagnostics. Checker issues are errors at
+  `workflow.nodes[i].addon.config.<relativePath>`. Messages never echo argument
+  values (same rule as the runtime errors).
+- The checker reads the leaf view: `postprocess` is removed first, as
+  `BuiltinPostprocessPlan` does before execution. Key-set rules such as
+  `config ⊆ {operation, arguments}` therefore match the runtime.
+- **Literal vs templated.** If the `arguments` subtree contains no `{{`, the
+  checker runs the full runtime builder with empty variables. If it contains a
+  placeholder, value-level checks are deferred to runtime. Key-level checks
+  still run on an object: argument names, required-argument presence, and
+  forbidden keys. An exact-placeholder `arguments` (`"{{input.args}}"`) defers
+  everything except mode/operation/selection checks.
+
+Per family:
+
+| Family | Static checks added | Source of truth |
+| --- | --- | --- |
+| Catalog GraphQL (Wrike, Analytics, Gmail reader/draft/sender, Notion) | literal: `BuiltinGatewayJSONRequest.document` (argument names, types, enums, selection fields, single root field); templated: names ⊆ catalog operation arguments, every `isRequired` argument present | pinned `GatewaySchemaCatalog` |
+| Apple `riela/apple-gateway-graphql` (`full`) | same as catalog GraphQL, only when `addon.inputs` is absent (inputs override config at runtime) | Apple `full` catalog |
+| Docs/Sheets/Drive | literal: the same request + `buildArgv` + forbidden-command check, extracted into one pure function; templated: names against catalog command arguments | Documents role catalog |
+| `riela/x-gateway-reader`, `riela/x-gateway-read` | mode mixing, literal operation, `select` XOR `selection`, selection depth/conflicts, `providerFailure` value (R2); literal: the full X document build, the embedded reader's `mediaRootDir` token rule, and the container's 120,000-byte limit | X shape/serializer split (R3) |
+| `riela/gmail-gateway-read` | operation mode: as Gmail reader plus `inlineReaderDocument` and the 120,000-byte limit (literal only); legacy mode: non-empty `queryTemplate`, no `arguments`/`selection`/`select` | Gmail reader catalog |
+| `riela/google-service-gateway-read`/`-write` | non-empty operation in the tier allowlist; in `arguments` mode: config ⊆ {operation, arguments}, no `addon.inputs`, names ⊆ the operation table; literal: required keys present and JSON-typed (string, string array, integer, Boolean, `state` enum) | one static table shared with the runtime engine |
+| named `kaiba/*` with `config.arguments` | config ⊆ {arguments, kaibaInstanceId}, no `addon.inputs`, object (or exact placeholder), keys disjoint from connection keys; GraphQL compatibility nodes: `query`/`document`/`operationName` are strings without `{{` | pure function extracted from `KaibaAddonInputs.init` |
+
+The Google Service table's type rules copy the runtime `GatewayAddonValues`
+accessors exactly. Any value an accessor accepts or converts today must pass
+statically; the parity table enforces this.
+Kaiba named add-ons have no argument catalog, so names/types stay runtime-only.
+X argument types stay SDK-side unless R3 finds an SDL source.
+SDK-excluded builds (`#if canImport` false) skip the catalog-dependent rows, as
+V0 does.
+
+**Parity table.** `WorkflowGatewayValidationTests` gets a table test with at
+least one valid, one invalid-literal and one templated-deferred case for each
+family above. For each row, `validate` must report an error exactly when the
+runtime, through the same resolver with stub runners, throws before any runner
+call (call count 0). Valid and deferred rows must reach the runner (count 1).
+The runtime error code is recorded per row (`policyBlocked`, or `invalidInput`
+where the runtime uses it today). Every example listed in
+`testGatewayWorkflowExamplesValidate`, plus the new examples (R4) and the
+existing X examples, must still validate.
+
+**Entry points.**
+
+- `riela workflow validate`: blocking, as today.
+- `riela workflow run`: every path through
+  `WorkflowRunCommand.validateEffectiveSessionPolicies` also evaluates the
+  production context before effects. Errors that only the production context
+  finds (the set difference against the context-free run) are printed to
+  stderr as `warning:` lines and do not block the run. The context-free errors
+  still block, as today.
+  - Rationale: a static per-node error is not provably equivalent to a runtime
+    failure, because the node may sit on a branch this run never takes.
+    Blocking would also change behavior without an opt-in. Adding an opt-in
+    flag would extend the `workflow.run` SurfaceCatalog row and GraphQL
+    `executeWorkflow`, which this issue does not need.
+- Inspect, catalog commands, task dispatch, the registry
+  (`RielaWorkflowRegistry`), the server (`RielaServer`), GraphQL and the
+  console stay context-free. `RielaWorkflowRegistry` and `RielaServer` do not
+  link the gateway SDKs, and the runtime still fails closed. This list is
+  documented in `docs/builtin-gateway-json.md`.
+
+#### R2. Finite X failure metadata, opt-in failure output
+
+`GatewayFailureDiagnostics` gains one function that returns the allowlisted
+fields as a JSON object. The existing suffix string is rendered from that
+object, so its text stays byte-identical (golden test). Failure messages,
+codes and step failure reasons in the default mode do not change.
+
+Both X readers accept `config.providerFailure`: `"fail"` (default, current
+behavior) or `"output"`. Any other value is `policyBlocked` before the call,
+and the R1 checker reports it statically. With `"output"`:
+
+- A provider failure becomes a completed output (`completionPassed: true`,
+  `status: "provider-failed"`) carrying `xGateway.failure =
+  {category, retryable, diagnostics}`. A provider failure here means a non-ok
+  SDK envelope, or a container exit/envelope error whose diagnostics contain an
+  allowlisted `code`. `diagnostics` holds only the allowlisted fields. Usage
+  and user-cache observations are preserved as today.
+- Not converted (still thrown): riela policy errors before the call, the node
+  deadline `timeout`, `invalidOutput`, and failures with no recognized
+  diagnostics (for example a missing container image).
+- `when` gets `providerFailed`, `providerRetryable`, `spendCapReached` and
+  `rateLimited`. All four are false on success, so labeled transitions can
+  branch (first match). Postprocess is skipped on a failure output
+  (`postprocess.status: "skipped"`, both postprocess flags false), so shaping
+  never misreports a missing provider payload.
+
+`category` is a closed set. The first matching rule wins:
+
+1. `spend-cap-reached`: providerProblem `spend-cap-reached`/`usage-capped`, or
+   providerReason `usage-capped` (retryable false).
+2. `rate-limited`: code `RATE_LIMITED`/`PROVIDER_RATE_LIMITED`, providerProblem
+   `rate-limit-exceeded`, classification `rate_limit`, or HTTP 429 (true).
+3. `auth`: `AUTH_*`, `CREDENTIAL_NOT_FOUND`, classification `auth`, or HTTP 401
+   (false).
+4. `permission`: `PERMISSION_DENIED`, `ACCESS_MODE_INSUFFICIENT`, classification
+   `permission`, the remaining 403 providerProblems, or HTTP 403 (false).
+5. `invalid-request`: `VALIDATION_ERROR`, `INVALID_ARGUMENT`, `CONFIG_INVALID`,
+   classification `validation`, providerProblem `invalid-request`, or HTTP
+   400/422 (false).
+6. `not-found`: `RESOURCE_NOT_FOUND`, providerProblem `resource-not-found`, or
+   HTTP 404 (false).
+7. `transient`: `NETWORK_FAILURE`, `UPSTREAM_FAILURE` with no status or a
+   status ≥ 500, classification `network`/`upstream`, or SDK `retryable=true`
+   (true).
+8. `unknown` (false).
+
+`retryable` comes from this table only. It is advice for workflow branches.
+Riela never retries: X stays `--retry 0`, `AdapterExecutionError.isRetryable`
+stays unset, and no loop is added. X readers are read-only, so no write can be
+re-sent. Other gateways keep their current failure behavior (see the user-QA
+file).
+
+#### R3. X request path review
+
+- Split `builtinGatewayXJSONDocument` into a shape phase (mode, operation,
+  `select`/`selection` tree) and a render phase (shared
+  `renderGatewayJSONArguments` and the literal serializer). R1 uses the shape
+  phase alone for templated arguments. Golden tests pin the documents built
+  for a fixed config set before and after the split. `select` and the
+  equivalent `selection` must produce the identical document.
+- **SDK fact check (first task of the X plan; record the outcome in the plan
+  and docs).** Does pinned X SDK 0.1.26 expose its read SDL through a public
+  API or an in-process CLI subcommand, with no network or credentials? Does
+  pinned GatewaySDKKit 0.1.1 publicly build a `GatewaySchemaCatalog` from SDL?
+  - Both yes: the X readers move to `BuiltinGatewayJSONRequest.document` plus
+    literal inline serialization, as the Gmail container reader does. The X
+    serializer is deleted, `select` is kept only as a conversion to
+    `selection`, and R1 gains full X catalog checks.
+  - SDL only: derive the Query root-field name set with a bounded scanner and
+    use it only for the unknown-operation check. A golden test pins the
+    derived set. Riela gets no SDL type parser.
+  - Neither: the serializer stays as is.
+- **Kept and why.** The literal serializer stays because there is no kit
+  catalog and the X reader accepts no variables (`acceptsVariables: false`).
+  The SDK stays the authority for argument types. Nested `select` stays as a
+  documented compatibility alias. No path is retired. Migration: each `true`
+  leaf becomes a dot-path entry, for example
+  `{"posts":{"id":true,"author":{"username":true}}}` becomes
+  `["posts.id","posts.author.username"]`. No validate warning is added, so
+  existing examples such as `x-window-checkpoint` stay diagnostic-free.
+  Riela has no X Python helper to remove; ART's helpers are outside riela.
+
+#### R4. Examples
+
+Every example is executable with a credential-free `mock-scenario.json` and
+has README.md and EXPECTED_RESULTS.md. Each uses only JSON
+`operation`/`arguments`/`selection`/`postprocess` (plus `riela/json-transform`
+or `riela/collection-checkpoint`), with no Python, shell or jq.
+
+- **New X example.** `riela/x-gateway-reader` with
+  `providerFailure: "output"`, a `selection` that includes `pageInfo.nextToken`,
+  a cursor argument from `{{workflowInput.cursor}}` (null on the first page),
+  and postprocess pick/unique/map/take. Labeled branches handle
+  `providerRetryable` (record "retry later" without looping),
+  `providerFailed`/`postprocessFailed` (report), and a default (shape
+  `{items, nextCursor}`). X has no riela writer tier, so the example does not
+  write.
+- **New Notion example.** Read with a cursor argument, then
+  `riela/notion-gateway-write` creates one page from typed `processed` data
+  (a write). Operation names come from the pinned Notion catalog and must pass
+  `workflow validate` on macOS.
+- **Gmail.** Extend `examples/builtin-gateway-json` beyond `accounts` with a
+  cursor-bearing reader operation (`threads`) and one `riela/gmail-gateway-draft`
+  write. The mock count for Gmail is unchanged, and EXPECTED_RESULTS.md is
+  added.
+- Pagination stays workflow-controlled. The original cursor is preserved, and
+  the caller (or `riela/collection-checkpoint`, as in `x-window-checkpoint`)
+  passes it to the next run. No gateway loop is added.
+- Register the two new names in `rielaExampleWorkflowNames()` and raise
+  `ExampleCatalog.expectedMockScenarioCount` by 2 in the same change.
+  `expectedNodeMockScenarioCount` is unchanged. Mock runs must not need
+  per-example variables in `testMockScenarioExamplesRunThroughSwiftCLI`.
+
+#### R5. Behavioral test matrix
+
+Add one new focused suite (for example `BuiltinGatewayJSONBehaviorTests`) that
+uses the existing seams: `localGatewayGraphQLRunner`,
+`XGatewayReaderSDK.invocationOverride`, the container runner, the Google
+Service `clientFactory`, and the Kaiba injected HTTP client. Each family covers
+the cases that apply to it:
+
+- quotes, newlines and `{{...}}` text inside argument values reach the
+  provider as data, rendered once;
+- null vs missing arguments and map fields;
+- empty arrays;
+- invalid specs (`policyBlocked`, zero runner calls);
+- the 8 MiB argument bound, the 120,000-byte legacy bound, and postprocess
+  limits;
+- for write tiers (Wrike write, Notion write, Gmail draft/sender, Docs write,
+  Google Service write, Apple mutation): a postprocess failure after a write
+  keeps exactly one runner call, `postprocessFailed`, `retryProvider: false`,
+  and no step retry;
+- tier boundaries (a reader rejects a mutation or writer operation, Google
+  Service read rejects `services.enable`, Kaiba arguments cannot set the
+  connection);
+- pagination metadata preserved next to `processed`;
+- legacy modes still work (`queryTemplate`, Docs command/flags, X `select`,
+  Google Service flat mode including its existing `allPages`, which is kept
+  for compatibility and not used by examples).
+
+macOS-only SDK cases use `#if canImport` and are skipped elsewhere.
+
+#### R6. Rollout and verification constraints
+
+- All Swift work shares one package, so the plans are chained:
+  R1 → R2 → R3 → R5 → R4 (R4 edits the RielaCLITests catalog/parity files).
+  Only the docs plan (`docs/builtin-gateway-json.md`, including adding the
+  missing `project` operation to its postprocess table;
+  `docs/workflows/json-data-processing.md`, switching its example to
+  `selection`; and `impl-plans/builtin-gateway-json-176.md`) may run in
+  parallel. It records the implemented-vs-outside-riela split and the R3
+  outcome last.
+- Verify with focused filters only, each inside `arch -arm64 /bin/zsh -lc`:
+  `swift build`, `WorkflowGatewayValidationTests`,
+  `WorkflowValidateGatewayContextTests`, `JSONDataTransform`,
+  `BuiltinGatewayJSONRequestTests`, the new behavior suite,
+  `RielaExampleParityTests`, and `swiftlint lint --quiet`.
+- `testMockScenarioExamplesRunThroughSwiftCLI` may already fail on
+  `x-follower-ai-business-digest` with VALIDATION_ERROR. Attribute it with
+  `--skip` only after reproducing it on a clean detached worktree of
+  `origin/main` (18f22b7d). Any other pre-existing failure needs the same
+  proof. That skip removes the whole mock-run test, so it would also hide the
+  new examples. When the skip is used, each R4 example must also be run
+  directly (`.build/debug/riela workflow validate` and
+  `workflow run <name> --workflow-definition-dir ./examples --mock-scenario
+  ... --output json`, logs under `tmp/issue-176/`), and
+  `testAllRielaExampleWorkflowsArePortedAndValidateInSwift` must still pass.
 
 ## Provider wiring and compatibility
 

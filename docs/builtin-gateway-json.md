@@ -1,8 +1,9 @@
 # Built-in gateway JSON requests
 
-Available in Riela 0.2.45, tracked by issue #176. Riela-side workflow
-validation/catalog reconciliation for linked built-in gateways is implemented;
-the complete ART migration and production cutover remain unfinished.
+The shared JSON request and finite postprocess foundation shipped in Riela
+0.2.45 (PR #177). The remaining riela-side #176 work described here is
+implemented on `feat/issue-176-gateway-json-remainder`; it has not been released.
+ART migration, private-image adoption and App production cutover remain open.
 
 Gateway nodes can receive typed JSON and shape their results without a Python,
 shell or JavaScript helper. The workflow still owns pagination, retries,
@@ -10,21 +11,21 @@ concurrency and per-item failure handling.
 
 ## Available input surfaces
 
-| Add-on family | JSON request | Selection | Execution boundary |
-| --- | --- | --- | --- |
-| `riela/x-gateway-reader` | literal `operation`, object `arguments` | required field-path `selection`, or compatibility nested `select` | linked read-only SDK; host or private worker |
-| `riela/x-gateway-read` | same X JSON contract | same X fields | existing reader container and explicit environment framing |
-| `riela/gmail-gateway-reader`, `-draft`, `-sender` | literal `operation`, object `arguments` | optional field paths, literal selection set, or catalog default | fixed-mode async SDK; host or Linux worker |
-| `riela/gmail-gateway-read` | same reader JSON contract | same reader selections | existing reader container; validated typed values become document literals |
-| `riela/wrike-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | fixed-tier linked gateway |
-| `riela/google-analytics-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | fixed-tier linked gateway, macOS build |
-| `riela/notion-gateway-read`, `-write` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | fixed-role SDK, macOS build |
-| `riela/google-docs-gateway-read`, `-write`; `google-sheet-gateway-read`, `-write`; `google-drive-gateway-read`, `-write` | literal catalog command in `operation`, object `arguments` | no selection; shape the result with postprocess | fixed-role SDK argv construction and existing command runner, macOS build |
-| `riela/google-service-gateway-read`, `-write` | literal operation such as `services.get`, object `arguments` | no selection; shape the result with postprocess | existing typed service client |
-| `riela/apple-gateway-graphql` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | macOS SDK; container requests are prepared on the host and use its existing exact-argv bridge |
-| Apple Notes, Mail, Calendar, Reminders, notifications and clock product nodes | operation fixed by add-on name; existing JSON `config`/`inputs` | fixed SDK query and output projection | existing native boundary and scoped host bridge |
-| named `kaiba/*` nodes | operation fixed by add-on name; object `arguments` | existing typed result projection | preflight-captured HTTP client; host or worker |
-| Kaiba GraphQL compatibility nodes | `arguments` containing `query` and optional `variables` | authored GraphQL document | same preflight-captured HTTP client |
+| Add-on family | JSON request | Selection | Static validation (`workflow validate`) | Failure metadata | Example | Execution boundary |
+| --- | --- | --- | --- | --- | --- | --- |
+| `riela/x-gateway-reader` | literal `operation`, object `arguments` | required field-path `selection`, or compatibility nested `select` | mode, operation, selection shape and argument keys; SDL operation-name check; argument and selection types stay SDK/runtime-checked | X `providerFailure: "output"` is opt-in | [X search](../examples/x-gateway-json-search/README.md) | linked read-only SDK; host or private worker |
+| `riela/x-gateway-read` | same X JSON contract | same X fields | same X shape and name checks; argument and selection types stay SDK/runtime-checked; container document limit | X `providerFailure: "output"` is opt-in | [X search](../examples/x-gateway-json-search/README.md) | existing reader container and explicit environment framing |
+| `riela/gmail-gateway-reader`, `-draft`, `-sender` | literal `operation`, object `arguments` | optional field paths, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | [Gmail](../examples/builtin-gateway-json/README.md) | fixed-mode async SDK; host or Linux worker |
+| `riela/gmail-gateway-read` | same reader JSON contract | same reader selections | operation mode uses Gmail catalog and inline document/size checks; legacy mode checks query template and mode conflicts | thrown error, unchanged | [Gmail](../examples/builtin-gateway-json/README.md) | existing reader container; validated typed values become document literals |
+| `riela/wrike-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | — | fixed-tier linked gateway |
+| `riela/google-analytics-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | — | fixed-tier linked gateway, macOS build |
+| `riela/notion-gateway-read`, `-write` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | [Notion sync](../examples/notion-gateway-json-sync/README.md) | fixed-role SDK, macOS build |
+| `riela/google-docs-gateway-read`, `-write`; `google-sheet-gateway-read`, `-write`; `google-drive-gateway-read`, `-write` | literal catalog command in `operation`, object `arguments` | no selection; shape the result with postprocess | command and typed argument checks, rendered key checks, forbidden-command check | thrown error, unchanged | — | fixed-role SDK argv construction and existing command runner, macOS build |
+| `riela/google-service-gateway-read`, `-write` | literal operation such as `services.get`, object `arguments` | no selection; shape the result with postprocess | tier allowlist, nested keys, required values and runtime-matching JSON types | thrown error, unchanged | — | existing typed service client |
+| `riela/apple-gateway-graphql` (`full`) | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | Apple catalog checks when `addon.inputs` is absent; inputs override the config at runtime | thrown error, unchanged | — | macOS SDK; container requests are prepared on the host and use its existing exact-argv bridge |
+| Apple Notes, Mail, Calendar, Reminders, notifications and clock product nodes | operation fixed by add-on name; existing JSON `config`/`inputs` | fixed SDK query and output projection | context-free; fixed product-node input rules remain runtime-owned | thrown error, unchanged | — | existing native boundary and scoped host bridge |
+| named `kaiba/*` nodes | operation fixed by add-on name; object `arguments` | existing typed result projection | nested object/config and forbidden connection keys; argument names/types stay runtime-only (no catalog) | thrown error, unchanged | — | preflight-captured HTTP client; host or worker |
+| Kaiba GraphQL compatibility nodes | `arguments` containing `query` and optional `variables` | authored GraphQL document | query/document/operationName must be literal strings; variables remain data | thrown error, unchanged | — | same preflight-captured HTTP client |
 
 Both X readers support `config.userCache: true` (default: disabled). The built-in
 owns the separate `x-gateway-users` cache namespace and its policy: 30 days,
@@ -44,18 +45,23 @@ shared by every workflow of the OS user, not partitioned per credential: it hold
 only public author metadata, and the SDK uses it only for authors of posts the
 caller already fetched.
 
-The matrix describes execution support. `riela workflow validate` checks
-catalog-backed built-in gateway operation requests when the corresponding SDK
-catalog is available: it rejects mixed operation and legacy modes, non-literal
-or malformed operation/selection values, invalid non-templated
-`config.postprocess` programs, unknown catalog operations, and a present
-`arguments` value that is not an object. A missing `arguments` is accepted, as at
-runtime, where it means `{}` (for example `{"operation":"labels"}`). It accepts the
-existing aliases and legacy request modes. Templated postprocess programs and
-providers without an available catalog are deferred to runtime. Validation for
-X readers, legacy container readers, Google Service and Kaiba nested arguments
-remains runtime-only; ART migration, release and deployment work also remain
-open.
+The matrix describes execution support and static validation. For literal
+`arguments`, the production checker runs the shared runtime builder with empty
+variables. If arguments contain a placeholder, value checks wait until runtime,
+but object key checks still validate argument names, required keys and forbidden
+keys. An exact-placeholder `arguments` value defers its content checks while
+mode, operation and selection checks still run. `postprocess` is removed before
+the checker reads the leaf request, matching runtime behavior. Missing
+`arguments` means `{}`. Templated postprocess programs and catalog-dependent
+checks on SDK-excluded builds are deferred to runtime.
+
+`riela workflow validate` blocks on production-checker findings. `riela workflow
+run` emits production-only findings as non-blocking `warning:` lines on stderr;
+stdout stays byte-identical. Inspect, catalog commands, task dispatch,
+`RielaWorkflowRegistry`, `RielaServer`, GraphQL and the console stay
+context-free. Runtime execution still fails closed before provider effects. The
+complete ART migration, private-image adoption, App cutover and release/deploy
+work remain open.
 Availability of a host SDK does not make it available in a Linux guest: only
 Gmail, Wrike and X in this matrix have portable linked execution, while native
 Apple operations use the host bridge. Existing provider authorization still
@@ -89,6 +95,24 @@ overrides. In nested Kaiba GraphQL arguments, `query`, `document` and
 Select the Kaiba instance through top-level `kaibaInstanceId`, not
 through argument data; endpoint and authentication remain captured by preflight.
 
+## Common input/output contract
+
+Gateway JSON requests use `operation`, typed object `arguments`, and where the
+family supports it, `selection`. X also accepts nested `select` as a compatibility
+alias. Every built-in can use finite `postprocess`; X readers additionally accept
+`providerFailure: "fail"` (default) or opt-in `"output"`.
+
+The original provider payload remains in the output, including pagination
+cursors. A successful transform is returned as `processed` with
+`postprocess.status: "ok"` and `postprocessPassed`; a data-dependent transform
+failure has `postprocess.status: "failed"`, sets `postprocessFailed`, and sets
+`retryProvider: false`. An X provider-failure output skips shaping and uses
+`postprocess.status: "skipped"` with both postprocess flags false. Its `when`
+object carries `providerFailed`, `providerRetryable`, `spendCapReached` and
+`rateLimited`. The payload carries
+`xGateway.failure: {category, retryable, diagnostics}`. Branch on
+`when.providerFailed` before reading `xGateway.data`.
+
 ## Example: X posts and their authors
 
 ```json
@@ -120,7 +144,8 @@ finite operations as `riela/json-transform`:
 | Instruction | Meaning |
 | --- | --- |
 | `{"pick":"/data/items"}` | select a JSON Pointer |
-| `{"map":{"id":"/id","author":"/author/username"}}` | project each array element into named fields |
+| `{"map":{"id":"/id","author":"/author/username"}}` | project each array element into named fields; fields may also use `{"path":"/x","default":value}` or `{"literal":value}` |
+| `{"project":{"cursor":"/cursor","items":"/items"}}` | keep explicitly named fields from an object, including nested metadata selectors |
 | `{"filter":{"path":"/enabled","equals":true}}` | retain matching array elements |
 | `{"unique":"/id"}` | keep the first element for each pointer value |
 | `{"take":25}` | retain at most that many array elements |
@@ -155,6 +180,89 @@ retains explicit write-retry metadata and its existing workspace/mount rules.
 An executable single-node example with a credential-free mock scenario lives
 in [`examples/builtin-gateway-json`](../examples/builtin-gateway-json/README.md).
 
+
+## X provider failure output
+
+In `providerFailure: "output"` mode, only an allowlisted X reader provider
+failure becomes a completed provider-failed output. Its category uses this
+closed first-match table in source order:
+
+1. `spend-cap-reached` — provider problem `spend-cap-reached` or `usage-capped`,
+   or provider reason `usage-capped`; not retryable.
+2. `rate-limited` — code `RATE_LIMITED` or `PROVIDER_RATE_LIMITED`, problem
+   `rate-limit-exceeded`, classification `rate_limit`, or HTTP 429; retryable.
+3. `auth` — `AUTH_*`, `CREDENTIAL_NOT_FOUND`, classification `auth`, or HTTP
+   401; not retryable.
+4. `permission` — `PERMISSION_DENIED`, `ACCESS_MODE_INSUFFICIENT`,
+   classification `permission`, provider problem `client-forbidden`,
+   `not-authorized-for-resource`, `unsupported-authentication` or
+   `insufficient-scope`, or HTTP 403; not retryable.
+5. `invalid-request` — `VALIDATION_ERROR`, `INVALID_ARGUMENT`, `CONFIG_INVALID`,
+   classification `validation`, problem `invalid-request`, or HTTP 400/422; not
+   retryable.
+6. `not-found` — `RESOURCE_NOT_FOUND`, problem `resource-not-found`, or HTTP
+   404; not retryable.
+7. `transient` — `NETWORK_FAILURE`, `UPSTREAM_FAILURE` with missing status or
+   status at least 500, classification `network`/`upstream`, or SDK
+   `retryable: true`; retryable.
+8. `unknown` — no earlier rule matched; not retryable.
+
+Timeout, policy errors, `invalidOutput`, cancellation and provider errors without
+an allowlisted code remain thrown errors. `retryable` is workflow advice only;
+Riela never retries X (`--retry 0`). The X example labels its transitions
+`providerRetryable` → `retry-later`, `providerFailed` and `postprocessFailed` →
+`report-failure`, then the unlabeled default → `page`. This records a retry-later
+outcome without looping and checks failure flags before consuming shaped data;
+see [its workflow](../examples/x-gateway-json-search/README.md).
+
+## X request path (#176 requirement 3)
+
+The SDK fact check selected **Outcome B (SDL only)**. The pinned X SDK exposes
+its read SDL through the public in-process `XGatewayCLI.run` schema action, and
+GatewaySDKKit exposes SDL printing but no SDL-to-catalog parser. Riela therefore
+uses a bounded SDL scanner for X Query root operation names and does not parse
+argument or selection types. The checked set contains 82 operations; the X SDK
+remains the authority for types.
+
+The X-specific literal serializer is kept because the kit has no catalog
+builder and the X reader accepts no variables. Request shape validation and
+rendering are split, with golden tests pinning the existing document output.
+No request path is retired, and Riela has no X Python helper. Nested `select`
+remains a compatibility alias. Migrate each true leaf to a dot path, for example
+`{"posts":{"id":true,"author":{"username":true}}}` becomes
+`["posts.id","posts.author.username"]`; both forms produce the same request.
+
+## Examples and migration notes
+
+- [x-gateway-json-search](../examples/x-gateway-json-search/README.md) reads a
+  cursor-bearing X page and branches on structured failure metadata.
+- [notion-gateway-json-sync](../examples/notion-gateway-json-sync/README.md)
+  reads a page and creates a Notion page.
+- [builtin-gateway-json](../examples/builtin-gateway-json/README.md) covers
+  Gmail accounts → threads → draft.
+- [x-window-checkpoint](../examples/x-window-checkpoint/README.md) preserves a
+  workflow-controlled cursor checkpoint.
+
+Migration: change X nested `select` to field-path `selection` as shown above;
+add `providerFailure: "output"` only when the workflow needs to branch on a
+recognized provider failure. X request-policy errors use `policyBlocked` (the
+pre-review code was `invalidInput`). Google Service `allPages` remains supported
+with its existing flat mode and is not extended by this work.
+
+## Implemented in riela vs outside riela
+
+Implemented on this branch:
+
+- R1 request validation and entry points; see [validation tests](../Tests/RielaCoreTests/WorkflowGatewayValidationTests.swift), [extended validation tests](../Tests/RielaCLITests/LegacyWorkflowGatewayValidationTests.swift), and [gwjson176-01 progress](../impl-plans/progress/gwjson176-01.md), [gwjson176-02 progress](../impl-plans/progress/gwjson176-02.md), [gwjson176-03 progress](../impl-plans/progress/gwjson176-03.md).
+- R2 structured X failure output; see [X failure tests](../Tests/RielaCLITests/XGatewayProviderFailureOutputTests.swift), [X search example](../examples/x-gateway-json-search/README.md), and [gwjson176-03 progress](../impl-plans/progress/gwjson176-03.md).
+- R3 X request-path review; see [gwjson176-02 progress](../impl-plans/progress/gwjson176-02.md).
+- R4 executable examples; see [gwjson176-05 plan](../impl-plans/completed/gwjson176-05-example-registration.md), [gwjson176-06 progress](../impl-plans/progress/gwjson176-06.md), and the [X](../examples/x-gateway-json-search/README.md), [Notion](../examples/notion-gateway-json-sync/README.md), and [Gmail](../examples/builtin-gateway-json/README.md) bundles.
+- R5 behavioral matrix; see [behavior tests](../Tests/RielaCLITests/BuiltinGatewayJSONBehaviorTests.swift), [gwjson176-04 plan](../impl-plans/completed/gwjson176-04-behavior-matrix.md), and the [Gmail](../examples/builtin-gateway-json/README.md) and [Notion](../examples/notion-gateway-json-sync/README.md) examples.
+- R6 documentation and migration notes; see [gwjson176-07 progress](../impl-plans/progress/gwjson176-07.md).
+
+Outside riela and still open: ART Python migration, private image adoption,
+App production cutover, release and deployment. These items are not complete or
+claimed as deployed by this branch.
 
 ## X retry failure diagnostics (0.2.47)
 

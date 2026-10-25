@@ -1,4 +1,5 @@
 import Foundation
+import GoogleServiceGatewayCore
 import RielaAddonSupport
 import RielaCore
 import XCTest
@@ -15,7 +16,7 @@ final class LegacyWorkflowGatewayValidationTests: XCTestCase {
       "arguments": .object(["mediaRootDir": .string("{{input.path}}")]),
       "selection": .array([.string("posts.id")])
     ]
-    let deepSelection = [JSONValue.string((0..<17).map { "field\($0)" }.joined(separator: "."))]
+    let deepSelection = [RielaCore.JSONValue.string((0..<17).map { "field\($0)" }.joined(separator: "."))]
     let cases: [(JSONObject, Bool)] = [
       (valid, true),
       (valid.merging(["selection": .array([.string("id")]), "select": .object(["id": .bool(true)])]) { _, rhs in rhs }, false),

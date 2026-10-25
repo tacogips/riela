@@ -14,7 +14,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/gwjson176-07.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "completed 2026-10-25; reviews accepted, L-07-1 closed with no doc change needed for 05 (session-488); Step 8 refreshed README.md; archived to impl-plans/completed/"
 }
 ```
 
@@ -142,12 +142,20 @@ added in `docs/builtin-gateway-json.md` resolves to an existing path
 
 ## Done criteria
 
-- [ ] All grep checks find matches (exit 0), and `git diff --check` exits 0.
-- [ ] The matrix covers every family in the design R1 table, plus the Apple
+- [x] All grep checks find matches (exit 0), and `git diff --check` exits 0.
+- [x] The matrix covers every family in the design R1 table, plus the Apple
       product nodes and Kaiba GraphQL compatibility rows that already exist.
-- [ ] The outside-riela list is present and makes no deployment claim.
-- [ ] The progress log has verification records with integer exitStatus,
+- [x] The outside-riela list is present and makes no deployment claim.
+- [x] The progress log has verification records with integer exitStatus,
       testsRun 0 and failureCount 0, plus per-edit hashes.
+
+## Step 6 implementation state
+
+The docs-only acceptance criteria are implemented on
+`feat/issue-176-gateway-json-remainder`. Verification records, current hashes
+and relative-link existence checks are in `impl-plans/progress/gwjson176-07.md`.
+Independent review, shared-tree integration review, index refresh, exact-file
+staging, commit and push remain downstream workflow steps.
 
 ## Progress log expectations
 

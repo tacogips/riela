@@ -84,3 +84,48 @@ Blockers: none. `providerFailure: "output"` runtime behavior and its runtime par
 Resolved items: prior implementation-order issues were corrected; final focused validation and regression suites pass on current source. Severity: fixed.
 
 Residual risks: the SDK SDL name scanner intentionally does not validate X argument types or selection field types; SDK execution remains the type authority. The public schema action was verified against the resolved SDK checkout on this host. On non-macOS or SDK-excluded builds, catalog checks guarded by `canImport` are unavailable as designed.
+
+## Step 6 final-source repair rerun (2026-10-25)
+
+The progress record previously ended with an operator note incorrectly leaving
+GW176-02-TI-1 open. The current source already contains the Google Service
+post-render operation-key subset guard and the resolver-level regression
+`testGoogleServiceRuntimeChecksRenderedExactPlaceholderArgumentKeys`, which
+checks placeholder deferral, `policyBlocked`, and zero client calls. A clean
+cache test compile exposed that the test file needed an explicit
+`GoogleServiceGatewayCore` import; that import also made one explicit
+`JSONValue.string` fixture ambiguous, so it is now qualified as
+`RielaCore.JSONValue.string`.
+
+| Path | Pre-edit SHA-256 | Final SHA-256 |
+|---|---|---|
+| `Tests/RielaCLITests/LegacyWorkflowGatewayValidationTests.swift` | `720e94def3fec83473b87669d2dd0bfb0551349d6615c3add065d2eb41073c16` | `91634cf752d20ab36d379b92a47ec3cf35bd1bf4d3b2a87f24a859b067342bf9` |
+| `Sources/RielaCLI/ProductionNodeAdapter+GoogleServiceGatewayAddons.swift` | unchanged this rerun | `e7896d138d0a8f4d7a1c773c415f79a04c990501a44b70029b4939bbfd3c7819` |
+
+Current-source verification ran in the foreground on arm64 from the repository
+root. Complete logs are under
+`tmp/issue-176/gwjson176-02/step6-rerun/`:
+
+| Command | Exit | Tests | Failures | Complete log |
+|---|---:|---:|---:|---|
+| `arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-176/gwjson176-02/step6-rerun/build-stable.log 2>&1'` | 0 | 0 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/build-stable.log` |
+| `arch -arm64 /bin/zsh -lc 'swift test --filter XGatewayJSONDocumentGoldenTests > tmp/issue-176/gwjson176-02/step6-rerun/golden-stable.log 2>&1'` | 0 | 7 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/golden-stable.log` |
+| `arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowGatewayValidationTests > tmp/issue-176/gwjson176-02/step6-rerun/validation-stable.log 2>&1'` | 0 | 23 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/validation-stable.log` |
+| `arch -arm64 /bin/zsh -lc "swift test --filter 'BuiltinGatewayJSONRequestTests|LegacyGatewayJSONRequestTests|XGatewaySDKAddonTests|XGatewayEmbeddedReaderRuntimeTests|XGatewayContainerReaderTests|GoogleServiceGatewayAddonTests|KaibaStructuredArgumentsTests' > tmp/issue-176/gwjson176-02/step6-rerun/regression-stable.log 2>&1"` | 0 | 39 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/regression-stable.log` |
+| `arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate x-window-checkpoint --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-02/step6-rerun/validate-x-window-stable.log 2>&1'` | 0 | 0 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/validate-x-window-stable.log` |
+| `arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate x-incremental-posts-kv --workflow-definition-dir ./examples --output json > tmp/issue-176/gwjson176-02/step6-rerun/validate-x-kv-stable.log 2>&1'` | 0 | 0 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/validate-x-kv-stable.log` |
+| `arch -arm64 /bin/zsh -lc 'if [ -s tmp/issue-176/gwjson176-02/step6-rerun/changed-swift-files.nul ]; then xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/issue-176/gwjson176-02/step6-rerun/changed-swift-files.nul; else printf "%s\\n" "No Swift files changed; selected-file SwiftLint not run."; fi'` | 0 | 0 | 0 | `tmp/issue-176/gwjson176-02/step6-rerun/lint-strict-stable.log` |
+
+The two X examples validate successfully; `x-incremental-posts-kv` retains its
+existing two warnings. The first test attempts before adding the import failed
+during test compilation with missing Google Service module symbols; the
+attempt after adding the import identified the ambiguous JSONValue fixture.
+Their complete logs remain as `step6-rerun/golden.log`, `validation.log`,
+`regression.log`, and `golden-final.log`, `validation-final.log`,
+`regression-final.log`. A subsequent attempt could not create new logs while
+the host had 116 MiB available; `swift package clean` freed the regenerable
+SwiftPM cache, after which every final-source gate above passed.
+
+Resolved items: GW176-02-TI-1 fixed. Severity: fixed. Implementation gates are
+complete; independent test-integrity/adversarial/integration review and the
+later exact-file staging, commit and push remain downstream.

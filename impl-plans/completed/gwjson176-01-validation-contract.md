@@ -21,7 +21,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/gwjson176-01.md",
-  "status": "implemented; Step 6 complete (pending downstream review); design accepted (Step 3 comm-008838)"
+  "status": "completed 2026-10-25; accepted dependency at fb928672, combined-tree integration review accepted (session-488); archived to impl-plans/completed/"
 }
 ```
 

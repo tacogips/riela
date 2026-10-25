@@ -13,11 +13,10 @@ These additions target Riela 0.2.39; older installed runtimes do not support the
   "config": {
     "operation": "homeTimeline",
     "arguments": {"maxResults": 25, "paginationToken": "{{input.cursor}}"},
-    "select": {
-      "posts": {"id": true, "text": true, "createdAt": true,
-                "author": {"username": true}},
-      "pageInfo": {"nextToken": true}
-    },
+    "selection": [
+      "posts.id", "posts.text", "posts.createdAt",
+      "posts.author.username", "pageInfo.nextToken"
+    ],
     "postprocess": [
       {"pick": "/data/homeTimeline/posts"},
       {"unique": "/id"},
@@ -29,11 +28,14 @@ These additions target Riela 0.2.39; older installed runtimes do not support the
 ```
 
 Arguments keep their JSON types. Strings are encoded as data, including quotes,
-newlines, and template-looking text received from upstream. `select` uses `true`
-for leaf fields and nested objects for child fields. Operation names, argument
-names, and selected fields must be plain GraphQL identifiers; the SDK validates
-the operation and argument types against its read schema. JSON mode cannot be
-combined with query/variable templates. Existing query-template mode still works.
+newlines, and template-looking text received from upstream. `selection` lists
+field paths. Nested `select` remains a compatibility alias for existing X
+workflows; migrate each true leaf to its dot-path entry. Operation names,
+argument names, and selected fields must be plain GraphQL identifiers; the SDK
+validates the operation and argument types against its read schema. JSON mode
+cannot be combined with query/variable templates. Existing query-template mode
+still works. Set `providerFailure: "output"` to branch on structured X provider
+failures; see the [gateway JSON reference](../builtin-gateway-json.md#x-provider-failure-output).
 
 The normal gateway output remains available, including
 `data.homeTimeline.pageInfo.nextToken`; transformed data is returned as

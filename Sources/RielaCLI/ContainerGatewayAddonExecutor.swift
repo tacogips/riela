@@ -99,6 +99,8 @@ struct ContainerGatewayAddonExecutor {
     gateway: ContainerGatewayAddon,
     context: AdapterExecutionContext
   ) async throws -> AdapterExecutionOutput {
+    let failureMode = gateway == .xRead ? try XGatewayProviderFailureMode.parse(input.addon.config ?? [:]) : .fail
+    do {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version")
     }
@@ -210,7 +212,7 @@ struct ContainerGatewayAddonExecutor {
     // consumers expect the GraphQL envelope itself at xGateway.data.
     let gatewayData = gateway == .xRead && response["ok"] == .bool(true)
       ? response["data"] ?? .object(response) : .object(response)
-    return AdapterExecutionOutput(
+    var output = AdapterExecutionOutput(
       provider: "container-addon",
       model: input.addon.name,
       promptText: "",
@@ -226,6 +228,15 @@ struct ContainerGatewayAddonExecutor {
         ])
       ]
     )
+    if failureMode == .output { xGatewayMarkProviderSuccess(&output) }
+    return output
+    } catch let error as AdapterExecutionError {
+      if gateway == .xRead, failureMode == .output,
+         let output = xGatewayProviderFailureOutput(error, input: input, provider: "container-addon") {
+        return output
+      }
+      throw error
+    }
   }
 
   private func runtimeMetadata(driver: any ContainerRuntimeDriver, image: String,

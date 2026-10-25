@@ -14,7 +14,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/gwjson176-06.md",
-  "status": "implemented; awaiting independent review and gwjson176-05 catalog parity"
+  "status": "completed 2026-10-25; accepted dependency at fb928672, gwjson176-05 catalog parity passed 9/0 with no example fixes (session-488); archived to impl-plans/completed/"
 }
 ```
 

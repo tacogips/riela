@@ -165,6 +165,34 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+Issue [#176](https://github.com/tacogips/riela/issues/176) remainder (design
+[gateway SDK add-ons](../design-docs/specs/design-gateway-sdk-addons.md), QA
+[qa-issue-176-gateway-json-remainder](../design-docs/user-qa/qa-issue-176-gateway-json-remainder.md),
+umbrella [`builtin-gateway-json-176`](builtin-gateway-json-176.md)):
+[`gwjson176-01-validation-contract`](completed/gwjson176-01-validation-contract.md),
+[`gwjson176-02-x-legacy-gs-kaiba-checks`](completed/gwjson176-02-x-legacy-gs-kaiba-checks.md),
+[`gwjson176-03-x-failure-output`](completed/gwjson176-03-x-failure-output.md),
+[`gwjson176-04-behavior-matrix`](completed/gwjson176-04-behavior-matrix.md),
+[`gwjson176-05-example-registration`](completed/gwjson176-05-example-registration.md),
+[`gwjson176-06-examples-authoring`](completed/gwjson176-06-examples-authoring.md)
+and [`gwjson176-07-docs`](completed/gwjson176-07-docs.md) were archived on
+2026-10-25 after the test-integrity, adversarial and combined-tree integration
+reviews (session-488) accepted them. The work adds a shared request checker
+used by `workflow validate` (blocking) and `workflow run` (stderr warnings),
+opt-in X `providerFailure: "output"`, the X request-path review (outcome B, SDL
+operation names only), the 12×9 behavior matrix, and the script-free
+`x-gateway-json-search` and `notion-gateway-json-sync` examples plus Gmail
+accounts → threads → draft. The combined-tree runs in
+`tmp/issue-176/reconcile-wave-004/session-488/` passed: focused suites 94/0,
+`RielaExampleParityTests` 9/0 without `--skip`, strict lint, build, three mock
+runs and five validations clean. Browser E2E was skipped because no
+browser-facing file changed. ART Python migration, private image adoption, App
+cutover and release/deploy stay outside riela and open. User docs:
+[`docs/builtin-gateway-json.md`](../docs/builtin-gateway-json.md). The dispatch
+manifest stays at
+[`active/issue-176-dispatch.json`](active/issue-176-dispatch.json); it records
+the original plan paths. Progress logs: `progress/gwjson176-0*.md`.
+
 Issue sweep 2 2026-10-24 (issues
 [#32](https://github.com/tacogips/riela/issues/32),
 [#27](https://github.com/tacogips/riela/issues/27),

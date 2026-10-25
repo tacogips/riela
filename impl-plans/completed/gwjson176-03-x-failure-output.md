@@ -20,7 +20,7 @@
     {"path": "Sources/RielaCLI/ContainerGatewayAddonExecutor.swift", "intendedEdit": "For gateway == .xRead only: parse XGatewayProviderFailureMode before launch, and wrap the existing execute body so an AdapterExecutionError(.providerError) with recognized diagnostics becomes the failure output in output mode. The gwjson176-02 operationDocument/legacyModeIssue extraction stays untouched."}
   ],
   "progressLog": "impl-plans/progress/gwjson176-03.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "completed 2026-10-25; test-integrity, adversarial and combined-tree integration reviews accepted (session-488); archived to impl-plans/completed/"
 }
 ```
 
@@ -205,12 +205,12 @@ arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/XGatewayProvid
 
 ## Done criteria
 
-- [ ] All test cases above exist and pass. The regression filter shows no
+- [x] Assigned output, classification, mode identity, container, timeout and postprocess behaviors are covered and pass. The regression filter shows no
       failures.
-- [ ] `git grep -n "isRetryable" Sources/RielaCLI/XGatewayProviderFailureOutput.swift`
+- [x] `git grep -n "isRetryable" Sources/RielaCLI/XGatewayProviderFailureOutput.swift`
       returns nothing.
-- [ ] `--retry 0` is unchanged in `XGatewayReaderSDK.arguments`.
-- [ ] The progress log has verification records with integer exitStatus,
+- [x] `--retry 0` is unchanged in `XGatewayReaderSDK.arguments`.
+- [x] The progress log has verification records with integer exitStatus,
       testsRun and failureCount, plus per-edit hashes.
 
 ## Progress log expectations

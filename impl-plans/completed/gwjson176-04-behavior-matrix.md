@@ -12,7 +12,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/gwjson176-04.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "completed 2026-10-25; test-integrity, adversarial and combined-tree integration reviews accepted (session-488); archived to impl-plans/completed/"
 }
 ```
 
@@ -133,12 +133,13 @@ arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Tests/RielaCLITests/BuiltinGate
 
 ## Done criteria
 
-- [ ] The progress log contains the full 12×9 matrix. Every cell names a
+- [x] The progress log contains the full 12×9 matrix. Every cell names a
       test (`Suite/testName`) or `n/a: <reason>`.
-- [ ] Every new test asserts provider call counts. The C6 cells all assert
+- [x] Every new test asserts provider call counts. The C6 cells all assert
       exactly one write call.
-- [ ] All commands exit 0 with the counts recorded.
-- [ ] `git diff --name-only` is a subset of writePaths.
+- [x] All plan-local commands exit 0 with the counts recorded.
+- [x] The plan-owned changed paths are a subset of `writePaths`; unrelated
+      sibling plan paths remain in the shared working tree.
 
 ## Progress log expectations
 

@@ -26,7 +26,7 @@
     {"path": "Sources/RielaCLI/BuiltinGatewayJSONRequest+Inline.swift", "intendedEdit": "Only if the R3 fact check gives outcome A: add a defaulted maximumBytes parameter to inlineReaderDocument (default ContainerGatewayAddon.legacyDocumentByteLimit) so the embedded X reader keeps its 1,000,000-byte bound. No other edit; untouched for outcomes B and C."}
   ],
   "progressLog": "impl-plans/progress/gwjson176-02.md",
-  "status": "Step 6 implementation complete; pending downstream test-integrity/adversarial/integration review (design accepted Step 3 comm-008838)"
+  "status": "completed 2026-10-25; GW176-02-TI-1 fixed, test-integrity, adversarial and combined-tree integration reviews accepted (session-488); archived to impl-plans/completed/"
 }
 ```
 
@@ -367,14 +367,14 @@ gwjson176-01 contract and the reviewed gwjson176-06 examples; both are now
 dependency. The first-pass gwjson176-02 implementation is in that commit and
 `swift build` passes on it.
 
-Remaining required repair before this plan is complete:
+Resolved before Step 6 handoff:
 
-- **GW176-02-TI-1 (mid):** exact-placeholder Google Service write arguments can
-  bypass runtime operation-key validation. Restore the post-render subset guard
-  in `Sources/RielaCLI/ProductionNodeAdapter+GoogleServiceGatewayAddons.swift`
-  so rendered arguments are re-checked against the operation's allowed keys,
-  and add a resolver-level regression in
-  `Tests/RielaCLITests/LegacyWorkflowGatewayValidationTests.swift` asserting
-  `policyBlocked` with zero client calls while static validation defers the
-  placeholder. Then rerun this plan's validation, regression and strict
-  changed-file lint commands.
+- **GW176-02-TI-1:** the runtime contains the post-render subset guard in
+  `Sources/RielaCLI/ProductionNodeAdapter+GoogleServiceGatewayAddons.swift`,
+  and `testGoogleServiceRuntimeChecksRenderedExactPlaceholderArgumentKeys`
+  asserts `policyBlocked`, zero client calls, and static placeholder deferral.
+  Added the test target's explicit `GoogleServiceGatewayCore` import and
+  qualified its RielaCore JSONValue fixture after a clean-cache test compile
+  exposed those source issues. Focused validation, regression and strict
+  changed-file lint gates pass; detailed evidence is in
+  `impl-plans/progress/gwjson176-02.md`.

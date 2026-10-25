@@ -23,7 +23,7 @@
     {"path": "examples/builtin-gateway-json", "intendedEdit": "Same minimal-fix rule (for example, Gmail threads or sendMessage input fields)."}
   ],
   "progressLog": "impl-plans/progress/gwjson176-05.md",
-  "status": "planned; design accepted (Step 3 comm-008838)"
+  "status": "completed 2026-10-25; test-integrity (comm-008957), adversarial (comm-008958) and combined-tree integration reviews accepted (session-488); archived to impl-plans/completed/"
 }
 ```
 
@@ -107,7 +107,7 @@ arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate builtin-gateway-j
 arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run x-gateway-json-search --workflow-definition-dir ./examples --mock-scenario ./examples/x-gateway-json-search/mock-scenario.json --session-store tmp/issue-176/gwjson176-05/sessions-x --output json > tmp/issue-176/gwjson176-05/run-x.json 2> tmp/issue-176/gwjson176-05/run-x.err'
 arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run notion-gateway-json-sync --workflow-definition-dir ./examples --mock-scenario ./examples/notion-gateway-json-sync/mock-scenario.json --session-store tmp/issue-176/gwjson176-05/sessions-notion --output json > tmp/issue-176/gwjson176-05/run-notion.json 2> tmp/issue-176/gwjson176-05/run-notion.err'
 arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run builtin-gateway-json --workflow-definition-dir ./examples --mock-scenario ./examples/builtin-gateway-json/mock-scenario.json --session-store tmp/issue-176/gwjson176-05/sessions-gmail --output json > tmp/issue-176/gwjson176-05/run-gmail.json 2> tmp/issue-176/gwjson176-05/run-gmail.err'
-arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Tests/RielaCLITests/RielaExampleCatalog.swift Tests/RielaCLITests/RielaExampleParityTests.swift Tests/RielaCLITests/WorkflowValidateGatewayContextTests.swift > tmp/issue-176/gwjson176-05/lint.log 2>&1'
+arch -arm64 /bin/zsh -lc 'xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/issue-176/gwjson176-05/changed-swift-files.nul > tmp/issue-176/gwjson176-05/lint.log 2>&1'
 ```
 
 Every `run-*.err` must contain no `warning: workflow.nodes` line. That shows
@@ -116,14 +116,22 @@ examples. Each run JSON must show status `completed`.
 
 ## Done criteria
 
-- [ ] Two names are registered, the count is 47, and the four examples are
+- [x] Two names are registered, the count is 47, and the four examples are
       added to the gateway validate test.
-- [ ] The parity suite passes, or its only failures are attributed with
+- [x] The parity suite passes, or its only failures are attributed with
       baseline evidence and the skip-plus-direct-run evidence is present.
-- [ ] Every verification record has integer exitStatus, testsRun and
+- [x] Every verification record has integer exitStatus, testsRun and
       failureCount, plus log paths. Any example fixes are recorded with
       their cause.
-- [ ] `git diff --name-only` is a subset of writePaths ∪ sharedPaths.
+- [x] This plan's authored changes are a subset of writePaths ∪ sharedPaths.
+      The shared native-fanout working tree also contains changes owned by
+      gwjson176-02, gwjson176-03, gwjson176-04 and gwjson176-07.
+
+Implementation status: complete. The focused build, validation-context suite,
+example-parity suite, direct validation/run checks and strict selected-file
+SwiftLint passed. See `impl-plans/progress/gwjson176-05.md` for commands,
+counts, logs and hashes. Integration review and exact-file staging remain
+owned by downstream workflow steps.
 
 ## Progress log expectations
 

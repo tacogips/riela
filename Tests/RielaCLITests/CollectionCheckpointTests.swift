@@ -126,6 +126,28 @@ final class CollectionCheckpointTests: XCTestCase {
     XCTAssertLessThanOrEqual(try JSONEncoder().encode(next).count, 8_001_000)
   }
 
+  func testStructuredProviderCursorRemainsLiteralAndIndependentFromExactVersionAcknowledgements() async throws {
+    let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+    let cursor: JSONValue = .object(["authors": .object(["author-a": .string("{{opaque-id}}"), "author-b": .null]),
+      "pages": .array([.integer(2), .string("{{next-token}}")]), "coverageComplete": .bool(false)])
+    let recorded = try await Self.run(root, "record", revision: 0, items: [Self.item("a", "1")], cursor: cursor)
+    XCTAssertEqual(recorded["cursor"], cursor)
+    XCTAssertEqual(recorded["acquisitionComplete"], .bool(false))
+    let ack = try await Self.run(root, "acknowledge", revision: 1, items: [Self.item("a", "1")])
+    XCTAssertEqual(ack["cursor"], cursor); XCTAssertEqual(ack["processingComplete"], .bool(true))
+    XCTAssertEqual(ack["acquisitionComplete"], .bool(false))
+    let loaded = try await Self.run(root, "load")
+    XCTAssertEqual(loaded["cursor"], cursor)
+    let excessive: JSONValue = .object(["cursor": .string(String(repeating: "x", count: 16384))])
+    do {
+      _ = try await Self.run(root, "record", revision: 2, items: [Self.item("b", "1")], cursor: excessive)
+      XCTFail("oversized structured metadata advanced acquisition")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+    let after = try await Self.run(root, "load")
+    XCTAssertEqual(after["cursor"], cursor); XCTAssertEqual(after["revision"], .integer(2))
+    XCTAssertEqual(after["pendingCount"], .integer(0))
+  }
+
   private static func item(_ id: String, _ version: String) -> JSONValue {
     .object(["id": .string(id), "version": .string(version)])
   }

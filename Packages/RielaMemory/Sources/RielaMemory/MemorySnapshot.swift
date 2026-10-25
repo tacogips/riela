@@ -104,7 +104,11 @@ extension RielaMemoryStore {
   func secureSnapshotFiles(memoryId: String) throws {
     let path = try databasePath(memoryId: memoryId)
     for suffix in ["", "-wal", "-shm", "-journal"] where FileManager.default.fileExists(atPath: path + suffix) {
-      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path + suffix)
+      do { try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path + suffix) } catch {
+        // Another SQLite connection can remove a sidecar after fileExists.
+        // Only an absent sidecar is benign; the main DB and other errors fail.
+        guard !suffix.isEmpty, !FileManager.default.fileExists(atPath: path + suffix) else { throw error }
+      }
     }
   }
 

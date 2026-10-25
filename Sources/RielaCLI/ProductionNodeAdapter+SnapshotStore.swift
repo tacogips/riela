@@ -11,7 +11,7 @@ extension BuiltinWorkflowAddonResolver {
   func executeSnapshotStore(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
-      Set(config.keys).isSubset(of: ["action", "storage", "expectedHead", "value", "context", "maxPayloadBytes", "label", "expiresInSeconds"]),
+      Set(config.keys).isSubset(of: ["action", "storage", "expectedHead", "value", "context", "maxPayloadBytes", "label", "expiresInSeconds", "retainedLabels"]),
       case let .string(action)? = config["action"], ["load", "commit", "retain", "load-retained", "release"].contains(action),
       case let .object(storage)? = config["storage"],
       Set(storage.keys).isSubset(of: ["memoryId", "workflowId", "nodeId", "tag", "memoryRoot"]),
@@ -34,7 +34,7 @@ extension BuiltinWorkflowAddonResolver {
     var released: Bool?
     do {
       if action == "load" || action == "load-retained" {
-        guard config["value"] == nil, config["expectedHead"] == nil, config["expiresInSeconds"] == nil else { throw snapshotInvalid() }
+        guard config["value"] == nil, config["expectedHead"] == nil, config["expiresInSeconds"] == nil, config["retainedLabels"] == nil else { throw snapshotInvalid() }
         if action == "load" {
           guard config["label"] == nil else { throw snapshotInvalid() }
           snapshot = try store.loadSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag, maxPayloadBytes: Int(limit))
@@ -58,18 +58,29 @@ extension BuiltinWorkflowAddonResolver {
         if action != "commit" {
           guard config["value"] == nil, let label = nonEmptyString(config["label"]), let head else { throw snapshotInvalid() }
           if action == "retain" {
-            guard case let .integer(ttl) = config["expiresInSeconds"] ?? .integer(86_400), (60...604_800).contains(ttl) else { throw snapshotInvalid() }
+            let ttl: Int?
+            if let raw = config["expiresInSeconds"] {
+              guard case let .integer(value) = raw, (60...604_800).contains(value) else { throw snapshotInvalid() }
+              ttl = Int(value)
+            } else { ttl = nil }
+            let labels: [String]?
+            if let raw = config["retainedLabels"] {
+              guard case let .array(values) = raw else { throw snapshotInvalid() }
+              labels = try values.map { value in
+                guard case let .string(text) = value else { throw snapshotInvalid() }; return text
+              }
+            } else { labels = nil }
             let responseBudget = min(Int(limit), frameLimit - (try JSONEncoder().encode(config["context"] ?? .null).count) - 512)
             guard responseBudget > 0 else { throw snapshotInvalid() }
             snapshot = try store.retainSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag,
-              label: label, expectedHead: head, expiresInSeconds: Int(ttl), maxPayloadBytes: responseBudget)
+              label: label, expectedHead: head, expiresInSeconds: ttl, retainedLabels: labels, maxPayloadBytes: responseBudget)
           } else {
-            guard config["expiresInSeconds"] == nil else { throw snapshotInvalid() }
+            guard config["expiresInSeconds"] == nil, config["retainedLabels"] == nil else { throw snapshotInvalid() }
             released = try store.releaseSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag, label: label, expectedHead: head)
             snapshot = nil
           }
         } else {
-          guard let value = config["value"], config["label"] == nil, config["expiresInSeconds"] == nil else { throw snapshotInvalid() }
+          guard let value = config["value"], config["label"] == nil, config["expiresInSeconds"] == nil, config["retainedLabels"] == nil else { throw snapshotInvalid() }
           // Validate the eventual response before mutating persistent state.
           guard try JSONEncoder().encode(value).count + JSONEncoder().encode(config["context"] ?? .null).count + 512 <= frameLimit else {
             throw snapshotInvalid()

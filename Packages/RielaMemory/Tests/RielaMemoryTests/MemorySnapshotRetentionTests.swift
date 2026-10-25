@@ -42,7 +42,7 @@ final class MemorySnapshotRetentionTests: XCTestCase {
   func testStaleRetainScopeAndLabelRebindingCannotReplaceActiveConsumerVersion() throws {
     let store = try store(); let first = try commit(store, "old")
     _ = try retain(store, first.head); let next = try commit(store, "new", head: first.head)
-    XCTAssertThrowsError(try retain(store, first.head)) { XCTAssertEqual($0 as? MemorySnapshotError, .conflict) }
+    XCTAssertEqual(try retain(store, first.head).record, first.record)
     XCTAssertThrowsError(try retain(store, next.head)) { XCTAssertEqual($0 as? MemorySnapshotError, .conflict) }
     XCTAssertThrowsError(try release(store, next.head)) { XCTAssertEqual($0 as? MemorySnapshotError, .conflict) }
     XCTAssertNil(try load(store, workflow: "other"))
@@ -88,6 +88,65 @@ final class MemorySnapshotRetentionTests: XCTestCase {
     XCTAssertTrue(try release(store, first.head, label: "work-0"))
     XCTAssertNoThrow(try retain(store, first.head, label: "overflow"))
     XCTAssertEqual(try store.loadSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint")?.head, first.head)
+  }
+
+  func testDurableReferenceSurvivesHeadAdvancementAndCanBeRenewedExactly() throws {
+    let store = try store(); let first = try commit(store, "old-work")
+    _ = try retain(store, first.head)
+    let next = try commit(store, "new-arrivals", head: first.head)
+    let db = try store.openDatabase(memoryId: "source")
+    let expiry = try queryRows(db, sql: "SELECT expires_at FROM memory_snapshot_retention", bindings: [])
+      .first?.columns["expires_at"].flatMap(Int64.init)
+    sqlite3_close(db)
+    XCTAssertEqual(expiry, Int64.max)
+    XCTAssertEqual(try retain(store, first.head).head, first.head)
+    XCTAssertEqual(try load(store)?.record, first.record)
+    XCTAssertEqual(try store.loadSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint")?.head, next.head)
+  }
+
+  func testMoreThan256CompletedGenerationsReclaimOnlyUnusedLabelsAndKeepAllActiveConsumers() throws {
+    let store = try store(); var head = try commit(store, "consumer-old")
+    let oldest = head
+    _ = try retain(store, oldest.head, label: "old-consumer")
+    let other = try store.commitSnapshot(memoryId: "source", workflowId: "other", nodeId: "collect", tag: "checkpoint",
+      expectedHead: nil, payload: .string("foreign-consumer"))
+    _ = try store.retainSnapshot(memoryId: "source", workflowId: "other", nodeId: "collect", tag: "checkpoint",
+      label: "foreign-consumer", expectedHead: other.head)
+    for index in 1...260 {
+      head = try commit(store, "version-\(index)", head: head.head)
+      _ = try store.retainSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint",
+        label: "current-\(index)", expectedHead: head.head, retainedLabels: ["old-consumer"])
+    }
+    XCTAssertEqual(try load(store, label: "old-consumer")?.head, oldest.head)
+    XCTAssertEqual(try load(store, label: "current-260")?.head, head.head)
+    XCTAssertNil(try load(store, label: "current-259"))
+    XCTAssertEqual(try store.loadRetainedSnapshot(memoryId: "source", workflowId: "other", nodeId: "collect", tag: "checkpoint",
+      label: "foreign-consumer")?.head, other.head)
+    let db = try store.openDatabase(memoryId: "source")
+    XCTAssertEqual(try queryRows(db, sql: "SELECT COUNT(*) AS count FROM memory_snapshot_retention", bindings: []).first?.columns["count"], "3")
+    sqlite3_close(db)
+  }
+
+  func testOpaqueUnicodeLabelsRetainTheirDistinctUTF8Identity() throws {
+    let store = try store(); let first = try commit(store, "opaque")
+    let composed = "caf\u{e9}", decomposed = "cafe\u{301}"
+    _ = try retain(store, first.head, label: composed)
+    _ = try store.retainSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint",
+      label: decomposed, expectedHead: first.head, retainedLabels: [composed])
+    _ = try store.retainSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint",
+      label: "current", expectedHead: first.head, retainedLabels: [composed, decomposed])
+    XCTAssertTrue(try release(store, first.head, label: composed))
+    XCTAssertEqual(try load(store, label: decomposed)?.head, first.head)
+  }
+
+  func testInvalidReferenceSetDoesNotReleaseAnyActiveConsumer() throws {
+    let store = try store(); let first = try commit(store, "old")
+    _ = try retain(store, first.head)
+    let next = try commit(store, "new", head: first.head)
+    XCTAssertThrowsError(try store.retainSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint",
+      label: "next", expectedHead: next.head, retainedLabels: ["batch", "batch"]))
+    XCTAssertEqual(try load(store)?.head, first.head)
+    XCTAssertNil(try load(store, label: "next"))
   }
 
   func testPayloadBudgetAndInvalidLabelFailWithoutCreatingRetention() throws {

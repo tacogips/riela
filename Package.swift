@@ -89,7 +89,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "6f7fd90b605f35ce99f023de36bcb272d0f58f60" // v0.1.27; process-lifetime bounded HTTP transport on Linux.
+      revision: "bb9ddfb3dbab970fd60e41468a4ecfc8347a6da0" // v0.1.28; process-lifetime transport with corelibs callback forwarding.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",

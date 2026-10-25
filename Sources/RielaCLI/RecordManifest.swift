@@ -15,6 +15,7 @@ enum RecordManifest {
     let fields: [String: Set<String>] = [
       "partition": ["availableKeys", "oversizedKeys", "acknowledged", "selectedKeys", "unavailableAcknowledgedKeys"],
       "merge": ["current", "retainKeys"],
+      "admit": ["available", "acknowledged", "priority", "examinedKeys", "maximumItems", "maximumBytes"],
       "recover": ["requestedKeys", "returnedKeys", "pendingKeys", "attemptedKeys", "deferredKeys",
         "availableKeys", "unavailableAcknowledgedKeys", "acknowledged", "context", "expectedContext"]
     ]
@@ -24,6 +25,7 @@ enum RecordManifest {
     let all = Set(entries.map { key($0.key) })
     let result: JSONObject
     switch action {
+    case "admit": result = try RecordManifestAdmission.select(value, entries: entries)
     case "partition": result = try partition(value, entries: entries, all: all)
     case "merge":
       let current = try self.entries(value["current"])

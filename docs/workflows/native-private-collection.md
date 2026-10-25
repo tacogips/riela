@@ -229,3 +229,42 @@ each scan iteration. Per-item byte metadata is checked before large payloads
 are loaded. Limits are 10,000 requests, 1,024 examined items per invocation,
 8 MB per item/output (with protocol envelope reserve); defaults are 40 hits,
 256 examined items, 1 MB per item, and 7,991,808 output bytes.
+
+
+### Provider-independent record admission
+
+`riela/record-manifest` action `admit` selects a bounded available batch without
+provider calls, persistence, cursor changes or publication acknowledgements.
+Use this after an availability scan for Gmail, X, Web or any other source:
+
+```json
+{
+  "action": "admit",
+  "value": {
+    "entries": [{"key": "opaque-id", "version": "opaque-version", "value": {"sourceId": "source-id"}}],
+    "available": [{"key": "opaque-id", "version": "opaque-version", "payload": {"checked": "body"}}],
+    "acknowledged": [],
+    "priority": [],
+    "examinedKeys": ["opaque-id"],
+    "maximumItems": 12,
+    "maximumBytes": 1000000
+  }
+}
+```
+
+The result contains `admitted`, `deferred`, `handled` metadata entries,
+`records` (admitted payloads), and `unavailableKeys`/`oversizedKeys`. Two ready
+items return immediately even when the limit is twelve. A byte limit may defer
+a large remaining item while admitting a later smaller one. A body individually
+larger than the byte limit is oversized; an item that only exceeds the remaining
+batch space is deferred. Unexamined items are deferred without claiming a miss.
+
+Only an explicit acknowledgement of the same key and version produces handled
+metadata. Changed versions become eligible again. An existing `priority` prefix
+is honored only if every complete descriptor still matches an unacknowledged
+entry; otherwise fresh inventory order applies. Available bodies with unknown
+keys, different versions or duplicate identities are rejected, including an
+invalid tail after the count limit. Callers retain their domain-specific source,
+account and body-digest checks. Keys and versions are opaque bounded UTF-8 values.
+Defaults are 40 items and 1,000,000 encoded payload bytes; limits are 10,000 items
+and 8,000,000 bytes. All request metadata is validated before selecting a result.

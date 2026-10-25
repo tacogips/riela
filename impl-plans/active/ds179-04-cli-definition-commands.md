@@ -1,11 +1,11 @@
 # DS179-04 `riela workflow definition` CLI Surface
 
 **planId**: `ds179-04-cli-definition-commands`
-**Status**: Ready for implementation
+**Status**: Implemented; aggregate SurfaceParity awaits downstream skill catalog synchronization
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy + (A) whole-workflow CLI update with mandatory reason
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §5 (operations incl. `update`), §7, §8 (CLI incl. `update` result and error codes), §11; QA Q1 (reversed for CLI/GraphQL), Q3 (actor kinds)
-**dependsOn**: `ds179-03-service-resolution`
+**dependsOn**: none (ds179-02 and ds179-03 are accepted dependencies, commit 695c0af9)
 **Branch**: `feat/definition-store-179` (local commits only; `gitPush=false`)
 **Progress log**: `impl-plans/progress/ds179-04-cli-definition-commands.md`
 
@@ -280,6 +280,25 @@ temporary project with `--session-store <tmp>`.
 - All verification commands exit 0. Each is logged with exitStatus,
   testsRun, failureCount and the log path.
 
+## Implementation checkpoint (2026-10-26)
+
+Attempt-004 is the final source snapshot; it includes the export JSON path-only
+output correction and supersedes attempt-003 verification evidence.
+
+The CLI route, eight command implementations, store-root selection seam,
+catalog rows and command tests are implemented. `swift build`, the assigned
+focused suite (39 tests), strict changed-file SwiftLint, `git diff --check`,
+and the unchanged `WorkflowRegistryCLICommand.swift` check pass.
+
+The exact `swift test --filter SurfaceParity` gate is not green yet. It reports
+two failures from `SurfaceParitySkillTests.testGeneratedCommandBlocksMatchTheCatalog`:
+`Resources/skills/riela-workflow-run/SKILL.md` does not list the new
+`workflow definition` commands and its session block misses the existing
+`session reconcile` row. That skill file is outside ds179-04 `writePaths`; do
+not edit it here. Rerun the gate after its owning documentation/integration
+step updates the generated command block. Evidence is in
+`tmp/ds179/ds179-04-cli-definition-commands/attempt-004/surface-parity.log`.
+
 ## Progress log expectations
 
 Log each edit in `impl-plans/progress/ds179-04-cli-definition-commands.md`
@@ -298,3 +317,12 @@ the catalog rows next.
   `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`, `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`.
   `DeterministicWorkflowRunnerFanoutTests.testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin` is timing-flaky under
   full-suite load and passes in isolation.
+
+## Operator amendment 2 (after session-498 blocked wave)
+
+- ds179-02 and ds179-03 are accepted and committed in 695c0af9.
+- ds179-04 now also owns `Resources/skills/riela-workflow-run/SKILL.md` (added to writePaths). The operator
+  already regenerated its `workflow` block (eight `riela workflow definition` commands) and `session` block
+  (`riela session reconcile`); `swift test --filter SurfaceParity` passes (48 tests, 0 failures). Keep those
+  blocks in sync with the catalog if the command list changes; the ds179-04 implementation WIP in the tree is
+  kept and must be finished and verified, not rewritten.

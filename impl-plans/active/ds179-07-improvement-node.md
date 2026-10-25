@@ -510,3 +510,7 @@ new position" check from file change 4.
   `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`, `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`.
   `DeterministicWorkflowRunnerFanoutTests.testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin` is timing-flaky under
   full-suite load and passes in isolation.
+
+## Operator amendment 2 (after session-498 blocked wave)
+
+- ds179-02 and ds179-03 are accepted (commit 695c0af9). `Resources/skills/riela-workflow-run/SKILL.md` is owned by ds179-04; it is a sharedPath of this plan: if this plan adds CLI catalog rows, update the generated command blocks in that file so SurfaceParitySkillTests stays green.

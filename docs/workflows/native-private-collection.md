@@ -81,13 +81,22 @@ Gateway and deterministic data nodes run within the same guest runtime.
 
 Only the inner root output is returned. Every intermediate step's session,
 artifact, working directory and memory reside under a private guest tmpfs root.
+Embedded execution renders only the root and finite lifecycle metadata rather
+than serializing the entire session transcript for extraction. Canonical runtime
+and CLI session persistence are retained inside the guest; an additional set of
+file artifact snapshots is not produced.
 The export schema is checked in the guest and controller. It establishes a
 structural contract; the authored screening/normalization graph must establish
 the semantic boundary for source content.
 
 The worker requires Linux, non-root identity, no capabilities, no-new-privileges
-on every current thread, a read-only root and a 256 MiB nosuid/nodev/noexec `/tmp`
-tmpfs. A pre-main native initialization sets privilege and process/core limits
+on every current thread, a read-only root and a bounded nosuid/nodev/noexec `/tmp`
+tmpfs. The default is 256 MiB. `config.temporaryStorageMiB` optionally selects
+64–4096 MiB for graphs whose private runtime records need more space. An
+explicit quota also allocates container memory equal to that quota plus
+1024 MiB for processes. The guest checks the global ceiling before reading
+input and then checks the configured ceiling before starting the graph.
+A pre-main native initialization sets privilege and process/core limits
 before Swift creates threads. The host refuses unsupported configuration and
 reserved environment names before launching; there is no host execution fallback.
 Selected secrets travel on attached stdin only. Failures use finite fixed text;

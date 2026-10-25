@@ -86,6 +86,25 @@ final class PrivateWorkflowTests: XCTestCase {
     XCTAssertTrue(calls.last?.0.arguments.contains("--force") == true)
   }
 
+  func testExplicitTemporaryStorageAllocatesBoundedGuestMemory() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-storage")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = PrivateWorkflowFixtureRunner()
+    var request = input()
+    request.addon.config?["temporaryStorageMiB"] = .integer(1024)
+    _ = try await host(runner, root: root).execute(request, context: .init())
+    let calls = await runner.calls
+    let arguments = try XCTUnwrap(calls.first?.0.arguments)
+    XCTAssertTrue(arguments.contains("/tmp:rw,nosuid,nodev,noexec,size=1024m"))
+    let index = try XCTUnwrap(arguments.firstIndex(of: "--memory"))
+    XCTAssertEqual(arguments[index + 1], "2048M")
+    for value: JSONValue in [.integer(0), .integer(63), .integer(4097), .number(256.5), .string("1024")] {
+      var config = try XCTUnwrap(input().addon.config)
+      config["temporaryStorageMiB"] = value
+      XCTAssertThrowsError(try PrivateWorkflowPlan(config: config))
+    }
+  }
+
   func testAdmissionWaitDoesNotLaunchPrivateWorkerAndCanProceedAfterRelease() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("private-workflow-admission")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -215,6 +234,12 @@ final class PrivateWorkflowTests: XCTestCase {
     let status = "NoNewPrivs:\t1\nCapEff:\t0\nCapPrm:\t0\nCapBnd:\t0\nCapAmb:\t0\n"
     let mounts = "1 0 0:1 / / ro - ext4 disk rw\n2 1 0:2 / /tmp rw,nosuid,nodev,noexec - tmpfs tmpfs rw\n"
     try PrivateWorkflowWorker.verifyGuestMetadata(status: [status], mounts: mounts, temporaryBytes: 256 * 1024 * 1024)
+    try PrivateWorkflowWorker.verifyGuestMetadata(status: [status], mounts: mounts,
+      temporaryBytes: 1024 * 1024 * 1024, maximumTemporaryMiB: 1024)
+    XCTAssertThrowsError(try PrivateWorkflowWorker.verifyGuestMetadata(status: [status], mounts: mounts,
+      temporaryBytes: 1025 * 1024 * 1024, maximumTemporaryMiB: 1024))
+    XCTAssertThrowsError(try PrivateWorkflowWorker.verifyGuestMetadata(status: [status], mounts: mounts,
+      temporaryBytes: 1, maximumTemporaryMiB: 4097))
     for (statuses, table, bytes) in [
       ([status.replacingOccurrences(of: "NoNewPrivs:\t1", with: "NoNewPrivs:\t0")], mounts, UInt64(1024)),
       ([status, status.replacingOccurrences(of: "CapEff:\t0", with: "CapEff:\t1")], mounts, UInt64(1024)),
@@ -252,6 +277,27 @@ final class PrivateWorkflowTests: XCTestCase {
     XCTAssertEqual(output.promptText, "")
     XCTAssertNil(output.usage)
     XCTAssertFalse(try XCTUnwrap(String(data: JSONEncoder().encode(output), encoding: .utf8)).contains("RAW_INTERMEDIATE_CANARY"))
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+      canonicalRuntimeStoreRoot(sessionStoreRoot: root.appendingPathComponent("guest/sessions").path))
+    let snapshots = try store.loadAll()
+    XCTAssertEqual(snapshots.count, 1)
+    XCTAssertTrue(try XCTUnwrap(String(data: JSONEncoder().encode(snapshots), encoding: .utf8)).contains("RAW_INTERMEDIATE_CANARY"))
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("guest/artifacts").path), [])
+    var command = WorkflowRunCommand()
+    command.outputProjection = PrivateWorkflowWorker.rootResult
+    let ordinary = await WorkflowRunCommand().runWithoutSpecialistMonitor(.init(target: "check",
+      resolution: .init(workflowName: "check", workflowDefinitionDir: definitions.deletingLastPathComponent().path,
+        workingDirectory: root.appendingPathComponent("ordinary").path), output: .json,
+      sessionStore: root.appendingPathComponent("ordinary-sessions").path))
+    XCTAssertEqual(ordinary.exitCode, .success)
+    XCTAssertTrue(ordinary.stdout.contains("RAW_INTERMEDIATE_CANARY"))
+    let projected = await command.runWithoutSpecialistMonitor(.init(target: "check",
+      resolution: .init(workflowName: "check", workflowDefinitionDir: definitions.deletingLastPathComponent().path,
+        workingDirectory: root.appendingPathComponent("projected").path), output: .json,
+      sessionStore: root.appendingPathComponent("projected-sessions").path))
+    XCTAssertEqual(projected.exitCode, .success)
+    XCTAssertFalse(projected.stdout.contains("RAW_INTERMEDIATE_CANARY"))
+    XCTAssertLessThan(projected.stdout.utf8.count, 1024)
   }
 
   func testBuiltinRoutingRequiresPrivateSandboxAndUsesOwnedWorker() async throws {

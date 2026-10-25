@@ -23,6 +23,9 @@ public struct WorkflowRunCommand: Sendable {
   var sessionStartedObserver: (@Sendable (String) -> Void)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
+  /// An embedded caller can return a bounded result without serializing the
+  /// complete execution transcript. Canonical persistence is unchanged.
+  var outputProjection: (@Sendable (WorkflowRunResult) throws -> JSONObject)?
   /// Projects loop evidence for required-gate enforcement; injectable so a
   /// projector failure can be exercised without a broken evidence fixture.
   var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
@@ -748,6 +751,7 @@ public struct WorkflowRunCommand: Sendable {
   ) async throws -> String {
     switch output {
     case .json:
+      if let outputProjection { return try jsonString(outputProjection(result)) }
       return try jsonString(result)
     case .jsonl:
       let record = try jsonString(WorkflowRunResultRecord(result: result))

@@ -12,10 +12,11 @@ struct PrivateWorkflowPlan: Codable, Sendable {
   var xUsageScope: String?
   var failureStages: [String: String]?
   var cacheSpaces: [String]?
+  var temporaryStorageMiB: Int?
 
   init(config: JSONObject) throws {
     guard Set(config.keys).isSubset(of: ["workflowId", "definitionRoot", "variables", "outputSchema",
-      "maxSteps", "maxConcurrency", "timeoutSeconds", "xUsageScope", "failureStages", "cacheSpaces"]) else { throw Self.invalid() }
+      "maxSteps", "maxConcurrency", "timeoutSeconds", "xUsageScope", "failureStages", "cacheSpaces", "temporaryStorageMiB"]) else { throw Self.invalid() }
     var config = config
     config["definitionRoot"] = config["definitionRoot"] ?? .string("/app/workflows")
     config["variables"] = config["variables"] ?? .object([:])
@@ -24,6 +25,7 @@ struct PrivateWorkflowPlan: Codable, Sendable {
   }
 
   func validate() throws {
+    if let temporaryStorageMiB, !(64...4096).contains(temporaryStorageMiB) { throw Self.invalid() }
     if let cacheSpaces {
       guard cacheSpaces.count <= 8, Set(cacheSpaces).count == cacheSpaces.count,
         Set(cacheSpaces).isSubset(of: PrivateWorkflowCacheSpaces.registeredNames) else { throw Self.invalid() }

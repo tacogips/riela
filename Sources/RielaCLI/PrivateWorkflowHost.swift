@@ -59,7 +59,12 @@ struct PrivateWorkflowHost {
       guard let index = configuration.arguments.firstIndex(of: "--tmpfs"), index + 1 < configuration.arguments.count else {
         throw PrivateWorkflowPlan.invalid()
       }
-      configuration.arguments[index + 1] = "/tmp:rw,nosuid,nodev,noexec,size=256m"
+      let temporaryStorageMiB = plan.temporaryStorageMiB ?? 256
+      configuration.arguments[index + 1] = "/tmp:rw,nosuid,nodev,noexec,size=\(temporaryStorageMiB)m"
+      if plan.temporaryStorageMiB != nil {
+        // Leave a separate, bounded process working set alongside tmpfs pages.
+        configuration.arguments.insert(contentsOf: ["--memory", "\(temporaryStorageMiB + 1024)M"], at: index)
+      }
       let records = SandboxNodeRecordCollector(privateOutput: true)
       let usageExports = XGatewayUsageExportCollector(cache: usageCache)
       let cacheExports = PrivateWorkflowCacheExportCollector(spaces: cacheSpaces, seeds: cacheSeeds)

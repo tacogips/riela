@@ -290,6 +290,7 @@ public struct WorkflowDefinitionCommand: Sendable {
   private func encode<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    encoder.dateEncodingStrategy = .iso8601
     let data = try encoder.encode(value)
     guard let json = String(data: data, encoding: .utf8) else {
       throw WorkflowDefinitionCLIError(code: "definition_error", message: "could not encode JSON as UTF-8", isUsage: false)

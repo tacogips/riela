@@ -105,6 +105,34 @@ final class SnapshotStoreAddonTests: XCTestCase {
     }
   }
 
+  func testRetainedSourceRevisionThroughBuiltinSurvivesNewAcquisitionAndReleasesExactly() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let first = try await resolver.execute(input(root, action: "commit", value: .string("old-work"), head: .null), context: .init())
+    func retained(_ action: String, head: JSONValue? = nil) -> WorkflowAddonExecutionInput {
+      var request = input(root, action: action, head: head)
+      request.addon.config?["label"] = .string("opaque-batch-token")
+      return request
+    }
+    _ = try await resolver.execute(retained("retain", head: first.payload["head"]), context: .init())
+    let newer = try await resolver.execute(input(root, action: "commit", value: .string("new-work"), head: first.payload["head"]), context: .init())
+    let old = try await resolver.execute(retained("load-retained"), context: .init())
+    XCTAssertEqual(old.payload["head"], first.payload["head"])
+    XCTAssertEqual(old.payload["value"], .string("old-work"))
+    do {
+      _ = try await resolver.execute(retained("release", head: newer.payload["head"]), context: .init())
+      XCTFail("stale acknowledgement removed another revision")
+    } catch {}
+    let released = try await resolver.execute(retained("release", head: first.payload["head"]), context: .init())
+    XCTAssertEqual(released.payload["released"], .bool(true))
+    let missing = try await resolver.execute(retained("load-retained"), context: .init())
+    XCTAssertEqual(missing.payload["found"], .bool(false))
+    let current = try await resolver.execute(input(root, action: "load"), context: .init())
+    XCTAssertEqual(current.payload["head"], newer.payload["head"])
+    XCTAssertEqual(current.payload["value"], .string("new-work"))
+  }
+
   private func input(_ root: URL, action: String, value: JSONValue? = nil, head: JSONValue? = nil) -> WorkflowAddonExecutionInput {
     var config: JSONObject = ["action": .string(action), "storage": .object(["memoryId": .string("state"),
       "workflowId": .string("snapshot"), "nodeId": .string("collect"), "memoryRoot": .string(root.path)]),

@@ -95,27 +95,27 @@ extension RielaMemoryStore {
     return result
   }
 
-  private func prepareSnapshotDirectory() throws {
+  func prepareSnapshotDirectory() throws {
     try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true,
       attributes: [.posixPermissions: 0o700])
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: rootDirectory)
   }
 
-  private func secureSnapshotFiles(memoryId: String) throws {
+  func secureSnapshotFiles(memoryId: String) throws {
     let path = try databasePath(memoryId: memoryId)
     for suffix in ["", "-wal", "-shm", "-journal"] where FileManager.default.fileExists(atPath: path + suffix) {
       try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path + suffix)
     }
   }
 
-  private func validateSnapshotScope(memoryId: String, workflowId: String, nodeId: String?, tag: String, limit: Int) throws {
+  func validateSnapshotScope(memoryId: String, workflowId: String, nodeId: String?, tag: String, limit: Int) throws {
     try validateMemoryId(memoryId); try validateWorkflowId(workflowId); try validateTags([tag])
     guard !tag.isEmpty, nodeId == nil || !(nodeId?.isEmpty ?? true), (1...64 * 1024 * 1024).contains(limit) else {
       throw MemorySnapshotError.invalidScope
     }
   }
 
-  private func selectedSnapshot(
+  func selectedSnapshot(
     memoryId: String, workflowId: String, nodeId: String?, tag: String,
     maxPayloadBytes: Int, db: OpaquePointer?
   ) throws -> MemorySnapshot? {
@@ -135,7 +135,7 @@ extension RielaMemoryStore {
       scope: snapshotScope(memoryId: memoryId, workflowId: workflowId, nodeId: nodeId, tag: tag), db: db)
   }
 
-  private func snapshotScope(memoryId: String, workflowId: String, nodeId: String?, tag: String) throws -> String {
+  func snapshotScope(memoryId: String, workflowId: String, nodeId: String?, tag: String) throws -> String {
     let root = URL(fileURLWithPath: rootDirectory).standardizedFileURL.resolvingSymlinksInPath().path
     let identity: [MemoryJSONValue] = [.string(root), .string(memoryId), .string(workflowId), nodeId.map(MemoryJSONValue.string) ?? .null, .string(tag)]
     return SHA256.hash(data: try JSONEncoder().encode(identity)).map { String(format: "%02x", $0) }.joined()

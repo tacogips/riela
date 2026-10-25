@@ -568,6 +568,7 @@ public struct RielaMemoryStore: Sendable {
       "CREATE INDEX IF NOT EXISTS idx_memory_files_record ON memory_files (record_id, file_id ASC)"
     )
     try ensureMemoryEvolutionSchema(db)
+    try ensureMemorySnapshotRetentionSchema(db)
     try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
     try execute(db, "COMMIT")
     committed = true

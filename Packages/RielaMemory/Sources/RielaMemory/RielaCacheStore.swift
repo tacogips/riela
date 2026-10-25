@@ -145,7 +145,7 @@ public struct RielaCacheStore: Sendable {
 
   public func get(cacheId: String, scope: String, keys: [String], maxOutputBytes: Int = maximumFrameBytes,
                   touch: Bool = true) throws -> CacheResult {
-    try validate(scope: scope, keys: keys)
+    try validate(scope: scope, keys: keys, allowingEmpty: true)
     guard (1...Self.maximumFrameBytes).contains(maxOutputBytes) else { throw RielaCacheError.invalid("invalid output budget") }
     return try transaction(cacheId) { db, now in
       let policy = try readPolicy(db)
@@ -350,9 +350,9 @@ public struct RielaCacheStore: Sendable {
     }
   }
 
-  private func validate(scope: String, keys: [String]) throws {
+  private func validate(scope: String, keys: [String], allowingEmpty: Bool = false) throws {
     try validate(scope: scope)
-    guard !keys.isEmpty, keys.count <= 1024, Set(keys).count == keys.count,
+    guard (allowingEmpty || !keys.isEmpty), keys.count <= 1024, Set(keys).count == keys.count,
       keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 && !$0.contains("\0") && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }) else {
       throw RielaCacheError.invalid("scope/key invalid, duplicate key, or batch outside 1...1024")
     }

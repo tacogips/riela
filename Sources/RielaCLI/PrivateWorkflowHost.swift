@@ -70,7 +70,10 @@ struct PrivateWorkflowHost {
       let result: LocalProcessResult
       do {
         result = try await EphemeralContainerNodeProcess(runner: runner).run(configuration: configuration,
-          stdin: stdin + "\n", deadline: deadline) { event in
+          stdin: stdin + "\n", deadline: deadline, onEmptyInputRetry: {
+            await context.backendEventHandler?(.init(provider: "riela-private-workflow", eventType: "private-input-reattach",
+              metadata: ["attempt": .integer(2), "phase": .string("before-request"), "reason": .string("empty-request")]))
+          }) { event in
             if event.stream == .stdout { _ = records.accept(event.line) }
             if event.stream == .stderr { usageExports.accept(event.line); cacheExports.accept(event.line) }
           }

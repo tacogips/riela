@@ -57,6 +57,7 @@ enum PrivateWorkflowWorker {
 
   /// Finite code, fixed text: inner diagnostics never cross the boundary.
   static func failure(for error: Error) -> AdapterExecutionError {
+    if error is EmptyWorkerInput { return .init(.invalidInput, WorkerJSONLInput.privateEmptyMessage) }
     let code: AdapterExecutionErrorCode
     switch error {
     case let error as PrivateWorkflowExecutionFailure:
@@ -158,6 +159,7 @@ enum PrivateWorkflowWorker {
       bytes.append(chunk)
       guard bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes else { throw PrivateWorkflowPlan.invalid() }
     }
-    return try JSONDecoder().decode(PrivateWorkflowRequest.self, from: bytes)
+    return try WorkerJSONLInput.decode(PrivateWorkflowRequest.self, from: bytes,
+      framingMessage: "private workflow worker requires one JSONL request")
   }
 }

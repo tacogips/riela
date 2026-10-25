@@ -90,7 +90,10 @@ actor SandboxingNodeAdapter: NodeAdapter {
       do {
         if options.ephemeralHome {
           result = try await EphemeralContainerNodeProcess(runner: runner).run(
-            configuration: configuration, stdin: stdin + "\n", deadline: context.deadline) { event in
+            configuration: configuration, stdin: stdin + "\n", deadline: context.deadline, onEmptyInputRetry: {
+              stream.continuation.yield(.init(provider: "riela-sandbox", eventType: "private-input-reattach",
+                metadata: ["attempt": .integer(2), "phase": .string("before-request"), "reason": .string("empty-request")]))
+            }) { event in
               guard event.stream == .stdout else { return }
               if let record = records.accept(event.line) { stream.continuation.yield(record) }
             }

@@ -123,9 +123,11 @@ public enum BuiltinAddonWorker {
         throw AdapterExecutionError(.invalidInput, "container request exceeds the record size limit")
       }
     }
-    guard let text = String(data: bytes, encoding: .utf8), text.split(whereSeparator: \.isNewline).count == 1 else {
-      throw AdapterExecutionError(.invalidInput, "container worker requires one JSONL request")
+    do {
+      return try WorkerJSONLInput.decode(BuiltinAddonContainerRequest.self, from: bytes,
+        framingMessage: "container worker requires one JSONL request")
+    } catch is EmptyWorkerInput {
+      throw AdapterExecutionError(.invalidInput, "container worker received no request bytes")
     }
-    return try JSONDecoder().decode(BuiltinAddonContainerRequest.self, from: bytes)
   }
 }

@@ -268,3 +268,24 @@ invalid tail after the count limit. Callers retain their domain-specific source,
 account and body-digest checks. Keys and versions are opaque bounded UTF-8 values.
 Defaults are 40 items and 1,000,000 encoded payload bytes; limits are 10,000 items
 and 8,000,000 bytes. All request metadata is validated before selecting a result.
+
+
+### Private worker input delivery
+
+The native node and private-workflow workers distinguish an empty request from
+malformed JSONL, invalid UTF-8, unsupported capabilities and execution failures.
+Framing uses ASCII LF: Unicode NEL/line/paragraph separators inside JSON string
+values remain data. The builtin add-on worker uses the same framing rule.
+
+A private container may attach one additional time only after a sole, current
+worker-protocol refusal explicitly reports no request bytes. That refusal is
+emitted before request decoding, credential HOME setup and provider/model calls.
+The retry uses the identical stdin and the same owned container/deadline. Model
+failures, schema rejections, partial/unknown outcomes, nonempty stderr and legacy
+ambiguous framing failures never authorize it. Cancellation and final container
+cleanup remain owned by the original invocation. A second empty refusal stops.
+
+The host records `private-input-reattach` with only `attempt: 2`,
+`phase: "before-request"`, and `reason: "empty-request"`. Neither the first
+refusal nor private data becomes an additional terminal result. Both host and
+guest must contain this explicit refusal to enable the recovery path.

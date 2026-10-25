@@ -116,7 +116,10 @@ let package = Package(
       ]
     ),
     .target(name: "CRielaPrivateWorker"),
-    .target(name: "CRielaPublicWeb", cSettings: [.unsafeFlags(["-iwithsysroot", "/usr/include/libxml2"])],
+    .systemLibrary(name: "CRielaXML2", pkgConfig: "libxml-2.0", providers: [.apt(["libxml2-dev"])]),
+    .target(name: "CRielaPublicWeb",
+      dependencies: [.target(name: "CRielaXML2", condition: .when(platforms: [.linux]))],
+      cSettings: [.unsafeFlags(["-iwithsysroot", "/usr/include/libxml2"], .when(platforms: [.macOS]))],
       linkerSettings: [.linkedLibrary("curl"), .linkedLibrary("xml2")]),
     .target(
       name: "RielaVersion",

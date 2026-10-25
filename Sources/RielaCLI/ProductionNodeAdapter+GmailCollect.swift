@@ -17,8 +17,7 @@ extension BuiltinWorkflowAddonResolver {
     guard try JSONEncoder().encode(values["previous"] ?? .object([:])).count + 131_072 < budget else {
       throw gmailCollectionInvalid()
     }
-    var payload = try await GmailMailboxCollector(options: .init(values),
-      deadline: context.deadline?.addingTimeInterval(-3), outputByteBudget: budget).collect { operation, arguments, selection in
+    func fetch(_ operation: String, _ arguments: JSONObject, _ selection: [String]) async throws -> JSONObject {
       let child = WorkflowAddonExecutionInput(workflowId: input.workflowId, stepId: input.stepId, nodeId: input.nodeId,
         addon: .init(name: "riela/gmail-gateway-reader", version: "1", config: ["operation": .string(operation),
           "arguments": .string("{{collectorArguments}}"), "selection": .array(selection.map(JSONValue.string)),
@@ -30,6 +29,14 @@ extension BuiltinWorkflowAddonResolver {
       let output = try await execute(child, context: childContext)
       guard case let .object(response)? = output.payload["processed"] else { throw gmailCollectionInvalid() }
       return response
+    }
+    var payload: JSONObject
+    if values["mode"] == .string("message-bodies") {
+      payload = try await GmailMessageBodyCollector(options: .init(values),
+        deadline: context.deadline?.addingTimeInterval(-3), outputByteBudget: budget).collect(fetch: fetch)
+    } else {
+      payload = try await GmailMailboxCollector(options: .init(values),
+        deadline: context.deadline?.addingTimeInterval(-3), outputByteBudget: budget).collect(fetch: fetch)
     }
     payload["context"] = config["context"] ?? .null
     guard try JSONEncoder().encode(payload).count <= 8_000_000 else { throw gmailCollectionInvalid() }

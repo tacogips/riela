@@ -117,6 +117,28 @@ thread. An item failure leaves that item's prior version unacknowledged, while
 other valid threads return immediately. Returned versions are acquisition
 metadata, never evidence of downstream inspection or publication.
 
+Exact original-body recovery uses the same addon with `options.mode` set to
+`message-bodies`. This mode takes `accountId`, `expectedMailboxHash` (the existing
+24-character lowercase SHA-256 prefix of the profile email address), `messageIds`
+(1–128 distinct IDs in request order), `maxMessages` (1–128, default 16),
+`providerBodyMetadata` and `minRequestIntervalSeconds`. It verifies the mailbox
+before reading any body and calls `messageBodyBytes` directly, without listing
+threads, changing normal collection cursors, or persisting body content.
+
+The result contains raw `bodies`, finite per-message `failures`, exact ordered
+`pendingMessageIds`, `attemptCount`, `requestCount`, `complete` and opaque
+`context`. `complete` means no unattempted or frame-deferred IDs remain; inspect
+`failures` separately for unavailable bodies. One failed body does not block
+other IDs. The caller keeps ownership of inspection, version binding and queue
+acknowledgement. Output overflow preserves the accepted prefix and leaves the
+overflowing ID pending. A body too large for an empty frame instead produces a
+finite `body-frame-too-large` failure so smaller peers can continue. Counts refer
+to logical gateway reads, not provider billing resources. Deadline exhaustion
+during a rate wait leaves the
+undispatched ID pending; cancellation always propagates. Like ordinary Gmail
+collection, run this mode inside the private workflow and inspect bodies before
+exporting them across that boundary.
+
 One bounded scan runs per invocation. `pending_scans` retains each exact frozen
 listing/cursor, original mailbox version, cutoff, completed IDs and failed IDs.
 Exhausted listings coalesce unresolved IDs into one retry backlog, without

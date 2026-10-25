@@ -43,7 +43,7 @@ jobs:
               test "$(uname -m)" = "x86_64"
               swift --version
               apt-get update >/dev/null
-              apt-get install -y libcurl4-openssl-dev libxml2-dev libsqlite3-dev >/dev/null
+              apt-get install -y pkg-config libcurl4-openssl-dev libxml2-dev libsqlite3-dev >/dev/null
               # SwiftPM can fetch stale macOS-only pins before resolving the
               # Linux manifest. Do not grant private-repository credentials.
               swift scripts/strip-macos-only-pins.swift Package.resolved

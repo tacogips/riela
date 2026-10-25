@@ -92,7 +92,7 @@ jobs:
               test "$(uname -m)" = "$BUILD_MACHINE"
               swift --version
               apt-get update >/dev/null
-              apt-get install -y libcurl4-openssl-dev libxml2-dev libsqlite3-dev curl unzip >/dev/null
+              apt-get install -y pkg-config libcurl4-openssl-dev libxml2-dev libsqlite3-dev curl unzip >/dev/null
               mkdir -p tmp/linux-release-bun
               curl --fail --location --retry 3 \
                 "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip" \

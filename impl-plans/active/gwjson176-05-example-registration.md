@@ -4,7 +4,7 @@
 {
   "planId": "gwjson176-05",
   "planPath": "impl-plans/active/gwjson176-05-example-registration.md",
-  "dependsOn": ["gwjson176-04", "gwjson176-06"],
+  "dependsOn": ["gwjson176-04"],
   "writePaths": [
     "Tests/RielaCLITests/RielaExampleCatalog.swift",
     "Tests/RielaCLITests/RielaExampleParityTests.swift",

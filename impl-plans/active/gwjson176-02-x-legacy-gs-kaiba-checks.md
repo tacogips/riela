@@ -4,7 +4,7 @@
 {
   "planId": "gwjson176-02",
   "planPath": "impl-plans/active/gwjson176-02-x-legacy-gs-kaiba-checks.md",
-  "dependsOn": ["gwjson176-01"],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
     "Sources/RielaCLI/BuiltinGatewayJSONRequest+XCompatibility.swift",
@@ -356,3 +356,25 @@ or B adds `XGatewayOperationCatalog.swift`, append it to the lint command.
 - blockers as dependency objects;
 - residual risks (no leading severity word);
 - resolved items marked severity `fixed`.
+
+## Operator recovery note (2026-10-25)
+
+An external worktree sweep stashed this branch during wave 2 and checked out
+main, so the TI-1 repair attempt ran against an empty tree. The stash was
+restored and committed at `fb928672` together with the integration-accepted
+gwjson176-01 contract and the reviewed gwjson176-06 examples; both are now
+`acceptedDependencies` in the manifest, so this plan has no pending
+dependency. The first-pass gwjson176-02 implementation is in that commit and
+`swift build` passes on it.
+
+Remaining required repair before this plan is complete:
+
+- **GW176-02-TI-1 (mid):** exact-placeholder Google Service write arguments can
+  bypass runtime operation-key validation. Restore the post-render subset guard
+  in `Sources/RielaCLI/ProductionNodeAdapter+GoogleServiceGatewayAddons.swift`
+  so rendered arguments are re-checked against the operation's allowed keys,
+  and add a resolver-level regression in
+  `Tests/RielaCLITests/LegacyWorkflowGatewayValidationTests.swift` asserting
+  `policyBlocked` with zero client calls while static validation defers the
+  placeholder. Then rerun this plan's validation, regression and strict
+  changed-file lint commands.

@@ -4,7 +4,7 @@
 {
   "planId": "gwjson176-07",
   "planPath": "impl-plans/active/gwjson176-07-docs.md",
-  "dependsOn": ["gwjson176-03", "gwjson176-06"],
+  "dependsOn": ["gwjson176-03"],
   "writePaths": [
     "docs/builtin-gateway-json.md",
     "docs/workflows/json-data-processing.md",

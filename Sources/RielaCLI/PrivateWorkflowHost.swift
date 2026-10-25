@@ -85,6 +85,11 @@ struct PrivateWorkflowHost {
       let terminal = try records.result()
       if let failure = terminal.failure {
         let source = try failure.executionError()
+        if let diagnostic = PrivateWorkflowFailureDiagnostic.parse(source.message, plan: plan) {
+          await context.backendEventHandler?(.init(provider: "riela-private-workflow",
+            eventType: "private-workflow-failure", metadata: ["stage": .string(diagnostic.stage), "kind": .string(diagnostic.kind)]))
+          throw AdapterExecutionError(source.code, diagnostic.message)
+        }
         throw AdapterExecutionError(source.code, "private workflow execution failed")
       }
       guard var output = terminal.output, terminal.vendorSessionId == nil, output.promptText.isEmpty, output.usage == nil else {

@@ -10,10 +10,11 @@ struct PrivateWorkflowPlan: Codable, Sendable {
   var maxConcurrency: Int?
   var timeoutSeconds: Int?
   var xUsageScope: String?
+  var failureStages: [String: String]?
 
   init(config: JSONObject) throws {
     guard Set(config.keys).isSubset(of: ["workflowId", "definitionRoot", "variables", "outputSchema",
-      "maxSteps", "maxConcurrency", "timeoutSeconds", "xUsageScope"]) else { throw Self.invalid() }
+      "maxSteps", "maxConcurrency", "timeoutSeconds", "xUsageScope", "failureStages"]) else { throw Self.invalid() }
     var config = config
     config["definitionRoot"] = config["definitionRoot"] ?? .string("/app/workflows")
     config["variables"] = config["variables"] ?? .object([:])
@@ -22,6 +23,12 @@ struct PrivateWorkflowPlan: Codable, Sendable {
   }
 
   func validate() throws {
+    if let failureStages {
+      guard failureStages.count <= 32, failureStages.allSatisfy({ step, label in
+        step.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"#, options: .regularExpression) != nil
+          && label.range(of: #"^[a-z][a-z0-9-]{0,47}$"#, options: .regularExpression) != nil
+      }) else { throw Self.invalid() }
+    }
     if let xUsageScope, xUsageScope.range(of: #"^[A-Za-z0-9._-]{1,128}$"#, options: .regularExpression) == nil { throw Self.invalid() }
     guard workflowId.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"#, options: .regularExpression) != nil,
           workflowId != ".", workflowId != "..", definitionRoot.hasPrefix("/"), definitionRoot != "/",

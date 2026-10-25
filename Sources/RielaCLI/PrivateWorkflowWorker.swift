@@ -53,6 +53,8 @@ enum PrivateWorkflowWorker {
   static func failure(for error: Error) -> AdapterExecutionError {
     let code: AdapterExecutionErrorCode
     switch error {
+    case let error as PrivateWorkflowExecutionFailure:
+      return .init(error.code, error.diagnostic.message)
     case let error as AdapterExecutionError: code = error.code
     case WorkflowPublicationError.validationRejected: code = .invalidOutput
     default: code = .providerError
@@ -86,7 +88,18 @@ enum PrivateWorkflowWorker {
       // nodeTimeout retry policy can apply.
       let timedOut = envelope?["failureKind"] == .string(WorkflowSessionFailureKind.nodeTimeout.rawValue)
         || request.deadline.timeIntervalSinceNow <= deadlineTolerance
-      throw AdapterExecutionError(timedOut ? .timeout : .providerError, "private inner workflow did not complete")
+      let code: AdapterExecutionErrorCode = timedOut ? .timeout : .providerError
+      if let stages = request.plan.failureStages, !stages.isEmpty,
+         case let .string(sessionId)? = envelope?["sessionId"],
+         let snapshot = try? SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+           canonicalRuntimeStoreRoot(sessionStoreRoot: root.appendingPathComponent("sessions").path)).load(sessionId: sessionId),
+         let step = snapshot.session.currentStepId, let stage = stages[step],
+         let kind = snapshot.session.failureKind {
+        let publicKind = PrivateWorkflowFailureDiagnostic.allowedKinds.contains(kind.rawValue) ? kind.rawValue : "other"
+        throw PrivateWorkflowExecutionFailure(code: code,
+          diagnostic: .init(stage: stage, kind: publicKind))
+      }
+      throw AdapterExecutionError(code, "private inner workflow did not complete")
     }
     let output = AdapterExecutionOutput(provider: "riela-private-workflow", model: request.plan.workflowId,
       promptText: "", completionPassed: true, payload: payload)

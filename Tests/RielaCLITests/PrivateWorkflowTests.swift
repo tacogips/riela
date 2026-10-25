@@ -299,6 +299,82 @@ final class PrivateWorkflowTests: XCTestCase {
     XCTAssertTrue(calls.isEmpty)
   }
 
+  func testConfiguredFailureStagesRejectUnknownLabelsAndFreeText() throws {
+    var config: JSONObject = ["workflowId": .string("synthetic"), "outputSchema": .object(schema),
+      "failureStages": .object(["collect": .string("acquisition")])]
+    let plan = try PrivateWorkflowPlan(config: config)
+    let message = PrivateWorkflowFailureDiagnostic(stage: "acquisition", kind: WorkflowSessionFailureKind.adapterFailure.rawValue).message
+    XCTAssertEqual(PrivateWorkflowFailureDiagnostic.parse(message, plan: plan)?.stage, "acquisition")
+    for rejected in [message + " PRIVATE_BODY_CANARY", message.replacingOccurrences(of: "acquisition", with: "unknown"),
+                     message.replacingOccurrences(of: WorkflowSessionFailureKind.adapterFailure.rawValue, with: "PRIVATE_BODY_CANARY")] {
+      XCTAssertNil(PrivateWorkflowFailureDiagnostic.parse(rejected, plan: plan))
+    }
+    config["failureStages"] = .object(["collect": .string("private message with spaces")])
+    XCTAssertThrowsError(try PrivateWorkflowPlan(config: config))
+    config["failureStages"] = .object(["../private": .string("collect")])
+    XCTAssertThrowsError(try PrivateWorkflowPlan(config: config))
+    let disabled = try PrivateWorkflowPlan(config: ["workflowId": .string("synthetic"), "outputSchema": .object(schema)])
+    XCTAssertNil(PrivateWorkflowFailureDiagnostic.parse(message, plan: disabled))
+  }
+
+  func testHostOnlyExportsConfiguredStageAndFiniteFailureKind() async throws {
+    for allowed in [false, true] {
+      let root = try makeRielaCLITestTemporaryDirectory("private-public-failure")
+      defer { try? FileManager.default.removeItem(at: root) }
+      let diagnostic = PrivateWorkflowFailureDiagnostic(stage: allowed ? "acquisition" : "PRIVATE_BODY_CANARY",
+        kind: WorkflowSessionFailureKind.adapterFailure.rawValue)
+      let runner = PrivateWorkflowFixtureRunner(failure: .init(.providerError, diagnostic.message))
+      var request = input()
+      request.addon.config?["failureStages"] = .object(["collect": .string("acquisition")])
+      let events = PrivateWorkflowEventRecorder()
+      do {
+        _ = try await host(runner, root: root).execute(request,
+          context: .init(backendEventHandler: { await events.append($0) }))
+        XCTFail("failed guest returned success")
+      } catch let error as AdapterExecutionError {
+        XCTAssertEqual(error.code, .providerError)
+        XCTAssertEqual(error.message, allowed ? diagnostic.message : "private workflow execution failed")
+        XCTAssertFalse(error.message.contains("PRIVATE_BODY_CANARY"))
+      }
+      let recorded = await events.events
+      XCTAssertEqual(recorded.count, allowed ? 1 : 0)
+      if allowed {
+        XCTAssertEqual(recorded.first?.eventType, "private-workflow-failure")
+        XCTAssertEqual(recorded.first?.metadata, ["stage": .string("acquisition"),
+          "kind": .string(WorkflowSessionFailureKind.adapterFailure.rawValue)])
+      }
+    }
+  }
+
+  func testEmbeddedFailureMapsTrustedStepWithoutExportingCommandStderr() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-inner-diagnostic")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definitions = root.appendingPathComponent("definitions/failing")
+    try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
+    let workflow: JSONObject = ["workflowId": .string("failing"), "entryStepId": .string("read"),
+      "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
+      "nodes": .array([.object(["id": .string("read"), "nodeFile": .string("node.json")])]),
+      "steps": .array([.object(["id": .string("read"), "nodeId": .string("read"), "role": .string("worker")])])]
+    let node: JSONObject = ["id": .string("read"), "nodeType": .string("command"), "variables": .object([:]),
+      "command": .object(["executable": .string("/bin/sh"), "arguments": .array([.string("-c"),
+        .string("printf PRIVATE_BODY_CANARY >&2; exit 7")])])]
+    try JSONEncoder().encode(workflow).write(to: definitions.appendingPathComponent("workflow.json"))
+    try JSONEncoder().encode(node).write(to: definitions.appendingPathComponent("node.json"))
+    let plan = try PrivateWorkflowPlan(config: ["workflowId": .string("failing"),
+      "definitionRoot": .string(definitions.deletingLastPathComponent().path), "outputSchema": .object(schema),
+      "failureStages": .object(["read": .string("acquisition")])])
+    do {
+      _ = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan, deadline: Date().addingTimeInterval(20),
+        environment: [:], credentials: []), root: root.appendingPathComponent("guest"))
+      XCTFail("command unexpectedly succeeded")
+    } catch {
+      let exported = PrivateWorkflowWorker.failure(for: error)
+      XCTAssertEqual(PrivateWorkflowFailureDiagnostic.parse(exported.message, plan: plan)?.stage, "acquisition")
+      XCTAssertFalse(exported.message.contains("PRIVATE_BODY_CANARY"))
+      XCTAssertFalse(exported.message.contains(root.path))
+    }
+  }
+
   private func input() -> WorkflowAddonExecutionInput {
     .init(workflowId: "outer", stepId: "private", nodeId: "private", addon: .init(name: "riela/private-workflow", version: "1",
       config: ["workflowId": .string("synthetic"), "outputSchema": .object(schema)],
@@ -333,12 +409,13 @@ private actor PrivateWorkflowFixtureRunner: LocalProcessRunning {
   var provider: String
   var status: Int32
   var recordVersion: Int
+  var failure: AdapterExecutionError?
   init(cancel: Bool = false, invalidPayload: Bool = false, event: Bool = false, usageLine: String? = nil,
        when: [String: Bool] = ["always": true], model: String = "fixture", provider: String = "fixture",
-       status: Int32 = 0, recordVersion: Int = SandboxNodeRecord.currentVersion) {
+       status: Int32 = 0, recordVersion: Int = SandboxNodeRecord.currentVersion, failure: AdapterExecutionError? = nil) {
     self.cancel = cancel; self.invalidPayload = invalidPayload; self.event = event
     self.usageLine = usageLine; self.when = when; self.model = model; self.provider = provider
-    self.status = status; self.recordVersion = recordVersion
+    self.status = status; self.recordVersion = recordVersion; self.failure = failure
   }
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
     calls.append((configuration, stdin))
@@ -347,6 +424,7 @@ private actor PrivateWorkflowFixtureRunner: LocalProcessRunning {
     let output = AdapterExecutionOutput(provider: provider, model: model, promptText: "", completionPassed: true, when: when,
       payload: invalidPayload ? ["raw": .string("RAW_UNAPPROVED")] : ["status": .string("ok")])
     var record = SandboxNodeRecord(kind: event ? .event : .result, output: event ? nil : output)
+    if let failure { record = .init(kind: .failure, failure: .init(failure)) }
     record.version = recordVersion
     let stdout = try XCTUnwrap(String(data: JSONEncoder().encode(record), encoding: .utf8))
     return .init(stdout: stdout + "\n", stderr: usageLine.map { $0 + "\n" } ?? "", terminationStatus: status)

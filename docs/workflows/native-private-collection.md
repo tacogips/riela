@@ -96,6 +96,21 @@ Exception: with `config.xUsageScope`, normalized X resource-usage telemetry (no
 source data or credentials) is forwarded to the host's `x-gateway-api-usage` cache
 over a bounded stderr marker channel (at most 2,000,000 bytes per line, 10,000
 resources per record and 256 records per run).
+Optional `config.failureStages` maps root step IDs to public diagnostic labels:
+
+```json
+"failureStages": { "collect": "acquisition", "batch": "screening", "finish": "normalization" }
+```
+
+At most 32 mappings are allowed. Public labels contain lowercase letters, digits
+and hyphens and are at most 48 characters. On failure, only a configured label and
+one of `adapterFailure`, `nodeTimeout`, `cancelled`, or `other` can leave the guest.
+The host validates both before emitting a `private-workflow-failure` backend event
+and the fixed diagnostic message. Internal step IDs, command stderr, provider
+errors, source content and paths remain private. Unknown labels/kinds and disabled
+configuration retain the original fixed failure message. This reports where the
+root graph stopped; a nested failure may be reported at its calling root step.
+
 The owned container is removed after completion, deadline or cancellation.
 
 Guest identity requirements:

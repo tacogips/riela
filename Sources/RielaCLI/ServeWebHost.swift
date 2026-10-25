@@ -215,7 +215,13 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
           sessionStoreRoot: sessionStoreRoot,
           environment: environment
         ),
-        next: TaskHandoverGraphQLDocumentExecutor(
+        next: WorkflowDefinitionGraphQLDocumentExecutor(
+          provider: WorkflowDefinitionGraphQLProvider(
+            workingDirectory: workingDirectory,
+            sessionStoreRoot: sessionStoreRoot,
+            environment: environment
+          ),
+          next: TaskHandoverGraphQLDocumentExecutor(
           provider: TaskHandoverGraphQLProvider(
             workingDirectory: workingDirectory,
             sessionStore: sessionStoreRoot
@@ -229,6 +235,7 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
               provider: consoleProvider,
               next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
             )
+          )
           )
         )
       )

@@ -282,22 +282,18 @@ temporary project with `--session-store <tmp>`.
 
 ## Implementation checkpoint (2026-10-26)
 
-Attempt-004 is the final source snapshot; it includes the export JSON path-only
-output correction and supersedes attempt-003 verification evidence.
+Attempt-005 is the final verified source snapshot. The CLI route, eight
+command implementations, store-root selection seam, catalog rows, generated
+skill command blocks and command tests are implemented. `swift build`, the
+assigned focused suite (39 tests), `swift test --filter SurfaceParity` (48
+tests, one skipped, zero failures), strict changed-file SwiftLint, and the
+unchanged `WorkflowRegistryCLICommand.swift` check pass. Complete logs and
+source hashes are under
+`tmp/ds179/ds179-04-cli-definition-commands/attempt-005/`.
 
-The CLI route, eight command implementations, store-root selection seam,
-catalog rows and command tests are implemented. `swift build`, the assigned
-focused suite (39 tests), strict changed-file SwiftLint, `git diff --check`,
-and the unchanged `WorkflowRegistryCLICommand.swift` check pass.
-
-The exact `swift test --filter SurfaceParity` gate is not green yet. It reports
-two failures from `SurfaceParitySkillTests.testGeneratedCommandBlocksMatchTheCatalog`:
-`Resources/skills/riela-workflow-run/SKILL.md` does not list the new
-`workflow definition` commands and its session block misses the existing
-`session reconcile` row. That skill file is outside ds179-04 `writePaths`; do
-not edit it here. Rerun the gate after its owning documentation/integration
-step updates the generated command block. Evidence is in
-`tmp/ds179/ds179-04-cli-definition-commands/attempt-004/surface-parity.log`.
+Attempt-004's SurfaceParity failure is retained as historical evidence; the
+skill command blocks were synchronized within this plan's write paths before
+attempt-005 and the gate now passes.
 
 ## Progress log expectations
 

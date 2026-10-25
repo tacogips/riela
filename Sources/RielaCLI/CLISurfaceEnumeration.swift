@@ -52,6 +52,10 @@ public enum CLISurfaceEnumerator {
           return WorkflowManifestClientSubcommand.allRawValues.map {
             CLICommandDescriptor([route, subcommand.rawValue, $0])
           }
+        case .definition:
+          return WorkflowDefinitionClientSubcommand.allRawValues.map {
+            CLICommandDescriptor([route, subcommand.rawValue, $0])
+          }
         default:
           // `workflow package` delegates to the package family, which is
           // enumerated under its own route.

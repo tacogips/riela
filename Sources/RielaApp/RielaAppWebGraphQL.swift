@@ -50,7 +50,13 @@ extension RielaApp {
             sessionStoreRoot: sessionStoreRoot,
             environment: environment
           ),
-          next: SessionControlGraphQLDocumentExecutor(
+          next: WorkflowDefinitionGraphQLDocumentExecutor(
+            provider: WorkflowDefinitionGraphQLProvider(
+              workingDirectory: appHomeDirectory.path,
+              sessionStoreRoot: daemonSessionStoreRoot(profileName: daemonProfileName),
+              environment: environment
+            ),
+            next: SessionControlGraphQLDocumentExecutor(
             provider: RielaSessionControlProvider(
               workingDirectory: appHomeDirectory.path,
               sessionStore: sessionStoreRoot
@@ -65,6 +71,7 @@ extension RielaApp {
                   provider: RielaAppConfigurationGraphQLProvider(app: self)
                 )
               )
+            )
             )
           )
         )

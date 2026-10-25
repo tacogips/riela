@@ -29,7 +29,13 @@ extension ScopedParityCommandRunner {
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
         localProvider: FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
       ),
-      fallback: TaskHandoverGraphQLDocumentExecutor(
+      fallback: WorkflowDefinitionGraphQLDocumentExecutor(
+        provider: WorkflowDefinitionGraphQLProvider(
+          workingDirectory: workingDirectory,
+          sessionStoreRoot: parsed.sessionStore,
+          environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+        ),
+        next: TaskHandoverGraphQLDocumentExecutor(
         provider: TaskHandoverGraphQLProvider(
           workingDirectory: workingDirectory,
           sessionStore: parsed.sessionStore,
@@ -48,6 +54,7 @@ extension ScopedParityCommandRunner {
             )
           )
         )
+      )
       )
     )
     let response = await executor.execute(request)

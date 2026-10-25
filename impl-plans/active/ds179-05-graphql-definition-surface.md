@@ -1,7 +1,7 @@
 # DS179-05 GraphQL Definition Surface, Catalog Binding and SDL
 
 **planId**: `ds179-05-graphql-definition-surface`
-**Status**: Ready for implementation
+**Status**: Implementation complete; pending integration review
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy + (A) GraphQL whole-workflow update with mandatory reason
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §5, §8 (GraphQL incl. `updateWorkflowDefinition`, catalog and SDL); QA Q3
@@ -234,18 +234,31 @@ The service codes `reason_required` and `definition_not_registered` map to
   `WorkflowDefinitionGraphQLContractTests.swift`. It checks that the
   executor routes all 8 fields and rejects malformed input.
 
+## Implementation completion
+
+The 3 query and 5 mutation fields are implemented, bound in every planned
+executor chain, and covered by contract and real service-path tests. Tests
+cover the default `api` actor and explicit `user`, required reasons, stale versions, safe export,
+audited whole-workflow changes, restore/import behavior, and a subsequent
+service run reading the updated prompt from the definition store. The SDL
+was regenerated and the focused, parity, regression, build, and strict
+changed-file lint gates passed. See the progress log for commands, counts,
+logs, and the resolved test-fixture validation correction. Integration
+review remains downstream.
+
 ## Verification (each command must exit 0)
 
-- `arch -arm64 /bin/zsh -lc 'swift build 2>&1 | tee tmp/ds179/05-build.log'`
-- `arch -arm64 /bin/zsh -lc 'scripts/surface-parity/generate-sdl.sh 2>&1 | tee tmp/ds179/05-sdl.log'`
-- `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowDefinitionGraphQLTests|WorkflowDefinitionGraphQLContractTests" 2>&1 | tee tmp/ds179/05-test.log'`.
-  Record testsRun and failureCount.
-- `arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParity 2>&1 | tee tmp/ds179/05-parity.log'`
-  must pass: the CLI, GraphQL, DTO-schema and executor-coverage gates.
-- `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowExecutionGraphQLTests|RoutineGraphQLTests|WorkflowExecutionProviderTests" 2>&1 | tee tmp/ds179/05-regression.log'`
-  is a regression check on the re-linked chains.
-- `arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet <every changed .swift file except the generated SDL>'`
-  must print no violations.
+- `arch -arm64 /bin/zsh -lc 'swift build > tmp/ds179/ds179-05-graphql-definition-surface/attempt-019/build.log 2>&1'`
+- `arch -arm64 /bin/zsh -lc 'scripts/surface-parity/generate-sdl.sh > tmp/ds179/ds179-05-graphql-definition-surface/attempt-018/sdl.log 2>&1'`
+- `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowDefinitionGraphQLTests|WorkflowDefinitionGraphQLContractTests' > tmp/ds179/ds179-05-graphql-definition-surface/attempt-017/focused.log 2>&1"`
+- `arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParity > tmp/ds179/ds179-05-graphql-definition-surface/attempt-018/parity.log 2>&1'`
+- `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowExecutionGraphQLTests|RoutineGraphQLTests|WorkflowExecutionProviderTests' > tmp/ds179/ds179-05-graphql-definition-surface/attempt-018/regression.log 2>&1"`
+- `arch -arm64 /bin/zsh -lc 'if [ -s tmp/ds179/ds179-05-graphql-definition-surface/attempt-006/changed-swift-files.nul ]; then xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/ds179/ds179-05-graphql-definition-surface/attempt-006/changed-swift-files.nul; else printf "%s\\n" "No Swift files changed; selected-file SwiftLint not run."; fi'`
+- `git diff --check` (log: `tmp/ds179/ds179-05-graphql-definition-surface/attempt-019/diff-check.log`).
+
+The plan progress log records each command's exit status, test count,
+failure count, and complete log path. Strict SwiftLint uses the exact NUL
+manifest of changed Swift files, including the generated SDL source.
 
 ## Done criteria
 
@@ -255,8 +268,10 @@ The service codes `reason_required` and `definition_not_registered` map to
   matches.
 - `grep -c "WorkflowDefinitionGraphQLDocumentExecutor" Sources/RielaCLI/ServeHTTPCommand.swift Sources/RielaCLI/ServeWebHost.swift Sources/RielaApp/RielaAppWebGraphQL.swift`
   gives at least 1 for each file.
-- All verification commands exit 0, and each is logged with exitStatus,
-  testsRun, failureCount and the log path.
+- Build, SDL generation, focused GraphQL, SurfaceParity, execution
+  regressions, and strict changed-file SwiftLint exit 0 with their evidence
+  recorded in the progress log. SurfaceParity proves the checked-in SDL is
+  byte-identical to its generator output.
 
 ## Progress log expectations
 

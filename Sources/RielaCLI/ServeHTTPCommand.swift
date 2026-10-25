@@ -183,7 +183,13 @@ func serveMachineGraphQLAdapter(
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(),
       fallback: WorkflowExecutionGraphQLDocumentExecutor(
         provider: provider,
-        next: TaskHandoverGraphQLDocumentExecutor(
+        next: WorkflowDefinitionGraphQLDocumentExecutor(
+          provider: WorkflowDefinitionGraphQLProvider(
+            workingDirectory: workingDirectory,
+            sessionStoreRoot: storeRoot,
+            environment: environment
+          ),
+          next: TaskHandoverGraphQLDocumentExecutor(
           provider: TaskHandoverGraphQLProvider(
             workingDirectory: workingDirectory,
             sessionStore: storeRoot
@@ -193,6 +199,7 @@ func serveMachineGraphQLAdapter(
               workingDirectory: workingDirectory,
               sessionStore: storeRoot
             )
+          )
           )
         )
       )

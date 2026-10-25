@@ -18,14 +18,18 @@ extension BuiltinWorkflowAddonResolver {
 /// Bounded metadata observations only. This never fetches, publishes or ACKs work.
 enum ProgressTracker {
   static func run(_ config: JSONObject) throws -> JSONObject {
-    guard Set(config.keys).isSubset(of: ["mode", "state", "event", "baseline", "maximumTurns"]),
+    guard Set(config.keys).isSubset(of: ["mode", "state", "event", "baseline", "maximumTurns", "items", "budgetAvailable"]),
       case let .string(mode)? = config["mode"],
       case let .integer(maximum) = config["maximumTurns"] ?? .integer(64), (1...64).contains(maximum),
       try JSONEncoder().encode(config).count <= 1_000_000 else { throw trackerInvalid() }
     let prior = try trackerObject(config["state"])
     let event = try trackerObject(config["event"])
     let output: JSONObject
+    if mode != "round-robin", config["items"] != nil || config["budgetAvailable"] != nil { throw trackerInvalid() }
     switch mode {
+    case "round-robin":
+      guard event == nil, config["baseline"] == nil else { throw trackerInvalid() }
+      output = try RoundRobinProgress.next(config, maximum: Int(maximum))
     case "identity-sweep":
       guard config["baseline"] == nil else { throw trackerInvalid() }
       var tracker = try IdentityProgress(prior, maximum: Int(maximum))

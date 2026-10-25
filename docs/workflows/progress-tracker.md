@@ -25,7 +25,7 @@ step history can retain that state for resume; a new cycle can start with no sta
 }
 ```
 
-Both modes return `state`, `count`, and `canContinue`. Omitting/nulling `state`
+The `identity-sweep` and `decreasing-counters` modes return `state`, `count`, and `canContinue`. Omitting/nulling `state`
 initializes a tracker; omitting/nulling `event` only returns its current decision.
 `maximumTurns` is 1–64 (default 64) and must stay identical within a state chain.
 Inputs and outputs are capped at 1 MB. Unknown fields and malformed observations
@@ -67,3 +67,39 @@ must be closed metadata, not raw provider objects or article text. `canContinue`
 is a scheduling decision; it does not prove acquisition/publication completion
 and never clears pending work. A cycle may stop sooner for deadlines or another
 worker's shared turn budget.
+
+## Fair bounded task turns
+
+The `round-robin` mode selects one attempted task from an ordered, frozen list:
+
+```json
+{
+  "mode": "round-robin",
+  "maximumTurns": 64,
+  "items": [{"id": "mail", "eligible": true}, {"id": "feed", "eligible": false}],
+  "budgetAvailable": true,
+  "state": null
+}
+```
+
+Every task gets one initial turn, regardless of its continuation eligibility.
+After the first pass, selection starts after the last selected task, skips
+ineligible tasks, and wraps fairly. The output is `{state, count, item,
+firstTurn, reason}`. Pass the returned state unchanged into the next call;
+`item` is its literal task ID or null. Task IDs/order and maximumTurns cannot
+change within a chain; eligibility may change on each call. IDs compare by
+exact UTF-8 bytes, remain data, and are never evaluated as templates.
+
+Reasons are `selected`, `empty`, `budget`, `limit`, or `no-eligible`.
+A selection increments count before dispatch; all stop reasons preserve state.
+A no-eligible result can later resume when a task becomes eligible. A false
+budgetAvailable prevents even initial turns. The node itself checks the runtime
+cancellation/deadline; the caller supplies its remaining-work budget decision.
+There are at most 16 distinct task IDs, each at most 256 UTF-8 bytes without
+control characters, and at most 64 attempted turns per state chain. An empty
+list is allowed. Cross-mode event/baseline inputs are refused.
+
+This pure metadata selector does not dispatch commands, persist a lease, retry,
+fetch, publish, or ACK work. State loss can repeat attempts, so callers retain
+source fences and exact-version publication receipts. Failures are explicit;
+callers must not silently restart a fresh state chain to bypass a limit.

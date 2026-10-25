@@ -4,6 +4,11 @@ import RielaCore
 @testable import RielaCLI
 
 final class GatewayCommandTests: XCTestCase {
+  func testPortableLinkedGatewaysAreAvailable() {
+    XCTAssertTrue(BuiltinGatewayCLI.gmail.available)
+    XCTAssertTrue(BuiltinGatewayCLI.x.available)
+  }
+
   func testGatewaySurfaceCatalogMatchesDelegatedRoutes() {
     let commands = CLISurfaceEnumerator.commands().filter { $0.path.first == "gateway" }
     let catalog = SurfaceCatalog.operations(inFamily: "gateway")

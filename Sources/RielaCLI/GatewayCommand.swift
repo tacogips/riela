@@ -38,7 +38,7 @@ enum BuiltinGatewayCLI: String, CaseIterable, Sendable {
     #if os(macOS)
     true
     #else
-    self == .wrike || self == .googleService
+    self == .wrike || self == .googleService || self == .gmail || self == .x
     #endif
   }
 }

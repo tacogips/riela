@@ -133,11 +133,12 @@ jobs:
             bash -lc '
               set -euo pipefail
               apt-get update >/dev/null
-              apt-get install -y ca-certificates libcurl4 libsqlite3-0 libxml2 >/dev/null
+              apt-get install -y ca-certificates libcurl4 libsqlite3-0 libxml2 python3 >/dev/null
               mkdir -p /tmp/riela-install
               tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-$RELEASE_ARCH.tar.gz" -C /tmp/riela-install
               install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela
               riela --version | grep -Fx "$RELEASE_VERSION"
+              scripts/check-linux-x-transport.sh /usr/local/bin/riela
             '
 
       - name: Upload Linux architecture-specific release assets

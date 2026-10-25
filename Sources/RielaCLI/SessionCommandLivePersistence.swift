@@ -59,3 +59,23 @@ func makeSessionCommandLivePersistenceHandler(
     }
   }
 }
+
+struct DurableSessionRuntime {
+  let backing: InMemoryWorkflowRuntimeStore
+  let store: FailClosedSQLiteWorkflowRuntimeStore
+  let nested: SQLiteWorkflowRuntimePersistenceStore
+}
+
+/// Resume and rerun share the fresh-run fail-closed persistence boundary.
+func makeDurableSessionRuntime(
+  storeRoot: String, sessionId: String, executionLocks: SessionExecutionLockRegistry
+) async throws -> DurableSessionRuntime {
+  let backing = try await makeSeededProductionRuntimeStore(
+    sessionStoreRoot: storeRoot, executionLocks: executionLocks, hydration: .family(of: sessionId)
+  )
+  let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+  let durable = FailClosedSQLiteWorkflowRuntimeStore(backing: backing, rootDirectory: canonicalRoot)
+  try await durable.hydrate(familyOf: sessionId)
+  return DurableSessionRuntime(backing: backing, store: durable,
+    nested: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot))
+}

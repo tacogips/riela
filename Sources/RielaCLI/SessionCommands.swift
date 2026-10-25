@@ -472,13 +472,12 @@ public struct SessionRerunCommand: Sendable {
         )
       }
       let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
-      let runtimeStore = try await makeSeededProductionRuntimeStore(
-        sessionStoreRoot: storeRoot,
-        executionLocks: executionLocks,
-        hydration: .family(of: persisted.session.sessionId)
+      let durableRuntime = try await makeDurableSessionRuntime(
+        storeRoot: storeRoot, sessionId: persisted.session.sessionId, executionLocks: executionLocks
       )
+      let runtimeStore = durableRuntime.backing
       let runner = DeterministicWorkflowRunner(
-        store: runtimeStore,
+        store: durableRuntime.store,
         adapter: adapter,
         runtimeEnvironment: kaibaContext.environment,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
@@ -489,7 +488,8 @@ public struct SessionRerunCommand: Sendable {
         ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
-        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
+        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true),
+        nestedInvocationPersistenceStore: durableRuntime.nested
       )
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
         ?? persisted.runtimeVariables
@@ -749,13 +749,12 @@ public struct SessionResumeCommand: Sendable {
         )
       }
       let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
-      let runtimeStore = try await makeSeededProductionRuntimeStore(
-        sessionStoreRoot: storeRoot,
-        executionLocks: executionLocks,
-        hydration: .family(of: persisted.session.sessionId)
+      let durableRuntime = try await makeDurableSessionRuntime(
+        storeRoot: storeRoot, sessionId: persisted.session.sessionId, executionLocks: executionLocks
       )
+      let runtimeStore = durableRuntime.backing
       let runner = DeterministicWorkflowRunner(
-        store: runtimeStore,
+        store: durableRuntime.store,
         adapter: adapter,
         runtimeEnvironment: kaibaContext.environment,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
@@ -766,13 +765,14 @@ public struct SessionResumeCommand: Sendable {
         ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
-        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
+        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true),
+        nestedInvocationPersistenceStore: durableRuntime.nested
       )
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
       if let gateResult = try await suspendedQuestionResumeResult(
         session: persisted.session,
         variables: variables,
-        store: runtimeStore
+        store: durableRuntime.store
       ) {
         return gateResult
       }

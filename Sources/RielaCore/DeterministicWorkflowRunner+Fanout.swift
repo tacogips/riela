@@ -76,6 +76,12 @@ extension DeterministicWorkflowRunner {
       changeEvidence: changeEvidence,
       parentSessionId: parentSessionId
     )
+    // Drain siblings before stopping. A resumable child is neither a failed
+    // item nor permission to cancel another child's in-flight operation.
+    if let pending = outcomes.sorted(by: { $0.index < $1.index }).first(where: { $0.resumeError != nil }),
+       let error = pending.resumeError {
+      throw error
+    }
     let orderedBranches = outcomes.sorted { $0.index < $1.index }.map { outcome in
       var record = outcome.record
       record["branchId"] = .string(wave.branchIds[outcome.index])
@@ -310,6 +316,11 @@ extension DeterministicWorkflowRunner {
       // the real branch runner rather than a store-only test helper.
       try await nestedInvocationRecoveryCheckpointer?.reached(.beforeChildNodeEffect)
       let result = try await run(branchRequest)
+      if !result.session.status.isTerminal || result.session.failureKind == .maxStepsExceeded {
+        try Task.checkCancellation()
+        return try await pendingFanoutBranch(index: index, item: item, session: result.session,
+          directive: directive, request: request)
+      }
       if try await persistNestedTerminalIfNeeded(
         parentSessionId: parentSessionId,
         sourceExecutionId: directive.sourceStepExecutionId,
@@ -338,14 +349,19 @@ extension DeterministicWorkflowRunner {
       if error is NestedRecoveryInterruption {
         throw error
       }
+      if reservedChildSessionId == nil, isWorkflowRunCancellation(error) { throw error }
       // A collect-partial parent may publish its join only after every
       // reserved child has a canonical terminal snapshot. `run` can throw
       // after it marks a child failed, so persist that actual terminal record
       // before returning a branch failure rather than losing it in the catch.
       var terminalFailureKind: WorkflowSessionFailureKind?
       if let reservedChildSessionId,
-         let terminal = try await store.loadSession(id: reservedChildSessionId),
-         terminal.status.isTerminal {
+         let terminal = try await store.loadSession(id: reservedChildSessionId) {
+        if !terminal.status.isTerminal || terminal.failureKind == .maxStepsExceeded {
+          if isWorkflowRunCancellation(error) { throw error }
+          return try await pendingFanoutBranch(index: index, item: item, session: terminal,
+            directive: directive, request: request)
+        }
         terminalFailureKind = terminal.failureKind
         // Workflow cancellation is represented by a failed terminal session
         // with failureKind=.cancelled. Keep that distinction in the persisted
@@ -371,6 +387,26 @@ extension DeterministicWorkflowRunner {
         cancelled: isWorkflowRunCancellation(error) || terminalFailureKind == .cancelled
       )
     }
+  }
+
+  private func pendingFanoutBranch(
+    index: Int, item: JSONValue, session: WorkflowSession,
+    directive: WorkflowFanoutDispatchDirective, request: DeterministicWorkflowRunRequest
+  ) async throws -> FanoutBranchOutcome {
+    // Save resumable progress without sealing the immutable terminal receipt.
+    // Reopening must use this same reservation and continue accepted steps.
+    if let nestedInvocationPersistenceStore {
+      let messages = try await store.listMessages(for: session.sessionId, toStepId: nil)
+      try nestedInvocationPersistenceStore.save(.init(session: session, workflowMessages: messages))
+    }
+    let error: DeterministicWorkflowRunnerError
+    if session.failureKind == .maxStepsExceeded {
+      error = .maxStepsExceeded(session.effectiveStepBudget ?? request.effectiveStepBudget
+        ?? request.maxSteps ?? max(1, request.workflow.steps.count + request.workflow.defaults.maxLoopIterations))
+    } else {
+      error = .fanoutDispatchPending(groupId: directive.groupId, sessionId: session.sessionId, status: session.status)
+    }
+    return FanoutBranchOutcome(index: index, record: [:], resumeError: error)
   }
 
   /// Resolves one item's tracking selection. `pathsFrom` must resolve to an
@@ -570,8 +606,10 @@ extension DeterministicWorkflowRunner {
 private struct FanoutBranchOutcome: Sendable {
   var index: Int
   var record: JSONObject
+  var resumeError: DeterministicWorkflowRunnerError?
 
   var isFailure: Bool {
+    if resumeError != nil { return false }
     if case .string("completed")? = record["status"] {
       return false
     }

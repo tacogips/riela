@@ -27,9 +27,10 @@ final class ArrayGatherTests: XCTestCase {
     return ["groupId": .string("inspection"), "allBranchesCompleted": .bool(true), "context": batch["receipt"] ?? .null,
       "branches": .array(branches)]
   }
-  private func gather(_ join: JSONObject, filter: Bool = true) async throws -> JSONObject {
+  private func gather(_ join: JSONObject, filter: Bool = true, allowPartial: Bool = false) async throws -> JSONObject {
     var config: JSONObject = ["join": .string("{{input.join}}"), "groupId": .string("inspection")]
     if filter { config["selectedIdsFrom"] = .string("/safe_ids") }
+    if allowPartial { config["allowPartial"] = .bool(true) }
     return try await execute("riela/array-gather", config, input: ["join": .object(join)])
   }
 
@@ -114,4 +115,52 @@ final class ArrayGatherTests: XCTestCase {
       do { _ = try await execute("riela/array-batch", config); XCTFail("invalid binding") } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
     }
   }
+
+  func testExplicitPartialGatherPreservesSuccessfulItemsAndReportsFailedIdentities() async throws {
+    var join = try await fixture(5)
+    guard case var .array(branches)? = join["branches"], case var .object(failed) = branches[1] else { return XCTFail("fixture") }
+    failed["status"] = .string("failed")
+    // A failed child output never supplies a selection or an inference receipt.
+    failed["output"] = .object(["safe_ids": .array([.string("unknown")])])
+    branches[1] = .object(failed); join["branches"] = .array(branches.reversed()); join["allBranchesCompleted"] = .bool(false)
+    let result = try await gather(join, allowPartial: true)
+    XCTAssertEqual(result["items"], .array([0, 4].map { .object(["id": .string(String($0)), "text": .string("{{literal}}-" + String($0))]) }))
+    XCTAssertEqual(result["failedItemIds"], .array([.string("2"), .string("3")]))
+    XCTAssertEqual(result["failedBatchCount"], .integer(1))
+    XCTAssertEqual(result["itemCount"], .integer(5)); XCTAssertEqual(result["selectedCount"], .integer(2))
+    XCTAssertEqual(result["context"], .object(["checkpoint": .integer(9), "text": .string("{{opaque}}")]))
+    do { _ = try await gather(join); XCTFail("partial allowed without opt-in") } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+  }
+
+  func testPartialPolicyRejectsCancellationPendingMissingAndTamperedFailedBatches() async throws {
+    for mutation in ["cancelled", "running", "missing", "tampered", "false-completion"] {
+      var join = try await fixture(3)
+      guard case var .array(branches)? = join["branches"], case var .object(first) = branches[0] else { return XCTFail("fixture") }
+      first["status"] = .string("failed"); join["allBranchesCompleted"] = .bool(false)
+      switch mutation {
+      case "cancelled", "running": first["status"] = .string(mutation)
+      case "missing": branches.removeLast()
+      case "tampered": first["item"] = .array([.object(["id": .string("0"), "text": .string("replaced")])])
+      default: join["allBranchesCompleted"] = .bool(true)
+      }
+      branches[0] = .object(first); join["branches"] = .array(branches)
+      do { _ = try await gather(join, allowPartial: true); XCTFail(mutation) } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+    }
+  }
+
+  func testPartialPolicyAllFailedAndEmptyHaveNoSelectedItems() async throws {
+    for count in [0, 3] {
+      var join = try await fixture(count)
+      guard case let .array(branches)? = join["branches"] else { return XCTFail("fixture") }
+      join["branches"] = .array(branches.map { value in
+        guard case var .object(branch) = value else { return value }
+        branch["status"] = .string("failed"); branch.removeValue(forKey: "output"); return .object(branch)
+      })
+      join["allBranchesCompleted"] = .bool(count == 0)
+      let result = try await gather(join, allowPartial: true)
+      XCTAssertEqual(result["items"], .array([])); XCTAssertEqual(result["selectedCount"], .integer(0))
+      XCTAssertEqual(result["failedBatchCount"], .integer(count == 0 ? 0 : 2))
+    }
+  }
+
 }

@@ -475,7 +475,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     return completedResult
     } catch {
       let originalError = error
-      if let interruptedSessionId, !(originalError is NestedRecoveryInterruption) {
+      let pendingFanout: Bool
+      if case DeterministicWorkflowRunnerError.fanoutDispatchPending = originalError {
+        pendingFanout = true
+      } else {
+        pendingFanout = false
+      }
+      if let interruptedSessionId, !(originalError is NestedRecoveryInterruption), !pendingFanout {
         await finalizeInterruptedSessionFailed(
           sessionId: interruptedSessionId,
           request: request,

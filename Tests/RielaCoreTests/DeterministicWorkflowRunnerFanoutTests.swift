@@ -729,7 +729,7 @@ private struct FanoutThrowingCheckpoint: NestedRecoveryCheckpointing {
   }
 }
 
-private actor FanoutBranchTracker {
+actor FanoutBranchTracker {
   private let delaysByIndex: [Int: UInt64]
   private let failingIndexes: Set<Int>
   private let cancellingIndexes: Set<Int>
@@ -809,7 +809,7 @@ private actor FanoutBranchTracker {
   }
 }
 
-private struct FanoutTestAdapter: NodeAdapter {
+struct FanoutTestAdapter: NodeAdapter {
   var tracker: FanoutBranchTracker
 
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -916,7 +916,7 @@ private struct FanoutCalleeResolver: WorkflowCalleeResolving {
   }
 }
 
-private func fanoutWorkflow(
+func fanoutWorkflow(
   concurrency: Int,
   failurePolicy: WorkflowFanoutFailurePolicy = .failFast,
   toWorkflowId: String? = nil
@@ -1029,7 +1029,7 @@ private func fanoutLoopWorkflow() -> WorkflowDefinition {
   )
 }
 
-private func fanoutPayloads() -> [String: AgentNodePayload] {
+func fanoutPayloads() -> [String: AgentNodePayload] {
   [
     "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
     "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),

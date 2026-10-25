@@ -171,6 +171,16 @@ selected IDs are harmless and never duplicate records. Results preserve source
 order, regardless of worker completion order. No worker-supplied replacement
 item is returned. Omit `selectedIdsFrom` to gather all original items.
 
+For optional work, set `allowPartial: true` explicitly and use a fanout with
+`failurePolicy: "collect-partial"`. Gather still validates every original batch
+and branch index, including failed batches. It returns original items selected
+by completed branches, plus `failedItemIds` (all original identities belonging
+to failed branches) and `failedBatchCount`. Failed outputs are never interpreted
+as selections or successful model receipts. Cancellation, running or missing
+branches, inconsistent completion flags and modified failed batches are rejected.
+The default remains a complete successful join. This option is available in
+Riela 0.2.61 and later.
+
 The result is `{items, itemCount, selectedCount, context}`. Empty input returns
 zero items and its original context without invoking workers or waiting for a
 minimum count. Failed/missing/modified branches cannot advance the joined

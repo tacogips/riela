@@ -1,7 +1,7 @@
 # DS179-02 Definition Document and Operations Service (RielaWorkflowRegistry)
 
 **planId**: `ds179-02-definition-service`
-**Status**: Ready for implementation
+**Status**: Implementation complete (Step 6; pending formal review)
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy + (A) whole-workflow update with mandatory reason
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §3 (stored document), §5 (operations, authored view and authored-edit pipeline, validation), §6 (diff), §7 (export); QA Q7
@@ -52,8 +52,11 @@ Repository facts:
   (`Sources/RielaCore/WorkflowValidation.swift:624`). Nodes that come from
   `nodeRef` or an `extends` base live in other directories.
 - `resolvePromptTemplatePath` (`PromptTemplateAssets.swift:103`) is the
-  containment-checked relative path resolver. Reuse it for authored-file
-  collection and for export path validation.
+  prompt-file resolver, including the rule that prompt references cannot
+  target canonical workflow definition files. Keep it for prompt hydration.
+  Authored workflow/node files and export keys use
+  `WorkflowDefinitionDocument.containedAuthoredURL`, which normalizes the
+  relative path and checks its symlink-resolved URL stays under the root.
 - Validators: `DefaultWorkflowValidator().validate(_:)` (`WorkflowValidation.swift:35`)
   and `validateAgentNodePayload` (`Sources/RielaCore/WorkflowNodeValidation.swift:3`).
 - Canonical JSON: `JSONCanonical.encode` / `sha256Hex`. Store API: plan 01's
@@ -512,13 +515,16 @@ transition `A → B`.
 
 ## Done criteria
 
-- `grep -n "public var definitionSource" Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift`
+- [x] `grep -n "public var definitionSource" Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift`
   matches.
-- `grep -n "authoredOverlay" Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift Sources/RielaCLI/WorkflowResolution.swift Sources/RielaCore/PromptTemplateAssets.swift`
+- [x] `grep -n "authoredOverlay" Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift Sources/RielaCLI/WorkflowResolution.swift Sources/RielaCore/PromptTemplateAssets.swift`
   matches in all three files.
-- Every pinned method above exists, checked with `grep -n "func importDefinition\|func updatePrompt\|func update(\|func authoredView\|func restore\|func export\|func seedIfAbsent\|func lookup\|func loadPinned"`.
-- All verification commands exit 0, and the progress log records each
+- [x] Every pinned method above exists, checked with `grep -n "func importDefinition\|func updatePrompt\|func update(\|func authoredView\|func restore\|func export\|func seedIfAbsent\|func lookup\|func loadPinned"`.
+- [x] Canonical `nodes/node-*.json` filenames seed, update, patch, export byte-identically, and re-resolve; absolute, traversal, and symlink escapes reject during document collection and source export.
+- [x] `WorkflowDefinitionJSONPatch`, `apply`, and `pointer` are public for the downstream CLI/improvement-node callers.
+- [x] All assigned implementation verification commands exit 0, and the progress log records each
   command with exitStatus, testsRun, failureCount and the log path.
+- [ ] Independent formal review and any review-dependent handoff actions remain downstream workflow steps.
 
 ## Progress log expectations
 

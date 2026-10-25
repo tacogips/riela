@@ -14,14 +14,75 @@ struct PreparedWorkflowRunExecution {
   let gatewayValidationWarnings: [String]
 }
 
+struct PreparedResolvedWorkflowRun {
+  let bundle: ResolvedWorkflowBundle
+  let variables: JSONObject
+  let execution: PreparedWorkflowRunExecution
+  let definitionSource: WorkflowDefinitionSource
+}
+
 extension WorkflowRunCommand {
+  func prepareResolvedRun(
+    options: WorkflowRunOptions,
+    resolution: WorkflowResolutionOptions,
+    taskContext: TaskPlacementExecutionContext?
+  ) async throws -> PreparedResolvedWorkflowRun {
+    let effectiveResolver: any WorkflowBundleResolving
+    if case let .service(actor) = options.executionMode, taskContext == nil, !options.fromRegistry {
+      effectiveResolver = DefinitionStoreWorkflowBundleResolver(
+        inner: resolver,
+        sessionStore: options.sessionStore,
+        actor: actor,
+        mode: .lookupOrSeed
+      )
+    } else {
+      // one-time runs never open definition tables (issue #179 policy)
+      effectiveResolver = resolver
+    }
+    var pendingDefinitionSeed: ResolvedWorkflowBundle?
+    var bundle = try resolveRunBundle(
+      options: options,
+      resolution: resolution,
+      taskContext: taskContext,
+      effectiveResolver: effectiveResolver,
+      pendingDefinitionSeed: &pendingDefinitionSeed
+    )
+    let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
+    let execution = try await prepareRunExecution(
+      options: options,
+      resolution: resolution,
+      bundle: &bundle,
+      variables: variables,
+      taskContext: taskContext,
+      resolver: effectiveResolver
+    )
+    if let pendingDefinitionSeed,
+       let storeResolver = effectiveResolver as? DefinitionStoreWorkflowBundleResolver {
+      let preparedNodes = bundle.workflow.nodes
+      let preparedPayloads = bundle.nodePayloads
+      bundle = try storeResolver.seed(fileBundle: pendingDefinitionSeed, options: resolution)
+      bundle.workflow.nodes = preparedNodes
+      bundle.nodePayloads = preparedPayloads
+    }
+    let definitionSource = bundle.definitionSource
+      ?? WorkflowDefinitionDocument.fileDefinitionSource(for: bundle, workflowName: options.target)
+    return PreparedResolvedWorkflowRun(
+      bundle: bundle,
+      variables: variables,
+      execution: execution,
+      definitionSource: definitionSource
+    )
+  }
+
   func prepareRunExecution(
     options: WorkflowRunOptions,
     resolution: WorkflowResolutionOptions,
     bundle: inout ResolvedWorkflowBundle,
     variables: JSONObject,
-    taskContext: TaskPlacementExecutionContext? = nil
+    taskContext: TaskPlacementExecutionContext? = nil,
+    resolver: (any WorkflowBundleResolving)? = nil
   ) async throws -> PreparedWorkflowRunExecution {
+    let effectiveResolver = resolver ?? self.resolver
     let preparedBundle = try prepareEffectiveRunBundle(
       options: options,
       resolution: resolution,
@@ -33,7 +94,7 @@ extension WorkflowRunCommand {
       bundle = try applyingTaskPlacement(taskContext, to: bundle)
     }
     let calleeResolver = FileSystemWorkflowCalleeResolver(
-      resolver: resolver,
+      resolver: effectiveResolver,
       baseResolution: resolution,
       taskContext: taskContext
     )
@@ -43,7 +104,11 @@ extension WorkflowRunCommand {
       nodes: bundle.workflow.nodes,
       workflow: bundle.workflow,
       calleeResolver: calleeResolver,
-      requiredEnvironment: try await CLIRuntimeEnvironmentPreparation.required(bundle: bundle, resolution: resolution, resolver: resolver)
+      requiredEnvironment: try await CLIRuntimeEnvironmentPreparation.required(
+        bundle: bundle,
+        resolution: resolution,
+        resolver: effectiveResolver
+      )
     )
     return PreparedWorkflowRunExecution(
       instance: instance,

@@ -2,6 +2,106 @@ import ArgumentParser
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaWorkflowRegistry
+
+private struct SessionBundleResolution {
+  var bundle: ResolvedWorkflowBundle
+  let calleeResolver: any WorkflowBundleResolving
+}
+
+private func resolveSessionBundle(
+  persisted: PersistedCLIWorkflowSession,
+  resolution: WorkflowResolutionOptions,
+  storeRoot: String,
+  resolver: any WorkflowBundleResolving
+) throws -> SessionBundleResolution {
+  guard let source = persisted.session.definitionSource, source.kind == .store,
+        let versionId = source.versionId else {
+    return SessionBundleResolution(bundle: try resolver.resolve(resolution), calleeResolver: resolver)
+  }
+  let sourceStoreRoot = source.storeRoot ?? storeRoot
+  let bundle = try WorkflowDefinitionService(storeRoot: sourceStoreRoot, fileResolver: resolver).loadPinned(versionId: versionId)
+  let calleeResolver = DefinitionStoreWorkflowBundleResolver(
+    inner: resolver,
+    sessionStore: sourceStoreRoot,
+    actor: .init(kind: .cli, id: "session-resume"),
+    mode: .lookupOrSeed
+  )
+  return SessionBundleResolution(bundle: bundle, calleeResolver: calleeResolver)
+}
+
+private func loadRecoverySession(
+  sessionId: String,
+  sessionStore: String?,
+  scope: WorkflowScope,
+  workingDirectory: String
+) throws -> LoadedPersistedCLIWorkflowSession {
+  let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+    sessionId: sessionId,
+    sessionStore: sessionStore,
+    scope: scope,
+    workingDirectory: workingDirectory
+  )
+  if try SessionExecutionLockRegistry(sessionStoreRoot: loaded.storeRoot)
+    .sessionMessagesRetired(sessionId: sessionId) {
+    throw SessionExecutionLockError.messagesRetired(sessionId)
+  }
+  return loaded
+}
+
+private struct SessionResumePreparation {
+  let storeRoot: String
+  let resolution: WorkflowResolutionOptions
+  var bundle: ResolvedWorkflowBundle
+  let instanceResolution: SessionInstanceResolution
+  let mockScenarioPath: String?
+  let calleeResolver: FileSystemWorkflowCalleeResolver
+}
+
+private func prepareSessionResume(
+  persisted: PersistedCLIWorkflowSession,
+  loaded: LoadedPersistedCLIWorkflowSession,
+  options: SessionResumeOptions,
+  resolver: any WorkflowBundleResolving
+) throws -> SessionResumePreparation {
+  let storeRoot = CLIWorkflowSessionResolution.saveStoreRoot(
+    sessionStore: options.sessionStore,
+    scope: options.scope,
+    workingDirectory: options.workingDirectory,
+    loadedFromStoreRoot: loaded.storeRoot
+  )
+  let resolution = CLIWorkflowSessionResolution.effectiveResolution(
+    persisted: persisted,
+    scope: options.scope,
+    workflowDefinitionDir: options.workflowDefinitionDir,
+    workingDirectory: options.workingDirectory
+  )
+  let resolved = try resolveSessionBundle(
+    persisted: persisted,
+    resolution: resolution,
+    storeRoot: storeRoot,
+    resolver: resolver
+  )
+  var bundle = resolved.bundle
+  let instanceResolution = try resolvePersistedSessionInstance(
+    persisted: persisted,
+    workflowId: bundle.workflow.workflowId,
+    workingDirectory: options.workingDirectory,
+    nodePayloads: bundle.nodePayloads,
+    commandName: "resume"
+  )
+  bundle.nodePayloads = instanceResolution.nodePayloads
+  let mockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
+  let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolved.calleeResolver, baseResolution: resolution)
+  return SessionResumePreparation(
+    storeRoot: storeRoot,
+    resolution: resolution,
+    bundle: bundle,
+    instanceResolution: instanceResolution,
+    mockScenarioPath: mockScenarioPath,
+    calleeResolver: calleeResolver
+  )
+}
 
 public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var sessionId: String
@@ -405,16 +505,12 @@ public struct SessionRerunCommand: Sendable {
   public func run(_ options: SessionRerunOptions) async -> CLICommandResult {
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
-      let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+      let loaded = try loadRecoverySession(
         sessionId: options.sessionId,
         sessionStore: options.sessionStore,
         scope: options.scope,
         workingDirectory: options.workingDirectory
       )
-      if try SessionExecutionLockRegistry(sessionStoreRoot: loaded.storeRoot)
-        .sessionMessagesRetired(sessionId: options.sessionId) {
-        throw SessionExecutionLockError.messagesRetired(options.sessionId)
-      }
       let persisted = loaded.record
       let storeRoot = CLIWorkflowSessionResolution.saveStoreRoot(
         sessionStore: options.sessionStore,
@@ -423,7 +519,13 @@ public struct SessionRerunCommand: Sendable {
         loadedFromStoreRoot: loaded.storeRoot
       )
       let resolution = mergedResolution(persisted: persisted, options: options)
-      var bundle = try resolver.resolve(resolution)
+      let resolved = try resolveSessionBundle(
+        persisted: persisted,
+        resolution: resolution,
+        storeRoot: storeRoot,
+        resolver: resolver
+      )
+      var bundle = resolved.bundle
       let instanceResolution = try resolveRerunInstance(
         persisted: persisted,
         workflowId: bundle.workflow.workflowId,
@@ -432,7 +534,7 @@ public struct SessionRerunCommand: Sendable {
       )
       bundle.nodePayloads = instanceResolution.nodePayloads
       let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
-      let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+      let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolved.calleeResolver, baseResolution: resolution)
       let kaibaContext = try await prepareSessionKaibaPreflight(
         bundle: &bundle,
         instance: instanceResolution.effectiveInstance,
@@ -523,7 +625,11 @@ public struct SessionRerunCommand: Sendable {
             ),
             effectiveInstance: instanceResolution.effectiveInstance,
             eventHandler: eventHandler,
-            sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks)
+            sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks),
+            definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
+              for: bundle,
+              workflowName: persisted.workflowName
+            )
           )
         )
       }
@@ -667,16 +773,12 @@ public struct SessionResumeCommand: Sendable {
   public func run(_ options: SessionResumeOptions) async -> CLICommandResult {
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
-      let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+      let loaded = try loadRecoverySession(
         sessionId: options.sessionId,
         sessionStore: options.sessionStore,
         scope: options.scope,
         workingDirectory: options.workingDirectory
       )
-      if try SessionExecutionLockRegistry(sessionStoreRoot: loaded.storeRoot)
-        .sessionMessagesRetired(sessionId: options.sessionId) {
-        throw SessionExecutionLockError.messagesRetired(options.sessionId)
-      }
       let persisted = loaded.record
       if blocksResume(persisted.session) && !options.retryFailedStep {
         return await resumeFailure(
@@ -686,29 +788,18 @@ public struct SessionResumeCommand: Sendable {
           jsonlRecorder: jsonlRecorder
         )
       }
-      let storeRoot = CLIWorkflowSessionResolution.saveStoreRoot(
-        sessionStore: options.sessionStore,
-        scope: options.scope,
-        workingDirectory: options.workingDirectory,
-        loadedFromStoreRoot: loaded.storeRoot
-      )
-      let resolution = CLIWorkflowSessionResolution.effectiveResolution(
+      let preparation = try prepareSessionResume(
         persisted: persisted,
-        scope: options.scope,
-        workflowDefinitionDir: options.workflowDefinitionDir,
-        workingDirectory: options.workingDirectory
+        loaded: loaded,
+        options: options,
+        resolver: resolver
       )
-      var bundle = try resolver.resolve(resolution)
-      let instanceResolution = try resolvePersistedSessionInstance(
-        persisted: persisted,
-        workflowId: bundle.workflow.workflowId,
-        workingDirectory: options.workingDirectory,
-        nodePayloads: bundle.nodePayloads,
-        commandName: "resume"
-      )
-      bundle.nodePayloads = instanceResolution.nodePayloads
-      let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
-      let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+      let storeRoot = preparation.storeRoot
+      let resolution = preparation.resolution
+      var bundle = preparation.bundle
+      let instanceResolution = preparation.instanceResolution
+      let effectiveMockScenarioPath = preparation.mockScenarioPath
+      let calleeResolver = preparation.calleeResolver
       let kaibaContext = try await prepareSessionKaibaPreflight(
         bundle: &bundle,
         instance: instanceResolution.effectiveInstance,
@@ -807,7 +898,11 @@ public struct SessionResumeCommand: Sendable {
               ),
               effectiveInstance: instanceResolution.effectiveInstance,
               eventHandler: eventHandler,
-              sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks)
+              sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks),
+              definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
+                for: bundle,
+                workflowName: persisted.workflowName
+              )
             )
           )
         }

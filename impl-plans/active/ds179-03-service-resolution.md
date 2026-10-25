@@ -1,7 +1,7 @@
 # DS179-03 Service-Mode Resolution and Run Pins (RielaCLI)
 
 **planId**: `ds179-03-service-resolution`
-**Status**: Ready for implementation
+**Status**: Implementation complete; final integration review pending
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §1, §3 (`definitionSource.storeRoot`), §4 (store selection, configured launch, events-serve preflight, resolver steps, resume/rerun)
@@ -267,6 +267,10 @@ Log each edit in `impl-plans/progress/ds179-03-service-resolution.md` with
 the pre-edit and post-edit sha256. `RielaCommand.swift` is edited again by
 plan 04, so re-read it fresh and record its hash. List every existing test
 you changed, and why.
+
+Implementation completion and current-source verification evidence are
+recorded in `impl-plans/progress/ds179-03-service-resolution.md`. Formal
+integration review remains owned by the downstream workflow step.
 
 
 ## Operator amendment 1 (after session-494 blocked wave)

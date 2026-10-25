@@ -9,6 +9,7 @@ import RielaCore
 import RielaKaibaAddons
 import RielaObservability
 import RielaWork
+import RielaWorkflowRegistry
 
 public struct WorkflowRunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
@@ -56,15 +57,11 @@ public struct WorkflowRunCommand: Sendable {
       if let result = try await remoteRunResult(options) { return result }
       let resolution = options.resolution
         ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
-      var bundle = try resolveRunBundle(options: options, resolution: resolution, taskContext: taskContext)
-      let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
-      let prepared = try await prepareRunExecution(
-        options: options,
-        resolution: resolution,
-        bundle: &bundle,
-        variables: variables,
-        taskContext: taskContext
-      )
+      let preparedRun = try await prepareResolvedRun(options: options, resolution: resolution, taskContext: taskContext)
+      let bundle = preparedRun.bundle
+      let variables = preparedRun.variables
+      let prepared = preparedRun.execution
+      let definitionSource = preparedRun.definitionSource
       gatewayValidationWarnings = prepared.gatewayValidationWarnings
       let effectiveInstance = prepared.instance
       let effectiveVariables = effectiveInstance.configuration.defaultVariables
@@ -205,7 +202,8 @@ public struct WorkflowRunCommand: Sendable {
         eventHandler: runEventHandler,
         sessionExecutionAdmission: taskAdmission ?? processAdmission,
         boundaryHandover: taskContext?.boundaryHandover,
-        cancellationCause: taskContext?.cancellationCause
+        cancellationCause: taskContext?.cancellationCause,
+        definitionSource: definitionSource
       )
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
         kaibaSnapshot,
@@ -623,10 +621,12 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  private func resolveRunBundle(
+  func resolveRunBundle(
     options: WorkflowRunOptions,
     resolution: WorkflowResolutionOptions,
-    taskContext: TaskPlacementExecutionContext?
+    taskContext: TaskPlacementExecutionContext?,
+    effectiveResolver: any WorkflowBundleResolving,
+    pendingDefinitionSeed: inout ResolvedWorkflowBundle?
   ) throws -> ResolvedWorkflowBundle {
     if let taskContext {
       guard let bundle = taskContext.bundles[options.target] else {
@@ -638,7 +638,17 @@ public struct WorkflowRunCommand: Sendable {
     if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
       bundle = temporary
     } else if options.fromRegistry { bundle = try resolveRegistryRunBundle(options: options) } else {
-      bundle = try resolver.resolve(resolution)
+      if let storeResolver = effectiveResolver as? DefinitionStoreWorkflowBundleResolver {
+        if let stored = try storeResolver.lookup(resolution) {
+          bundle = stored
+        } else {
+          bundle = try resolver.resolve(resolution)
+          pendingDefinitionSeed = bundle
+        }
+      } else {
+        // one-time runs never open definition tables (issue #179 policy)
+        bundle = try effectiveResolver.resolve(resolution)
+      }
     }
     return bundle
   }

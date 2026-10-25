@@ -267,7 +267,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       throw WorkflowCandidateRejected(description: "\(resolvedDirectory.path) escapes \(resolvedRoot.path)")
     }
     let workflowURL = resolvedDirectory.appendingPathComponent("workflow.json")
-    guard FileManager.default.fileExists(atPath: workflowURL.path) else {
+    guard options.authoredOverlay?.files["workflow.json"] != nil || FileManager.default.fileExists(atPath: workflowURL.path) else {
       throw WorkflowCandidateMissing(path: workflowURL.path)
     }
     return try loadBundle(
@@ -340,7 +340,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
           }
           throw error
         }
-      }
+      },
+      authoredOverlay: options.authoredOverlay
     )
   }
 
@@ -714,7 +715,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated,
     sharedNodeActivationRootDirectory: URL? = nil,
     inheritanceAncestry: [String] = [],
-    inheritanceBaseResolver: WorkflowInheritanceBaseResolver? = nil
+    inheritanceBaseResolver: WorkflowInheritanceBaseResolver? = nil,
+    authoredOverlay: WorkflowAuthoredFileOverlay? = nil
   ) throws -> ResolvedWorkflowBundle {
     try WorkflowRegistryBundleLoader().loadBundle(
       at: directory,
@@ -727,7 +729,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       sharedNodeActivationPolicy: sharedNodeActivationPolicy,
       sharedNodeActivationRootDirectory: sharedNodeActivationRootDirectory,
       inheritanceAncestry: inheritanceAncestry,
-      inheritanceBaseResolver: inheritanceBaseResolver
+      inheritanceBaseResolver: inheritanceBaseResolver,
+      authoredOverlay: authoredOverlay
     )
   }
 

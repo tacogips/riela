@@ -5,6 +5,7 @@ import FoundationNetworking
 import RielaCore
 import RielaEvents
 import RielaObservability
+import RielaWorkflowRegistry
 
 protocol EventLiveServing: Sendable {
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult
@@ -974,7 +975,14 @@ struct CLIWorkflowTriggerDefaultsResolver: EventWorkflowTriggerDefaultsResolving
       workflowDefinitionDir: parsed.workflowDefinitionDir,
       workingDirectory: workingDirectory
     )
-    return try WorkflowRunCommand().resolver.resolve(options).workflow.triggerDefaults
+    let fileResolver = WorkflowRunCommand().resolver
+    let resolver = DefinitionStoreWorkflowBundleResolver(
+      inner: fileResolver,
+      sessionStore: parsed.sessionStore,
+      actor: .init(kind: .cli, id: "events-serve"),
+      mode: .lookupOnly
+    )
+    return try resolver.resolve(options).workflow.triggerDefaults
   }
 }
 
@@ -992,7 +1000,7 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
     let workingDirectory = request.parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     var observedCommand = command
     observedCommand.sessionStartedObserver = request.onSessionStarted
-    let result = await observedCommand.run(WorkflowRunOptions(
+    var options = WorkflowRunOptions(
       target: request.workflowName,
       resolution: WorkflowResolutionOptions(
         workflowName: request.workflowName,
@@ -1008,7 +1016,9 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
       artifactRoot: request.parsed.artifactRoot,
       sessionStore: request.parsed.sessionStore,
       workingDirectory: workingDirectory
-    ))
+    )
+    options.executionMode = .service(.init(kind: .cli, id: "events-serve"))
+    let result = await observedCommand.run(options)
     guard result.exitCode == .success else {
       throw CLIUsageError(result.stderr.isEmpty ? result.stdout : result.stderr)
     }

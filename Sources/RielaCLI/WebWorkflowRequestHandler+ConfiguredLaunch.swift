@@ -27,19 +27,40 @@ public extension RielaWebWorkflowRequestHandler {
         workflowDefinitionDir: source.workflowDirectory,
         workingDirectory: directory
       )
-      let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
-      guard bundle.workflow.workflowId == source.workflowId,
-            URL(fileURLWithPath: bundle.workflowDirectory).standardizedFileURL == URL(fileURLWithPath: source.workflowDirectory).standardizedFileURL else {
-        return .json(status: 409, .object(["error": .object(["code": .string("source_changed")])]))
+      let fileResolver = FileSystemWorkflowBundleResolver()
+      let storeResolver = DefinitionStoreWorkflowBundleResolver(
+        inner: fileResolver,
+        sessionStore: context.sessionStoreRoot,
+        actor: .init(kind: .api, id: "configured-run"),
+        mode: .lookupOrSeed
+      )
+      let bundle: ResolvedWorkflowBundle
+      if let stored = try storeResolver.lookup(resolution) {
+        guard stored.workflow.workflowId == source.workflowId else {
+          return .json(status: 409, .object(["error": .object(["code": .string("source_changed")])]))
+        }
+        bundle = stored
+      } else {
+        let fileBundle = try fileResolver.resolve(resolution)
+        guard fileBundle.workflow.workflowId == source.workflowId,
+              URL(fileURLWithPath: fileBundle.workflowDirectory).standardizedFileURL
+                == URL(fileURLWithPath: source.workflowDirectory).standardizedFileURL else {
+          return .json(status: 409, .object(["error": .object(["code": .string("source_changed")])]))
+        }
+        bundle = try storeResolver.seed(fileBundle: fileBundle, options: resolution)
       }
       let input = variables
       let encoder = JSONEncoder()
-      let options = WorkflowRunOptions(
+      guard let encodedVariables = String(data: try encoder.encode(input), encoding: .utf8) else {
+        throw CLIUsageError("configured workflow variables must be UTF-8")
+      }
+      var options = WorkflowRunOptions(
         target: source.workflowId, resolution: resolution,
-        variables: String(decoding: try encoder.encode(input), as: UTF8.self),
+        variables: encodedVariables,
         output: .jsonl, sessionStore: context.sessionStoreRoot,
         workingDirectory: directory, explicitWorkingDirectory: true
       )
+      options.executionMode = .service(.init(kind: .api, id: "configured-run"))
       let job = WebWorkflowLaunch(profile: context.profile.rawValue)
       runtime.launches[job.id] = job
       var environment = context.environment

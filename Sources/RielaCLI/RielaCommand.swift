@@ -27,6 +27,11 @@ public enum WorkflowOutputFormat: String, Codable, Sendable {
   case table
 }
 
+public enum WorkflowExecutionMode: Equatable, Sendable {
+  case oneTime
+  case service(WorkflowDefinitionActor)
+}
+
 public extension WorkflowOutputFormat {
   var isStructured: Bool {
     self == .json || self == .jsonl
@@ -140,6 +145,7 @@ public enum WorkflowCommand: Equatable, Sendable {
   case create(CLICommandOptions)
   case selfImprove(CLICommandOptions)
   case version(WorkflowVersionCommandOptions)
+  case workflowDefinition(WorkflowDefinitionCommandOptions)
   case package(PackageCommand)
 }
 
@@ -306,6 +312,7 @@ public struct CLICommandOptions: Equatable, Sendable {
 }
 
 public struct WorkflowRunOptions: Equatable, Sendable {
+  public var executionMode: WorkflowExecutionMode
   public var runtimeEnvironmentFile: String?
   public var target: String
   public var resolution: WorkflowResolutionOptions?
@@ -367,6 +374,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     resumeSessionId: String? = nil,
     runtimeEnvironmentFile: String? = nil
   ) {
+    executionMode = .oneTime
     self.runtimeEnvironmentFile = runtimeEnvironmentFile
     self.target = target
     self.resolution = resolution
@@ -564,6 +572,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       )
       return .workflow(.version(versionCommand))
     }
+    if family.subcommand == .definition {
+      return .workflow(.workflowDefinition(try parseWorkflowDefinitionCommand(family.remainder)))
+    }
     let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
     if family.subcommand == .run,
        route.target == nil,
@@ -574,6 +585,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       throw CLIUsageError("workflow \(family.subcommand.rawValue) requires a workflow name")
     }
     switch family.subcommand {
+    case .definition:
+      return .workflow(.workflowDefinition(try parseWorkflowDefinitionCommand(family.remainder)))
     case .validate:
       return .workflow(.validate(try parseValidate(target: target, tokens: route.options)))
     case .inspect:

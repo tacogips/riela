@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaWorkflowRegistry
 
 /// Resolves callee workflows for live cross-workflow dispatch through the same
 /// scope machinery the CLI uses for the caller: the caller's own resolution
@@ -34,7 +35,14 @@ public struct FileSystemWorkflowCalleeResolver: WorkflowCalleeResolving {
     let bundle = try taskContext.map {
       try WorkflowRunCommand().applyingTaskPlacement($0, to: original)
     } ?? original
-    return ResolvedWorkflowCallee(workflow: bundle.workflow, nodePayloads: bundle.nodePayloads)
+    return ResolvedWorkflowCallee(
+      workflow: bundle.workflow,
+      nodePayloads: bundle.nodePayloads,
+      definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
+        for: bundle,
+        workflowName: workflowId
+      )
+    )
   }
 
   func resolveBundle(workflowId: String) throws -> ResolvedWorkflowBundle {

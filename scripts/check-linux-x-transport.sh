@@ -21,9 +21,10 @@ if grep -Eq 'non-zero retain count|Segmentation fault|Signal 11' "$probe_root/er
   echo "Linux X transport lifetime regression" >&2
   exit 1
 fi
-python3 - "$probe_root/out" <<'PY'
+python3 - "$probe_root/err" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1]))
-assert isinstance(value,dict) and ('errors' in value or 'error' in value), 'missing SDK error envelope'
+assert isinstance(value,dict) and value.get('ok') is False and isinstance(value.get('error'),dict), 'missing SDK error envelope'
+assert value['error'].get('code') in {'AUTH_MISSING','AUTH_INVALID','AUTH_EXPIRED','AUTH_REVOKED','PERMISSION_DENIED','UPSTREAM_FAILURE','NETWORK_FAILURE','INTERNAL_ERROR','RATE_LIMITED'}, 'unexpected SDK failure code'
 PY
 echo "Linux X HTTPS probe returned a controlled error (status $status)"

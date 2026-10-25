@@ -1,5 +1,5 @@
 {
-  "originHash" : "983b6ce6cc64521ad0c8a280bdfa378c52539b237c9417e49b2f5dca9fa1363e",
+  "originHash" : "4ba95f810204d0dc40c84cf5cda543c17736fdd749d1cf6512678abc11e7d409",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -39,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "4ce54035694bbcbe88c33a4de3f5905677370b0e"
+        "revision" : "6f7fd90b605f35ce99f023de36bcb272d0f58f60"
       }
     },
     {

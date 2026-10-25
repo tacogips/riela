@@ -139,6 +139,7 @@ jobs:
               install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela
               riela --version | grep -Fx "$RELEASE_VERSION"
               scripts/check-linux-x-transport.sh /usr/local/bin/riela
+              scripts/check-linux-gmail-transport.sh /usr/local/bin/riela
             '
 
       - name: Upload Linux architecture-specific release assets

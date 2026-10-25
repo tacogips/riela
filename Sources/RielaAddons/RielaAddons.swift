@@ -120,6 +120,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/page-state", version: "1"),
     .init(name: "riela/collection-checkpoint", version: "1"),
     .init(name: "riela/snapshot-store", version: "1"),
+    .init(name: "riela/write-intent-store", version: "1"),
     .init(name: "riela/snapshot-scan", version: "1"),
     .init(name: "riela/array-select", version: "1"),
     .init(name: "riela/progress-tracker", version: "1"),

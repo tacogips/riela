@@ -153,7 +153,12 @@ struct XAuthorCollector {
         try window.accept(response, at: ISO8601DateFormatter().string(from: clock()))
       } catch is CancellationError { throw CancellationError() } catch {
         window.failed = true
-        failures.append(.object(["shard": .integer(Int64(shard)), "stage": .string(label), "code": .string("page-unavailable")]))
+        var failure: JSONObject = ["shard": .integer(Int64(shard)), "stage": .string(label), "code": .string("page-unavailable")]
+        if let error = error as? AdapterExecutionError {
+          let diagnostics = GatewayFailureDiagnostics.fields(readerMessage: error.message)
+          if !diagnostics.isEmpty { failure["diagnostics"] = .object(diagnostics) }
+        }
+        failures.append(.object(failure))
         return false
       }
     }

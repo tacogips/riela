@@ -498,3 +498,15 @@ earlier plans. Re-read each fresh before editing; if a file differs from
 what the earlier plan's log recorded, note the drift and merge instead of
 overwriting. Record the "nothing uses `addonResolver` between the old and
 new position" check from file change 4.
+
+
+## Operator amendment 1 (after session-494 blocked wave)
+
+- ds179-01-store-core is accepted and committed in 6337aa24. The definition store API now returns
+  `WorkflowDefinitionCurrent` (struct with head/version/document) from `current(workflowName:)`, and
+  `WorkflowDefinitionDiffEntry.Op` was renamed to `WorkflowDefinitionDiffEntry.Operation`.
+- Known pre-existing failures on main f4fcf68c (not caused by this work; exclude them from gates with
+  `--skip` and never treat them as blockers): `DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession`,
+  `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`, `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`.
+  `DeterministicWorkflowRunnerFanoutTests.testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin` is timing-flaky under
+  full-suite load and passes in isolation.

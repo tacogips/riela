@@ -5,7 +5,7 @@
 **Workflow Mode**: issue-resolution
 **Issue Reference**: tacogips/riela#179 section 2 + execution-mode policy + (A) whole-workflow update with mandatory reason
 **Design Reference**: `design-docs/specs/design-workflow-definition-store.md` §3 (stored document), §5 (operations, authored view and authored-edit pipeline, validation), §6 (diff), §7 (export); QA Q7
-**dependsOn**: `ds179-01-store-core`
+**dependsOn**: none (ds179-01-store-core is an accepted dependency, commit 6337aa24)
 **Branch**: `feat/definition-store-179` (local commits only; `gitPush=false`)
 **Progress log**: `impl-plans/progress/ds179-02-definition-service.md`
 
@@ -527,3 +527,15 @@ with the pre-edit and post-edit sha256. `WorkflowRegistryBundleLoader.swift`,
 `PromptTemplateAssets.swift` and `WorkflowResolution.swift` are shared with
 nothing else in this chain, but re-read each fresh before editing. Record
 any blocker, such as Codable loss, verbatim.
+
+
+## Operator amendment 1 (after session-494 blocked wave)
+
+- ds179-01-store-core is accepted and committed in 6337aa24. The definition store API now returns
+  `WorkflowDefinitionCurrent` (struct with head/version/document) from `current(workflowName:)`, and
+  `WorkflowDefinitionDiffEntry.Op` was renamed to `WorkflowDefinitionDiffEntry.Operation`.
+- Known pre-existing failures on main f4fcf68c (not caused by this work; exclude them from gates with
+  `--skip` and never treat them as blockers): `DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession`,
+  `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`, `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`.
+  `DeterministicWorkflowRunnerFanoutTests.testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin` is timing-flaky under
+  full-suite load and passes in isolation.

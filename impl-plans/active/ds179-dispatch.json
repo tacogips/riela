@@ -5,7 +5,7 @@
   "baseBranch": "main",
   "remote": "origin",
   "gitPush": false,
-  "originalHead": "f4fcf68c3ef2f5fd5b6ab2d1281d8c053f4a8761",
+  "originalHead": "6337aa243c7c501dfe02c652b869ca09d9323d24",
   "designDocPaths": [
     "design-docs/specs/design-workflow-definition-store.md",
     "design-docs/user-qa/qa-workflow-definition-store.md",
@@ -13,7 +13,7 @@
   ],
   "evidenceRoot": "tmp/ds179",
   "reviewContext": {
-    "issueReference": "tacogips/riela#179 (https://github.com/tacogips/riela/issues/179): section 2, the execution-mode policy, (A) whole-workflow CLI/GraphQL update with a mandatory reason, and (B) the builtin improvement node; workflowExecutionId opus-luna-design-and-implement-review-loop-session-494; plans accepted by step5-impl-plan-review comm-009201 (accepted true, no repair requests)",
+    "issueReference": "tacogips/riela#179 (https://github.com/tacogips/riela/issues/179): section 2, the execution-mode policy, (A) whole-workflow CLI/GraphQL update with a mandatory reason, and (B) the builtin improvement node; workflowExecutionId opus-luna-design-and-implement-review-loop-session-498; plans accepted by step5-impl-plan-review comm-009240 (accepted true, no repair requests); ds179-01 already committed at 6337aa24",
     "userProblem": "Long-running service runs (RielaApp API, riela serve/GraphQL, daemon, events serve, cron) read workflow definitions and prompts straight from text files. There is no durable, auditable record of which definition a run used, and no way to change prompts or structure with a recorded reason, evidence and actor. One-time `riela workflow run` must keep its file-only behavior. The user also wants whole-workflow updates through the CLI/GraphQL with a mandatory reason, and a builtin improvement node that proposes a change from the latest run's digest and applies it only through that CLI command.",
     "requiredOutcomes": [
       "SQLite definition store in the runtime records DB (schema generation 10): definition_blobs, definition_versions, definition_heads and an append-only definition_change_audit with reason, evidence, actor, before/after digest, diff, approval state and overwritten changes (ds179-01).",
@@ -105,53 +105,9 @@
   },
   "plans": [
     {
-      "planId": "ds179-01-store-core",
-      "planPath": "impl-plans/active/ds179-01-store-core.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCore/WorkflowDefinitionStoreSchema.swift",
-        "Sources/RielaCore/WorkflowDefinitionStore.swift",
-        "Sources/RielaCore/WorkflowDefinitionDiff.swift",
-        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
-        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift",
-        "Sources/RielaCore/RuntimeSession.swift",
-        "Sources/RielaCore/RuntimeStore.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
-        "Sources/RielaCore/WorkflowCalleeResolution.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+NestedPublication.swift",
-        "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift",
-        "Tests/RielaCoreTests/WorkflowDefinitionSessionPinTests.swift",
-        "impl-plans/active/ds179-01-store-core.md",
-        "impl-plans/progress/ds179-01-store-core.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "schemaGeneration is 10; generation-9 stores migrate in place keeping sessions; stores holding definition heads are never discarded.",
-        "The four definition tables exist with append-only triggers on versions and audit; commit is a single transaction with insert-or-read seeding, staleHead and missingReason rejection writing zero rows.",
-        "WorkflowDefinitionDiff produces RFC 6901 pointers deterministically.",
-        "definitionSource is threaded through WorkflowSession, WorkflowSessionCreateInput, DeterministicWorkflowRunRequest and ResolvedWorkflowCallee; old snapshots decode with nil.",
-        "Build, focused tests and swiftlint exit 0 with testsRun > 0 and failureCount 0 recorded in the progress log."
-      ],
-      "verification": [
-        "mkdir -p tmp/ds179/ds179-01-store-core",
-        "arch -arm64 /bin/zsh -lc 'swift build > tmp/ds179/ds179-01-store-core/build.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowDefinitionStoreTests|WorkflowDefinitionSessionPinTests|SQLiteRuntimeSchemaMigrationTests|SQLiteWorkflowMessageLogTests' > tmp/ds179/ds179-01-store-core/test.log 2>&1\"",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkStoreTests > tmp/ds179/ds179-01-store-core/workstore.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/WorkflowDefinitionStoreSchema.swift Sources/RielaCore/WorkflowDefinitionStore.swift Sources/RielaCore/WorkflowDefinitionDiff.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift Sources/RielaCore/RuntimeSession.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Sources/RielaCore/WorkflowCalleeResolution.swift Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift Sources/RielaCore/DeterministicWorkflowRunner+NestedPublication.swift Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift Tests/RielaCoreTests/WorkflowDefinitionSessionPinTests.swift > tmp/ds179/ds179-01-store-core/lint.log 2>&1'",
-        "grep -n 'schemaGeneration: Int64 = 10' Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift"
-      ]
-    },
-    {
       "planId": "ds179-02-definition-service",
       "planPath": "impl-plans/active/ds179-02-definition-service.md",
-      "dependsOn": [
-        "ds179-01-store-core"
-      ],
+      "dependsOn": [],
       "writePaths": [
         "Sources/RielaCore/WorkflowAuthoredFileOverlay.swift",
         "Sources/RielaCore/PromptTemplateAssets.swift",
@@ -419,6 +375,19 @@
         "grep -n 'riela/improve-workflow-apply' docs/workflow-definition-store.md",
         "grep -n 'Workflow Definition Store' README.md",
         "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParitySkillTests > tmp/ds179/ds179-06-docs/skill-parity.log 2>&1'"
+      ]
+    }
+  ],
+  "acceptedDependencies": [
+    {
+      "planId": "ds179-01-store-core",
+      "planPath": "impl-plans/active/ds179-01-store-core.md",
+      "commit": "6337aa243c7c501dfe02c652b869ca09d9323d24",
+      "provides": [
+        "definition_heads, definition_versions, definition_blobs and append-only definition_change_audit tables (schema generation 10, 9 to 10 migration)",
+        "WorkflowDefinitionStore API",
+        "WorkflowDefinitionDiff",
+        "session definitionSource pins"
       ]
     }
   ]

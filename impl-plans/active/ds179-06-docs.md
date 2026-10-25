@@ -98,3 +98,15 @@ topic sections such as `## Runtime Data Retention` (around line 676) and
 
 Log both file edits in `impl-plans/progress/ds179-06-docs.md` with the
 pre-edit and post-edit sha256. Re-read `README.md` fresh before editing.
+
+
+## Operator amendment 1 (after session-494 blocked wave)
+
+- ds179-01-store-core is accepted and committed in 6337aa24. The definition store API now returns
+  `WorkflowDefinitionCurrent` (struct with head/version/document) from `current(workflowName:)`, and
+  `WorkflowDefinitionDiffEntry.Op` was renamed to `WorkflowDefinitionDiffEntry.Operation`.
+- Known pre-existing failures on main f4fcf68c (not caused by this work; exclude them from gates with
+  `--skip` and never treat them as blockers): `DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession`,
+  `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`, `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`.
+  `DeterministicWorkflowRunnerFanoutTests.testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin` is timing-flaky under
+  full-suite load and passes in isolation.

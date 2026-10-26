@@ -4,6 +4,19 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowStdioNodeExecutorTests: XCTestCase {
+  func testCommandOutputRetainsUnicodeLineSeparatorsInsideJSONString() async throws {
+    for separator in ["\u{0085}", "\u{2028}", "\u{2029}"] {
+      let expected = "before" + separator + "after"
+      let record = "{\"text\":\"\(expected)\"}\r\n"
+      let runner = RecordingStdioNodeProcessRunner { _, _ in record }
+      let executor = LocalWorkflowStdioNodeExecutor(runner: runner)
+      let result = try await executor.execute(input(kind: .command,
+        node: AgentNodePayload(id: "node", nodeType: .command, model: "",
+          command: WorkflowCommandExecution(executable: "true"))), context: AdapterExecutionContext())
+      XCTAssertEqual(result.payload?["text"], .string(expected))
+    }
+  }
+
   func testExplicitHostEnvironmentIsExactAndNodeOverridesRemainScoped() async throws {
     let runner = RecordingStdioNodeProcessRunner { configuration, _ in
       XCTAssertFalse(configuration.inheritEnvironment)

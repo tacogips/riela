@@ -5,7 +5,7 @@ import Foundation
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.75"
+let rielaVersion = "0.2.76"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -416,7 +416,8 @@ let package = Package(
 let focusedRuntimeSuite = ProcessInfo.processInfo.environment["RIELA_TEST_SUITE"]
 if focusedRuntimeSuite == "private-workflow" || focusedRuntimeSuite == "canonical-persistence" {
   var sources: [String: [String]] = [
-    "RielaCoreTests": ["RuntimeEnvironmentPropagationTests.swift"],
+    "RielaCoreTests": ["RuntimeEnvironmentPropagationTests.swift", "JSONLRecordFramingTests.swift"],
+    "RielaAdaptersTests": ["WorkflowStdioNodeExecutorTests.swift"],
     "RielaCLITests": ["PrivateWorkflowTests.swift", "RielaCLITemporaryDirectory.swift",
       "RuntimeEnvironmentSurfaceNamesTests.swift"]
   ]

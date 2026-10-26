@@ -10,6 +10,10 @@ on:
       - 'Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift'
       - 'Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift'
       - 'Sources/RielaCore/RuntimeExecutionReuse.swift'
+      - 'Sources/RielaCore/JSONLRecordFraming.swift'
+      - 'Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift'
+      - 'Tests/RielaAdaptersTests/WorkflowStdioNodeExecutorTests.swift'
+      - 'Tests/RielaCoreTests/JSONLRecordFramingTests.swift'
       - 'Sources/RielaCLI/RielaCommand.swift'
       - 'Sources/RielaCLI/ParsedWorkflowOptions.swift'
       - 'Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift'
@@ -31,6 +35,10 @@ on:
       - 'Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift'
       - 'Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift'
       - 'Sources/RielaCore/RuntimeExecutionReuse.swift'
+      - 'Sources/RielaCore/JSONLRecordFraming.swift'
+      - 'Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift'
+      - 'Tests/RielaAdaptersTests/WorkflowStdioNodeExecutorTests.swift'
+      - 'Tests/RielaCoreTests/JSONLRecordFramingTests.swift'
       - 'Sources/RielaCLI/RielaCommand.swift'
       - 'Sources/RielaCLI/ParsedWorkflowOptions.swift'
       - 'Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift'
@@ -76,7 +84,7 @@ jobs:
           docker run --rm -e RIELA_TEST_SUITE=private-workflow -v "$GITHUB_WORKSPACE:/workspace" -w /workspace riela-private-tests bash -lc '
             set -euo pipefail
             swift scripts/strip-macos-only-pins.swift Package.resolved
-            swift test --jobs 2 --filter "PrivateWorkflowTests|RuntimeEnvironmentPropagationTests|RuntimeEnvironmentSurfaceNamesTests"
+            swift test --jobs 2 --filter "PrivateWorkflowTests|RuntimeEnvironmentPropagationTests|JSONLRecordFramingTests|WorkflowStdioNodeExecutorTests|RuntimeEnvironmentSurfaceNamesTests"
           '
       - name: Run canonical persistence contracts
         run: |

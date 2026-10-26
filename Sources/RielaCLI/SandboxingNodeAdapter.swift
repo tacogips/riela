@@ -104,7 +104,7 @@ actor SandboxingNodeAdapter: NodeAdapter {
           }
         } else {
           result = try await runner.run(configuration: configuration, stdin: stdin + "\n", deadline: context.deadline)
-          for line in result.stdout.split(whereSeparator: \.isNewline) {
+          for line in JSONLRecordFraming.records(in: result.stdout) {
             if let event = records.accept(String(line)) { stream.continuation.yield(event) }
           }
         }

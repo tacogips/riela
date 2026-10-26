@@ -225,10 +225,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   }
 
   private func outputPayload(fromStdout stdout: String, kind: WorkflowStdioNodeExecutionKind) throws -> JSONObject? {
-    let records = stdout
-      .split(whereSeparator: \.isNewline)
-      .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
+    let records = JSONLRecordFraming.records(in: stdout)
     guard !records.isEmpty else {
       return nil
     }

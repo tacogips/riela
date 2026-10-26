@@ -167,10 +167,7 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
   }
 
   private func outputPayload(fromStdout stdout: String, addonName: String) throws -> JSONObject {
-    let records = stdout
-      .split(whereSeparator: \.isNewline)
-      .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
+    let records = JSONLRecordFraming.records(in: stdout)
     guard records.count == 1 else {
       throw AdapterExecutionError(.invalidOutput, "container add-on '\(addonName)' stdout must contain exactly one JSONL output record")
     }

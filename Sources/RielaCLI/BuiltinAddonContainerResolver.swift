@@ -292,7 +292,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
         subject: "built-in add-on worker")
     }
     guard result.stdout.utf8.count <= BuiltinAddonContainerRequest.maximumRecordBytes,
-          result.stdout.split(whereSeparator: \.isNewline).count == 1 else {
+          JSONLRecordFraming.records(in: result.stdout).count == 1 else {
       throw AdapterExecutionError(.invalidOutput, "built-in worker must return one bounded JSONL record")
     }
     do {

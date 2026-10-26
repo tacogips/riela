@@ -9,6 +9,32 @@ final class PrivateWorkflowTests: XCTestCase {
   private let schema: JSONObject = ["type": .string("object"), "required": .array([.string("status")]),
     "properties": .object(["status": .object(["const": .string("ok")])]), "additionalProperties": .bool(false)]
 
+  func testPrivateCommandRetainsUnicodeSeparatorsAcrossValidatedRoot() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-unicode-jsonl")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definitions = root.appendingPathComponent("definitions/unicode")
+    try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
+    let text = "before\u{0085}middle\u{2028}next\u{2029}after"
+    let literal = "{\"text\":\"\(text)\"}"
+    let workflow: JSONObject = ["workflowId": .string("unicode"), "description": .string("Unicode JSONL fixture"),
+      "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
+      "entryStepId": .string("emit"),
+      "nodes": .array([.object(["id": .string("emit"), "nodeFile": .string("node.json")])]),
+      "steps": .array([.object(["id": .string("emit"), "nodeId": .string("emit")])])]
+    let node: JSONObject = ["id": .string("emit"), "nodeType": .string("command"), "model": .string(""),
+      "command": .object(["executable": .string("/usr/bin/printf"),
+        "arguments": .array([.string("%s\n"), .string(literal)])])]
+    try JSONEncoder().encode(workflow).write(to: definitions.appendingPathComponent("workflow.json"))
+    try JSONEncoder().encode(node).write(to: definitions.appendingPathComponent("node.json"))
+    let contract: JSONObject = ["type": .string("object"), "required": .array([.string("text")]),
+      "properties": .object(["text": .object(["const": .string(text)])]), "additionalProperties": .bool(false)]
+    let plan = try PrivateWorkflowPlan(config: ["workflowId": .string("unicode"),
+      "definitionRoot": .string(definitions.deletingLastPathComponent().path), "outputSchema": .object(contract)])
+    let output = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan,
+      deadline: Date().addingTimeInterval(30), environment: [:], credentials: []), root: root.appendingPathComponent("guest"))
+    XCTAssertEqual(output.payload, ["text": .string(text)])
+  }
+
   func testUsageExportReachesHostCacheEvenWhenPrivateResultIsRejected() async throws {
     for invalid in [false, true] {
       let root = try makeRielaCLITestTemporaryDirectory("private-usage-export")

@@ -242,7 +242,8 @@ public struct WorkflowRunCommand: Sendable {
           storeRoot: storeRoot,
           telemetry: telemetry,
           jsonlRecorder: jsonlRecorder,
-          gatewayValidationWarnings: gatewayValidationWarnings
+          gatewayValidationWarnings: gatewayValidationWarnings,
+          canonicalPersistenceStore: durableRuntime.canonicalPersistenceStore
         )
       )
     } catch let error as CLIUsageError {
@@ -360,17 +361,20 @@ public struct WorkflowRunCommand: Sendable {
       hydration: options.resumeSessionId.map { .family(of: $0) } ?? .none
     )
     let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    let canonicalPersistenceStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot)
     let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
       backing: backingStore, rootDirectory: canonicalRoot,
       beforeTerminalPersistence: beforeTerminalPersistence,
-      deferTerminalPersistence: deferTerminalPersistence
+      deferTerminalPersistence: deferTerminalPersistence,
+      persistenceStore: canonicalPersistenceStore
     )
     if let sessionId = options.resumeSessionId { try await durableStore.hydrate(familyOf: sessionId) }
     return WorkflowRunProductionDurableRuntime(
       backingStore: backingStore,
       runtimeStore: durableStore,
-      nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot),
-      nestedRecoveryCheckpointer: try workflowRunNestedRecoveryCheckpointer(options: options)
+      nestedInvocationPersistenceStore: canonicalPersistenceStore,
+      nestedRecoveryCheckpointer: try workflowRunNestedRecoveryCheckpointer(options: options),
+      canonicalPersistenceStore: canonicalPersistenceStore
     )
   }
 
@@ -520,7 +524,8 @@ public struct WorkflowRunCommand: Sendable {
     bundle: ResolvedWorkflowBundle,
     variables: JSONObject,
     options: WorkflowRunOptions,
-    loopEvidence: LoopEvidenceManifest? = nil
+    loopEvidence: LoopEvidenceManifest? = nil,
+    canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
   ) throws {
     let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
       resolution: resolution,
@@ -543,8 +548,8 @@ public struct WorkflowRunCommand: Sendable {
     if !recordsCLIProjection {
       // Final evidence/gate status still belongs in the canonical record.
       // Only the redundant CLI projection is omitted for embedded callers.
-      try SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
-        canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(snapshot)
+      try (canonicalPersistenceStore ?? SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+        canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))).save(snapshot)
       return
     }
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
@@ -862,6 +867,7 @@ private struct WorkflowRunProductionDurableRuntime {
   let runtimeStore: any WorkflowRuntimeStore
   let nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
   let nestedRecoveryCheckpointer: (any NestedRecoveryCheckpointing)?
+  let canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
 }
 
 private func isTemporaryWorkflowRunTarget(_ target: String, workingDirectory: String) -> Bool {
@@ -943,6 +949,7 @@ struct RunFinalizeContext {
   var telemetry: any RielaTelemetry
   var jsonlRecorder: WorkflowRunJSONLRecorder?
   var gatewayValidationWarnings: [String]
+  var canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
 }
 
 private func failsRequiredGate(_ gate: LoopGateResult, in workflow: WorkflowDefinition) -> Bool {
@@ -995,7 +1002,8 @@ extension WorkflowRunCommand {
         bundle: context.bundle,
         variables: context.effectiveVariables,
         options: context.options,
-        loopEvidence: loopEvidence
+        loopEvidence: loopEvidence,
+        canonicalPersistenceStore: context.canonicalPersistenceStore
       )
     }
     if Task.isCancelled {

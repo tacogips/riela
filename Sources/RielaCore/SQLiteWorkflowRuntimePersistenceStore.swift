@@ -19,6 +19,7 @@ public struct LoopBaseline: Codable, Equatable, Sendable {
 
 public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   public var rootDirectory: String
+  private let executionReuse = RuntimeExecutionReuse()
 
   public init(rootDirectory: String) {
     self.rootDirectory = rootDirectory
@@ -807,15 +808,48 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     var header = snapshot.session
     header.executions = []
     let headerJSON = try jsonString(header)
-    // Let SQLite aggregate the encoded executions. Keeping a second Swift
-    // Data/String copy of the complete array still doubles peak heap use.
-    try db.execute("CREATE TEMP TABLE IF NOT EXISTS riela_snapshot_execution_parts (ordinal INTEGER PRIMARY KEY, value BLOB NOT NULL)")
-    try db.execute("DELETE FROM temp.riela_snapshot_execution_parts")
-    defer { try? db.execute("DROP TABLE temp.riela_snapshot_execution_parts") }
-    for (index, execution) in snapshot.session.executions.enumerated() {
-      try db.execute("INSERT INTO temp.riela_snapshot_execution_parts (ordinal, value) VALUES (?, jsonb(?))",
-        bindings: [.int(Int64(index)), .text(try jsonString(execution))])
+    let sessionId = snapshot.session.sessionId
+    let cacheKey = Self.defaultDatabasePath(rootDirectory: rootDirectory) + ":" + sessionId
+    let witness = UUID().uuidString
+    var executionSQL = "(SELECT jsonb_group_array(value) FROM (SELECT value FROM temp.riela_snapshot_execution_parts ORDER BY ordinal))"
+    var reusingExecutions = false
+    var executionBindings: [SQLiteValue] = []
+    if let previous = executionReuse.load(cacheKey),
+       previous.executions.count <= snapshot.session.executions.count,
+       previous.executions.map(\.executionId) == snapshot.session.executions.prefix(previous.executions.count).map(\.executionId),
+       try db.query("SELECT json_extract(session_json, '$._rielaCanonicalWrite') AS witness FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?",
+         bindings: [.text(sessionId)]).first?["witness"] == previous.witness {
+      let changed = snapshot.session.executions.indices.filter { index in
+        index >= previous.executions.count || previous.executions[index] != snapshot.session.executions[index]
+      }
+      // Keep below SQLite's function argument limit. Bulk imports can use the
+      // full reconstruction path; ordinary node mutations change one record.
+      if changed.count <= 32 {
+        var expression = "jsonb_extract(session_json, '$.executions')"
+        if !changed.isEmpty {
+          expression = "jsonb_set(" + expression + String(repeating: ", ?, jsonb(?)", count: changed.count) + ")"
+          for index in changed {
+            executionBindings += [.text("$[\(index)]"), .text(try jsonString(snapshot.session.executions[index]))]
+          }
+        }
+        executionSQL = "coalesce((SELECT " + expression
+          + " FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? AND json_extract(session_json, '$._rielaCanonicalWrite') = ?),"
+          + " jsonb('canonical execution witness changed'))"
+        executionBindings += [.text(sessionId), .text(previous.witness)]
+        reusingExecutions = true
+      }
     }
+    if !reusingExecutions {
+      // A missing/rolled-back/interleaved/legacy write witness cannot authorize
+      // reuse. Reconstruct all executions without changing the stored format.
+      try db.execute("CREATE TEMP TABLE IF NOT EXISTS riela_snapshot_execution_parts (ordinal INTEGER PRIMARY KEY, value BLOB NOT NULL)")
+      try db.execute("DELETE FROM temp.riela_snapshot_execution_parts")
+      for (index, execution) in snapshot.session.executions.enumerated() {
+        try db.execute("INSERT INTO temp.riela_snapshot_execution_parts (ordinal, value) VALUES (?, jsonb(?))",
+          bindings: [.int(Int64(index)), .text(try jsonString(execution))])
+      }
+    }
+    defer { try? db.execute("DROP TABLE IF EXISTS temp.riela_snapshot_execution_parts") }
     let rootOutputJSON = try snapshot.rootOutput.map(jsonString)
     let loopEvidenceJSON = try snapshot.loopEvidence.map(jsonString)
     let loopSummaryJSON = try snapshot.loopEvidence.map {
@@ -827,8 +861,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       INSERT INTO workflow_runtime_snapshots (
         workflow_execution_id, session_json, root_output_json, diagnostics_json,
         loop_evidence_json, loop_summary_json, created_at, updated_at
-      ) VALUES (?, jsonb_set(jsonb(?), '$.executions',
-        (SELECT jsonb_group_array(value) FROM (SELECT value FROM temp.riela_snapshot_execution_parts ORDER BY ordinal))),
+      ) VALUES (?, jsonb_set(jsonb(?), '$.executions', \(executionSQL), '$._rielaCanonicalWrite', ?),
         jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, ?)
       ON CONFLICT(workflow_execution_id) DO UPDATE SET
         session_json = excluded.session_json,
@@ -840,8 +873,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         updated_at = excluded.updated_at
       """,
       bindings: [
-        .text(snapshot.session.sessionId),
-        .text(headerJSON),
+        .text(snapshot.session.sessionId), .text(headerJSON)
+      ] + executionBindings + [
+        .text(witness),
         .optionalText(rootOutputJSON),
         .text(try jsonString(snapshot.diagnostics)),
         .optionalText(loopEvidenceJSON),
@@ -855,6 +889,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         executionIds: snapshot.session.executions.map(\.executionId))
       try touchLoopConcurrencyLease(db, snapshot)
     }
+    // Updating before the caller's COMMIT is safe: a rollback removes this
+    // UUID from the row, so the next save must reconstruct instead of reusing.
+    executionReuse.remember(cacheKey, witness: witness, executions: snapshot.session.executions)
   }
 
   private func validateTaskTerminalWrite(

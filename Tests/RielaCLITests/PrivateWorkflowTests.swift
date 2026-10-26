@@ -376,6 +376,7 @@ final class PrivateWorkflowTests: XCTestCase {
     let snapshot = try XCTUnwrap(snapshots.first)
     XCTAssertEqual(snapshot.session.status, .completed)
     XCTAssertEqual(snapshot.session.executions.count, identities.count)
+    XCTAssertEqual(snapshot.session.executions.map(\.stepId), identities)
     // Assert every retained payload exactly, without allocating another full
     // serialized copy of the already-loaded canonical history in the test.
     for execution in snapshot.session.executions where execution.stepId != "done" {
@@ -421,6 +422,72 @@ final class PrivateWorkflowTests: XCTestCase {
       mode: .readWriteCreate)
     try db.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb_set(session_json, '$.failureKind', 123) WHERE workflow_execution_id='terminal-0'")
     XCTAssertThrowsError(try store.loadStatus(sessionId: "terminal-0"))
+  }
+
+  private func reuseSnapshot() -> WorkflowRuntimePersistenceSnapshot {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let executions = (0..<2).map { index in
+      WorkflowStepExecution(executionId: "record-\(index)", stepId: "step-\(index)", nodeId: "node",
+        attempt: 1, inputSnapshot: ["tag": .string("original-\(index)")], createdAt: date, updatedAt: date)
+    }
+    return .init(session: .init(workflowId: "fixture", sessionId: "reuse-test", status: .running,
+      entryStepId: "step-0", currentStepId: "step-1", createdAt: date, updatedAt: date,
+      executions: executions, failureReason: "prior optional metadata"))
+  }
+
+  func testCanonicalReuseKeepsExactInputsOrderAndReplacesOptionalMetadata() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("canonical-execution-reuse")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    var value = reuseSnapshot()
+    try store.save(value)
+    // Deliberately leave updatedAt unchanged: timestamps alone cannot prove
+    // that a record is unchanged, and nil metadata must remove the old value.
+    value.session.executions[0].inputSnapshot = ["tag": .string("changed")]
+    value.session.currentStepId = nil
+    value.session.failureReason = nil
+    var next = value.session.executions[1]
+    next.executionId = "record-2"; next.stepId = "step-2"
+    value.session.executions.append(next)
+    try store.save(value)
+    XCTAssertEqual(try store.load(sessionId: value.session.sessionId).session, value.session)
+    value.session.executions.removeLast()
+    try store.save(value)
+    XCTAssertEqual(try store.load(sessionId: value.session.sessionId).session, value.session)
+  }
+
+  func testCanonicalReuseRefusesRolledBackAndLegacyWriterWitnesses() throws {
+    enum Rollback: Error { case requested }
+    let root = try makeRielaCLITestTemporaryDirectory("canonical-reuse-witness")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    var expected = reuseSnapshot()
+    try store.save(expected)
+    let db = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path))
+    var aborted = expected
+    aborted.session.executions[0].inputSnapshot = ["tag": .string("rolled-back")]
+    XCTAssertThrowsError(try db.transaction { database in
+      try store.save(aborted, in: database)
+      throw Rollback.requested
+    })
+    XCTAssertEqual(try store.load(sessionId: expected.session.sessionId).session, expected.session)
+    expected.session.currentStepId = "after-rollback"
+    try store.save(expected)
+    XCTAssertEqual(try store.load(sessionId: expected.session.sessionId).session, expected.session)
+    // A legacy writer drops unknown root metadata. An existing cache entry
+    // must not authorize retaining its unrelated replacement of an old input.
+    try db.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb_remove(jsonb_set(session_json, '$.executions[1].inputSnapshot.tag', ?), '$._rielaCanonicalWrite') WHERE workflow_execution_id=?",
+      bindings: [.text("legacy-replacement"), .text(expected.session.sessionId)])
+    expected.session.currentStepId = "after-legacy-write"
+    try store.save(expected)
+    XCTAssertEqual(try store.load(sessionId: expected.session.sessionId).session, expected.session)
+    let other = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    var replacement = expected
+    replacement.session.executions[1].inputSnapshot = ["tag": .string("different-writer")]
+    try other.save(replacement)
+    expected.session.currentStepId = "after-other-writer"
+    try store.save(expected)
+    XCTAssertEqual(try store.load(sessionId: expected.session.sessionId).session, expected.session)
   }
 
   func testBuiltinRoutingRequiresPrivateSandboxAndUsesOwnedWorker() async throws {

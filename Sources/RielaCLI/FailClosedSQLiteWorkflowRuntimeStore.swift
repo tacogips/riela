@@ -24,12 +24,13 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
     rootDirectory: String,
     persistenceWriter: PersistenceWriter? = nil,
     beforeTerminalPersistence: (@Sendable () throws -> Void)? = nil,
-    deferTerminalPersistence: (@Sendable () -> Bool)? = nil
+    deferTerminalPersistence: (@Sendable () -> Bool)? = nil,
+    persistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
   ) {
     self.backing = backing
     self.beforeTerminalPersistence = beforeTerminalPersistence
     self.deferTerminalPersistence = deferTerminalPersistence
-    persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+    persistence = persistenceStore ?? SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
     self.persistenceWriter = persistenceWriter ?? { [persistence] snapshot in
       try persistence.save(snapshot)
     }

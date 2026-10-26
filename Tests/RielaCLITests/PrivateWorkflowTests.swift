@@ -332,8 +332,9 @@ final class PrivateWorkflowTests: XCTestCase {
       }
       return .object(step)
     }
-    try JSONEncoder().encode(["workflowId": JSONValue.string("bulk"), "entryStepId": .string("source"),
-      "nodes": .array(nodes), "steps": .array(steps)]).write(to: definitions.appendingPathComponent("workflow.json"))
+    try JSONEncoder().encode(["workflowId": JSONValue.string("bulk"), "description": .string("Synthetic bulk regression"),
+      "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
+      "entryStepId": .string("source"), "nodes": .array(nodes), "steps": .array(steps)]).write(to: definitions.appendingPathComponent("workflow.json"))
     let plan = try PrivateWorkflowPlan(config: ["workflowId": .string("bulk"),
       "definitionRoot": .string(definitions.deletingLastPathComponent().path),
       "temporaryStorageMiB": .integer(1024), "outputSchema": .object(schema)])
@@ -381,7 +382,9 @@ final class PrivateWorkflowTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let definitions = root.appendingPathComponent("definitions/shared")
     try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
-    let workflow: JSONObject = ["workflowId": .string("shared"), "entryStepId": .string("public"),
+    let workflow: JSONObject = ["workflowId": .string("shared"), "description": .string("Synthetic entry regression"),
+      "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
+      "entryStepId": .string("public"),
       "nodes": .array(["public", "private"].map { id in
         var addon: JSONObject = ["name": .string("riela/json-compose"), "version": .string("1"),
           "config": .object(["payload": .object(["status": .string(id == "private" ? "ok" : "public")])])]

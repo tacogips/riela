@@ -323,3 +323,10 @@ Local callers can select the same declared entry with
 validation as the private builtin. Omitting the option preserves the default
 entry. Remote runs and resumed sessions reject entry overrides rather than
 silently ignoring them or changing persisted resume semantics.
+
+The focused regression command is
+`RIELA_TEST_SUITE=private-workflow swift test --filter 'PrivateWorkflowTests|RuntimeEnvironmentPropagationTests|RuntimeEnvironmentSurfaceNamesTests'`.
+It includes the complete private-workflow suite and environment propagation
+checks. The normal manifest/test suite is unchanged when this variable is
+unset. Linux CI additionally executes the ten-copy bulk case in a network-denied
+container limited to 2 GiB memory and 1 GiB tmpfs; no provider credentials are used.

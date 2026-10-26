@@ -801,7 +801,15 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     var header = snapshot.session
     header.executions = []
     let headerJSON = try jsonString(header)
-    let executionsJSON = try executionArrayJSON(snapshot.session.executions)
+    // Let SQLite aggregate the encoded executions. Keeping a second Swift
+    // Data/String copy of the complete array still doubles peak heap use.
+    try db.execute("CREATE TEMP TABLE IF NOT EXISTS riela_snapshot_execution_parts (ordinal INTEGER PRIMARY KEY, value BLOB NOT NULL)")
+    try db.execute("DELETE FROM temp.riela_snapshot_execution_parts")
+    defer { try? db.execute("DROP TABLE temp.riela_snapshot_execution_parts") }
+    for (index, execution) in snapshot.session.executions.enumerated() {
+      try db.execute("INSERT INTO temp.riela_snapshot_execution_parts (ordinal, value) VALUES (?, jsonb(?))",
+        bindings: [.int(Int64(index)), .text(try jsonString(execution))])
+    }
     let rootOutputJSON = try snapshot.rootOutput.map(jsonString)
     let loopEvidenceJSON = try snapshot.loopEvidence.map(jsonString)
     let loopSummaryJSON = try snapshot.loopEvidence.map {
@@ -813,7 +821,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       INSERT INTO workflow_runtime_snapshots (
         workflow_execution_id, session_json, root_output_json, diagnostics_json,
         loop_evidence_json, loop_summary_json, created_at, updated_at
-      ) VALUES (?, jsonb_set(jsonb(?), '$.executions', jsonb(?)), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, ?)
+      ) VALUES (?, jsonb_set(jsonb(?), '$.executions',
+        (SELECT jsonb_group_array(value) FROM (SELECT value FROM temp.riela_snapshot_execution_parts ORDER BY ordinal))),
+        jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, ?)
       ON CONFLICT(workflow_execution_id) DO UPDATE SET
         session_json = excluded.session_json,
         root_output_json = excluded.root_output_json,
@@ -826,7 +836,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       bindings: [
         .text(snapshot.session.sessionId),
         .text(headerJSON),
-        .text(executionsJSON),
         .optionalText(rootOutputJSON),
         .text(try jsonString(snapshot.diagnostics)),
         .optionalText(loopEvidenceJSON),
@@ -958,18 +967,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = RuntimeSnapshotDates.encoding
     return String(data: try encoder.encode(value), encoding: .utf8) ?? "{}"
-  }
-
-  private func executionArrayJSON(_ executions: [WorkflowStepExecution]) throws -> String {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = RuntimeSnapshotDates.encoding
-    var bytes = Data([0x5b])
-    for (index, execution) in executions.enumerated() {
-      if index > 0 { bytes.append(0x2c) }
-      bytes.append(try encoder.encode(execution))
-    }
-    bytes.append(0x5d)
-    return String(decoding: bytes, as: UTF8.self)
   }
 
   func isSafeId(_ value: String) -> Bool {

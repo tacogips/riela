@@ -6,6 +6,8 @@ on:
     paths:
       - 'Sources/RielaCLI/PrivateWorkflow*.swift'
       - 'Sources/RielaCLI/WorkflowRunCommand.swift'
+      - 'Sources/RielaCLI/WorkflowRunLivePersistence.swift'
+      - 'Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift'
       - 'Sources/RielaCLI/RielaCommand.swift'
       - 'Sources/RielaCLI/ParsedWorkflowOptions.swift'
       - 'Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift'
@@ -23,6 +25,8 @@ on:
     paths:
       - 'Sources/RielaCLI/PrivateWorkflow*.swift'
       - 'Sources/RielaCLI/WorkflowRunCommand.swift'
+      - 'Sources/RielaCLI/WorkflowRunLivePersistence.swift'
+      - 'Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift'
       - 'Sources/RielaCLI/RielaCommand.swift'
       - 'Sources/RielaCLI/ParsedWorkflowOptions.swift'
       - 'Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift'

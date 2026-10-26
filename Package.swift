@@ -420,6 +420,10 @@ if ProcessInfo.processInfo.environment["RIELA_TEST_SUITE"] == "private-workflow"
       "RuntimeEnvironmentSurfaceNamesTests.swift"]
   ]
   package.targets.removeAll { $0.type == .test && sources[$0.name] == nil }
+  // This suite exercises the CLI and AppSupport environment surface, not the
+  // macOS application executable or its unrelated code-signing build plugin.
+  package.products.removeAll { $0.name == "RielaApp" }
+  package.targets.removeAll { $0.name == "RielaApp" }
   let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
   for target in package.targets {
     guard let selected = sources[target.name] else { continue }

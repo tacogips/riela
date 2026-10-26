@@ -327,6 +327,11 @@ final class PrivateWorkflowTests: XCTestCase {
       }
     }
     defer { resourceProbe.cancel() }
+    func phase(_ value: String) {
+      if ProcessInfo.processInfo.environment["RIELA_BULK_RESOURCE_DIAGNOSTICS"] == "1" {
+        FileHandle.standardError.write(Data("bulk-phase \(value)\n".utf8))
+      }
+    }
     let root = try makeRielaCLITestTemporaryDirectory("private-bulk")
     defer { try? FileManager.default.removeItem(at: root) }
     let definitions = root.appendingPathComponent("definitions/bulk")
@@ -354,23 +359,68 @@ final class PrivateWorkflowTests: XCTestCase {
       "definitionRoot": .string(definitions.deletingLastPathComponent().path),
       "temporaryStorageMiB": .integer(1024), "outputSchema": .object(schema)])
     let guest = root.appendingPathComponent("guest")
+    phase("workflow-start")
     let output = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan,
       deadline: Date().addingTimeInterval(150), environment: [:], credentials: []), root: guest)
+    phase("workflow-completed")
     XCTAssertEqual(output.payload, ["status": .string("ok")])
     let bytes = try JSONEncoder().encode(output)
     XCTAssertLessThan(bytes.count, 1024)
     XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains(canary))
     let canonical = canonicalRuntimeStoreRoot(sessionStoreRoot: guest.appendingPathComponent("sessions").path)
     let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonical)
+    phase("canonical-readback-start")
     let snapshots = try store.loadAll()
+    phase("canonical-readback-completed")
     XCTAssertEqual(snapshots.count, 1)
     let snapshot = try XCTUnwrap(snapshots.first)
     XCTAssertEqual(snapshot.session.status, .completed)
     XCTAssertEqual(snapshot.session.executions.count, identities.count)
-    XCTAssertTrue(String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self).contains(canary))
+    // Assert every retained payload exactly, without allocating another full
+    // serialized copy of the already-loaded canonical history in the test.
+    for execution in snapshot.session.executions where execution.stepId != "done" {
+      XCTAssertEqual(execution.acceptedOutput?.payload["large"], .string(bulk), execution.stepId)
+      if execution.stepId.hasPrefix("copy-") {
+        guard case let .object(input)? = execution.inputSnapshot?["resolvedInputPayload"] else {
+          return XCTFail("missing retained invocation input for \(execution.stepId)")
+        }
+        XCTAssertEqual(input["large"], .string(bulk), execution.stepId)
+      }
+    }
+    phase("canonical-retention-checked")
     let database = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
       rootDirectory: canonical), mode: .readOnly, options: .readOnlyDefault)
     XCTAssertFalse(try database.tableExists("cli_workflow_sessions"))
+  }
+
+  func testCanonicalTerminalFenceUsesCommittedStatusAndFailureKind() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-terminal-fence")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sessions = root.appendingPathComponent("sessions").path
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessions))
+    for (index, status) in [WorkflowSessionStatus.completed, .failed, .cancelled].enumerated() {
+      let session = WorkflowSession(workflowId: "fixture", sessionId: "terminal-\(index)", status: status,
+        entryStepId: "entry", createdAt: Date(), updatedAt: Date(),
+        failureKind: status == .completed ? nil : .nodeTimeout)
+      let snapshot = WorkflowRuntimePersistenceSnapshot(session: session)
+      try store.save(snapshot)
+      let committed = try store.loadStatus(sessionId: session.sessionId)
+      XCTAssertEqual(committed.status, status)
+      XCTAssertEqual(committed.failureKind, session.failureKind)
+      XCTAssertNoThrow(try requireCommittedCanonicalTerminal(snapshot, sessionStoreRoot: sessions))
+      var mismatched = snapshot
+      mismatched.session.failureKind = .policyBlocked
+      XCTAssertThrowsError(try requireCommittedCanonicalTerminal(mismatched, sessionStoreRoot: sessions))
+      mismatched = snapshot
+      mismatched.session.status = status == .completed ? .failed : .completed
+      XCTAssertThrowsError(try requireCommittedCanonicalTerminal(mismatched, sessionStoreRoot: sessions))
+    }
+    XCTAssertThrowsError(try store.loadStatus(sessionId: "missing"))
+    XCTAssertThrowsError(try store.loadStatus(sessionId: "../outside"))
+    let db = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: store.rootDirectory),
+      mode: .readWriteCreate)
+    try db.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb_set(session_json, '$.failureKind', 123) WHERE workflow_execution_id='terminal-0'")
+    XCTAssertThrowsError(try store.loadStatus(sessionId: "terminal-0"))
   }
 
   func testBuiltinRoutingRequiresPrivateSandboxAndUsesOwnedWorker() async throws {

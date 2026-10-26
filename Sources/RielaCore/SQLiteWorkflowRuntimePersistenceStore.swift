@@ -211,6 +211,36 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try load(sessionId: sessionId, strictReadOnly: false)
   }
 
+  /// Read the committed state without decoding invocation inputs and outputs.
+  /// Terminal fencing needs these two scalars, even for a very large history.
+  public func loadStatus(sessionId: String) throws -> (status: WorkflowSessionStatus, failureKind: WorkflowSessionFailureKind?) {
+    guard isSafeId(sessionId) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try runtimeSnapshotTableExists(db) else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    let rows = try mapRuntimeSQLiteError {
+      try db.query(
+        "SELECT session_status, json_extract(session_json, '$.failureKind') AS failure_kind, "
+          + "json_type(session_json, '$.failureKind') AS failure_type "
+          + "FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
+        bindings: [.text(sessionId)]
+      )
+    }
+    guard let row = rows.first else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    guard let value = row["session_status"], let status = WorkflowSessionStatus(rawValue: value) else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime snapshot status is invalid")
+    }
+    guard row["failure_type"] == nil || row["failure_type"] == "null" || row["failure_type"] == "text" else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime snapshot failure kind is invalid")
+    }
+    return (status, row["failure_kind"].map(WorkflowSessionFailureKind.init(rawValue:)))
+  }
+
   /// Reports whether a runtime snapshot row exists for `sessionId` without
   /// decoding it. A missing database or table reports `false`.
   public func sessionExists(sessionId: String) throws -> Bool {

@@ -76,6 +76,8 @@ final class RielaAppEnvironmentFileStoreTests: XCTestCase {
     try """
     {
       "workflowId": "env-workflow",
+      "defaults": {"nodeTimeoutMs": 1000, "maxLoopIterations": 3},
+      "entryStepId": "inline-addon",
       "nodes": [
         {
           "id": "inline-addon",
@@ -89,7 +91,10 @@ final class RielaAppEnvironmentFileStoreTests: XCTestCase {
         },
         {"id": "agent", "nodeFile": "nodes/agent.json"}
       ],
-      "steps": []
+      "steps": [
+        {"id": "inline-addon", "nodeId": "inline-addon", "transitions": [{"toStepId": "agent"}]},
+        {"id": "agent", "nodeId": "agent"}
+      ]
     }
     """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     try """

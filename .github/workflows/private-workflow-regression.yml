@@ -78,6 +78,13 @@ jobs:
             swift scripts/strip-macos-only-pins.swift Package.resolved
             swift test --jobs 2 --filter "PrivateWorkflowTests|RuntimeEnvironmentPropagationTests|RuntimeEnvironmentSurfaceNamesTests"
           '
+      - name: Run canonical persistence contracts
+        run: |
+          set -euo pipefail
+          docker run --rm -e RIELA_TEST_SUITE=canonical-persistence -v "$GITHUB_WORKSPACE:/workspace" -w /workspace riela-private-tests bash -lc '
+            set -euo pipefail
+            swift test --jobs 2 --filter "SQLiteRuntimeSchemaMigrationTests|SQLitePersistenceSessionExistsTests|RuntimeSnapshotDatesTests|WorkflowPreservedHistoryTests|WorkflowCommandLivePersistence|SessionRecoveryHydrationScopeTests|SessionReconcileCommandTests"
+          '
       - name: Run ten-copy bulk graph with original resource limits
         run: |
           set -euo pipefail

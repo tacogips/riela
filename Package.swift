@@ -5,7 +5,7 @@ import Foundation
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.74"
+let rielaVersion = "0.2.75"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -413,12 +413,24 @@ let package = Package(
 // A focused build still compiles the production runtime unchanged. Limiting
 // discovery to these regression suites avoids unrelated UI/server actor tests
 // being loaded by Linux XCTest before its --filter is applied.
-if ProcessInfo.processInfo.environment["RIELA_TEST_SUITE"] == "private-workflow" {
-  let sources: [String: [String]] = [
+let focusedRuntimeSuite = ProcessInfo.processInfo.environment["RIELA_TEST_SUITE"]
+if focusedRuntimeSuite == "private-workflow" || focusedRuntimeSuite == "canonical-persistence" {
+  var sources: [String: [String]] = [
     "RielaCoreTests": ["RuntimeEnvironmentPropagationTests.swift"],
     "RielaCLITests": ["PrivateWorkflowTests.swift", "RielaCLITemporaryDirectory.swift",
       "RuntimeEnvironmentSurfaceNamesTests.swift"]
   ]
+  if focusedRuntimeSuite == "canonical-persistence" {
+    sources["RielaCoreTests", default: []] += [
+      "SQLiteRuntimeSchemaMigrationTests.swift", "SQLitePersistenceSessionExistsTests.swift",
+      "RuntimeSnapshotDatesTests.swift", "WorkflowPreservedHistoryTests.swift"
+    ]
+    sources["RielaCLITests", default: []] += [
+      "WorkflowCommandLivePersistenceTests.swift", "WorkflowCommandLivePersistenceTests+LoopGate.swift",
+      "WorkflowCommandLivePersistenceEventTests.swift", "SessionRecoveryHydrationScopeTests.swift",
+      "SessionReconcileCommandTests.swift"
+    ]
+  }
   package.targets.removeAll { $0.type == .test && sources[$0.name] == nil }
   // This suite exercises the CLI and AppSupport environment surface, not the
   // macOS application executable or its unrelated code-signing build plugin.

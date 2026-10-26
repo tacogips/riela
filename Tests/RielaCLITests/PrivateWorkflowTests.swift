@@ -1,6 +1,7 @@
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaSQLite
 import XCTest
 @testable import RielaCLI
 
@@ -281,6 +282,11 @@ final class PrivateWorkflowTests: XCTestCase {
       canonicalRuntimeStoreRoot(sessionStoreRoot: root.appendingPathComponent("guest/sessions").path))
     let snapshots = try store.loadAll()
     XCTAssertEqual(snapshots.count, 1)
+    let database = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.appendingPathComponent("guest/sessions").path)),
+      mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertFalse(try database.tableExists("cli_workflow_sessions"))
+    XCTAssertEqual(snapshots.first?.session.status, .completed)
     XCTAssertTrue(try XCTUnwrap(String(data: JSONEncoder().encode(snapshots), encoding: .utf8)).contains("RAW_INTERMEDIATE_CANARY"))
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("guest/artifacts").path), [])
     var command = WorkflowRunCommand()
@@ -291,6 +297,9 @@ final class PrivateWorkflowTests: XCTestCase {
       sessionStore: root.appendingPathComponent("ordinary-sessions").path))
     XCTAssertEqual(ordinary.exitCode, .success)
     XCTAssertTrue(ordinary.stdout.contains("RAW_INTERMEDIATE_CANARY"))
+    let ordinaryDatabase = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(
+      rootDirectory: root.appendingPathComponent("ordinary-sessions").path), mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertTrue(try ordinaryDatabase.tableExists("cli_workflow_sessions"))
     let projected = await command.runWithoutSpecialistMonitor(.init(target: "check",
       resolution: .init(workflowName: "check", workflowDefinitionDir: definitions.deletingLastPathComponent().path,
         workingDirectory: root.appendingPathComponent("projected").path), output: .json,
@@ -298,6 +307,54 @@ final class PrivateWorkflowTests: XCTestCase {
     XCTAssertEqual(projected.exitCode, .success)
     XCTAssertFalse(projected.stdout.contains("RAW_INTERMEDIATE_CANARY"))
     XCTAssertLessThan(projected.stdout.utf8.count, 1024)
+  }
+
+  /// CI also runs this exact graph in a network-denied 2 GiB container with
+  /// a 1 GiB tmpfs. Ten copies previously killed the private worker (137).
+  func testEmbeddedBulkGraphRetainsCanonicalHistoryWithoutCLIProjection() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-bulk")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definitions = root.appendingPathComponent("definitions/bulk")
+    try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
+    let canary = "PRIVATE_BULK_CANARY"
+    let bulk = canary + String(repeating: "x", count: 1024 * 1024)
+    let identities = ["source"] + (0..<10).map { "copy-\($0)" } + ["done"]
+    let nodes: [JSONValue] = [("source", ["large": JSONValue.string(bulk)]),
+      ("copy", ["large": JSONValue.string("{{input.large}}")]),
+      ("done", ["status": JSONValue.string("ok")])].map { id, payload in
+        .object(["id": .string(id), "addon": .object(["name": .string("riela/json-compose"),
+          "version": .string("1"), "config": .object(["payload": .object(payload)])])])
+      }
+    let steps: [JSONValue] = identities.enumerated().map { index, id in
+      var step: JSONObject = ["id": .string(id), "nodeId": .string(id.hasPrefix("copy-") ? "copy" : id)]
+      if index + 1 < identities.count {
+        step["transitions"] = .array([.object(["toStepId": .string(identities[index + 1])])])
+      }
+      return .object(step)
+    }
+    try JSONEncoder().encode(["workflowId": JSONValue.string("bulk"), "entryStepId": .string("source"),
+      "nodes": .array(nodes), "steps": .array(steps)]).write(to: definitions.appendingPathComponent("workflow.json"))
+    let plan = try PrivateWorkflowPlan(config: ["workflowId": .string("bulk"),
+      "definitionRoot": .string(definitions.deletingLastPathComponent().path),
+      "temporaryStorageMiB": .integer(1024), "outputSchema": .object(schema)])
+    let guest = root.appendingPathComponent("guest")
+    let output = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan,
+      deadline: Date().addingTimeInterval(150), environment: [:], credentials: []), root: guest)
+    XCTAssertEqual(output.payload, ["status": .string("ok")])
+    let bytes = try JSONEncoder().encode(output)
+    XCTAssertLessThan(bytes.count, 1024)
+    XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains(canary))
+    let canonical = canonicalRuntimeStoreRoot(sessionStoreRoot: guest.appendingPathComponent("sessions").path)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonical)
+    let snapshots = try store.loadAll()
+    XCTAssertEqual(snapshots.count, 1)
+    let snapshot = try XCTUnwrap(snapshots.first)
+    XCTAssertEqual(snapshot.session.status, .completed)
+    XCTAssertEqual(snapshot.session.executions.count, identities.count)
+    XCTAssertTrue(String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self).contains(canary))
+    let database = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
+      rootDirectory: canonical), mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertFalse(try database.tableExists("cli_workflow_sessions"))
   }
 
   func testBuiltinRoutingRequiresPrivateSandboxAndUsesOwnedWorker() async throws {

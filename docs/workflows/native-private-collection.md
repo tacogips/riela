@@ -304,3 +304,10 @@ The host records `private-input-reattach` with only `attempt: 2`,
 `phase: "before-request"`, and `reason: "empty-request"`. Neither the first
 refusal nor private data becomes an additional terminal result. Both host and
 guest must contain this explicit refusal to enable the recovery path.
+
+
+Embedded private execution keeps its complete canonical runtime records and
+failure-stage evidence in the guest tmpfs. It omits the second CLI session
+projection on each event; normal `riela workflow run` inspection records are
+unchanged. The terminal canonical record still includes final gate/evidence
+status. Only the validated root is returned to the parent.

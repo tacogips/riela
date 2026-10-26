@@ -26,6 +26,9 @@ public struct WorkflowRunCommand: Sendable {
   /// An embedded caller can return a bounded result without serializing the
   /// complete execution transcript. Canonical persistence is unchanged.
   var outputProjection: (@Sendable (WorkflowRunResult) throws -> JSONObject)?
+  /// Embedded execution retains the fail-closed canonical runtime record but
+  /// does not also maintain a duplicate CLI inspection projection per event.
+  var recordsCLIProjection = true
   /// Embedded callers can enter a declared subgraph without another workflow.
   var entryStepOverride: String?
   /// Projects loop evidence for required-gate enforcement; injectable so a
@@ -156,7 +159,13 @@ public struct WorkflowRunCommand: Sendable {
         // The fail-closed runtime store is the canonical effect boundary.
         // This established CLI projection remains an inspectability/event
         // record and never determines whether a node may start.
-        if await persistenceState.shouldPersist(event: event) {
+        if !recordsCLIProjection {
+          // The event follows the canonical store's durable mutation. Keep
+          // failure/session identity without re-encoding its full transcript.
+          if workflowRunEventTriggersLiveSessionPersistence(event) {
+            await persistenceState.recordSuccess(sessionId: event.sessionId)
+          }
+        } else if await persistenceState.shouldPersist(event: event) {
           // Cross-workflow callee sessions share the runtime store and event
           // stream; persist them under the callee workflow identity so they
           // stay inspectable and resumable on their own.
@@ -527,6 +536,13 @@ public struct WorkflowRunCommand: Sendable {
       loopEvidence: loopEvidence
     )
     if deferTerminalPersistence != nil { try requireCommittedCanonicalTerminal(snapshot, sessionStoreRoot: storeRoot) }
+    if !recordsCLIProjection {
+      // Final evidence/gate status still belongs in the canonical record.
+      // Only the redundant CLI projection is omitted for embedded callers.
+      try SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+        canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(snapshot)
+      return
+    }
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,

@@ -7,6 +7,7 @@ on:
       - 'Sources/RielaCLI/PrivateWorkflow*.swift'
       - 'Sources/RielaCLI/WorkflowRunCommand.swift'
       - 'Tests/RielaCLITests/PrivateWorkflowTests.swift'
+      - 'Tests/RielaCLITests/EventCronOverlap*.swift'
       - 'Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift'
       - '.github/workflows/private-workflow-regression.yml'
   pull_request:
@@ -14,6 +15,7 @@ on:
       - 'Sources/RielaCLI/PrivateWorkflow*.swift'
       - 'Sources/RielaCLI/WorkflowRunCommand.swift'
       - 'Tests/RielaCLITests/PrivateWorkflowTests.swift'
+      - 'Tests/RielaCLITests/EventCronOverlap*.swift'
       - 'Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift'
       - '.github/workflows/private-workflow-regression.yml'
 

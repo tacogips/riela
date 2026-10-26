@@ -336,6 +336,8 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   /// Reserved canonical session identity for durable supervisors.  Ordinary
   /// command callers leave it nil and retain normal run semantics.
   public var resumeSessionId: String?
+  /// A declared local entry; omitted for normal workflow entry semantics.
+  public var entryStepId: String?
 
   public init(
     target: String,
@@ -365,8 +367,10 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     fromRegistry: Bool = false,
     supervisorMode: Bool = false,
     resumeSessionId: String? = nil,
-    runtimeEnvironmentFile: String? = nil
+    runtimeEnvironmentFile: String? = nil,
+    entryStepId: String? = nil
   ) {
+    self.entryStepId = entryStepId
     self.runtimeEnvironmentFile = runtimeEnvironmentFile
     self.target = target
     self.resolution = resolution

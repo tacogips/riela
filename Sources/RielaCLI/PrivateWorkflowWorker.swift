@@ -86,12 +86,12 @@ enum PrivateWorkflowWorker {
     var command = WorkflowRunCommand()
     command.outputProjection = rootResult
     command.recordsCLIProjection = false
-    command.entryStepOverride = request.plan.entryStepId
     let result = await command.runWithoutSpecialistMonitor(.init(target: request.plan.workflowId,
       resolution: resolution, variables: try JSONValue.object(request.plan.variables).compactJSONString(), output: .json,
       maxSteps: request.plan.maxSteps ?? 1000, maxConcurrency: request.plan.maxConcurrency ?? 4,
       maxLoopIterations: 1000, timeoutMs: milliseconds,
-      sessionStore: root.appendingPathComponent("sessions").path, workingDirectory: work.path))
+      sessionStore: root.appendingPathComponent("sessions").path, workingDirectory: work.path,
+      entryStepId: request.plan.entryStepId))
     let bytes = result.stdout.data(using: .utf8) ?? Data()
     let envelope: JSONObject? = bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes
       ? (try? JSONDecoder().decode(JSONObject.self, from: bytes)) : nil

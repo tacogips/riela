@@ -30,8 +30,10 @@ enum CLIRuntimeEnvironmentPreparation {
     let maps = try await reachableWorkflowMaps(bundle: bundle, resolution: resolution, resolver: resolver)
     var names: [String] = []
     for (id, workflow) in maps.workflows {
-      names += try WorkflowEnvironmentRequirements.names(workflow: workflow, nodePayloads: maps.nodePayloads[id] ?? [:])
-      for requirement in maps.nodeHostRequirements[id]?.values ?? [:].values {
+      let selected = maps.reachableNodeIds[id] ?? []
+      names += try WorkflowEnvironmentRequirements.names(workflow: workflow,
+        nodePayloads: maps.nodePayloads[id] ?? [:], nodeIds: selected)
+      for (nodeId, requirement) in maps.nodeHostRequirements[id] ?? [:] where selected.contains(nodeId) {
         names += requirement.requiredEnvironment
       }
     }

@@ -29,8 +29,6 @@ public struct WorkflowRunCommand: Sendable {
   /// Embedded execution retains the fail-closed canonical runtime record but
   /// does not also maintain a duplicate CLI inspection projection per event.
   var recordsCLIProjection = true
-  /// Embedded callers can enter a declared subgraph without another workflow.
-  var entryStepOverride: String?
   /// Projects loop evidence for required-gate enforcement; injectable so a
   /// projector failure can be exercised without a broken evidence fixture.
   var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
@@ -65,11 +63,11 @@ public struct WorkflowRunCommand: Sendable {
       let resolution = options.resolution
         ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
       var bundle = try resolveRunBundle(options: options, resolution: resolution, taskContext: taskContext)
-      if let entryStepOverride {
-        guard bundle.workflow.steps.contains(where: { $0.id == entryStepOverride }) else {
-          throw AdapterExecutionError(.invalidInput, "embedded workflow entry step does not exist")
+      if let entryStepId = options.entryStepId {
+        guard bundle.workflow.steps.contains(where: { $0.id == entryStepId }) else {
+          throw AdapterExecutionError(.invalidInput, "workflow entry step does not exist")
         }
-        bundle.workflow.entryStepId = entryStepOverride
+        bundle.workflow.entryStepId = entryStepId
       }
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
       let prepared = try await prepareRunExecution(
@@ -480,6 +478,12 @@ public struct WorkflowRunCommand: Sendable {
   }
 
   private func rejectUnsupportedRunOptions(_ options: WorkflowRunOptions) throws {
+    if options.entryStepId != nil && options.endpoint != nil {
+      throw CLIUsageError("--entry-step is supported only for local workflow runs")
+    }
+    if options.entryStepId != nil && options.resumeSessionId != nil {
+      throw CLIUsageError("--entry-step cannot change a resumed session's entry")
+    }
     if options.endpoint != nil && options.runtimeEnvironmentFile != nil {
       throw CLIUsageError("--runtime-environment-file is local-only")
     }

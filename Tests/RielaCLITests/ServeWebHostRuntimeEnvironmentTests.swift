@@ -13,14 +13,14 @@ import XCTest
 final class ServeWebHostRuntimeEnvironmentTests: XCTestCase {
   private var root: URL!
 
-  override func setUpWithError() throws {
+  override func setUp() async throws {
     let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     root = repository.appendingPathComponent("tmp/serve-web-host-runtime-environment-tests/\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
   }
 
-  override func tearDownWithError() throws {
+  override func tearDown() async throws {
     try? FileManager.default.removeItem(at: root)
   }
 

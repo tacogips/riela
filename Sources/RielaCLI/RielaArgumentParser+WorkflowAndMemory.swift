@@ -219,6 +219,7 @@ extension RielaArgumentParser {
       resumeSessionId: parsed.resumeSessionId
     )
     options.runtimeEnvironmentFile = parsed.runtimeEnvironmentFile
+    options.entryStepId = parsed.entryStepId
     return options
   }
 

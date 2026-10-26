@@ -24,6 +24,8 @@ final class RuntimeEnvironmentPropagationTests: XCTestCase {
       apiKeyEnvironment: "PROVIDER_KEY", requiredEnvironment: ["PAYLOAD_KEY"])
     let names = try WorkflowEnvironmentRequirements.names(workflow: workflow, nodePayloads: ["node": node])
     XCTAssertEqual(names, ["COMMAND_KEY", "PAYLOAD_KEY", "PROVIDER_KEY", "REGISTRY_KEY", "SOURCE_KEY", "WORKFLOW_KEY"])
+    XCTAssertEqual(try WorkflowEnvironmentRequirements.names(workflow: workflow,
+      nodePayloads: ["node": node], nodeIds: []), ["WORKFLOW_KEY"])
     let restored = try JSONDecoder().decode(WorkflowDefinition.self, from: JSONEncoder().encode(workflow))
     XCTAssertEqual(restored.requiredEnvironment, ["WORKFLOW_KEY"])
     XCTAssertEqual(restored.nodes[0].requiredEnvironment, ["COMMAND_KEY"])

@@ -311,3 +311,15 @@ failure-stage evidence in the guest tmpfs. It omits the second CLI session
 projection on each event; normal `riela workflow run` inspection records are
 unchanged. The terminal canonical record still includes final gate/evidence
 status. Only the validated root is returned to the parent.
+
+An embedded entry requires environment values only for steps reachable from
+that entry, including called entries and their resume/join steps. An unrelated
+public or provider island in the same file does not require its credentials in
+the private guest. Workflow-wide explicit requirements and each executed
+node's required bindings remain enforced.
+
+Local callers can select the same declared entry with
+`riela workflow run <workflow> --entry-step <step-id>`. This uses the same entry
+validation as the private builtin. Omitting the option preserves the default
+entry. Remote runs and resumed sessions reject entry overrides rather than
+silently ignoring them or changing persisted resume semantics.

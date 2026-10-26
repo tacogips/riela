@@ -383,9 +383,12 @@ final class PrivateWorkflowTests: XCTestCase {
     try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
     let workflow: JSONObject = ["workflowId": .string("shared"), "entryStepId": .string("public"),
       "nodes": .array(["public", "private"].map { id in
-        .object(["id": .string(id), "addon": .object(["name": .string("riela/json-compose"),
-          "version": .string("1"), "config": .object(["payload": .object([
-            "status": .string(id == "private" ? "ok" : "public")])])])])
+        var addon: JSONObject = ["name": .string("riela/json-compose"), "version": .string("1"),
+          "config": .object(["payload": .object(["status": .string(id == "private" ? "ok" : "public")])])]
+        if id == "public" {
+          addon["env"] = .object(["TOKEN": .object(["fromEnv": .string("PRIVATE_TEST_UNUSED_CREDENTIAL"), "required": .bool(true)])])
+        }
+        return .object(["id": .string(id), "addon": .object(addon)])
       }), "steps": .array(["public", "private"].map { .object(["id": .string($0), "nodeId": .string($0)]) })]
     try JSONEncoder().encode(workflow).write(to: definitions.appendingPathComponent("workflow.json"))
     var config: JSONObject = ["workflowId": .string("shared"),
@@ -398,6 +401,28 @@ final class PrivateWorkflowTests: XCTestCase {
     let snapshots = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
       canonicalRuntimeStoreRoot(sessionStoreRoot: root.appendingPathComponent("guest/sessions").path)).loadAll()
     XCTAssertEqual(snapshots.first?.session.entryStepId, "private")
+    // Reachable credentials remain mandatory; only the unselected island is
+    // excluded. This does not weaken the actual node's environment binding.
+    let ordinary = await WorkflowRunCommand().runWithoutSpecialistMonitor(.init(target: "shared",
+      resolution: .init(workflowName: "shared", workflowDefinitionDir: definitions.deletingLastPathComponent().path,
+        workingDirectory: root.path), output: .json, sessionStore: root.appendingPathComponent("ordinary").path))
+    XCTAssertEqual(ordinary.exitCode, .failure)
+    XCTAssertTrue(ordinary.stdout.contains("environment_required_missing"))
+    let parsed = try RielaArgumentParser().parse(["workflow", "run", "shared", "--entry-step", "private",
+      "--workflow-definition-dir", definitions.deletingLastPathComponent().path, "--working-dir", root.path,
+      "--session-store", root.appendingPathComponent("selected-cli").path, "--output", "json"])
+    guard case let .workflow(.run(selected)) = parsed else { return XCTFail("entry option was not parsed") }
+    XCTAssertEqual(selected.entryStepId, "private")
+    let selectedResult = await WorkflowRunCommand().runWithoutSpecialistMonitor(selected)
+    XCTAssertEqual(selectedResult.exitCode, .success)
+    let selectedPayload = try JSONDecoder().decode(JSONObject.self, from: Data(selectedResult.stdout.utf8))
+    XCTAssertEqual(selectedPayload["rootOutput"], .object(["status": .string("ok")]))
+    XCTAssertThrowsError(try RielaArgumentParser().parse(["workflow", "validate", "shared", "--entry-step", "private"]))
+    for options in [WorkflowRunOptions(target: "shared", endpoint: "http://127.0.0.1:1", entryStepId: "private"),
+      WorkflowRunOptions(target: "shared", resumeSessionId: "original-session", entryStepId: "private")] {
+      let refusal = await WorkflowRunCommand().runWithoutSpecialistMonitor(options)
+      XCTAssertEqual(refusal.exitCode, .usage)
+    }
     for invalid in ["", "../private", "private/child"] {
       config["entryStepId"] = .string(invalid)
       XCTAssertThrowsError(try PrivateWorkflowPlan(config: config))

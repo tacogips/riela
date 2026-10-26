@@ -74,6 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --memory 2g --memory-swap 2g --network none --read-only --cap-drop ALL \
+            -e RIELA_BULK_RESOURCE_DIAGNOSTICS=1 \
             --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1024m \
             -v "$GITHUB_WORKSPACE:/workspace:ro" -w /tmp riela-private-tests \

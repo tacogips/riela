@@ -312,6 +312,21 @@ final class PrivateWorkflowTests: XCTestCase {
   /// CI also runs this exact graph in a network-denied 2 GiB container with
   /// a 1 GiB tmpfs. Ten copies previously killed the private worker (137).
   func testEmbeddedBulkGraphRetainsCanonicalHistoryWithoutCLIProjection() async throws {
+    let resourceProbe = Task.detached {
+      guard ProcessInfo.processInfo.environment["RIELA_BULK_RESOURCE_DIAGNOSTICS"] == "1" else { return }
+      while !Task.isCancelled {
+        // Counts only: never emit the synthetic source, workflow input, or
+        // environment. tmpfs page cache shares the same cgroup memory limit.
+        let current = (try? String(contentsOfFile: "/sys/fs/cgroup/memory.current", encoding: .utf8)) ?? "unavailable"
+        let stat = (try? String(contentsOfFile: "/sys/fs/cgroup/memory.stat", encoding: .utf8)) ?? ""
+        let fields = stat.split(separator: "\n").filter {
+          ["anon", "file", "shmem", "file_dirty"].contains(String($0.split(separator: " ").first ?? ""))
+        }.joined(separator: ";")
+        FileHandle.standardError.write(Data("bulk-resource bytes=\(current.trimmingCharacters(in: .whitespacesAndNewlines)) \(fields)\n".utf8))
+        try? await Task.sleep(for: .seconds(1))
+      }
+    }
+    defer { resourceProbe.cancel() }
     let root = try makeRielaCLITestTemporaryDirectory("private-bulk")
     defer { try? FileManager.default.removeItem(at: root) }
     let definitions = root.appendingPathComponent("definitions/bulk")

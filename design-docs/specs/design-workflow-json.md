@@ -927,7 +927,10 @@ Optional:
   resolve)
 - `agentToolPolicy` (per-backend argv lists; one-pass templates bind only node
   `variables` and workflow input, see
-  `docs/workflows/declarative-data-and-private-agents.md`)
+  `docs/workflows/declarative-data-and-private-agents.md`; optional closed
+  `preset` `none` | `web-search` that the host expands into CLI argv or maps
+  to the SDK `webSearch` flag, see
+  [design-agent-tool-policy-presets.md](./design-agent-tool-policy-presets.md))
 - `sandbox` (agent execution boundary; see "`sandbox`" below)
 
 Important rules:

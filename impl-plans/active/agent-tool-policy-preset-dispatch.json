@@ -1,0 +1,293 @@
+{
+  "taskId": "agent-tool-policy-preset",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/agent-tool-policy-presets",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "7494388152530251947e3e2f33ec8a47e883300a",
+  "designDocPaths": [
+    "design-docs/specs/design-agent-tool-policy-presets.md",
+    "design-docs/user-qa/qa-agent-tool-policy-presets.md",
+    "design-docs/specs/design-workflow-json.md"
+  ],
+  "evidenceRoot": "tmp/agent-tool-policy-preset",
+  "reviewContext": {
+    "issueReference": "workflowInput issue 'Agent tool-policy presets (none / web-search) for Codex, Claude Code and SDK backends incl. Gemini' (no GitHub number); workflowExecutionId opus-luna-design-and-implement-review-loop-session-503; plan acceptance comm-009420 from step5-impl-plan-review",
+    "userProblem": "Workflows that must run an agent with no tools (untrusted-input summarization) or with web search only repeat about 45 backend-specific argv entries per node in agentToolPolicy.codexArguments/claudeArguments. This is generic runtime knowledge that belongs in Riela and must cover Codex, Claude Code and the SDK backends incl. Gemini (design §1).",
+    "requiredOutcomes": [
+      "AgentToolPolicy gains a closed optional preset enum (JSON \"none\" | \"web-search\", Swift cases noTools/webSearch); unknown values fail decoding of AgentToolPolicy and AgentNodePayload; payloads without preset encode exactly as before (design §3, atp-01).",
+      "One source of truth, Sources/RielaCore/AgentToolPolicyPresetArguments.swift, holds the Codex and Claude preset argv and the backend support matrix, with codexDisabledFeatures verified against codex-cli 0.164.0 (codex features list, codex exec [resume] --help) and a header comment naming the CLI version (design §4.1/§4.2, atp-01).",
+      "resolveAgentToolPolicy expands CLI presets on the host after template rendering: codex/claude arguments = preset argv + additionalArguments + authored backend arguments, additionalArguments cleared, preset cleared; --ephemeral omitted for sessionPolicy reuse; SDK backends keep preset; unsupported or nil backend throws .invalidInput (design §4, atp-03).",
+      "promptSpillFilesAreAccessible treats preset != nil as a custom policy (design §7, atp-03).",
+      "validateAgentNodePayload reports preset errors before the provider early return: backend-default mode, unsupported backend, unsupported backendPolicy.allowed entry, missing executionBackend, and codex reuse only if resume rejects a kept flag (design §6, atp-04).",
+      "agent-gateway pin moves from dae69561f05b75be6d680af1267da1af9db16d13 to fbb7d8519683d838d1f603480d5ec7a52700fe0e (v0.1.5) in Package.swift and Package.resolved, with no other dependency moving (design §5, atp-02).",
+      "SDK web-search sets GatewayExecuteParams.webSearch = true via GatewayTurnExecutor for official/openai-sdk, anthropic-sdk, gemini-sdk and OpenRouter; none/no preset and CLI vendors get false; an unexpanded CLI preset reaching the adapter throws .invalidInput (design §5, atp-05).",
+      "docs/workflows/declarative-data-and-private-agents.md documents the preset with a support table, ordering rule, caveats and Codex none, Claude Code web-search and Gemini SDK web-search examples (design §8, atp-06).",
+      "Live smoke runs with the source-built riela and the installed codex and claude CLIs return {\"ok\": true} and argv-logging wrappers prove the expanded argv; the final report states 'Gemini live check not run: GEMINI_API_KEY unset' (design §9, atp-07)."
+    ],
+    "nonGoals": [
+      "No VERSION bump and no release.",
+      "No agent-gateway source changes and no ACP _meta routing.",
+      "No GraphQL SDL/DTO changes (AgentToolPolicy is not exposed there).",
+      "No cursorArguments behavior change and no cursor-cli-agent or official/cursor-sdk web-search support.",
+      "No version gate for older Riela hosts (user-QA Q2).",
+      "No live Gemini/SDK run and no live web-search run.",
+      "No change to DeterministicWorkflowRunner+DynamicWorkflow.swift, AdapterUtilities.swift or agentToolPolicyArguments."
+    ],
+    "constraints": [
+      "Single working directory /Users/taco/gits/tacogips/riela on the implementation branch; no worktrees; workers run no git write operations; commits, pushes and the final gate are serial.",
+      "Each worker edits only its own writePaths, records pre/post shasum -a 256 per edit, re-applies intent on drift and never reverts a foreign change.",
+      "Every swift/swiftlint command runs as arch -arm64 /bin/zsh -lc in the foreground with output redirected to tmp/agent-tool-policy-preset/<planId>/<name>.log; verification records are {command, logPath, exitStatus, testsRun, failureCount}; blocked checks are recorded as blocked: <reason>, never as a pass.",
+      "Scratch files, wrappers, temporary workflows and session stores stay under the untracked evidenceRoot tmp/agent-tool-policy-preset and are never committed.",
+      "Package.resolved is produced by swift package resolve, owned only by atp-02 and never hand-edited.",
+      "Preset argv literals never pass through renderPromptTemplate and expansion happens after rendering."
+    ],
+    "designDecisionsAndRationale": [
+      "Expansion happens only on the host in resolveAgentToolPolicy so sandbox/container guests running an older embedded Riela receive explicit argv and never silently gain default tools (design §4).",
+      "additionalArguments are folded into the backend argument array during CLI expansion so the final argv order is preset, authored generic, authored backend-specific (design §4).",
+      "SDK payloads keep preset so the adapter can set webSearch; an old guest that drops preset only loses web search, never adds a tool (design §4, §10).",
+      "The Riela-owned GatewayTurnExecutor wrapper sets params.webSearch unconditionally because agent-gateway v0.1.5 GatewayAgentDefaults and the ACP init do not carry webSearch (design §5, DR-1).",
+      "The Swift case is noTools, not none, to avoid Optional.none comparisons (atp-01).",
+      "multi_agent is excluded from the preset list because the adapter already appends --disable multi_agent; --supervisor-mode stays authoritative and is documented (user-QA Q1).",
+      "Claude web-search also emits --allowedTools WebSearch so print mode cannot silently deny it (user-QA Q3).",
+      "--setting-sources \"\" is included only if the atp-01 probe proves the installed Claude Code accepts it (design §4.2).",
+      "A preset with neither executionBackend nor backendPolicy is a load-time error, keeping validation consistent with the resolution throw (design §6, DR-2)."
+    ],
+    "intentionalTradeoffs": [
+      "--supervisor-mode re-enables Codex multi_agent on top of a preset (user-QA Q1).",
+      "An old Riela host ignores preset and runs CLI nodes with default tools; documented instead of version-gated (user-QA Q2).",
+      "Codex disable list may drop names that codex-cli 0.164.0 does not list or rejects; an unknown --disable name would abort runs.",
+      "Codex preset + sessionPolicy reuse is rejected only if codex exec resume rejects a kept flag; otherwise reuse just omits --ephemeral.",
+      "Step-execution records hold the raw basePayload, so argv-logging wrappers, not session records, are the live expansion evidence (atp-07 T5)."
+    ],
+    "supportedEdgeCases": [
+      "preset with mode omitted or backend-arguments is valid; backend-default is rejected.",
+      "official/cursor-sdk + none is accepted; official/cursor-sdk + web-search and cursor-cli-agent + any preset are rejected.",
+      "backendPolicy-selected nodes are rejected when backendPolicy.allowed contains an unsupported backend.",
+      "Payload without provider and an unsupported preset still reports the error (block placed before the provider early return).",
+      "Authored templates in codex/claude arguments still render and are appended after verbatim preset literals such as mcp_servers={} and {\"mcpServers\":{}}.",
+      "Run-time revalidation accepts a resolved CLI payload whose preset was cleared.",
+      "Dynamic-workflow generated nodes expand the raw stamped policy against their own backend at run time.",
+      "OpenRouter via official/openai-sdk provider openrouter receives webSearch true for web-search."
+    ],
+    "outOfScopeEdgeCases": [
+      "Old Riela hosts that do not know preset.",
+      "Per-turn Codex argv variants for resume.",
+      "A preset on a backendPolicy node with no pinned backend at resolution time fails closed (WorkflowRunCommand+TaskReservation.swift:113-116) rather than being supported.",
+      "Moving preset into policy.agent when the execution-environment consolidation lands."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-agent-tool-policy-presets.md",
+      "design-docs/user-qa/qa-agent-tool-policy-presets.md",
+      "design-docs/specs/design-workflow-json.md",
+      "impl-plans/active/agent-tool-policy-presets.md",
+      "impl-plans/active/agent-tool-policy-presets-01-core-contract.md",
+      "impl-plans/active/agent-tool-policy-presets-02-agent-gateway-pin.md",
+      "impl-plans/active/agent-tool-policy-presets-03-core-resolution.md",
+      "impl-plans/active/agent-tool-policy-presets-04-core-validation.md",
+      "impl-plans/active/agent-tool-policy-presets-05-adapter-websearch.md",
+      "impl-plans/active/agent-tool-policy-presets-06-docs.md",
+      "impl-plans/active/agent-tool-policy-presets-07-live-smoke.md"
+    ],
+    "codexAgentReferences": [],
+    "residualFindings": [
+      "low: design §4 line 104 wrongly says step-execution evidence shows the concrete argv; non-normative, atp-07 does not rely on it; reword when the design is next touched.",
+      "low: atp-04 rule 5 reads payload.sessionPolicy while atp-03 uses step.sessionPolicy ?? payload.sessionPolicy; a rejected resume fails closed.",
+      "low: preset on a backendPolicy node with no executionBackend passes load validation but resolution throws unless placement pins the backend; fails closed.",
+      "low: atp-01 T2c may drop a fixed Codex flag if codex exec --help omits it; adversarial review must check any such drop.",
+      "low: agent-gateway fbb7d851 not cached locally at plan time; peer-drift protocol and serial reconciliation cover API drift.",
+      "low: if the atp-01 probe of --setting-sources \"\" is blocked, the option is omitted (safe).",
+      "low: Gemini live check not run: GEMINI_API_KEY unset; atp-07 T7 records it and the final report must state it."
+    ],
+    "resolvedFindings": [
+      "ATP-PR-1 (mid, verified-fixed): atp-07 adds argv-logging codex/claude wrappers under tmp/agent-tool-policy-preset/atp-07-live-smoke/ via RIELA_CODEX_AGENT_EXECUTABLE / RIELA_CLAUDE_CODE_AGENT_EXECUTABLE with variables fallback (AgentGatewayNodeAdapter.swift:580-594), ordered argv assertions, and exit-0-alone-is-not-a-pass rule.",
+      "DR-1 and DR-2 design review findings fixed (SDK webSearch seam §5, nil-backend validation row §6); DR-3 citation fixed."
+    ],
+    "finalGate": [
+      "arch -arm64 /bin/zsh -lc 'swift build'",
+      "arch -arm64 /bin/zsh -lc \"swift test --filter 'AgentToolPolicy|AgentPromptGuardTests|WorkflowBackendPolicyTests|OpenModelProviderRoutingTests|AgentNodeOutputContractValidationTests|WorkflowModelTests|DynamicWorkflow|RielaAdaptersTests'\"",
+      "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache <every touched Swift file>'"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "atp-01-core-contract",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-01-core-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/AgentToolPolicyPresetArguments.swift",
+        "Tests/RielaCoreTests/AgentToolPolicyPresetContractTests.swift",
+        "impl-plans/progress/atp-01-core-contract.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "AgentToolPolicyPreset (noTools = \"none\", webSearch = \"web-search\") and AgentToolPolicy.preset exist; unknown values throw on decode; policies without preset encode with no preset key.",
+        "AgentToolPolicyPresetArguments exposes codexDisabledFeatures, codexSupportsSessionReuse, isSupported(_:backend:) and cliArguments(_:backend:sessionReuse:) matching design §4.1/§4.2/§6, with a header comment naming codex-cli 0.164.0 and the verification commands.",
+        "Progress log records CLI versions, per-feature keep/drop table with source lines, resume decision, --setting-sources decision with its evidence log path, and passing verification records."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-01-core-contract",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AgentToolPolicyPresetContractTests|WorkflowModelTests|AgentToolPolicyResolutionTests\" > tmp/agent-tool-policy-preset/atp-01-core-contract/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/AgentToolPolicyPresetArguments.swift Tests/RielaCoreTests/AgentToolPolicyPresetContractTests.swift > tmp/agent-tool-policy-preset/atp-01-core-contract/swiftlint.log 2>&1'",
+        "grep -n 'case noTools = \"none\"' Sources/RielaCore/WorkflowModel.swift"
+      ]
+    },
+    {
+      "planId": "atp-02-agent-gateway-pin",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-02-agent-gateway-pin.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Package.swift",
+        "Package.resolved",
+        "impl-plans/progress/atp-02-agent-gateway-pin.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Package.swift and Package.resolved pin agent-gateway at fbb7d8519683d838d1f603480d5ec7a52700fe0e and no longer mention dae69561; only the agent-gateway revision and originHash change in Package.resolved.",
+        "Progress log records the v0.1.5 webSearch facts with line numbers, resolve and build records, and any handed-off compile errors."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-02-agent-gateway-pin",
+        "arch -arm64 /bin/zsh -lc 'swift package resolve > tmp/agent-tool-policy-preset/atp-02-agent-gateway-pin/resolve.log 2>&1'",
+        "git diff --stat Package.swift Package.resolved",
+        "grep -c fbb7d8519683d838d1f603480d5ec7a52700fe0e Package.swift Package.resolved",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/agent-tool-policy-preset/atp-02-agent-gateway-pin/build.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "atp-03-core-resolution",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-03-core-resolution.md",
+      "dependsOn": [
+        "atp-01-core-contract"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/AgentToolPolicyResolution.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+PromptGuard.swift",
+        "Tests/RielaCoreTests/AgentToolPolicyResolutionTests.swift",
+        "Tests/RielaCoreTests/AgentPromptGuardTests.swift",
+        "impl-plans/progress/atp-03-core-resolution.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "resolveAgentToolPolicy has the pinned signature with executionBackend and sessionReuse defaults; CLI presets expand after rendering to preset argv + additionalArguments + backend arguments with additionalArguments and preset cleared; SDK presets are kept; unsupported or nil backends throw .invalidInput.",
+        "The runner call site passes executionBackend: executionPayload.executionBackend and sessionReuse from step.sessionPolicy ?? executionPayload.sessionPolicy.",
+        "promptSpillFilesAreAccessible returns false when preset != nil; all listed resolution and prompt-guard tests pass."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-03-core-resolution",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AgentToolPolicyResolutionTests|AgentPromptGuardTests|DeterministicWorkflowRunnerDynamicWorkflowTests|DynamicWorkflowPolicyTests\" > tmp/agent-tool-policy-preset/atp-03-core-resolution/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/AgentToolPolicyResolution.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCore/DeterministicWorkflowRunner+PromptGuard.swift Tests/RielaCoreTests/AgentToolPolicyResolutionTests.swift Tests/RielaCoreTests/AgentPromptGuardTests.swift > tmp/agent-tool-policy-preset/atp-03-core-resolution/swiftlint.log 2>&1'",
+        "grep -n 'executionBackend: executionPayload.executionBackend' Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "grep -n 'preset == nil' Sources/RielaCore/DeterministicWorkflowRunner+PromptGuard.swift"
+      ]
+    },
+    {
+      "planId": "atp-04-core-validation",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-04-core-validation.md",
+      "dependsOn": [
+        "atp-01-core-contract"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowNodeValidation.swift",
+        "Tests/RielaCoreTests/AgentToolPolicyPresetValidationTests.swift",
+        "impl-plans/progress/atp-04-core-validation.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "validateAgentNodePayload emits the five preset rules (backend-default mode, unsupported backend, unsupported backendPolicy.allowed entry, missing executionBackend, codex reuse when codexSupportsSessionReuse is false) before the provider early return, without changing existing diagnostics or their order.",
+        "AgentToolPolicyPresetValidationTests covers every listed case including the no-provider placement proof and resolved CLI payloads producing no preset diagnostics."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-04-core-validation",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AgentToolPolicyPresetValidationTests|OpenModelProviderRoutingTests|WorkflowBackendPolicyTests|AgentNodeOutputContractValidationTests\" > tmp/agent-tool-policy-preset/atp-04-core-validation/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/WorkflowNodeValidation.swift Tests/RielaCoreTests/AgentToolPolicyPresetValidationTests.swift > tmp/agent-tool-policy-preset/atp-04-core-validation/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "atp-05-adapter-websearch",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-05-adapter-websearch.md",
+      "dependsOn": [
+        "atp-01-core-contract",
+        "atp-02-agent-gateway-pin"
+      ],
+      "writePaths": [
+        "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+        "Sources/RielaAdapters/GatewayTurnLifetime.swift",
+        "Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift",
+        "impl-plans/progress/atp-05-adapter-websearch.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "GatewayTurnExecutor sets params.webSearch unconditionally from its webSearch init parameter; GatewayTurnRequest carries webSearch (default false) and runGatewayTurn passes webSearch: request.webSearch.",
+        "SDK vendors (openai, anthropic, gemini, OpenRouter) get webSearch true only for web-search; none, no preset and CLI vendors get false; an unexpanded CLI preset throws .invalidInput before the vendor is called.",
+        "All existing RielaAdaptersTests still pass with the new agentToolPolicyPreset… swift-testing functions."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-05-adapter-websearch",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaAdaptersTests\" > tmp/agent-tool-policy-preset/atp-05-adapter-websearch/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaAdapters/AgentGatewayNodeAdapter.swift Sources/RielaAdapters/GatewayTurnLifetime.swift Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift > tmp/agent-tool-policy-preset/atp-05-adapter-websearch/swiftlint.log 2>&1'",
+        "grep -n 'params.webSearch = webSearch' Sources/RielaAdapters/GatewayTurnLifetime.swift",
+        "grep -n 'webSearch: request.webSearch' Sources/RielaAdapters/AgentGatewayNodeAdapter.swift"
+      ]
+    },
+    {
+      "planId": "atp-06-docs",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-06-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "docs/workflows/declarative-data-and-private-agents.md",
+        "impl-plans/progress/atp-06-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "A single ### Tool-policy presets subsection sits before ## Container-private HOME and covers preset values, the support table, host expansion and argument ordering, SDK hosted search mapping, the --supervisor-mode and old-build caveats, and three valid JSON examples (codex-agent none, claude-code-agent web-search, official/gemini-sdk web-search with GEMINI_API_KEY note).",
+        "The docs do not copy the full argv list and point to Sources/RielaCore/AgentToolPolicyPresetArguments.swift."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-06-docs",
+        "grep -n '### Tool-policy presets' docs/workflows/declarative-data-and-private-agents.md",
+        "grep -c '\"preset\"' docs/workflows/declarative-data-and-private-agents.md",
+        "python3 -I -m json.tool tmp/agent-tool-policy-preset/atp-06-docs/example-1.json",
+        "python3 -I -m json.tool tmp/agent-tool-policy-preset/atp-06-docs/example-2.json",
+        "python3 -I -m json.tool tmp/agent-tool-policy-preset/atp-06-docs/example-3.json"
+      ]
+    },
+    {
+      "planId": "atp-07-live-smoke",
+      "planPath": "impl-plans/active/agent-tool-policy-presets-07-live-smoke.md",
+      "dependsOn": [
+        "atp-03-core-resolution",
+        "atp-04-core-validation",
+        "atp-05-adapter-websearch",
+        "atp-06-docs"
+      ],
+      "writePaths": [
+        "impl-plans/progress/atp-07-live-smoke.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Source-built riela runs tmp/agent-tool-policy-preset/codex-none.json and claude-none.json with preset none, each exiting 0 with root output {\"ok\": true}; exit 0 alone is never a pass.",
+        "argv-codex.log and argv-claude.log from the argv-logging wrappers satisfy the ordered T3/T4 assertions (Codex fixed flags, -c pairs, --ephemeral, one --disable pair per codexDisabledFeatures entry, trailing --disable multi_agent; Claude --tools, empty element, --strict-mcp-config, --mcp-config, {\"mcpServers\":{}}, --disable-slash-commands).",
+        "Progress log records the build, CLI and wrapper paths, two run records or blocked: records with exact command, exit status and log path, and 'Gemini live check not run: GEMINI_API_KEY unset'. Nothing under tmp/ is staged."
+      ],
+      "verification": [
+        "mkdir -p tmp/agent-tool-policy-preset/atp-07-live-smoke",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/agent-tool-policy-preset/atp-07-live-smoke/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'RIELA_CODEX_AGENT_EXECUTABLE=\"$PWD/tmp/agent-tool-policy-preset/atp-07-live-smoke/codex-wrapper.sh\" .build/debug/riela workflow run tmp/agent-tool-policy-preset/codex-none.json --session-store tmp/agent-tool-policy-preset/sessions-codex --output json > tmp/agent-tool-policy-preset/atp-07-live-smoke/codex-none.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'env -u ANTHROPIC_API_KEY RIELA_CLAUDE_CODE_AGENT_EXECUTABLE=\"$PWD/tmp/agent-tool-policy-preset/atp-07-live-smoke/claude-wrapper.sh\" .build/debug/riela workflow run tmp/agent-tool-policy-preset/claude-none.json --session-store tmp/agent-tool-policy-preset/sessions-claude --output json > tmp/agent-tool-policy-preset/atp-07-live-smoke/claude-none.log 2>&1'",
+        "grep -c . tmp/agent-tool-policy-preset/atp-07-live-smoke/argv-codex.log",
+        "grep -c . tmp/agent-tool-policy-preset/atp-07-live-smoke/argv-claude.log"
+      ]
+    }
+  ]
+}

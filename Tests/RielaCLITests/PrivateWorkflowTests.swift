@@ -597,8 +597,15 @@ final class PrivateWorkflowTests: XCTestCase {
   }
 
   private func host(_ runner: PrivateWorkflowFixtureRunner, root: URL) -> PrivateWorkflowHost {
+    #if os(Linux)
+    // On Linux the test bundle URL is already the products directory, unlike
+    // Darwin's .xctest bundle. Resolve from the actual test executable instead.
+    let worker = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+      .deletingLastPathComponent().appendingPathComponent("riela").path
+    #else
     let worker = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
       .appendingPathComponent("riela").resolvingSymlinksInPath().path
+    #endif
     return .init(environment: ["RIELA_CONTAINER_RUNTIME": "docker", "RIELA_SANDBOX_WORKER_EXECUTABLE": worker,
       "SOURCE_SECRET": "SYNTHETIC_SECRET_TOKEN", "MODEL_SECRET": "SYNTHETIC_SECRET_FILE"],
       workingDirectory: root, runner: runner, directoryParent: root)

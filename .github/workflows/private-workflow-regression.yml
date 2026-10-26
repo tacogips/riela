@@ -7,12 +7,14 @@ on:
       - 'Sources/RielaCLI/PrivateWorkflow*.swift'
       - 'Sources/RielaCLI/WorkflowRunCommand.swift'
       - 'Tests/RielaCLITests/PrivateWorkflowTests.swift'
+      - 'Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift'
       - '.github/workflows/private-workflow-regression.yml'
   pull_request:
     paths:
       - 'Sources/RielaCLI/PrivateWorkflow*.swift'
       - 'Sources/RielaCLI/WorkflowRunCommand.swift'
       - 'Tests/RielaCLITests/PrivateWorkflowTests.swift'
+      - 'Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift'
       - '.github/workflows/private-workflow-regression.yml'
 
 permissions:

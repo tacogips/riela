@@ -15,6 +15,13 @@ the supported dialect before any work; an unsupported schema is an
 `invalid_output`. This applies to every data add-on below.
 Unknown config fields are errors. Maximum encoded output is 8 MB.
 
+With `payload: "{{input}}"`, whole-input relays forward application fields and
+omit the runtime's top-level `_rielaInput`, `upstream` and `runtime` history
+views. These views are reconstructed for each step; forwarding them would copy
+the preceding transcript repeatedly. Nested application fields remain exact.
+To include a history view intentionally, project it explicitly, for example
+`payload: {"history": "{{input.upstream}}"}`. The normal output limit still applies.
+
 `riela/array-batch` version `1` accepts `items`, `size` (default 1), `minItems`
 (default 0), `maxItems` (default 10000), and optional `uniqueBy` (a top-level string
 identity field). It returns `{items: [[...], ...], itemCount, batchCount}` in

@@ -48,7 +48,14 @@ extension BuiltinWorkflowAddonResolver {
             case let .object(value)? = config["payload"] else {
         throw AdapterExecutionError(.invalidInput, "json-compose requires an object payload")
       }
-      payload = value
+      // Whole-input relays forward application data. Input-only history views
+      // are rebuilt by the runtime; echoing them recursively multiplies every
+      // prior output at each hop. Explicit field projections remain literal.
+      let forwardsInput: Bool
+      if case let .string(template)? = input.addon.config?["payload"] {
+        forwardsInput = template.range(of: #"^\s*\{\{\s*input\s*\}\}\s*$"#, options: .regularExpression) != nil
+      } else { forwardsInput = false }
+      payload = forwardsInput ? addonForwardedApplicationPayload(value) : value
     case .gather:
       payload = try ArrayBatchReceipt.gather(config)
     case .batch:

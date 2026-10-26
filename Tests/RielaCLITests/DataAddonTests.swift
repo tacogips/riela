@@ -4,6 +4,79 @@ import XCTest
 @testable import RielaCLI
 
 final class DataAddonTests: XCTestCase {
+  func testWholeInputRelayOmitsRuntimeHistoryBeforeApplyingOutputLimit() async throws {
+    let nested: JSONValue = .object(["upstream": .string("authored"), "runtime": .integer(7),
+      "_rielaInput": .string("{{opaque}}")])
+    let business: JSONObject = ["article": nested, "ready": .bool(true)]
+    var input = business
+    input["upstream"] = .array([.string(String(repeating: "x", count: 8_100_000))])
+    input["runtime"] = .object(["sessionId": .string("current")])
+    input["_rielaInput"] = .object(["latest": .object(["payload": .object(business)])])
+    for template in ["{{input}}", " \n{{ input }}\n"] {
+      let output = try await run("riela/json-compose", config: ["payload": .string(template)], input: input)
+      XCTAssertEqual(output.payload, business)
+    }
+  }
+
+  func testExplicitHistoryProjectionRemainsAvailable() async throws {
+    let value: JSONObject = ["upstream": .array([.integer(1)]), "runtime": .object(["id": .string("current")])]
+    let output = try await run("riela/json-compose", config: ["payload": .object([
+      "upstream": .string("{{input.upstream}}"), "runtime": .string("{{input.runtime}}")])], input: value)
+    XCTAssertEqual(output.payload, value)
+  }
+
+  func testRepeatedWholeInputRelaysKeepBusinessPayloadConstant() async throws {
+    let business: JSONObject = ["body": .string(String(repeating: "article", count: 1000)),
+      "nested": .object(["upstream": .string("user data")])]
+    var value = business
+    for _ in 0..<16 {
+      value["upstream"] = .array([.object(["payload": .object(value), "output": .object(value)])])
+      value["_rielaInput"] = .object(["latest": .object(["payload": .object(business)])])
+      let output = try await run("riela/json-compose", config: ["payload": .string("{{input}}")], input: value)
+      XCTAssertEqual(output.payload, business)
+      guard output.payload == business else { return }
+      value = output.payload
+    }
+  }
+
+  func testEmbeddedWholeInputRelaysDoNotRecursivelyRetainHistory() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("whole-input-relay")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definitions = root.appendingPathComponent("definitions/relay")
+    try FileManager.default.createDirectory(at: definitions, withIntermediateDirectories: true)
+    let business: JSONObject = ["body": .string(String(repeating: "a", count: 16384) + "\u{2028}\u{2029}"),
+      "nested": .object(["upstream": .string("authored")])]
+    let ids = ["seed"] + (0..<18).map { "relay-\($0)" }
+    let steps: [JSONValue] = ids.enumerated().map { index, id in
+      var value: JSONObject = ["id": .string(id), "nodeId": .string(index == 0 ? "seed" : "relay")]
+      if index + 1 < ids.count { value["transitions"] = .array([.object(["toStepId": .string(ids[index + 1])])]) }
+      return .object(value)
+    }
+    let nodes: [JSONValue] = [("seed", JSONValue.object(business)), ("relay", .string("{{input}}"))].map { id, payload in
+      .object(["id": .string(id), "addon": .object(["name": .string("riela/json-compose"),
+        "version": .string("1"), "config": .object(["payload": payload])])])
+    }
+    try JSONEncoder().encode(["workflowId": JSONValue.string("relay"), "description": .string("Whole-input relay regression"),
+      "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
+      "entryStepId": .string("seed"), "nodes": .array(nodes), "steps": .array(steps)]).write(to: definitions.appendingPathComponent("workflow.json"))
+    let schema: JSONObject = ["type": .string("object"), "required": .array([.string("body"), .string("nested")]),
+      "properties": .object(["body": .object(["type": .string("string")]), "nested": .object(["type": .string("object")])]),
+      "additionalProperties": .bool(false)]
+    let plan = try PrivateWorkflowPlan(config: ["workflowId": .string("relay"),
+      "definitionRoot": .string(definitions.deletingLastPathComponent().path), "outputSchema": .object(schema)])
+    let guest = root.appendingPathComponent("guest")
+    let result = try await PrivateWorkflowWorker.executeWorkflow(.init(plan: plan,
+      deadline: Date().addingTimeInterval(30), environment: [:], credentials: []), root: guest)
+    XCTAssertEqual(result.payload, business)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+      canonicalRuntimeStoreRoot(sessionStoreRoot: guest.appendingPathComponent("sessions").path))
+    let snapshot = try XCTUnwrap(store.loadAll().first)
+    XCTAssertEqual(snapshot.session.executions.count, ids.count)
+    for execution in snapshot.session.executions {
+      XCTAssertEqual(execution.acceptedOutput?.payload, business, execution.stepId)
+    }
+  }
+
   func testComposePreservesTypesAndDoesNotEvaluateDataAsTemplates() async throws {
     let value: JSONObject = ["nested": .array([.integer(2), .null, .bool(false)]),
                              "text": .string("{{secret}}")]

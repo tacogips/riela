@@ -728,11 +728,17 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       mode = readOnly ? .readOnly : .readWriteCreate
     }
     return try mapRuntimeSQLiteError {
-      try SQLiteDatabase.open(
+      let database = try SQLiteDatabase.open(
         path: databasePath,
         mode: mode,
         options: readOnly ? .readOnlyDefault : .writableDefault
       )
+      if !readOnly && !strictReadOnly {
+        // The assembly table is transient, not another durable journal.
+        // Avoid duplicating it on the guest's size-limited tmpfs volume.
+        try database.execute("PRAGMA temp_store = MEMORY")
+      }
+      return database
     }
   }
 

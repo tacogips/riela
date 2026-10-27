@@ -10,10 +10,12 @@ public enum WorkflowDefinitionRetentionMode: String, Codable, Equatable, Sendabl
 public struct WorkflowDefinitionProtectedVersion: Codable, Equatable, Sendable {
   public var versionId: String
   public var reason: String
+  public var until: String?
 
-  public init(versionId: String, reason: String) {
+  public init(versionId: String, reason: String, until: String? = nil) {
     self.versionId = versionId
     self.reason = reason
+    self.until = until
   }
 }
 
@@ -92,7 +94,8 @@ extension WorkflowDefinitionStore {
         lastFileVersionId: head.lastFileVersionId, cutoff: cutoff, now: canonicalDate(currentTime)
       )
       let protectedVersions = try protectedVersionDetails(
-        workflowName: workflowName, head: head, protectedNumbers: protectedNumbers, in: transaction
+        workflowName: workflowName, head: head, protectedNumbers: protectedNumbers,
+        now: canonicalDate(currentTime), in: transaction
       )
       let metadata = try transaction.query(
         "SELECT version_id, history_version, document_digest, operation, created_at FROM definition_versions WHERE workflow_name = ? ORDER BY history_version DESC",
@@ -161,6 +164,7 @@ extension WorkflowDefinitionStore {
     workflowName: String,
     head: WorkflowDefinitionHead,
     protectedNumbers: Set<Int64>,
+    now: String,
     in database: SQLiteDatabase
   ) throws -> [WorkflowDefinitionProtectedVersion] {
     let rows = try database.query("SELECT version_id, history_version FROM definition_versions WHERE workflow_name = ?", bindings: [.text(workflowName)])
@@ -178,11 +182,44 @@ extension WorkflowDefinitionStore {
       "SELECT history_version FROM definition_version_pins WHERE workflow_name = ?",
       bindings: [.text(workflowName)]
     ).compactMap { $0["history_version"].flatMap(Int64.init) })
+    let expiries = try formerHeadProtectionExpiries(workflowName: workflowName, now: now, in: database)
     for number in protectedNumbers.sorted() where number != idsFor(head.currentVersionId, in: ids) && number != idsFor(head.lastFileVersionId, in: ids) {
       guard let id = ids[number] else { continue }
-      values.append(.init(versionId: id, reason: pinnedNumbers.contains(number) ? "activeSession" : "formerHead24h"))
+      if pinnedNumbers.contains(number) {
+        values.append(.init(versionId: id, reason: "activeSession"))
+      } else if let until = expiries[id], until > now {
+        values.append(.init(versionId: id, reason: "purgeGrace", until: until))
+      }
     }
     return values
+  }
+
+  private func formerHeadProtectionExpiries(workflowName: String, now: String, in database: SQLiteDatabase) throws -> [String: String] {
+    let rows = try database.query("""
+      SELECT version.version_id AS version_id,
+        MAX(strftime('%Y-%m-%dT%H:%M:%fZ', audit.created_at, '+24 hours')) AS until
+      FROM definition_change_audit audit
+      JOIN definition_versions version ON version.version_id = audit.previous_version_id
+      WHERE audit.workflow_name = ? AND audit.operation NOT IN ('prune', 'purgeHistory')
+        AND strftime('%Y-%m-%dT%H:%M:%fZ', audit.created_at, '+24 hours') > ?
+      GROUP BY version.version_id
+      UNION ALL
+      SELECT version.version_id AS version_id, MAX(json_extract(entry.value, '$.after.until')) AS until
+      FROM definition_change_audit audit
+      JOIN json_each(audit.diff_json) entry
+      JOIN definition_versions version ON version.version_id = json_extract(entry.value, '$.after.versionId')
+      WHERE audit.workflow_name = ? AND audit.operation = 'purgeHistory'
+        AND json_extract(entry.value, '$.path') LIKE '/retention/protected/%'
+        AND json_extract(entry.value, '$.after.until') > ?
+      GROUP BY version.version_id
+      """, bindings: [.text(workflowName), .text(now), .text(workflowName), .text(now)])
+    var expiries: [String: String] = [:]
+    for row in rows {
+      guard let until = row["until"], !until.isEmpty else { continue }
+      let versionId = row.string("version_id")
+      expiries[versionId] = max(expiries[versionId] ?? until, until)
+    }
+    return expiries
   }
 
   private func idsFor(_ versionId: String, in versions: [Int64: String]) -> Int64? {
@@ -215,10 +252,10 @@ extension WorkflowDefinitionStore {
     if let keep = result.keepVersions {
       diff.append(.init(path: "/retention/keepVersions", op: .add, after: .integer(Int64(keep))))
     }
-    let protectionExpiry = canonicalDate(now().addingTimeInterval(24 * 60 * 60))
-    for protected in result.protectedVersions where protected.reason == "formerHead24h" {
+    for protected in result.protectedVersions where result.mode == .purgeHistory && protected.reason == "purgeGrace" {
+      guard let expiry = protected.until else { continue }
       diff.append(.init(path: "/retention/protected/\(protected.versionId)", op: .add, after: .object([
-        "versionId": .string(protected.versionId), "until": .string(protectionExpiry)
+        "versionId": .string(protected.versionId), "until": .string(expiry)
       ])))
     }
     diff.append(.init(path: "/audit", op: .remove, before: .object(["removedCount": .integer(Int64(result.removedAuditCount))])))

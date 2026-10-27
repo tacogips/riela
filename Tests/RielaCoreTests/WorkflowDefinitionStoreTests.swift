@@ -3,6 +3,21 @@ import RielaSQLite
 import XCTest
 @testable import RielaCore
 
+private actor SeedRaceStartBarrier {
+  private var arrivals = 0
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    arrivals += 1
+    guard arrivals < 2 else {
+      waiters.forEach { $0.resume() }
+      waiters.removeAll()
+      return
+    }
+    await withCheckedContinuation { waiters.append($0) }
+  }
+}
+
 final class WorkflowDefinitionStoreTests: XCTestCase {
   func testFreshStoreCreatesDefinitionSchemaAtGenerationEleven() throws {
     let root = try makeRoot()
@@ -48,20 +63,29 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
   }
 
   func testSeedRaceAndRepeatedSeedDoNotCreateExtraRows() async throws {
-    let root = try makeRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let first = WorkflowDefinitionStore(rootDirectory: root.path)
-    let second = WorkflowDefinitionStore(rootDirectory: root.path)
-    let write = makeWrite(operation: .seed, reason: "register")
-    async let left = first.commit(write)
-    async let right = second.commit(write)
-    let outcomes = try await [left, right]
-    XCTAssertEqual(outcomes.filter { if case .created = $0 { return true }; return false }.count, 1)
-    XCTAssertEqual(outcomes.filter { if case .alreadyRegistered = $0 { return true }; return false }.count, 1)
-    let database = try rawDatabase(root)
-    XCTAssertEqual(try count("definition_heads", database: database), 1)
-    XCTAssertEqual(try count("definition_versions", database: database), 1)
-    XCTAssertEqual(try count("definition_change_audit", database: database), 1)
+    for _ in 0..<200 {
+      let root = try makeRoot()
+      defer { try? FileManager.default.removeItem(at: root) }
+      let first = WorkflowDefinitionStore(rootDirectory: root.path)
+      let second = WorkflowDefinitionStore(rootDirectory: root.path)
+      let write = makeWrite(operation: .seed, reason: "register")
+      let barrier = SeedRaceStartBarrier()
+      async let left: WorkflowDefinitionCommitOutcome = {
+        await barrier.wait()
+        return try first.commit(write)
+      }()
+      async let right: WorkflowDefinitionCommitOutcome = {
+        await barrier.wait()
+        return try second.commit(write)
+      }()
+      let outcomes = try await [left, right]
+      XCTAssertEqual(outcomes.filter { if case .created = $0 { return true }; return false }.count, 1)
+      XCTAssertEqual(outcomes.filter { if case .alreadyRegistered = $0 { return true }; return false }.count, 1)
+      let database = try rawDatabase(root)
+      XCTAssertEqual(try count("definition_heads", database: database), 1)
+      XCTAssertEqual(try count("definition_versions", database: database), 1)
+      XCTAssertEqual(try count("definition_change_audit", database: database), 1)
+    }
   }
 
   func testStaleHeadAndMissingReasonRejectWithoutWritingRows() throws {

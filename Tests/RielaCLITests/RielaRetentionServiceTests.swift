@@ -389,10 +389,16 @@ final class RielaRetentionServiceTests: XCTestCase {
       previous = version.versionId
     }
     try writeConfig(home: home, json: #"{"workflowDefinitions":{"historyRetention":0}}"#)
+    let definitionDatabase = try SQLiteDatabase.open(
+      path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: sessionRoot),
+      mode: .readOnly, options: .readOnlyDefault
+    )
+    let dataVersionBefore = try definitionDatabase.query("PRAGMA data_version").first?["data_version"]
     let report = try untouchedStoreService().run(request(home: home, trigger: .manual))
     XCTAssertEqual(report.targets.first?.definitions?.keepVersions, 0)
     XCTAssertEqual(report.targets.first?.definitions?.removedVersionCount, 0)
     XCTAssertEqual(try store.history(workflowName: "unlimited-window").filter { $0.operation == .prune }.count, 0)
+    XCTAssertEqual(try definitionDatabase.query("PRAGMA data_version").first?["data_version"], dataVersionBefore)
   }
 
   private func untouchedStoreService() -> RielaRetentionService {

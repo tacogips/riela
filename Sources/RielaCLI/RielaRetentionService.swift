@@ -341,10 +341,10 @@ public struct RielaRetentionService: Sendable {
     let reason = "\(request.trigger.rawValue) retention policy: keep newest \(keepVersions) definition versions"
     for workflowName in try store.workflowNames() {
       let effectiveRetention = try store.retainedHistoryGenerations(workflowName: workflowName) ?? keepVersions
-      let engineRetention = effectiveRetention == 0 ? Int.max : effectiveRetention
-      let result = try store.prune(workflowName: workflowName, keepVersions: engineRetention, reason: reason,
-        actor: WorkflowDefinitionActor(kind: .cli, id: "riela-retention"), dryRun: request.dryRun)
       report.workflowCount += 1
+      guard effectiveRetention != 0 else { continue }
+      let result = try store.prune(workflowName: workflowName, keepVersions: effectiveRetention, reason: reason,
+        actor: WorkflowDefinitionActor(kind: .cli, id: "riela-retention"), dryRun: request.dryRun)
       report.removedVersionCount += result.removedVersionIds.count
       report.removedAuditCount += result.removedAuditCount
       report.removedBlobCount += result.removedBlobCount

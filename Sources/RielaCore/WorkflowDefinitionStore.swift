@@ -756,6 +756,10 @@ public struct WorkflowDefinitionStore: Sendable {
   }
 
   func openDatabase() throws -> SQLiteDatabase {
+    let schemaLock = try DistributedStoreLock(url: URL(fileURLWithPath: rootDirectory)
+      .appendingPathComponent(".riela/definition-schema.lock"))
+    try schemaLock.acquire()
+    defer { schemaLock.release() }
     let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
     let database = try persistence.openDatabase()
     try persistence.prepareSchema(in: database)

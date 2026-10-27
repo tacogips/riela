@@ -517,6 +517,43 @@ final class WorkflowDefinitionRetentionTests: XCTestCase {
     XCTAssertNotNil(try store.document(versionId: next.versionId))
   }
 
+  func testPurgeGraceDeadlineDoesNotRenewWhenPruned() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let start = Date(timeIntervalSince1970: 1_800_000_000)
+    let clock = TestClock(start.addingTimeInterval(-51 * 60 * 60))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var ids: [String] = []
+    for version in 1...6 {
+      ids.append(try commit(store, version: version, previous: ids.last,
+        operation: version == 1 ? .seed : .update, defaultRetention: 100).versionId)
+      clock.advance(by: 10 * 60 * 60)
+    }
+    clock.set(start)
+    let purged = try store.purgeHistory(workflowName: "retention-flow", reason: "reset", actor: .init(kind: .user))
+    let protected = try XCTUnwrap(purged.audit?.diff.first {
+      $0.path == "/retention/protected/\(ids[4])"
+    })
+    guard case let .object(protection)? = protected.after,
+          case let .string(expiry)? = protection["until"] else {
+      return XCTFail("expected a persisted grace deadline")
+    }
+    let expectedExpiry = ISO8601DateFormatter()
+    expectedExpiry.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    XCTAssertEqual(expiry, expectedExpiry.string(from: start.addingTimeInterval(23 * 60 * 60)))
+
+    clock.advance(by: 20 * 60 * 60)
+    let prune = try store.prune(workflowName: "retention-flow", keepVersions: 2,
+      reason: "age out old history", actor: .init(kind: .user))
+    XCTAssertFalse(prune.removedVersionIds.isEmpty)
+    XCTAssertTrue(prune.protectedVersions.contains { $0.versionId == ids[4] && $0.reason == "purgeGrace" })
+
+    clock.advance(by: 5 * 60 * 60)
+    let next = try commit(store, version: 7, previous: ids[5], retention: 1)
+    XCTAssertThrowsError(try store.document(versionId: ids[4]))
+    XCTAssertNotNil(try store.document(versionId: next.versionId))
+  }
+
   private func commit(_ store: WorkflowDefinitionStore, version: Int, previous: String?, operation: WorkflowDefinitionOperation = .update,
                       retention: Int? = nil, defaultRetention: Int = WorkflowDefinitionStore.defaultHistoryRetention) throws -> WorkflowDefinitionVersion {
     let data = Data("{\"version\":\(version)}".utf8)
@@ -597,4 +634,6 @@ private final class TestClock: @unchecked Sendable {
   init(_ value: Date) { self.value = value }
   var now: Date { lock.lock(); defer { lock.unlock() }; return value }
   func advance() { lock.lock(); value = value.addingTimeInterval(25 * 60 * 60); lock.unlock() }
+  func advance(by seconds: TimeInterval) { lock.lock(); value = value.addingTimeInterval(seconds); lock.unlock() }
+  func set(_ date: Date) { lock.lock(); value = date; lock.unlock() }
 }

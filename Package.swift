@@ -57,6 +57,7 @@ let package = Package(
     .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
+    .package(url: "https://github.com/tacogips/gateway-sdk-kit.git", exact: "0.1.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
       revision: "bdaf0ab503b59b7065f110e4c1984f0f767461bb"
@@ -65,30 +66,15 @@ let package = Package(
       url: "https://github.com/tacogips/google-service-gateway.git",
       revision: "3d964e69b3342cb70726f668f4600832421f7bf9"
     ),
-    .package(
-      url: "https://github.com/tacogips/wrike-gateway.git",
-      revision: "d607aaa6783fef2b34c1a73ec9e091ef421143bf"
-    ),
-    .package(
-      url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "2761f3bccf30ead78de5d6968d827929925eae80"
-    ),
-    .package(
-      url: "https://github.com/tacogips/google-analytics-gateway.git",
-      revision: "c46443a5e8f744244cb9825d3238958a797c4f2b"
-    ),
-    .package(
-      url: "https://github.com/tacogips/apple-gateway.git",
-      revision: "3a2320ef74aa40c6ee42852b10f48f3c3911b917"
-    ),
+    .package(url: "https://github.com/tacogips/wrike-gateway.git", exact: "0.2.4"),
+    .package(url: "https://github.com/tacogips/gmail-gateway.git", exact: "0.1.11"),
+    .package(url: "https://github.com/tacogips/google-analytics-gateway.git", exact: "0.1.1"),
+    .package(url: "https://github.com/tacogips/apple-gateway.git", exact: "0.1.7"),
     .package(
       url: "https://github.com/tacogips/anydoc-swift.git",
       revision: "d957c08372786b7062553e83fe9c29880fdee7a4"
     ),
-    .package(
-      url: "https://github.com/tacogips/google-documents-gateway.git",
-      revision: "cda93cdd770a51f6f9d1bc63b1db555884824606"
-    )
+    .package(url: "https://github.com/tacogips/google-documents-gateway.git", exact: "0.3.3")
   ],
   targets: [
     .target(
@@ -229,6 +215,7 @@ let package = Package(
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
+        .product(name: "GatewaySDKKit", package: "gateway-sdk-kit"),
         // Gateway add-ons run inside this process; riela spawns no `*-gateway`
         // executable. The cumulative tier products carry every tier module, and
         // each add-on stays pinned to one tier through its role descriptor.

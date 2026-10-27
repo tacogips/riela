@@ -1,5 +1,5 @@
 {
-  "originHash" : "f5af345bc57add682b18ceba983560bdd0df07bb2a000bd461e673ff445873a8",
+  "originHash" : "0ba9f8ba024ea22057305c1598ed4722aba6462524d8086a94495156d61a5dc6",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -22,7 +22,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "3a2320ef74aa40c6ee42852b10f48f3c3911b917"
+        "revision" : "190224f4e8af6c89e34c657f69f292bf40d6ca15",
+        "version" : "0.1.7"
+      }
+    },
+    {
+      "identity" : "gateway-sdk-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/gateway-sdk-kit.git",
+      "state" : {
+        "revision" : "4d4b56c686f6875defccb54f74e2276022eb524e",
+        "version" : "0.1.0"
       }
     },
     {
@@ -30,7 +40,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "2761f3bccf30ead78de5d6968d827929925eae80"
+        "revision" : "b023b883fc8000ba65690c583e557131d762f91a",
+        "version" : "0.1.11"
       }
     },
     {
@@ -38,7 +49,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-analytics-gateway.git",
       "state" : {
-        "revision" : "c46443a5e8f744244cb9825d3238958a797c4f2b"
+        "revision" : "0cca5a534b126637f3600605030d8f37aee6303e",
+        "version" : "0.1.1"
       }
     },
     {
@@ -46,7 +58,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-documents-gateway.git",
       "state" : {
-        "revision" : "cda93cdd770a51f6f9d1bc63b1db555884824606"
+        "revision" : "4baeb285f459adb9031273490b922abc8204dedb",
+        "version" : "0.3.3"
       }
     },
     {
@@ -133,7 +146,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/wrike-gateway.git",
       "state" : {
-        "revision" : "d607aaa6783fef2b34c1a73ec9e091ef421143bf"
+        "revision" : "1f8b27ef4cc50bfcf245b519f307d4255dbea875",
+        "version" : "0.2.4"
       }
     }
   ],

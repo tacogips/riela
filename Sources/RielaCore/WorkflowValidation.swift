@@ -33,7 +33,11 @@ public struct AuthoredWorkflowValidationResult: Equatable, Sendable {
 }
 
 public struct DefaultWorkflowValidator: WorkflowValidating {
-  public init() {}
+  public let context: WorkflowValidationContext
+
+  public init(context: WorkflowValidationContext = WorkflowValidationContext()) {
+    self.context = context
+  }
 
   public func validate(_ workflow: WorkflowDefinition) -> [WorkflowValidationDiagnostic] {
     var diagnostics: [WorkflowValidationDiagnostic] = []
@@ -61,6 +65,8 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
     let gateIds = Set(workflow.loop?.gates.map(\.id) ?? [])
     for (index, node) in workflow.nodeRegistry.enumerated() {
+      validateGatewayNodeAddon(node.addon, path: "workflow.nodes[\(index)]", context: context,
+                               diagnostics: &diagnostics)
       validateMemoryAddonDeclarations(
         node,
         path: "workflow.nodes[\(index)]",

@@ -103,11 +103,26 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
   private func strictSummary(
     sessionId: String
   ) throws -> (summary: GraphQLWorkflowExecutionSummary, status: WorkflowSessionStatus) {
-    let record = try CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
-      .loadStrictReadOnly(sessionId: sessionId)
-    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(
-      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
-    ).loadStrictReadOnly(sessionId: sessionId)
+    let record: PersistedCLIWorkflowSession
+    do {
+      record = try CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
+        .loadStrictReadOnly(sessionId: sessionId)
+    } catch CLIWorkflowSessionStoreError.canonicalSnapshotMismatch {
+      throw WorkflowExecutionProviderError.persistenceFailed
+    } catch CLIWorkflowSessionStoreError.canonicalSnapshotMissing {
+      throw WorkflowExecutionProviderError.persistenceFailed
+    }
+    let snapshot: WorkflowRuntimePersistenceSnapshot
+    do {
+      snapshot = try SQLiteWorkflowRuntimePersistenceStore(
+        rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
+      ).loadStrictReadOnly(sessionId: sessionId)
+    } catch let error as WorkflowRuntimePersistenceStoreError {
+      if case .notFound = error {
+        throw WorkflowExecutionProviderError.persistenceFailed
+      }
+      throw error
+    }
     guard record.session.sessionId == sessionId,
           snapshot.session.sessionId == sessionId,
           record.session.workflowId == snapshot.session.workflowId,

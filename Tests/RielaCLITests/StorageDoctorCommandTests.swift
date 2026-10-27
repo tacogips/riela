@@ -20,10 +20,19 @@ final class StorageDoctorCommandTests: XCTestCase {
     let beforeWAL = try Data(contentsOf: URL(fileURLWithPath: walPath))
     let beforeBytes = try Data(contentsOf: URL(fileURLWithPath: databasePath))
     let beforeDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: databasePath)[.modificationDate] as? Date)
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    let memoryRoot = root.appendingPathComponent("memory", isDirectory: true)
+    try FileManager.default.createDirectory(at: memoryRoot, withIntermediateDirectories: true)
+    for name in ["persona-events.sqlite", "persona-summary.sqlite"] {
+      let memoryDatabase = try SQLiteDatabase.open(path: memoryRoot.appendingPathComponent(name).path)
+      try memoryDatabase.execute("CREATE TABLE example(value TEXT)")
+    }
+    let result = await RielaCLIApplication().run([
+      "doctor", "storage", "--session-store", root.path, "--memory-root", memoryRoot.path, "--output", "json"
+    ])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
-    XCTAssertEqual(files.count, 1)
+    XCTAssertEqual(files.count, 3)
+    XCTAssertEqual(files.compactMap { $0["kind"] as? String }.sorted(), ["memory", "memory", "session"])
     XCTAssertEqual(files[0]["kind"] as? String, "session")
     XCTAssertTrue(["none", "full", "incremental", "unknown"].contains(files[0]["autoVacuum"] as? String ?? ""))
     XCTAssertFalse((files[0]["tables"] as? [[String: Any]] ?? []).isEmpty)

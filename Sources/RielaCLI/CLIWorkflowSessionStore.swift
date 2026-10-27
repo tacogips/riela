@@ -32,6 +32,7 @@ public enum CLIWorkflowSessionStoreError: Error, Equatable, Sendable {
   case invalidSessionId(String)
   case notFound(String)
   case canonicalSnapshotMissing(sessionId: String)
+  case canonicalSnapshotMismatch(sessionId: String)
   case io(String)
   case sqliteFailed(String)
 }
@@ -287,6 +288,7 @@ public struct CLIWorkflowSessionStore: Sendable {
           sessionId: sessionId,
           in: database,
           includeExecutions: true,
+          validateEnvelopeHeader: strictDecoding,
           isLegacy: row["storage"] == nil
         )
         if strictDecoding, record.session.sessionId != sessionId {
@@ -299,6 +301,7 @@ public struct CLIWorkflowSessionStore: Sendable {
         switch storeError {
         case .notFound: throw storeError
         case .canonicalSnapshotMissing where strictDecoding: throw storeError
+        case .canonicalSnapshotMismatch where strictDecoding: throw storeError
         case .canonicalSnapshotMissing:
           warnAboutSkippedRecords(count: 1)
           throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
@@ -699,6 +702,7 @@ public struct CLIWorkflowSessionStore: Sendable {
     sessionId: String,
     in db: SQLiteDatabase,
     includeExecutions: Bool,
+    validateEnvelopeHeader: Bool = false,
     isLegacy: Bool
   ) throws -> PersistedCLIWorkflowSession {
     if isLegacy { return try decodeRecord(text) }
@@ -726,6 +730,12 @@ public struct CLIWorkflowSessionStore: Sendable {
         throw CLIWorkflowSessionStoreError.canonicalSnapshotMissing(sessionId: sessionId)
       }
       throw error
+    }
+    guard !validateEnvelopeHeader
+      || (envelope.session.sessionId == session.sessionId
+        && envelope.session.workflowId == session.workflowId
+        && envelope.session.status == session.status) else {
+      throw CLIWorkflowSessionStoreError.canonicalSnapshotMismatch(sessionId: sessionId)
     }
     return PersistedCLIWorkflowSession(
       workflowName: envelope.workflowName,

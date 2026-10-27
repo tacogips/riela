@@ -254,6 +254,14 @@ final class WorkflowExecutionProviderTests: XCTestCase {
     var statusMismatch = record
     statusMismatch.session.status = .failed
     try store.save(statusMismatch)
+    let cliDatabase = try SQLiteDatabase.open(
+      path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    )
+    try cliDatabase.execute(
+      "UPDATE cli_workflow_sessions SET record_json = jsonb(json_set(record_json, '$.session.status', ?)) "
+        + "WHERE session_id = ?",
+      bindings: [.text(record.session.status.rawValue), .text(record.session.sessionId)]
+    )
     do {
       _ = try await provider.workflowExecution(workflowExecutionId: "valid-session")
       XCTFail("CLI and runtime status mismatch must be rejected")
@@ -263,6 +271,15 @@ final class WorkflowExecutionProviderTests: XCTestCase {
     var missing = record
     missing.session.sessionId = "missing-runtime"
     try store.save(missing)
+    let runtimeDatabase = try SQLiteDatabase.open(
+      path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
+        rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
+      )
+    )
+    try runtimeDatabase.execute(
+      "DELETE FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?",
+      bindings: [.text(missing.session.sessionId)]
+    )
     do {
       _ = try await provider.workflowExecution(workflowExecutionId: "missing-runtime")
       XCTFail("missing runtime snapshot must be an execution error")
@@ -273,13 +290,17 @@ final class WorkflowExecutionProviderTests: XCTestCase {
     var mismatched = record
     mismatched.session.workflowId = "other-workflow"
     try store.save(mismatched)
+    try cliDatabase.execute(
+      "UPDATE cli_workflow_sessions SET record_json = jsonb(json_set(record_json, '$.session.workflowId', ?)) "
+        + "WHERE session_id = ?",
+      bindings: [.text(record.session.workflowId), .text(record.session.sessionId)]
+    )
     do {
       _ = try await provider.workflowExecution(workflowExecutionId: "valid-session")
       XCTFail("workflow identity mismatch must be rejected")
     } catch WorkflowExecutionProviderError.persistenceFailed { }
 
-    let database = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
-    try database.execute(
+    try cliDatabase.execute(
       "UPDATE cli_workflow_sessions SET record_json = jsonb(?) WHERE session_id = ?",
       bindings: [
         .text(#"{"workflowName":"fixture-name","session":{"workflowId":"fixture-workflow","status":"completed"}}"#),
@@ -310,11 +331,86 @@ final class WorkflowExecutionProviderTests: XCTestCase {
     } catch CLIWorkflowSessionStoreError.sqliteFailed { }
     let stillAbsent = try await provider.workflowExecution(workflowExecutionId: "absent-session")
     XCTAssertNil(stillAbsent)
-    try database.execute("ALTER TABLE cli_workflow_sessions RENAME COLUMN record_json TO invalid_json")
+    try cliDatabase.execute("ALTER TABLE cli_workflow_sessions RENAME COLUMN record_json TO invalid_json")
     do {
       _ = try await provider.workflowExecution(workflowExecutionId: "valid-session")
       XCTFail("SQLite query failure must not return null")
     } catch CLIWorkflowSessionStoreError.sqliteFailed { }
+  }
+
+  func testStrictSummaryRejectsLegacyCLIStatusThatDisagreesWithCanonicalRuntime() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/native-remote-implementation/NRE-03/provider-legacy-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let session = WorkflowSession(
+      workflowId: "legacy-workflow", sessionId: "legacy-session", status: .completed,
+      entryStepId: "work", createdAt: Date(timeIntervalSince1970: 1_000),
+      updatedAt: Date(timeIntervalSince1970: 1_000)
+    )
+    var legacy = PersistedCLIWorkflowSession(
+      workflowName: "legacy-workflow", session: session,
+      resolution: WorkflowResolutionOptions(workflowName: "legacy-workflow", workingDirectory: root.path)
+    )
+    try store.save(legacy, runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: session))
+    legacy.session.status = .failed
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let recordJSON = try XCTUnwrap(String(data: encoder.encode(legacy), encoding: .utf8))
+    let database = try SQLiteDatabase.open(
+      path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    )
+    try database.execute(
+      "UPDATE cli_workflow_sessions SET record_json = jsonb(?) WHERE session_id = ?",
+      bindings: [.text(recordJSON), .text(session.sessionId)]
+    )
+    let provider = WorkflowExecutionProvider(
+      workingDirectory: root.path, sessionStoreRoot: root.path, environment: ["HOME": root.path]
+    )
+
+    do {
+      _ = try await provider.workflowExecution(workflowExecutionId: session.sessionId)
+      XCTFail("legacy CLI and runtime status mismatch must be rejected")
+    } catch WorkflowExecutionProviderError.persistenceFailed { }
+
+    legacy.session.status = .completed
+    legacy.session.workflowId = "different-legacy-workflow"
+    let workflowMismatchJSON = try XCTUnwrap(String(data: encoder.encode(legacy), encoding: .utf8))
+    try database.execute(
+      "UPDATE cli_workflow_sessions SET record_json = jsonb(?) WHERE session_id = ?",
+      bindings: [.text(workflowMismatchJSON), .text(session.sessionId)]
+    )
+    do {
+      _ = try await provider.workflowExecution(workflowExecutionId: session.sessionId)
+      XCTFail("legacy CLI and runtime workflow mismatch must be rejected")
+    } catch WorkflowExecutionProviderError.persistenceFailed { }
+
+    var missingLegacy = legacy
+    missingLegacy.session.sessionId = "legacy-missing-session"
+    missingLegacy.session.status = .completed
+    missingLegacy.session.workflowId = session.workflowId
+    try store.save(missingLegacy, runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: missingLegacy.session))
+    let missingJSON = try XCTUnwrap(String(data: encoder.encode(missingLegacy), encoding: .utf8))
+    try database.execute(
+      "UPDATE cli_workflow_sessions SET record_json = jsonb(?) WHERE session_id = ?",
+      bindings: [.text(missingJSON), .text(missingLegacy.session.sessionId)]
+    )
+    let runtimeDatabase = try SQLiteDatabase.open(
+      path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
+        rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
+      )
+    )
+    try runtimeDatabase.execute(
+      "DELETE FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?",
+      bindings: [.text(missingLegacy.session.sessionId)]
+    )
+
+    do {
+      _ = try await provider.workflowExecution(workflowExecutionId: missingLegacy.session.sessionId)
+      XCTFail("missing canonical snapshot for legacy CLI record must be an execution error")
+    } catch WorkflowExecutionProviderError.persistenceFailed { }
   }
 
   func testSummaryUsesPersistedOrderAndOnlyRequestedSessionMessages() async throws {

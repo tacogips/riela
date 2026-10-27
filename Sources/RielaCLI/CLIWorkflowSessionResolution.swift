@@ -157,6 +157,8 @@ private struct SessionStoreSearchOutcome: Sendable {
       return "invalid session id: \(value)"
     case let .canonicalSnapshotMissing(sessionId):
       return "canonical session snapshot is missing: \(sessionId)"
+    case let .canonicalSnapshotMismatch(sessionId):
+      return "canonical session snapshot does not match CLI header: \(sessionId)"
     case let .notFound(message), let .io(message), let .sqliteFailed(message):
       return message
     }

@@ -27,6 +27,27 @@ final class CLIWorkflowSessionEnvelopeTests: XCTestCase {
     XCTAssertEqual(listed.executionCount, 3)
   }
 
+  func testStrictReadRejectsEnvelopeHeaderThatDisagreesWithCanonicalSnapshot() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("cli-session-envelope-header-mismatch")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let record = makeRecord(sessionId: "header-mismatch", status: .completed, executionCount: 1)
+    try store.save(record, runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: record.session))
+
+    try openDatabase(root: root.path).execute(
+      "UPDATE cli_workflow_sessions SET record_json = jsonb(json_set(record_json, '$.session.status', 'failed')) "
+        + "WHERE session_id = ?",
+      bindings: [.text(record.session.sessionId)]
+    )
+
+    XCTAssertThrowsError(try store.loadStrictReadOnly(sessionId: record.session.sessionId)) { error in
+      XCTAssertEqual(
+        error as? CLIWorkflowSessionStoreError,
+        .canonicalSnapshotMismatch(sessionId: record.session.sessionId)
+      )
+    }
+  }
+
   func testLegacyRecordLoadsAndConvertsToCanonicalEnvelope() throws {
     let root = try makeRielaCLITestTemporaryDirectory("cli-session-legacy-convert")
     defer { try? FileManager.default.removeItem(at: root) }

@@ -78,11 +78,7 @@ public extension WorkStore {
 
   private func readLeaseDatabase() throws -> SQLiteDatabase? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(
-      path: databasePath,
-      mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-      options: .readOnlyDefault
-    )
+    let database = try openReadOnlyDatabase()
     guard try database.tableExists("work_leases") else { return nil }
     return database
   }

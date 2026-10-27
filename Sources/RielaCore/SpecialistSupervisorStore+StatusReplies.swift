@@ -37,7 +37,7 @@ extension SpecialistSupervisorStore {
   /// released.
   public func pendingCapacityWaitRequests(limit: Int = 100) throws -> [SpecialistCapacityWaitRequest] {
     guard limit > 0, limit <= 1_000, FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     let rows = try database.query(
       "SELECT json(t.task_json) AS task_json, json(r.request_json) AS request_json "
@@ -126,7 +126,7 @@ extension SpecialistSupervisorStore {
     limit: Int = 100
   ) throws -> [SpecialistPendingContinuation] {
     guard limit > 0, limit <= 1_000, FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     let rows = try database.query(
       """
@@ -157,7 +157,7 @@ extension SpecialistSupervisorStore {
   ) throws -> SpecialistTask? {
     try validateIdentifier(requestId)
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     let rows = try database.query(
       """

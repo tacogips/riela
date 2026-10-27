@@ -341,7 +341,7 @@ final class DeterministicWorkflowRunnerFailureStateTests: XCTestCase {
       XCTFail("completed sessions cannot retry a failed step")
     } catch {
       XCTAssertTrue(String(describing: error).contains(
-        "--retry-failed-step requires an adapter-failed, policy-blocked or timed-out current step with no accepted output"))
+        "--retry-failed-step requires an adapter-failed, prompt-too-large, policy-blocked or timed-out current step with no accepted output"))
     }
   }
 

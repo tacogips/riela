@@ -33,7 +33,6 @@ public struct SQLiteWorkflowMessageLog: Sendable {
 
   public func replaceMessages(for workflowExecutionId: String, with messages: [WorkflowMessageRecord]) throws {
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { database in
       try replaceMessages(for: workflowExecutionId, with: messages, in: database)
     }
@@ -41,7 +40,6 @@ public struct SQLiteWorkflowMessageLog: Sendable {
 
   public func upsertMessages(_ messages: [WorkflowMessageRecord]) throws {
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { database in
       try upsertMessages(messages, in: database)
     }
@@ -154,15 +152,28 @@ public struct SQLiteWorkflowMessageLog: Sendable {
   }
 
   private func openDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
+    let runtimeRoot = URL(fileURLWithPath: databasePath, isDirectory: false).deletingLastPathComponent()
+    let lock: DistributedStoreLock
+    do {
+      lock = try DistributedStoreLock(url: runtimeRoot.appendingPathComponent(".riela/runtime-schema.lock"))
+      try lock.acquire()
+    } catch {
+      throw SQLiteWorkflowMessageLogError.openFailed(
+        "failed to open sqlite database at \(databasePath): \(error.localizedDescription)"
+      )
+    }
+    defer { lock.release() }
     if !readOnly {
       SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
     }
     do {
-      return try SQLiteDatabase.open(
+      let database = try SQLiteDatabase.open(
         path: databasePath,
         mode: readOnly ? .readOnly : .readWriteCreate,
         options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
       )
+      if !readOnly { try ensureSchema(database) }
+      return database
     } catch let error as SQLiteError where error.operation == .open {
       throw SQLiteWorkflowMessageLogError.openFailed(error.message)
     } catch let error as SQLiteError {

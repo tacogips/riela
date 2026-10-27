@@ -39,11 +39,7 @@ public extension WorkStore {
 
   func pendingHandoverRequest(attemptId: AttemptID) throws -> HandoverRequestRecord? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(
-      path: databasePath,
-      mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-      options: .readOnlyDefault
-    )
+    let database = try openReadOnlyDatabase()
     guard try database.tableExists("work_handover_requests"),
           let row = try database.query(
             "SELECT json(record) AS record FROM work_handover_requests WHERE attempt_id = ? AND consumed_at IS NULL LIMIT 1",

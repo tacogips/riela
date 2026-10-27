@@ -236,10 +236,28 @@ extension SQLiteWorkflowRuntimePersistenceStore {
     readOnly: Bool = false,
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
+    // Keep readers behind first-use compatibility checks too, so no process
+    // can observe a database while another process replaces an incompatible
+    // store or initializes its schema.
     let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
-    if !readOnly, !strictReadOnly {
-      Self.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+    let schemaLock: DistributedStoreLock?
+    if !strictReadOnly {
+      let lock: DistributedStoreLock
+      do {
+        lock = try DistributedStoreLock(url: URL(fileURLWithPath: rootDirectory, isDirectory: true)
+          .appendingPathComponent(".riela/runtime-schema.lock"))
+        try lock.acquire()
+      } catch {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed(
+          "failed to open sqlite database at \(databasePath): \(error.localizedDescription)"
+        )
+      }
+      schemaLock = lock
+    } else {
+      schemaLock = nil
     }
+    defer { schemaLock?.release() }
+    if !readOnly, !strictReadOnly { Self.discardIncompatibleStoreIfNeeded(databasePath: databasePath) }
     let mode: SQLiteOpenMode
     if strictReadOnly {
       mode = .strictReadOnlyWithImmutableFallback
@@ -247,12 +265,17 @@ extension SQLiteWorkflowRuntimePersistenceStore {
       mode = readOnly ? .readOnly : .readWriteCreate
     }
     return try mapRuntimeSQLiteError {
+      var options = readOnly ? SQLiteOpenOptions.readOnlyDefault : SQLiteOpenOptions.writableRuntimeStoreDefault
+      options.trackStatementWork = !readOnly && measuresSQLiteStatementWork
       let database = try SQLiteDatabase.open(
         path: databasePath,
         mode: mode,
-        options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
+        options: options
       )
       if !readOnly && !strictReadOnly {
+        // Serialize the destructive compatibility probe with first creation,
+        // migration and schema setup so peers cannot unlink a partial database.
+        try prepareSchema(in: database)
         // The assembly table is transient, not another durable journal.
         // Avoid duplicating it on the guest's size-limited tmpfs volume.
         try database.execute("PRAGMA temp_store = MEMORY")

@@ -26,6 +26,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     public let headerEncodeInputBytes: Int
     public let sqliteVMSteps: Int
     public let sqliteFullScanSteps: Int
+    public let sqliteCatalogFullScanSteps: Int
     public let familyReleaseScans: Int
 
     public init(
@@ -34,6 +35,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       headerEncodeInputBytes: Int = 0,
       sqliteVMSteps: Int = 0,
       sqliteFullScanSteps: Int = 0,
+      sqliteCatalogFullScanSteps: Int = 0,
       familyReleaseScans: Int = 0
     ) {
       self.boundBytes = boundBytes
@@ -41,6 +43,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       self.headerEncodeInputBytes = headerEncodeInputBytes
       self.sqliteVMSteps = sqliteVMSteps
       self.sqliteFullScanSteps = sqliteFullScanSteps
+      self.sqliteCatalogFullScanSteps = sqliteCatalogFullScanSteps
       self.familyReleaseScans = familyReleaseScans
     }
   }
@@ -51,14 +54,17 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   private let executionReuse = RuntimeExecutionReuse()
   let persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)?
   let loadAssemblyObserver: (@Sendable () throws -> Void)?
+  let measuresSQLiteStatementWork: Bool
 
   public init(
     rootDirectory: String,
-    persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)? = nil
+    persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)? = nil,
+    measureSQLiteStatementWork: Bool = false
   ) {
     self.rootDirectory = rootDirectory
     self.persistenceWriteObserver = persistenceWriteObserver
     self.loadAssemblyObserver = nil
+    self.measuresSQLiteStatementWork = measureSQLiteStatementWork
   }
 
   init(
@@ -69,6 +75,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     self.rootDirectory = rootDirectory
     self.persistenceWriteObserver = persistenceWriteObserver
     self.loadAssemblyObserver = loadAssemblyObserver
+    self.measuresSQLiteStatementWork = false
   }
 
   public static func defaultDatabasePath(rootDirectory: String) -> String {
@@ -100,7 +107,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     try WorkflowDefinitionPins.recordForeignPinIfNeeded(snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { database in
       try save(snapshot, in: database)
     }
@@ -125,7 +131,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     try WorkflowDefinitionPins.recordForeignPinIfNeeded(snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { database in
       try save(snapshot, appendingWorkflowMessages: messages, in: database)
     }
@@ -302,7 +307,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       if try runtimeSnapshotTableExists(read),
          !(try SQLiteWorkflowStartupIdentities.isPrepared(read, source: .runtime)) {
         let write = try openDatabase()
-        try prepareSchema(in: write)
         try write.transaction { try SQLiteWorkflowStartupIdentities.backfill($0, source: .runtime) }
       }
     }
@@ -772,6 +776,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         statements: metrics.statements + 1,
         sqliteVMSteps: work.vmSteps,
         sqliteFullScanSteps: work.fullScanSteps,
+        sqliteCatalogFullScanSteps: work.catalogFullScanSteps,
         familyReleaseScans: familyReleaseScans
       )
     }
@@ -841,6 +846,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         statements: metrics.statements + 1,
         sqliteVMSteps: work.vmSteps,
         sqliteFullScanSteps: work.fullScanSteps,
+        sqliteCatalogFullScanSteps: work.catalogFullScanSteps,
         familyReleaseScans: familyReleaseScans
       )
     }
@@ -909,6 +915,10 @@ func mapRuntimeSQLiteError<T>(_ body: () throws -> T) throws -> T {
   do {
     return try body()
   } catch let error as SQLiteError {
-    throw WorkflowRuntimePersistenceStoreError.sqliteFailed(error.message)
+    let code = error.code.map(String.init) ?? "unknown"
+    let statement = error.sql.map { ", sql=\($0)" } ?? ""
+    throw WorkflowRuntimePersistenceStoreError.sqliteFailed(
+      "\(error.message) [operation=\(error.operation.rawValue), code=\(code)\(statement)]"
+    )
   }
 }

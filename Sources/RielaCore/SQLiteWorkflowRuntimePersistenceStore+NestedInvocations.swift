@@ -107,7 +107,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested publication parent does not match reservation")
     }
     let database = try openDatabase()
-    try prepareSchema(in: database)
     try database.transaction { db in
       let key = try nestedInvocationKey(reservation)
       if let existing = try nestedInvocationRecord(key: key, in: db) {
@@ -140,7 +139,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   ) throws -> WorkflowNestedInvocationRecord {
     try validate(reservation)
     let database = try openDatabase()
-    try prepareSchema(in: database)
     return try database.transaction { db in
       let key = try nestedInvocationKey(reservation)
       if let existing = try nestedInvocationRecord(key: key, in: db) {
@@ -180,7 +178,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested child terminal snapshot is invalid")
     }
     let database = try openDatabase()
-    try prepareSchema(in: database)
     return try database.transaction { db in
       let key = try nestedInvocationKey(reservation)
       guard var existing = try nestedInvocationRecord(key: key, in: db) else {
@@ -222,7 +219,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested parent publication does not match its reservation")
     }
     let database = try openDatabase()
-    try prepareSchema(in: database)
     return try database.transaction { db in
       let key = try nestedInvocationKey(reservation)
       guard var existing = try nestedInvocationRecord(key: key, in: db) else {
@@ -328,7 +324,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested recovery reason is empty")
     }
     let database = try openDatabase()
-    try prepareSchema(in: database)
     return try database.transaction { db in
       let key = try nestedInvocationKey(reservation)
       guard var existing = try nestedInvocationRecord(key: key, in: db) else {
@@ -392,7 +387,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("fanout parent publication identity is invalid")
     }
     let database = try openDatabase()
-    try prepareSchema(in: database)
     return try database.transaction { db in
       let records = try fanoutNestedInvocationRecords(
         parentSessionId: parentSessionId,

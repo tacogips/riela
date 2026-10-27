@@ -23,6 +23,7 @@ public struct SQLiteOpenOptions: Sendable {
   public var requireJSONB: Bool
   public var requireFTS5: Bool
   public var incrementalAutoVacuumForNewFile: Bool
+  public var trackStatementWork: Bool
 
   public init(
     enableWAL: Bool = true,
@@ -31,7 +32,8 @@ public struct SQLiteOpenOptions: Sendable {
     requireJSONB: Bool = true,
     requireFTS5: Bool = false,
     waitForLocks: Bool = false,
-    incrementalAutoVacuumForNewFile: Bool = false
+    incrementalAutoVacuumForNewFile: Bool = false,
+    trackStatementWork: Bool = false
   ) {
     self.enableWAL = enableWAL
     self.enableForeignKeys = enableForeignKeys
@@ -40,6 +42,7 @@ public struct SQLiteOpenOptions: Sendable {
     self.requireJSONB = requireJSONB
     self.requireFTS5 = requireFTS5
     self.incrementalAutoVacuumForNewFile = incrementalAutoVacuumForNewFile
+    self.trackStatementWork = trackStatementWork
   }
 
   public static let writableDefault = SQLiteOpenOptions(waitForLocks: true)
@@ -55,9 +58,12 @@ public struct SQLiteStatementWorkSnapshot: Sendable, Equatable {
   public let vmSteps: Int
   /// SQLite full-scan steps for application tables; schema-catalog lookups are excluded.
   public let fullScanSteps: Int
+  /// SQLite full-scan steps for schema-catalog lookups.
+  public let catalogFullScanSteps: Int
 
   public static func - (lhs: Self, rhs: Self) -> Self {
-    Self(vmSteps: lhs.vmSteps - rhs.vmSteps, fullScanSteps: lhs.fullScanSteps - rhs.fullScanSteps)
+    Self(vmSteps: lhs.vmSteps - rhs.vmSteps, fullScanSteps: lhs.fullScanSteps - rhs.fullScanSteps,
+         catalogFullScanSteps: lhs.catalogFullScanSteps - rhs.catalogFullScanSteps)
   }
 }
 
@@ -130,20 +136,28 @@ public final class SQLiteDatabase: @unchecked Sendable {
   public let path: String?
   private let handle: OpaquePointer?
   private let ownsHandle: Bool
+  private let tracksStatementWork: Bool
   private let statementWorkLock = NSLock()
   private var accumulatedVMSteps = 0
   private var accumulatedFullScanSteps = 0
+  private var accumulatedCatalogFullScanSteps = 0
+  private(set) var statementWorkAccountingCalls = 0
 
   public var statementWorkSnapshot: SQLiteStatementWorkSnapshot {
     statementWorkLock.lock()
     defer { statementWorkLock.unlock() }
-    return SQLiteStatementWorkSnapshot(vmSteps: accumulatedVMSteps, fullScanSteps: accumulatedFullScanSteps)
+    return SQLiteStatementWorkSnapshot(
+      vmSteps: accumulatedVMSteps,
+      fullScanSteps: accumulatedFullScanSteps,
+      catalogFullScanSteps: accumulatedCatalogFullScanSteps
+    )
   }
 
-  private init(path: String?, handle: OpaquePointer?, ownsHandle: Bool) {
+  private init(path: String?, handle: OpaquePointer?, ownsHandle: Bool, tracksStatementWork: Bool = false) {
     self.path = path
     self.handle = handle
     self.ownsHandle = ownsHandle
+    self.tracksStatementWork = tracksStatementWork
   }
 
   deinit {
@@ -213,7 +227,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
         message: "failed to open sqlite database at \(diagnosticPath): \(message)"
       )
     }
-    let database = SQLiteDatabase(path: diagnosticPath, handle: opened, ownsHandle: true)
+    let database = SQLiteDatabase(path: diagnosticPath, handle: opened, ownsHandle: true,
+                                  tracksStatementWork: options.trackStatementWork)
     try database.configure(options, isNewFile: isNewFile)
     return database
   }
@@ -270,7 +285,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
       throw sqliteError(operation: .execute, sql: sql)
     }
     defer {
-      recordStatementWork(statement)
+      if tracksStatementWork { recordStatementWork(statement) }
       sqlite3_finalize(statement)
     }
     try bind(bindings, to: statement)
@@ -286,7 +301,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
       throw sqliteError(operation: .query, sql: sql)
     }
     defer {
-      recordStatementWork(statement)
+      if tracksStatementWork { recordStatementWork(statement) }
       sqlite3_finalize(statement)
     }
     try bind(bindings, to: statement)
@@ -310,13 +325,30 @@ public final class SQLiteDatabase: @unchecked Sendable {
     let vmSteps = Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 0))
     let fullScanSteps = Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_FULLSCAN_STEP, 0))
     let sql = sqlite3_sql(statement).map { String(cString: $0) } ?? ""
-    let isSchemaCatalogQuery = sql.localizedCaseInsensitiveContains("sqlite_master")
-      || sql.localizedCaseInsensitiveContains("sqlite_schema")
+    let isSchemaCatalogQuery = Self.containsASCIIInsensitive("sqlite_master", in: sql)
+      || Self.containsASCIIInsensitive("sqlite_schema", in: sql)
     statementWorkLock.lock()
+    statementWorkAccountingCalls += 1
     accumulatedVMSteps += vmSteps
-    // Catalog lookups are bounded by schema size and are not payload/family scans.
-    if !isSchemaCatalogQuery { accumulatedFullScanSteps += fullScanSteps }
+    if isSchemaCatalogQuery {
+      accumulatedCatalogFullScanSteps += fullScanSteps
+    } else {
+      accumulatedFullScanSteps += fullScanSteps
+    }
     statementWorkLock.unlock()
+  }
+
+  private static func containsASCIIInsensitive(_ needle: String, in haystack: String) -> Bool {
+    let source = Array(haystack.utf8)
+    let target = Array(needle.utf8)
+    guard !target.isEmpty, source.count >= target.count else { return false }
+    return source.indices.prefix(source.count - target.count + 1).contains { start in
+      target.indices.allSatisfy { offset in
+        let byte = source[start + offset]
+        let folded = (65...90).contains(byte) ? byte + 32 : byte
+        return folded == target[offset]
+      }
+    }
   }
 
   public func requireJSONBAvailable() throws {

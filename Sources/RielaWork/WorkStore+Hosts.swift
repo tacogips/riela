@@ -42,11 +42,7 @@ public extension WorkStore {
 
   func loadHostSnapshots() throws -> [HostCapabilitySnapshot] {
     guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let db = try SQLiteDatabase.open(
-      path: databasePath,
-      mode: .strictReadOnlyWithImmutableFallback,
-      options: .readOnlyDefault
-    )
+    let db = try openStrictReadOnlyDatabase()
     guard try db.tableExists("work_hosts") else { return [] }
     let rows = try db.query("SELECT json(record) AS record FROM work_hosts ORDER BY host_id ASC")
     let decoder = JSONDecoder()

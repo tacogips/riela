@@ -298,7 +298,7 @@ extension SpecialistSupervisorStore {
 
   public func providerCursor(provider: String) throws -> String? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     return try database.query("SELECT cursor FROM specialist_provider_cursors WHERE provider = ?", bindings: [.text(provider)]).first?["cursor"]
   }

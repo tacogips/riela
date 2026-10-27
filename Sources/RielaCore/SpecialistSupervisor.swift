@@ -371,7 +371,7 @@ public struct SpecialistSupervisorStore: Sendable {
 
   public func dispatch(dispatchId: String) throws -> SpecialistDispatch? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     return try dispatch(dispatchId: dispatchId, in: database)
   }
@@ -459,7 +459,7 @@ public struct SpecialistSupervisorStore: Sendable {
 
   public func recoverableDispatches() throws -> [SpecialistDispatch] {
     guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     return try database.query(
       "SELECT json(dispatch_json) AS dispatch_json FROM specialist_dispatch_details WHERE state IN ('prepared', 'running', 'terminal', 'recovery_required') ORDER BY dispatch_id",
@@ -499,7 +499,7 @@ public struct SpecialistSupervisorStore: Sendable {
 
   public func task(taskId: String, principal: SpecialistPrincipal) throws -> SpecialistTask? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     let rows = try database.query("SELECT json(task_json) AS task_json FROM specialist_tasks WHERE task_id = ?", bindings: [.text(taskId)])
     guard let json = rows.first?["task_json"] else { return nil }
@@ -510,7 +510,7 @@ public struct SpecialistSupervisorStore: Sendable {
 
   public func deliveryReceipt(eventId: String) throws -> SpecialistDeliveryReceipt? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     return try database.query(
       "SELECT json(receipt_json) AS receipt_json FROM specialist_delivery_receipts WHERE event_id = ?",
@@ -682,13 +682,7 @@ public struct SpecialistSupervisorStore: Sendable {
     }
   }
 
-  func openWritable() throws -> SQLiteDatabase {
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readWriteCreate, options: .writableDefault)
-    try prepareSchema(database)
-    return database
-  }
-
-  private func prepareSchema(_ database: SQLiteDatabase) throws {
+  func prepareSchema(_ database: SQLiteDatabase) throws {
     try database.transaction { database in
       try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRootDirectory).prepareSchema(in: database)
       try verifySchema(database)

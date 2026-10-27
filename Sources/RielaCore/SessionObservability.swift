@@ -527,6 +527,7 @@ public struct SessionObservabilityService: Sendable {
   }
 
   public static func isTerminal(_ session: WorkflowSession) -> Bool {
+    if session.failureKind == .cancelled { return true }
     return switch session.status {
     case .completed, .failed, .cancelled:
       true

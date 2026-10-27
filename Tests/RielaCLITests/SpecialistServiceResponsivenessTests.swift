@@ -11,6 +11,22 @@ import RielaWorkflowRegistry
 @testable import RielaCLI
 
 final class SpecialistServiceResponsivenessTests: XCTestCase {
+  private final class ExecutableCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var executable: URL?
+
+    func value(build: () throws -> URL) throws -> URL {
+      lock.lock()
+      defer { lock.unlock() }
+      if let executable, FileManager.default.isExecutableFile(atPath: executable.path) { return executable }
+      let built = try build()
+      executable = built
+      return built
+    }
+  }
+
+  private static let executableCache = ExecutableCache()
+
   private struct LaunchWindowFixture {
     let root: URL
     let work: URL
@@ -751,11 +767,17 @@ final class SpecialistServiceResponsivenessTests: XCTestCase {
     )
   }
 
-  /// Rebuilds the product in the active test scratch path before launching it.
-  /// XCTest itself only guarantees the test bundle is current; this explicit
-  /// product build prevents process-boundary tests from executing a stale
-  /// `riela` binary that happens to be beside an older bundle.
+  /// Builds the product once in the test worker's separate scratch tree before
+  /// launching processes. The test bundle can be current while an adjacent
+  /// executable is stale, and rebuilding on every spawn makes large suites
+  /// repeatedly invoke SwiftPM while a child-held barrier is active.
   private func currentSpecialistExecutable(repository: URL) throws -> URL {
+    try Self.executableCache.value {
+      try buildCurrentSpecialistExecutable(repository: repository)
+    }
+  }
+
+  private func buildCurrentSpecialistExecutable(repository: URL) throws -> URL {
     // A distinct build tree is necessary: SwiftPM holds the test tree's
     // package lock while XCTest is executing, so rebuilding that same tree
     // from the test would deadlock. This tree is still built explicitly on

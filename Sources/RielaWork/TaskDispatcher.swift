@@ -33,11 +33,7 @@ public struct TaskDispatcher: Sendable {
   /// A missing database has no request; an incompatible database is an error.
   public func pendingReservation(taskId: TaskID) throws -> PendingAttemptReservation? {
     guard FileManager.default.fileExists(atPath: store.databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(
-      path: store.databasePath,
-      mode: store.immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-      options: .readOnlyDefault
-    )
+    let database = try store.openReadOnlyDatabase()
     guard try database.tableExists("work_pending_reservations") else {
       throw WorkStoreError("work store has no pending reservation table")
     }
@@ -133,11 +129,7 @@ public struct TaskDispatcher: Sendable {
 
   private func unclaimedLatestHandoverId(taskId: TaskID) throws -> HandoverID? {
     guard FileManager.default.fileExists(atPath: store.databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(
-      path: store.databasePath,
-      mode: store.immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-      options: .readOnlyDefault
-    )
+    let database = try store.openReadOnlyDatabase()
     guard try database.tableExists("work_handovers"),
           let row = try database.query(
             "SELECT handover_id, successor_attempt_id FROM work_handovers WHERE task_id = ? ORDER BY created_at DESC, handover_id DESC LIMIT 1",

@@ -609,21 +609,29 @@ public struct CLIWorkflowSessionStore: Sendable {
     readOnly: Bool = false,
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
-    if !readOnly, !strictReadOnly {
-      SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
-    }
-    let mode: SQLiteOpenMode
-    if strictReadOnly {
-      mode = .strictReadOnlyWithImmutableFallback
-    } else {
-      mode = readOnly ? .readOnly : .readWriteCreate
-    }
-    return try mapSQLiteError {
-      try SQLiteDatabase.open(
-        path: databasePath,
-        mode: mode,
-        options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
-      )
+    let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory)
+    return try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: runtimeRoot) {
+      if !readOnly, !strictReadOnly {
+        SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+      }
+      let mode: SQLiteOpenMode
+      if strictReadOnly {
+        mode = .strictReadOnlyWithImmutableFallback
+      } else {
+        mode = readOnly ? .readOnly : .readWriteCreate
+      }
+      let database = try mapSQLiteError {
+        try SQLiteDatabase.open(
+          path: databasePath,
+          mode: mode,
+          options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
+        )
+      }
+      if !readOnly, !strictReadOnly {
+        let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
+        try prepareRuntimePersistenceSchemas(in: database, runtimeStore: runtimeStore)
+      }
+      return database
     }
   }
 

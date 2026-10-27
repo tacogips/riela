@@ -75,8 +75,15 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
         }
       }
     }
-    if addonNames.contains(where: { $0.hasPrefix("riela/memory-") || $0.hasPrefix("riela/kv-") })
-      && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
+    let hasLocalMemory = workflow.nodeRegistry.contains {
+      $0.addon?.name.hasPrefix("riela/memory-") == true
+    }
+    let hasImplicitKVRoot = workflow.nodeRegistry.contains { node in
+      guard let addon = node.addon, addon.name.hasPrefix("riela/kv-") else { return false }
+      guard case let .string(root)? = addon.config?["kvRoot"] else { return true }
+      return root.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    if (hasLocalMemory || hasImplicitKVRoot) && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
       diagnostics.append(WorkflowValidationDiagnostic(
         severity: .warning,
         path: "workflow.nodes",

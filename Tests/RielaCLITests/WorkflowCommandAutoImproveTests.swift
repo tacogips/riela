@@ -79,7 +79,7 @@ extension WorkflowCommandTests {
       rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
     )
     let snapshot = try XCTUnwrap(persistence.load(sessionId: live.session.sessionId))
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
     XCTAssertFalse(snapshot.session.executions.contains { $0.status == .running })
     XCTAssertTrue(result.stdout.contains("\"failureKind\":\"cancelled\""), result.stdout)

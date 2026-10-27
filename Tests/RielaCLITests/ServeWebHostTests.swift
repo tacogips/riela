@@ -84,6 +84,8 @@ final class ServeWebHostTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let workflow = root.appendingPathComponent("project/.riela/workflows/browser-example")
     try FileManager.default.createDirectory(at: workflow.appendingPathComponent("nodes"), withIntermediateDirectories: true)
+    let barrierWorkflow = root.appendingPathComponent("project/.riela/workflows/browser-barrier")
+    try FileManager.default.createDirectory(at: barrierWorkflow.appendingPathComponent("nodes"), withIntermediateDirectories: true)
     try Data(#"""
       {"workflowId":"browser-example","entryStepId":"work",
        "defaults":{"nodeTimeoutMs":30000,"maxLoopIterations":1},
@@ -94,6 +96,27 @@ final class ServeWebHostTests: XCTestCase {
       {"id":"work","nodeType":"command","modelFreeze":false,
        "command":{"executable":"/bin/echo","arguments":["{\"ok\":true}"]}}
       """#.utf8).write(to: workflow.appendingPathComponent("nodes/work.json"))
+    let ready = root.appendingPathComponent("ready")
+    let release = root.appendingPathComponent("release")
+    try Data(#"""
+      {"workflowId":"browser-barrier","entryStepId":"work",
+       "defaults":{"nodeTimeoutMs":30000,"maxLoopIterations":1},
+       "nodes":[{"id":"work","nodeFile":"nodes/work.json"}],
+       "steps":[{"id":"work","nodeId":"work","role":"worker"}]}
+      """#.utf8).write(to: barrierWorkflow.appendingPathComponent("workflow.json"))
+    let barrierNode: [String: Any] = [
+      "id": "work", "nodeType": "command", "modelFreeze": false,
+      "command": [
+        "executable": "/bin/sh",
+        "arguments": [
+          "-c",
+          "printf ready > \"$1\"; while [ ! -e \"$2\" ]; do /bin/sleep 0.05; done; printf '{\"ok\":true}\\n'",
+          "work", ready.path, release.path
+        ]
+      ]
+    ]
+    try JSONSerialization.data(withJSONObject: barrierNode)
+      .write(to: barrierWorkflow.appendingPathComponent("nodes/work.json"))
     let home = root.appendingPathComponent("home")
     let host = ServeWebHost(
       homeDirectory: home, workingDirectory: root.appendingPathComponent("project"),
@@ -137,23 +160,10 @@ final class ServeWebHostTests: XCTestCase {
     let summarySession = ((summary["data"] as? [String: Any])?["workflowExecution"] as? [String: Any])?["session"] as? [String: Any]
     XCTAssertEqual(summarySession?["workflowId"] as? String, "browser-example")
 
-    let ready = root.appendingPathComponent("ready")
-    let release = root.appendingPathComponent("release")
-    let barrierNode: [String: Any] = [
-      "id": "work", "nodeType": "command", "modelFreeze": false,
-      "command": [
-        "executable": "/bin/sh",
-        "arguments": [
-          "-c",
-          "printf ready > \"$1\"; while [ ! -e \"$2\" ]; do /bin/sleep 0.05; done; printf '{\"ok\":true}\\n'",
-          "work", ready.path, release.path
-        ]
-      ]
-    ]
-    try JSONSerialization.data(withJSONObject: barrierNode)
-      .write(to: workflow.appendingPathComponent("nodes/work.json"))
     var pendingRequest = request
-    pendingRequest.body = Data(#"{"query":"mutation { executeWorkflow(input: {workflowName: \"browser-example\"}) { sessionId status exitCode } }"}"#.utf8)
+    // Service executions pin the first-used definition; this fresh workflow
+    // owns the barrier from its initial import (docs/workflow-definition-store.md).
+    pendingRequest.body = Data(#"{"query":"mutation { executeWorkflow(input: {workflowName: \"browser-barrier\"}) { sessionId status exitCode } }"}"#.utf8)
     let pending = Task { await host.response(for: pendingRequest) }
     let deadline = Date().addingTimeInterval(5)
     while !FileManager.default.fileExists(atPath: ready.path) && Date() < deadline {
@@ -161,8 +171,9 @@ final class ServeWebHostTests: XCTestCase {
     }
     guard FileManager.default.fileExists(atPath: ready.path) else {
       try Data().write(to: release)
-      _ = await pending.value
-      XCTFail("browser execution did not reach the profile-switch barrier")
+      let response = await pending.value
+      XCTFail("browser execution did not reach the profile-switch barrier: HTTP \(response.status), " +
+        "body: \(String(data: response.body, encoding: .utf8) ?? "<non-UTF8>")")
       return
     }
 

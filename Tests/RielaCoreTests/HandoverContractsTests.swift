@@ -94,7 +94,9 @@ final class HandoverContractsTests: XCTestCase {
     let decoded = try JSONDecoder().decode(WorkflowSession.self, from: JSONEncoder().encode(session))
     XCTAssertEqual(decoded, session)
     XCTAssertEqual(try JSONDecoder().decode(WorkflowSessionStatus.self, from: Data("\"suspended\"".utf8)), .suspended)
-    XCTAssertThrowsError(try JSONDecoder().decode(WorkflowSessionStatus.self, from: Data("\"paused\"".utf8)))
+    // ISW2-27a explicitly makes unknown persisted statuses fall back to failed
+    // so readers remain fail-safe across newer status values.
+    XCTAssertEqual(try JSONDecoder().decode(WorkflowSessionStatus.self, from: Data("\"paused\"".utf8)), .failed)
     XCTAssertEqual(try JSONDecoder().decode(WorkflowStepExecutionStatus.self, from: Data("\"suspended\"".utf8)), .suspended)
     try assertRoundTrip(WorkflowStepExecutionStatus.suspended)
     XCTAssertEqual(WorkflowSessionFailureKind.stalled.rawValue, "stalled")
@@ -124,6 +126,16 @@ final class HandoverContractsTests: XCTestCase {
       $0.severity == .warning
         && $0.message == "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
     })
+    for explicitRoot in ["/tmp/kv-state", "{{workflowInput.kvRoot}}"] {
+      let configured = validationWorkflow(registry: [
+        WorkflowNodeRegistryRef(id: "kv", addon: WorkflowNodeAddonRef(
+          name: "riela/kv-set", config: ["kvRoot": .string(explicitRoot)]
+        ))
+      ])
+      XCTAssertFalse(DefaultWorkflowValidator().validate(configured).contains {
+        $0.severity == .warning && $0.message.contains("memory/KV state is cwd-local")
+      }, "explicit kvRoot should suppress the implicit-root warning: \(explicitRoot)")
+    }
     XCTAssertFalse(diagnostics.contains { $0.severity == .error })
   }
 

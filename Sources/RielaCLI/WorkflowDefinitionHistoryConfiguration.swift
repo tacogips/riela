@@ -52,7 +52,7 @@ enum WorkflowDefinitionHistoryConfiguration {
       }
     }
     let historyValue = try integer(workflowDefinitions["historyRetention"], key: "workflowDefinitions.historyRetention", minimum: 0, url: url)
-    let aliasValue = try integer(definitionRetention?["keepVersions"], key: "retention.definitions.keepVersions", minimum: 1, url: url)
+    let aliasValue = try integer(definitionRetention?["keepVersions"], key: "retention.definitions.keepVersions", minimum: 0, url: url)
     if let historyValue, let aliasValue, historyValue != aliasValue {
       throw ConfigurationError(description: "workflowDefinitions.historyRetention and retention.definitions.keepVersions in \(url.path) must match")
     }

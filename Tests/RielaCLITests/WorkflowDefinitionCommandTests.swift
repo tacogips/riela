@@ -280,6 +280,8 @@ final class WorkflowDefinitionCommandTests: XCTestCase {
     XCTAssertThrowsError(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]))
     try #"{"retention":{"definitions":{"keepVersions":3}}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
     XCTAssertEqual(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]), 3)
+    try #"{"retention":{"definitions":{"keepVersions":0}}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
+    XCTAssertEqual(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]), 0)
     try #"{"workflowDefinitions":{"historyRetention":3}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
     try #"{"workflowDefinitions":{"unexpected":1}}"#.write(to: userConfig, atomically: true, encoding: .utf8)
     XCTAssertThrowsError(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]))

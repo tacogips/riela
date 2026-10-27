@@ -165,7 +165,8 @@ removed fails the same way. Sessions recorded in a different store are
 protected through persisted pins. Automatic retention and `riela gc` use the
 shared engine with a default window of 10. `retention.definitions.keepVersions`
 aliases `workflowDefinitions.historyRetention`; if both keys are present in
-one config file, they must match. They use the actor `cli:riela-retention`.
+one config file, they must match. A value of `0` keeps all generations during
+automatic retention and `riela gc`. They use the actor `cli:riela-retention`.
 
 ## GraphQL surface and schema
 

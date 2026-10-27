@@ -39,6 +39,12 @@ extension WorkflowDefinitionStore {
     return try database.query("SELECT workflow_name FROM definition_heads ORDER BY workflow_name").map { $0.string("workflow_name") }
   }
 
+  public func retainedHistoryGenerations(workflowName: String) throws -> Int? {
+    let database = try openDatabase()
+    return try database.query("SELECT retained_generations FROM definition_history_heads WHERE key = ?",
+      bindings: [.text(workflowName)]).first?["retained_generations"].flatMap(Int.init)
+  }
+
   public func prune(
     workflowName: String,
     keepVersions: Int,
@@ -79,10 +85,11 @@ extension WorkflowDefinitionStore {
         throw WorkflowDefinitionStoreError(code: .headMissing, message: "definition head does not exist")
       }
       try releaseStalePins(workflowName: workflowName, in: transaction)
-      let cutoff = canonicalDate(now().addingTimeInterval(-24 * 60 * 60))
+      let currentTime = now()
+      let cutoff = canonicalDate(currentTime.addingTimeInterval(-24 * 60 * 60))
       let protectedNumbers = try WorkflowDefinitionHistorySchema.protectedHistoryVersions(
         in: transaction, workflowName: workflowName, currentVersionId: head.currentVersionId,
-        lastFileVersionId: head.lastFileVersionId, cutoff: cutoff
+        lastFileVersionId: head.lastFileVersionId, cutoff: cutoff, now: canonicalDate(currentTime)
       )
       let protectedVersions = try protectedVersionDetails(
         workflowName: workflowName, head: head, protectedNumbers: protectedNumbers, in: transaction
@@ -93,12 +100,18 @@ extension WorkflowDefinitionStore {
       )
       let engine = try history(in: transaction)
       let droppedNumbers: [Int64]
+      let freedBlobBytes: Int64
       if mode == .prune {
-        droppedNumbers = try engine.applyRetention(
-          key: workflowName, currentHeadValue: nil, retainedGenerations: keepVersions ?? 1, pins: protectedNumbers
-        ).dropped
+        let retention = try engine.applyRetention(
+          key: workflowName, currentHeadValue: nil, retainedGenerations: keepVersions ?? 1,
+          pins: protectedNumbers, persistRetention: false
+        )
+        droppedNumbers = retention.dropped
+        freedBlobBytes = retention.freedBytes
       } else {
-        droppedNumbers = try engine.retainVersions(key: workflowName, currentHeadValue: nil, versions: protectedNumbers).dropped
+        let retention = try engine.retainVersions(key: workflowName, currentHeadValue: nil, versions: protectedNumbers)
+        droppedNumbers = retention.dropped
+        freedBlobBytes = retention.freedBytes
       }
       let droppedSet = Set(droppedNumbers)
       let removedRows = metadata.filter { row in
@@ -110,12 +123,8 @@ extension WorkflowDefinitionStore {
         guard let number = row["history_version"].flatMap(Int64.init) else { return false }
         return !droppedSet.contains(number)
       }.map { $0.string("version_id") }
-      let blobsBefore = try transaction.query(
-        "SELECT COUNT(*) AS count, COALESCE(SUM(length(blob)), 0) AS bytes FROM definition_history_versions WHERE key = ? AND version IN (\(sqlPlaceholders(droppedNumbers.count)))",
-        bindings: [.text(workflowName)] + droppedNumbers.map(SQLiteValue.int)
-      ).first
-      let blobCount = blobsBefore?["count"].flatMap(Int.init) ?? 0
-      let blobBytes = blobsBefore?["bytes"].flatMap(Int64.init) ?? 0
+      let blobCount = droppedNumbers.count
+      let blobBytes = freedBlobBytes
       let auditCountBefore = try countAudit(workflowName: workflowName, in: transaction)
 
       if mode == .prune {
@@ -205,6 +214,12 @@ extension WorkflowDefinitionStore {
     }
     if let keep = result.keepVersions {
       diff.append(.init(path: "/retention/keepVersions", op: .add, after: .integer(Int64(keep))))
+    }
+    let protectionExpiry = canonicalDate(now().addingTimeInterval(24 * 60 * 60))
+    for protected in result.protectedVersions where protected.reason == "formerHead24h" {
+      diff.append(.init(path: "/retention/protected/\(protected.versionId)", op: .add, after: .object([
+        "versionId": .string(protected.versionId), "until": .string(protectionExpiry)
+      ])))
     }
     diff.append(.init(path: "/audit", op: .remove, before: .object(["removedCount": .integer(Int64(result.removedAuditCount))])))
     diff.append(.init(path: "/blobs", op: .remove, before: .object([

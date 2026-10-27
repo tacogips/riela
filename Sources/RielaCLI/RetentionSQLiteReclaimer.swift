@@ -46,7 +46,8 @@ struct RetentionSQLiteReclaimer: Sendable {
   var manualTimeBudget: TimeInterval = 30
   var statementObserver: (@Sendable (String) -> Void)?
 
-  func reclaim(databasePath: String, mode: RetentionReclamationMode) -> RetentionReclamationResult {
+  func reclaim(databasePath: String, mode: RetentionReclamationMode,
+               allowLiveSessions: Bool = false) -> RetentionReclamationResult {
     let before = fileBytes(at: databasePath)
     var result = RetentionReclamationResult(
       database: databasePath,
@@ -89,7 +90,8 @@ struct RetentionSQLiteReclaimer: Sendable {
           database: database,
           databasePath: databasePath,
           fileBytes: before,
-          mode: mode
+          mode: mode,
+          allowLiveSessions: allowLiveSessions
         )
       }
       result.reusableFreeBytes = max(0, pageSize) * max(0, freelistCount)
@@ -123,13 +125,16 @@ struct RetentionSQLiteReclaimer: Sendable {
     database: SQLiteDatabase,
     databasePath: String,
     fileBytes: Int64,
-    mode: RetentionReclamationMode
+    mode: RetentionReclamationMode,
+    allowLiveSessions: Bool
   ) throws -> RetentionReclamationAction {
     if mode == .automatic, fileBytes > automaticConversionLimitBytes {
       return .deferredAutomaticSizeLimit
     }
     let directory = URL(fileURLWithPath: databasePath).deletingLastPathComponent().path
-    if mode == .manual, hasLiveSessionLocks(databaseDirectory: directory) { return .deferredLiveSessions }
+    if mode == .manual, !allowLiveSessions, hasLiveSessionLocks(databaseDirectory: directory) {
+      return .deferredLiveSessions
+    }
     guard let available = freeSpace(directory),
           let doubledSize = checkedMultiply(fileBytes, 2),
           let required = checkedAdd(doubledSize, 256 << 20),
@@ -178,13 +183,12 @@ struct RetentionSQLiteReclaimer: Sendable {
     for directory in directories {
       guard let entries = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { continue }
       for entry in entries where entry.hasSuffix(".lock") {
-        let descriptor = open(directory.appendingPathComponent(entry).path, O_RDWR | O_CLOEXEC)
+        let descriptor = open(directory.appendingPathComponent(entry).path, O_RDONLY | O_CLOEXEC)
         guard descriptor >= 0 else { continue }
-        if flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+        if flock(descriptor, LOCK_SH | LOCK_NB) != 0 {
           close(descriptor)
           return true
         }
-        _ = flock(descriptor, LOCK_UN)
         close(descriptor)
       }
     }

@@ -288,9 +288,15 @@ public struct RielaRetentionService: Sendable {
     }
     if let sessionRoot = target.sessionStoreRoot {
       do {
+        let configDirectory = target.kind == .project ? (request.projectDirectory ?? request.homeDirectory) : request.homeDirectory
+        let configuredDefinitionRetention = try WorkflowDefinitionHistoryConfiguration.resolve(
+          homeDirectory: request.homeDirectory.path,
+          projectDirectory: configDirectory.path,
+          environment: request.environment
+        )
         report.definitions = try pruneDefinitions(
           sessionRoot: sessionRoot,
-          keepVersions: policy.definitions.keepVersions ?? WorkflowDefinitionStore.defaultHistoryRetention,
+          keepVersions: configuredDefinitionRetention,
           request: request
         )
       } catch {
@@ -334,7 +340,9 @@ public struct RielaRetentionService: Sendable {
     let store = WorkflowDefinitionStore(rootDirectory: sessionRoot)
     let reason = "\(request.trigger.rawValue) retention policy: keep newest \(keepVersions) definition versions"
     for workflowName in try store.workflowNames() {
-      let result = try store.prune(workflowName: workflowName, keepVersions: keepVersions, reason: reason,
+      let effectiveRetention = try store.retainedHistoryGenerations(workflowName: workflowName) ?? keepVersions
+      let engineRetention = effectiveRetention == 0 ? Int.max : effectiveRetention
+      let result = try store.prune(workflowName: workflowName, keepVersions: engineRetention, reason: reason,
         actor: WorkflowDefinitionActor(kind: .cli, id: "riela-retention"), dryRun: request.dryRun)
       report.workflowCount += 1
       report.removedVersionCount += result.removedVersionIds.count

@@ -161,10 +161,14 @@ struct StorageCompactCommandRunner {
         remaining = remaining || estimate.hasWork
       }
       if options.apply {
-        let result = reclaimer.reclaim(databasePath: path, mode: .manual)
+        let result = reclaimer.reclaim(databasePath: path, mode: .manual,
+          allowLiveSessions: options.allowLiveVacuum)
         convertedBytes = max(0, before - fileBytes(path))
         reclamation.append(result)
-        if result.action == .checkpointPending { remaining = true }
+        if result.action == .checkpointPending {
+          remaining = true
+          warnings.append("\(path): WAL checkpoint is pending; close readers and retry reclamation")
+        }
         if result.action == .incrementalVacuum, result.reusableFreeBytes > 0 { remaining = true }
         if result.action == .deferredInsufficientSpace {
           remaining = true
@@ -212,7 +216,6 @@ struct StorageCompactCommandRunner {
     let cli = CLIWorkflowSessionStore(rootDirectory: root)
     let lock = SessionExecutionLockRegistry(sessionStoreRoot: root)
     let legacy = try runtime.legacyInlineSessionIds(limit: 10_000)
-    if legacy.count >= options.maxBatch { state.workRemaining = true }
     var handled = 0
     for id in legacy {
       guard handled < options.maxBatch else { state.workRemaining = true; break }
@@ -223,14 +226,13 @@ struct StorageCompactCommandRunner {
         state.skipped.append("session \(id): \(error)")
         continue
       }
-      handled += 1
       do {
         if try runtime.convertLegacySession(sessionId: id) { state.counts.sessions += 1 }
+        handled += 1
         lock.release(sessionId: id)
       } catch { lock.release(sessionId: id); state.workRemaining = true; state.skipped.append("session \(id): \(error)") }
     }
     let cliIds = try cli.legacyFullRecordIds(limit: 10_000)
-    if cliIds.count >= options.maxBatch { state.workRemaining = true }
     handled = 0
     for id in cliIds {
       guard handled < options.maxBatch else { state.workRemaining = true; break }
@@ -241,20 +243,19 @@ struct StorageCompactCommandRunner {
         state.skipped.append("session \(id): \(error)")
         continue
       }
-      handled += 1
       do {
         if try cli.convertLegacyRecord(sessionId: id) { state.counts.cliRecords += 1 }
+        handled += 1
         lock.release(sessionId: id)
       } catch { lock.release(sessionId: id); state.workRemaining = true; state.skipped.append("session \(id): \(error)") }
     }
     let nested = try runtime.legacyEmbeddedNestedInvocationKeys(limit: 10_000)
-    if nested.count >= options.maxBatch { state.workRemaining = true }
     handled = 0
     for key in nested {
       guard handled < options.maxBatch else { state.workRemaining = true; break }
-      handled += 1
       do {
         if try runtime.convertLegacyNestedInvocation(invocationKey: key) { state.counts.nestedInvocations += 1 }
+        handled += 1
       } catch { state.workRemaining = true; state.skipped.append("nested invocation \(key): \(error)") }
     }
     state.reconciled = try SessionAbandonedInvocationReconciler(registry: lock).run(sessionStoreRoot: root,

@@ -21,7 +21,7 @@ struct SessionAbandonedInvocationReconciler {
     guard abandonedAfter >= 0 else { return [] }
     let databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: sessionStoreRoot)
     guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let db = try SQLiteDatabase.open(path: databasePath, mode: apply ? .readWriteCreate : .strictReadOnly,
+    let db = try SQLiteDatabase.open(path: databasePath, mode: apply ? .readWriteCreate : .strictReadOnlyWithImmutableFallback,
       options: apply ? .writableRuntimeStoreDefault : .readOnlyDefault)
     guard try db.tableExists("workflow_nested_invocations"), try db.tableColumnNames("workflow_nested_invocations").contains("abandoned_at") else {
       return []
@@ -55,20 +55,22 @@ struct SessionAbandonedInvocationReconciler {
                          apply: Bool, parentActivityOverride: Date?) -> SessionNestedInvocationVerdict {
     let ids = Set([parent, child].compactMap { $0 }).sorted()
     var acquired: [String] = []
-    do {
-      for id in ids { try registry.acquire(sessionId: id, allowMessagesRetired: true); acquired.append(id) }
-    } catch SessionExecutionLockError.alreadyRunning {
-      for id in acquired { registry.release(sessionId: id) }
-      return verdict(key, parent, child, "live")
-    } catch {
-      for id in acquired { registry.release(sessionId: id) }
-      return verdict(key, parent, child, "skipped", reason: String(describing: error))
+    if apply {
+      do {
+        for id in ids { try registry.acquire(sessionId: id, allowMessagesRetired: true); acquired.append(id) }
+      } catch SessionExecutionLockError.alreadyRunning {
+        for id in acquired { registry.release(sessionId: id) }
+        return verdict(key, parent, child, "live")
+      } catch {
+        for id in acquired { registry.release(sessionId: id) }
+        return verdict(key, parent, child, "skipped", reason: String(describing: error))
+      }
     }
     defer { for id in acquired { registry.release(sessionId: id) } }
     do {
       let cutoff = now().addingTimeInterval(-abandonedAfter)
       let parentStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
-      guard let parentSnapshot = try? parentStore.load(sessionId: parent),
+      guard let parentSnapshot = try? loadSnapshot(parentStore, sessionId: parent, apply: apply),
             [.completed, .failed, .cancelled].contains(parentSnapshot.session.status)
               || (parentActivityOverride != nil && parentSnapshot.session.status == .running) else {
         return verdict(key, parent, child, "skipped", reason: "parent is absent or nonterminal")
@@ -80,7 +82,7 @@ struct SessionAbandonedInvocationReconciler {
       var childSnapshot: WorkflowRuntimePersistenceSnapshot?
       if let child {
         do {
-          childSnapshot = try parentStore.load(sessionId: child)
+          childSnapshot = try loadSnapshot(parentStore, sessionId: child, apply: apply)
         } catch WorkflowRuntimePersistenceStoreError.notFound {
           childSnapshot = nil
         }
@@ -135,6 +137,11 @@ struct SessionAbandonedInvocationReconciler {
     } catch {
       return verdict(key, parent, child, "skipped", reason: String(describing: error))
     }
+  }
+
+  private func loadSnapshot(_ store: SQLiteWorkflowRuntimePersistenceStore, sessionId: String,
+                            apply: Bool) throws -> WorkflowRuntimePersistenceSnapshot {
+    apply ? try store.load(sessionId: sessionId) : try store.loadStrictReadOnly(sessionId: sessionId)
   }
 
   private func verdict(_ key: String, _ parent: String?, _ child: String?, _ value: String,

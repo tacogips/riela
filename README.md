@@ -744,7 +744,8 @@ one config file, their values must match. With
 `"definitions": { "keepVersions": 20 }`, a GC pass keeps the newest 20
 versions of every registered workflow plus the current version, the last file
 import, recent former heads and versions pinned by created, running or
-suspended sessions. It writes one `prune` audit record per workflow that lost
+suspended sessions. A value of `0` keeps all generations during both writes
+and GC. It writes one `prune` audit record per workflow that lost
 history. See
 [`docs/workflow-definition-store.md`](docs/workflow-definition-store.md#history-retention)
 for the manual `prune` and `purge-history` commands.

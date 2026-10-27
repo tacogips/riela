@@ -15,6 +15,7 @@ struct ParsedStorageCommandArguments: ParsableArguments {
   @Option var top = 10
   @Option var output = "text"
   @Flag var apply = false
+  @Flag(name: .long) var allowLiveVacuum = false
   @Option var maxBatch = 500
   @Option var abandonedAfterHours = 24
   @Option var resultsMaxAgeDays: Int?
@@ -23,7 +24,7 @@ struct ParsedStorageCommandArguments: ParsableArguments {
   @Option var messagesMaxTotalBytes: Int64?
 
   func validate(doctor: Bool, tokens: [String]) throws {
-    let compactFlags = ["--apply", "--max-batch", "--abandoned-after-hours", "--results-max-age-days",
+    let compactFlags = ["--apply", "--allow-live-vacuum", "--max-batch", "--abandoned-after-hours", "--results-max-age-days",
       "--results-max-total-bytes", "--messages-max-age-days", "--messages-max-total-bytes"]
     if doctor, tokens.contains(where: { token in compactFlags.contains { token == $0 || token.hasPrefix($0 + "=") } }) {
       throw CLIUsageError("compact-only option used with doctor storage")

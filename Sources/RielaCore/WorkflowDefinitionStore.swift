@@ -470,10 +470,14 @@ public struct WorkflowDefinitionStore: Sendable {
         WHERE retained_version.version_id = audit.version_id) AS retained FROM definition_change_audit AS audit
       JOIN definition_change_audit AS origin
         ON origin.workflow_name = audit.workflow_name AND origin.version_id = ?
+          AND origin.operation NOT IN (?, ?)
       WHERE audit.workflow_name = ? AND audit.created_order > origin.created_order
+        AND audit.operation NOT IN (?, ?)
       ORDER BY audit.created_order ASC
       """,
-      bindings: [.text(afterVersionId), .text(workflowName)]
+      bindings: [.text(afterVersionId), .text(WorkflowDefinitionOperation.prune.rawValue),
+        .text(WorkflowDefinitionOperation.purgeHistory.rawValue), .text(workflowName),
+        .text(WorkflowDefinitionOperation.prune.rawValue), .text(WorkflowDefinitionOperation.purgeHistory.rawValue)]
     )
     return try rows.map(mapAudit)
   }
@@ -513,7 +517,7 @@ public struct WorkflowDefinitionStore: Sendable {
       let previousDocument: Data? = nil
       var pins = try WorkflowDefinitionHistorySchema.protectedHistoryVersions(in: transaction, workflowName: write.workflowName,
         currentVersionId: previousHead?.currentVersionId ?? "", lastFileVersionId: previousHead?.lastFileVersionId ?? "",
-        cutoff: canonicalDate(now.addingTimeInterval(-24 * 60 * 60)))
+        cutoff: canonicalDate(now.addingTimeInterval(-24 * 60 * 60)), now: timestamp)
       let state = try transaction.query("SELECT value FROM definition_store_state WHERE key = 'retention'").first?["value"]
       if state == "pendingBackfill" {
         let existingVersions = try transaction.query("SELECT version FROM definition_history_versions WHERE key = ?",
@@ -780,9 +784,10 @@ public struct WorkflowDefinitionStore: Sendable {
       let name = row.string("workflow_name")
       try releaseStalePins(workflowName: name, in: database)
       guard let currentId = row["current_version_id"] else { continue }
+      let currentTime = now()
       let pins = try WorkflowDefinitionHistorySchema.protectedHistoryVersions(in: database, workflowName: name,
         currentVersionId: currentId, lastFileVersionId: row.string("last_file_version_id"),
-        cutoff: canonicalDate(now().addingTimeInterval(-24 * 60 * 60)))
+        cutoff: canonicalDate(currentTime.addingTimeInterval(-24 * 60 * 60)), now: canonicalDate(currentTime))
       let saved = try database.query("SELECT retained_generations FROM definition_history_heads WHERE key = ?", bindings: [.text(name)])
         .first?["retained_generations"].flatMap(Int.init)
       let result = try history(in: database).applyRetention(key: name, currentHeadValue: nil,

@@ -2,6 +2,11 @@ import Foundation
 import XCTest
 import RielaSQLite
 @testable import RielaCLI
+#if os(Linux)
+import Glibc
+#else
+import Darwin
+#endif
 
 final class RetentionReclamationTests: XCTestCase {
   func testFreshRuntimeStoreStartsInIncrementalAutoVacuumMode() throws {
@@ -65,6 +70,37 @@ final class RetentionReclamationTests: XCTestCase {
     let lock = SessionExecutionLockRegistry(sessionStoreRoot: fixture.root.path)
     try lock.acquire(sessionId: "live-session")
     defer { lock.release(sessionId: "live-session") }
+
+    let result = RetentionSQLiteReclaimer(freeSpace: { _ in Int64.max }).reclaim(
+      databasePath: fixture.databasePath, mode: .manual)
+
+    XCTAssertEqual(result.action, .deferredLiveSessions)
+  }
+
+  func testManualFullVacuumCanBeExplicitlyAllowedWithLiveSessionLock() throws {
+    let fixture = try makeDatabase(incremental: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lock = SessionExecutionLockRegistry(sessionStoreRoot: fixture.root.path)
+    try lock.acquire(sessionId: "live-session")
+    defer { lock.release(sessionId: "live-session") }
+
+    let result = RetentionSQLiteReclaimer(freeSpace: { _ in Int64.max }).reclaim(
+      databasePath: fixture.databasePath, mode: .manual, allowLiveSessions: true)
+
+    XCTAssertEqual(result.action, .converted)
+  }
+
+  func testManualFullVacuumLockProbeDoesNotAcquireExclusiveLock() throws {
+    let fixture = try makeDatabase(incremental: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lockPath = URL(fileURLWithPath: fixture.root.path).appendingPathComponent("execution-locks/live.lock")
+    try FileManager.default.createDirectory(at: lockPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: lockPath.path, contents: Data())
+    let descriptor = open(lockPath.path, O_RDWR | O_CLOEXEC)
+    XCTAssertGreaterThanOrEqual(descriptor, 0)
+    defer { close(descriptor) }
+    XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+    defer { _ = flock(descriptor, LOCK_UN) }
 
     let result = RetentionSQLiteReclaimer(freeSpace: { _ in Int64.max }).reclaim(
       databasePath: fixture.databasePath, mode: .manual)

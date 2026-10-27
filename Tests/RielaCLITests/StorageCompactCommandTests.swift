@@ -179,6 +179,99 @@ final class StorageCompactCommandTests: XCTestCase {
     XCTAssertEqual(result.exitCode, .usage)
   }
 
+  func testExactlyMaxBatchDoesNotReportRemainingWork() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+    let database = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: runtime.rootDirectory))
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    for index in 0..<16 {
+      let session = WorkflowSession(workflowId: "workflow", sessionId: "legacy-\(index)", entryStepId: "start",
+        createdAt: Date(timeIntervalSince1970: 1_600_000_000), updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
+      try runtime.save(WorkflowRuntimePersistenceSnapshot(session: session))
+      var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(session)) as? [String: Any])
+      legacy["executions"] = []
+      let json = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: legacy), encoding: .utf8))
+      try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
+        bindings: [.text(json), .text(session.sessionId)])
+    }
+
+    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--max-batch", "16",
+      "--session-store", root.path, "--output", "json"])
+
+    XCTAssertEqual(report["workRemaining"] as? Bool, false)
+    let stores = try XCTUnwrap(report["stores"] as? [[String: Any]])
+    XCTAssertEqual((stores.first?["converted"] as? [String: Int])?["sessions"], 16)
+  }
+
+  func testFailingLegacySessionDoesNotConsumeBatchSlot() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+    let bad = WorkflowSession(workflowId: "workflow", sessionId: "a-bad", entryStepId: "start",
+      createdAt: Date(timeIntervalSince1970: 1_600_000_000), updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
+    let good = WorkflowSession(workflowId: "workflow", sessionId: "b-good", entryStepId: "start",
+      createdAt: Date(timeIntervalSince1970: 1_600_000_000), updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
+    try runtime.save(WorkflowRuntimePersistenceSnapshot(session: bad))
+    try runtime.save(WorkflowRuntimePersistenceSnapshot(session: good))
+    let database = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: runtime.rootDirectory))
+    let badEncoder = JSONEncoder()
+    badEncoder.dateEncodingStrategy = .iso8601
+    var invalidSession = try XCTUnwrap(JSONSerialization.jsonObject(with: badEncoder.encode(bad)) as? [String: Any])
+    invalidSession.removeValue(forKey: "entryStepId")
+    invalidSession["executions"] = []
+    let invalidJSON = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: invalidSession), encoding: .utf8))
+    try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id='a-bad'",
+      bindings: [.text(invalidJSON)])
+    var legacyGood = try XCTUnwrap(JSONSerialization.jsonObject(with: badEncoder.encode(good)) as? [String: Any])
+    legacyGood["executions"] = []
+    let legacyGoodJSON = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: legacyGood), encoding: .utf8))
+    try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id='b-good'",
+      bindings: [.text(legacyGoodJSON)])
+
+    let result = StorageCompactCommandRunner().run(["compact", "--apply", "--max-batch", "1",
+      "--session-store", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .failure)
+    let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    XCTAssertEqual(report["workRemaining"] as? Bool, true)
+    XCTAssertTrue((report["skipped"] as? [String] ?? []).contains { $0.contains("a-bad") })
+    let stores = try XCTUnwrap(report["stores"] as? [[String: Any]])
+    XCTAssertEqual((stores.first?["converted"] as? [String: Int])?["sessions"], 1)
+    XCTAssertEqual(try runtime.load(sessionId: good.sessionId).session.sessionId, good.sessionId)
+  }
+
+  func testCheckpointPendingAddsWarningAndFailsApply() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    let setup = try SQLiteDatabase.open(path: databasePath)
+    _ = try setup.query("PRAGMA journal_mode=WAL")
+    _ = try setup.query("PRAGMA auto_vacuum=INCREMENTAL")
+    try setup.execute("VACUUM")
+    try setup.execute("CREATE TABLE checkpoint_fixture(value TEXT)")
+    let reader = try SQLiteDatabase.open(path: databasePath)
+    let writer = try SQLiteDatabase.open(path: databasePath)
+    let reclaimer = RetentionSQLiteReclaimer(statementObserver: { sql in
+      guard sql == "PRAGMA wal_checkpoint(PASSIVE)" else { return }
+      try? reader.execute("BEGIN")
+      _ = try? reader.query("SELECT * FROM checkpoint_fixture")
+      try? writer.execute("INSERT INTO checkpoint_fixture VALUES ('pending frame')")
+    })
+    defer { try? reader.execute("ROLLBACK") }
+
+    let result = StorageCompactCommandRunner(reclaimer: reclaimer)
+      .run(["compact", "--apply", "--session-store", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .failure)
+    let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    XCTAssertTrue((report["warnings"] as? [String] ?? []).contains { $0.contains("WAL checkpoint is pending") })
+  }
+
   func testLegacyCLIListingCapsAtParserMaximum() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -331,7 +424,7 @@ final class StorageCompactCommandTests: XCTestCase {
     let arguments = ["compact", "--apply", "--max-batch", "1", "--session-store", sessionRoot, "--output", "json"]
 
     let first = try run(StorageCompactCommandRunner(), arguments)
-    XCTAssertEqual(first["workRemaining"] as? Bool, true)
+    XCTAssertEqual(first["workRemaining"] as? Bool, false)
     let firstStore = try XCTUnwrap((first["stores"] as? [[String: Any]])?.first)
     let converted = try XCTUnwrap(firstStore["converted"] as? [String: Int])
     XCTAssertEqual(converted["sessions"], 1)

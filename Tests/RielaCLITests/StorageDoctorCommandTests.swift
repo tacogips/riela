@@ -34,6 +34,110 @@ final class StorageDoctorCommandTests: XCTestCase {
     XCTAssertEqual(beforeDate, afterDate)
   }
 
+  func testDoctorListsWALSessionStoreWithoutSidecarFiles() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    let session = WorkflowSession(workflowId: "wal", sessionId: "wal-session", status: .completed,
+      entryStepId: "start", createdAt: Date(timeIntervalSince1970: 1_600_000_000),
+      updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+      .save(WorkflowRuntimePersistenceSnapshot(session: session))
+    do {
+      let database = try SQLiteDatabase.open(path: databasePath)
+      _ = try database.query("PRAGMA journal_mode=WAL")
+    }
+    try? FileManager.default.removeItem(atPath: databasePath + "-wal")
+    try? FileManager.default.removeItem(atPath: databasePath + "-shm")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: databasePath + "-wal"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: databasePath + "-shm"))
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let files = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    XCTAssertTrue(files.contains { $0["kind"] as? String == "session" })
+  }
+
+  func testDoctorReadOnlyReconciliationLeavesTreeAndLocksUntouched() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now = Date(timeIntervalSince1970: 1_600_000_000)
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+    let parent = WorkflowSession(workflowId: "workflow", sessionId: "parent-zz", status: .completed,
+      entryStepId: "start", createdAt: now, updatedAt: now)
+    try runtime.save(WorkflowRuntimePersistenceSnapshot(session: parent))
+    let child = WorkflowSession(workflowId: "child", sessionId: "child-zz", status: .created,
+      entryStepId: "start", createdAt: now, updatedAt: now, parentSessionId: parent.sessionId,
+      rootSessionId: parent.sessionId)
+    _ = try runtime.reserveNestedInvocation(WorkflowNestedInvocationReservation(parentSessionId: parent.sessionId,
+      parentStepId: "step", resumeStepId: "resume", sourceStepExecutionId: "execution", branchId: "branch",
+      childSnapshot: WorkflowRuntimePersistenceSnapshot(session: child)))
+    let databasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: runtime.rootDirectory)
+    try? FileManager.default.removeItem(atPath: databasePath + "-wal")
+    try? FileManager.default.removeItem(atPath: databasePath + "-shm")
+    let before = try treeSnapshot(root)
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    XCTAssertEqual(try treeSnapshot(root), before)
+    let lockRoot = URL(fileURLWithPath: runtime.rootDirectory).appendingPathComponent("execution-locks")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: lockRoot.appendingPathComponent("child-zz.lock").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: lockRoot.appendingPathComponent("parent-zz.lock").path))
+  }
+
+  func testDoctorCountsOnlyMemorySpecificUnreferencedFilesUsingLegacyReferences() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let sources = root.appendingPathComponent("sources", isDirectory: true)
+    try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let alphaSource = sources.appendingPathComponent("alpha.bin")
+    let betaSource = sources.appendingPathComponent("beta.bin")
+    try Data(repeating: 1, count: 1_000).write(to: alphaSource)
+    try Data(repeating: 2, count: 2_000).write(to: betaSource)
+    let alpha = try RielaMemoryStore(rootDirectory: root.path).save(memoryId: "alpha", workflowId: "flow",
+      files: [MemoryFileReference(path: alphaSource.path, mediaType: "application/octet-stream", kind: "file")],
+      payload: .string("alpha"))
+    _ = try RielaMemoryStore(rootDirectory: root.path).save(memoryId: "beta", workflowId: "flow",
+      files: [MemoryFileReference(path: betaSource.path, mediaType: "application/octet-stream", kind: "file")],
+      payload: .string("beta"))
+    for memoryId in ["alpha", "beta"] {
+      let memoryStore = RielaMemoryStore(rootDirectory: root.path)
+      let database = try SQLiteDatabase.open(path: memoryStore.databasePath(memoryId: memoryId))
+      try database.execute("DELETE FROM memory_history_heads")
+    }
+    let orphan = root.appendingPathComponent("files/alpha/\(alpha.recordId)/orphan.bin")
+    try Data(repeating: 3, count: 3_000).write(to: orphan)
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+      "--memory-root", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let files = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    let memories = Dictionary(uniqueKeysWithValues: files.compactMap { file -> (String, Int)? in
+      guard file["kind"] as? String == "memory", let path = file["path"] as? String,
+            let info = file["memory"] as? [String: Any],
+            let size = info["unreferencedAttachmentBytes"] as? Int else { return nil }
+      return (URL(fileURLWithPath: path).lastPathComponent, size)
+    })
+    XCTAssertEqual(memories["alpha.sqlite"], 3_000)
+    XCTAssertEqual(memories["beta.sqlite"], 0)
+  }
+
+  private func treeSnapshot(_ root: URL) throws -> [String: String] {
+    let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+    var result: [String: String] = [:]
+    while let url = enumerator?.nextObject() as? URL {
+      let key = String(url.path.dropFirst(root.path.count))
+      let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+      result[key] = values.isDirectory == true ? "directory" : SHA256.hash(data: try Data(contentsOf: url)).description
+    }
+    return result
+  }
+
   func testTextOutputHasOneBlockForEachDatabaseFile() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -50,7 +154,7 @@ final class StorageDoctorCommandTests: XCTestCase {
   func testStorageParserHelpListsContractFlags() throws {
     let help = ParsedStorageCommandArguments.helpMessage()
     for flag in ["--scope", "--working-dir", "--session-store", "--memory-root", "--cache-root", "--kv-root",
-      "--top", "--output", "--apply", "--max-batch", "--abandoned-after-hours", "--results-max-age-days",
+      "--top", "--output", "--apply", "--allow-live-vacuum", "--max-batch", "--abandoned-after-hours", "--results-max-age-days",
       "--results-max-total-bytes", "--messages-max-age-days", "--messages-max-total-bytes"] {
       XCTAssertTrue(help.contains(flag), "missing \(flag)")
     }

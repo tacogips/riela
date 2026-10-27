@@ -267,8 +267,8 @@ private func parseDefinitions(_ raw: Any?, path: String) throws -> RielaDefiniti
   }
   try validateKeys(object, allowed: ["keepVersions"], path: path)
   let keepVersions = try integer(object["keepVersions"], path: "\(path).keepVersions")
-  guard keepVersions.map({ (1...10_000).contains($0) }) ?? true else {
-    throw RielaRetentionConfigurationError.invalid(path: "\(path).keepVersions", reason: "must be between 1 and 10000")
+  guard keepVersions.map({ (0...10_000).contains($0) }) ?? true else {
+    throw RielaRetentionConfigurationError.invalid(path: "\(path).keepVersions", reason: "must be between 0 and 10000")
   }
   return RielaDefinitionRetention(keepVersions: keepVersions)
 }

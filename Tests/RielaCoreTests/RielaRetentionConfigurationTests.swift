@@ -35,6 +35,24 @@ final class RielaRetentionConfigurationTests: XCTestCase {
     }
   }
 
+  func testDefinitionRetentionAliasAllowsZeroAsKeepAll() throws {
+    let home = try makeRoot(configuration: #"{"workflowDefinitions":{"historyRetention":0},"retention":{"definitions":{"keepVersions":0}}}"#)
+    defer { try? FileManager.default.removeItem(at: home) }
+    XCTAssertEqual(try XCTUnwrap(load(home: home).userPolicy).definitions.keepVersions, 0)
+  }
+
+  func testRetentionConfigurationParsesDefinitionKeepVersions() throws {
+    let home = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let configured = try load(home: home, environment: [
+      "RIELA_RETENTION": #"{"definitions":{"keepVersions":20}}"#
+    ])
+    XCTAssertEqual(configured.userPolicy?.definitions.keepVersions, 20)
+    let zero = try load(home: home, environment: ["RIELA_RETENTION": #"{"definitions":{"keepVersions":0}}"#])
+    XCTAssertEqual(zero.userPolicy?.definitions.keepVersions, 0)
+    XCTAssertThrowsError(try load(home: home, environment: ["RIELA_RETENTION": #"{"definitions":{"other":3}}"#]))
+  }
+
   func testKeepForeverExampleAndDecimalByteLimit() throws {
     let home = try makeRoot(configuration: #"{"retention":{"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"maxAgeDays":14,"maxTotalBytes":"1GB"}}}"#)
     defer { try? FileManager.default.removeItem(at: home) }

@@ -291,11 +291,17 @@ struct StorageDoctorCommandRunner {
 
   private func unreferencedAttachmentBytes(_ db: SQLiteDatabase, databasePath: String) throws -> Int64 {
     let root = URL(fileURLWithPath: databasePath).deletingLastPathComponent()
-    let candidates = [root.appendingPathComponent("files", isDirectory: true)]
+    let memoryId = URL(fileURLWithPath: databasePath).deletingPathExtension().lastPathComponent
+    let candidates = [root.appendingPathComponent("files", isDirectory: true)
+      .appendingPathComponent(memoryId, isDirectory: true)]
       .filter { FileManager.default.fileExists(atPath: $0.path) }
     guard !candidates.isEmpty else { return 0 }
     var references = Set(try db.tableExists("memory_evolution_attachments")
       ? db.query("SELECT path FROM memory_evolution_attachments").compactMap { $0["path"] }.map(normalizedFilePath) : [])
+    if try db.tableExists("memory_files") {
+      references.formUnion(try db.query("SELECT path FROM memory_files")
+        .compactMap { $0["path"] }.map(normalizedFilePath))
+    }
     for table in ["memory_entries", "memory_history_heads"] where try db.tableExists(table) {
       let jsonColumn = table == "memory_entries" ? "payload_json" : "record_json"
       guard try db.tableColumnNames(table).contains(jsonColumn) else { continue }

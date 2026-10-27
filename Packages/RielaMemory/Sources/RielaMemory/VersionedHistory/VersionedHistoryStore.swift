@@ -130,12 +130,16 @@ public struct VersionedHistoryStore {
       }
   }
 
-  public func applyRetention(key: String, currentHeadValue: Data?, retainedGenerations: Int, pins: Set<Int64>) throws -> (dropped: [Int64], freedBytes: Int64) {
+  public func applyRetention(key: String, currentHeadValue: Data?, retainedGenerations: Int, pins: Set<Int64>,
+                             persistRetention: Bool = true) throws -> (dropped: [Int64], freedBytes: Int64) {
     guard retainedGenerations >= 0 else { throw VersionedHistoryError.invalidRetention(retainedGenerations) }
     guard let head = try head(key: key) else { return ([], 0) }
     let bytes = try headValue(key: key, head: head, supplied: currentHeadValue)
     let result = try applyRetentionInternal(key: key, headVersion: head.headVersion, headValue: bytes, retainedGenerations: retainedGenerations, pins: pins)
-    try sql.execute("UPDATE \(heads) SET retained_generations = ?, updated_at = ? WHERE key = ?", [.int(Int64(retainedGenerations)), .text(timestamp()), .text(key)])
+    if persistRetention {
+      try sql.execute("UPDATE \(heads) SET retained_generations = ?, updated_at = ? WHERE key = ?",
+        [.int(Int64(retainedGenerations)), .text(timestamp()), .text(key)])
+    }
     return result
   }
 

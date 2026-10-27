@@ -55,6 +55,38 @@ private struct VersionedHistoryAdapter: VersionedHistoryAdapterProtocol {
 final class VersionedHistoryConformanceTests: XCTestCase {
   private final class Clock: @unchecked Sendable { var now: Date; init(_ now: Date) { self.now = now } }
 
+  func testExactRetentionDropsRedoBranchReconstructsSurvivorsAndPreservesSetting() throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/efficient-history/exact-retention-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, defaultHistoryRetention: 20)
+    var ids: [String] = []
+    for value in 1...4 {
+      let bytes = Data("{\"value\":\(value)}".utf8)
+      guard case let .created(version, _) = try store.commit(WorkflowDefinitionWrite(
+        workflowName: "exact-retention", operation: value == 1 ? .import : .update, documentData: bytes,
+        documentDigest: JSONCanonical.sha256Hex(bytes), sourceDirectory: "/exact-retention", sourceScope: "project",
+        provenance: "test", actor: WorkflowDefinitionActor(kind: .user), reason: "version \(value)",
+        expectedCurrentVersionId: ids.last, historyRetention: 20, defaultHistoryRetention: 20
+      )) else { return XCTFail("expected a new definition version") }
+      ids.append(version.versionId)
+    }
+    _ = try store.moveHead(workflowName: "exact-retention", direction: .undo, reason: "create redo branch",
+      expectedRevision: 4, expectedVersionId: ids[3], evidence: [], actorKind: "user", actorId: nil)
+    let db = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path))
+    let beforeRetention = try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='exact-retention'")
+      .first?["retained_generations"]
+    let result = try store.history(in: db).retainVersions(key: "exact-retention", currentHeadValue: nil,
+      versions: [1, 3])
+    XCTAssertEqual(result.dropped, [2, 4])
+    XCTAssertEqual(try store.history(in: db).versions(key: "exact-retention", limit: 10, beforeVersion: nil).map(\.version), [3, 1])
+    XCTAssertEqual(try store.history(in: db).value(key: "exact-retention", version: 1, currentHeadValue: nil), Data("{\"value\":1}".utf8))
+    XCTAssertEqual(try store.history(in: db).value(key: "exact-retention", version: 3, currentHeadValue: nil), Data("{\"value\":3}".utf8))
+    XCTAssertEqual(try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='exact-retention'")
+      .first?["retained_generations"], beforeRetention)
+  }
+
   func testMemoryAndDefinitionStoresConformForDiffUndoRedoRetentionAndBranching() throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       .appendingPathComponent("tmp/efficient-history/conformance-\(UUID().uuidString)", isDirectory: true)

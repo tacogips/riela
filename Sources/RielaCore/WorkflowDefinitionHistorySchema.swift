@@ -203,6 +203,7 @@ enum WorkflowDefinitionHistorySchema {
         DELETE FROM definition_change_audit WHERE workflow_name = ?
           AND version_id NOT IN (SELECT version_id FROM definition_versions)
           AND (previous_version_id IS NULL OR previous_version_id NOT IN (SELECT version_id FROM definition_versions))
+          AND operation NOT IN ('prune', 'purgeHistory')
         """, bindings: [.text(workflowName)])
     }
   }
@@ -213,7 +214,7 @@ enum WorkflowDefinitionHistorySchema {
   }
 
   static func protectedHistoryVersions(in db: SQLiteDatabase, workflowName: String, currentVersionId: String,
-                                       lastFileVersionId: String, cutoff: String) throws -> Set<Int64> {
+                                       lastFileVersionId: String, cutoff: String, now: String) throws -> Set<Int64> {
     let ids = try db.query("SELECT history_version FROM definition_versions WHERE workflow_name = ? AND version_id IN (?, ?)",
       bindings: [.text(workflowName), .text(currentVersionId), .text(lastFileVersionId)])
     var versions = Set(ids.compactMap { $0["history_version"].flatMap(Int64.init) })
@@ -223,7 +224,13 @@ enum WorkflowDefinitionHistorySchema {
       SELECT DISTINCT version.history_version FROM definition_change_audit audit
       JOIN definition_versions version ON version.version_id = audit.previous_version_id
       WHERE audit.workflow_name = ? AND audit.created_at > ?
-      """, bindings: [.text(workflowName), .text(cutoff)])
+      UNION
+      SELECT DISTINCT version.history_version FROM definition_change_audit audit
+      JOIN json_each(audit.diff_json) entry
+      JOIN definition_versions version ON version.version_id = json_extract(entry.value, '$.after.versionId')
+      WHERE audit.workflow_name = ? AND json_extract(entry.value, '$.path') LIKE '/retention/protected/%'
+        AND json_extract(entry.value, '$.after.until') > ?
+      """, bindings: [.text(workflowName), .text(cutoff), .text(workflowName), .text(now)])
     versions.formUnion(recent.compactMap { $0["history_version"].flatMap(Int64.init) })
     return versions
   }
@@ -270,11 +277,15 @@ enum WorkflowDefinitionHistorySchema {
 
   private static func backfillCLIPins(in db: SQLiteDatabase, batchSize: Int) throws {
     guard try db.tableExists("cli_workflow_sessions") else { return }
+    let columns = Set(try db.query("PRAGMA table_info(cli_workflow_sessions)").map { $0.string("name") })
+    let createdAtExpression = columns.contains("updated_at")
+      ? "coalesce(json_extract(record_json,'$.session.createdAt'),updated_at)"
+      : "coalesce(json_extract(record_json,'$.session.createdAt'),'')"
     var cursor: Int64 = 0
     while true {
       let records = try db.query("""
         SELECT rowid, session_id,
-          coalesce(json_extract(record_json,'$.session.createdAt'),updated_at) AS created_at,
+          \(createdAtExpression) AS created_at,
           json_extract(record_json,'$.session.definitionSource.kind') AS kind,
           json_extract(record_json,'$.session.definitionSource.workflowName') AS workflow_name,
           json_extract(record_json,'$.session.definitionSource.versionId') AS version_id,
@@ -309,9 +320,11 @@ enum WorkflowDefinitionHistorySchema {
       let name = row.string("workflow_name")
       guard let number = try versionNumber(row.string("current_version_id"), in: db) else { continue }
       _ = try history.value(key: name, version: Int64(number), currentHeadValue: nil)
-      let cutoff = canonicalDate(Date().addingTimeInterval(-24 * 60 * 60))
+      let now = Date()
+      let cutoff = canonicalDate(now.addingTimeInterval(-24 * 60 * 60))
       let pins = try protectedHistoryVersions(in: db, workflowName: name,
-        currentVersionId: row.string("current_version_id"), lastFileVersionId: row.string("last_file_version_id"), cutoff: cutoff)
+        currentVersionId: row.string("current_version_id"), lastFileVersionId: row.string("last_file_version_id"),
+        cutoff: cutoff, now: canonicalDate(now))
       let saved = try db.query("SELECT retained_generations FROM definition_history_heads WHERE key = ?", bindings: [.text(name)])
         .first?["retained_generations"].flatMap(Int.init)
       let dropped = try history.applyRetention(key: name, currentHeadValue: nil,

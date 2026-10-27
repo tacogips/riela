@@ -4,6 +4,144 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowDefinitionRetentionTests: XCTestCase {
+  func testPruneDoesNotPersistRetentionAndNextWriteKeepsDefaultWindow() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var previous: String?
+    for version in 1...12 {
+      previous = try commit(store, version: version, previous: previous,
+        operation: version == 1 ? .import : .update).versionId
+      clock.advance()
+    }
+    let db = try database(root)
+    let unchanged = try store.prune(workflowName: "retention-flow", keepVersions: 20, reason: "no-op", actor: .init(kind: .user))
+    XCTAssertTrue(unchanged.removedVersionIds.isEmpty)
+    XCTAssertNil(try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='retention-flow'")
+      .first?["retained_generations"])
+    let prune = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "temporary prune",
+      actor: .init(kind: .user))
+    XCTAssertGreaterThan(prune.removedVersionIds.count, 0)
+    XCTAssertNil(try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='retention-flow'")
+      .first?["retained_generations"])
+    previous = try commit(store, version: 13, previous: previous).versionId
+    for version in 14...20 {
+      previous = try commit(store, version: version, previous: previous).versionId
+      clock.advance()
+    }
+    XCTAssertEqual(try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='retention-flow'")
+      .first?["retained_generations"], nil)
+    XCTAssertGreaterThanOrEqual(try count("definition_history_versions", db: db), 10)
+  }
+
+  func testNoOpPruneLeavesDefaultRetentionForNextWrite() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var previous: String?
+    for version in 1...12 {
+      previous = try commit(store, version: version, previous: previous,
+        operation: version == 1 ? .import : .update).versionId
+    }
+    let result = try store.prune(workflowName: "retention-flow", keepVersions: 2,
+      reason: "no versions outside the grace window", actor: .init(kind: .user))
+    XCTAssertTrue(result.removedVersionIds.isEmpty)
+    let db = try database(root)
+    XCTAssertNil(try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='retention-flow'")
+      .first?["retained_generations"])
+    _ = try commit(store, version: 13, previous: previous)
+    XCTAssertEqual(try count("definition_history_versions", db: db), 13)
+    XCTAssertNil(try db.query("SELECT retained_generations FROM definition_history_heads WHERE key='retention-flow'")
+      .first?["retained_generations"])
+  }
+
+  func testPruneRejectsInvalidInputAndGuardedDeletesRemainBlocked() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkflowDefinitionStore(rootDirectory: root.path)
+    let first = try commit(store, version: 1, previous: nil, operation: .import)
+    let db = try database(root)
+    XCTAssertThrowsError(try store.prune(workflowName: "retention-flow", keepVersions: 0, reason: "x", actor: .init(kind: .user))) {
+      XCTAssertEqual(($0 as? WorkflowDefinitionStoreError)?.code, .invalidRetention)
+    }
+    XCTAssertThrowsError(try store.prune(workflowName: "retention-flow", keepVersions: 1, reason: " ", actor: .init(kind: .user))) {
+      XCTAssertEqual(($0 as? WorkflowDefinitionStoreError)?.code, .missingReason)
+    }
+    XCTAssertThrowsError(try store.purgeHistory(workflowName: "missing", reason: "x", actor: .init(kind: .user))) {
+      XCTAssertEqual(($0 as? WorkflowDefinitionStoreError)?.code, .headMissing)
+    }
+    let versionCount = try count("definition_versions", db: db)
+    let auditCount = try count("definition_change_audit", db: db)
+    XCTAssertThrowsError(try db.execute("DELETE FROM definition_versions WHERE version_id = ?", bindings: [.text(first.versionId)]))
+    XCTAssertThrowsError(try db.execute("DELETE FROM definition_history_versions WHERE key = 'retention-flow'"))
+    XCTAssertEqual(try count("definition_versions", db: db), versionCount)
+    XCTAssertEqual(try count("definition_change_audit", db: db), auditCount)
+  }
+
+  func testPurgeKeepsOnlyProtectedVersionsAndOneAuditWithoutMovingHead() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var ids: [String] = []
+    for version in 1...4 {
+      ids.append(try commit(store, version: version, previous: ids.last,
+        operation: version == 1 ? .import : .update).versionId)
+      clock.advance()
+    }
+    _ = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "earlier prune", actor: .init(kind: .user))
+    let revision = try XCTUnwrap(store.head(workflowName: "retention-flow")?.revision)
+    let purged = try store.purgeHistory(workflowName: "retention-flow", reason: "start over", actor: .init(kind: .user))
+    XCTAssertEqual(Set(purged.keptVersionIds), Set([ids[0], ids[3]]))
+    XCTAssertEqual(try store.history(workflowName: "retention-flow").map(\.operation), [.purgeHistory])
+    XCTAssertEqual(try store.history(workflowName: "retention-flow").first?.reason, "start over")
+    XCTAssertEqual(try store.head(workflowName: "retention-flow")?.revision, revision)
+    XCTAssertThrowsError(try database(root).execute("DELETE FROM definition_change_audit"))
+  }
+
+  func testOverwrittenChangeLookupIgnoresRetentionRecords() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var ids: [String] = []
+    for version in 1...3 {
+      ids.append(try commit(store, version: version, previous: ids.last,
+        operation: version == 1 ? .import : .update).versionId)
+      clock.advance()
+    }
+    ids.append(try commit(store, version: 4, previous: ids.last, operation: .forceUpdate).versionId)
+    _ = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "trim", actor: .init(kind: .user))
+    clock.advance()
+    ids.append(try commit(store, version: 5, previous: ids.last).versionId)
+    clock.advance()
+    ids.append(try commit(store, version: 6, previous: ids.last).versionId)
+    XCTAssertEqual(try store.auditRecords(workflowName: "retention-flow", afterVersionId: ids[3]).map(\.versionId),
+      [ids[4], ids[5]])
+  }
+
+  func testEarlierPruneAuditSurvivesLaterAutomaticRetention() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var previous: String?
+    for version in 1...12 {
+      previous = try commit(store, version: version, previous: previous,
+        operation: version == 1 ? .import : .update).versionId
+      clock.advance()
+    }
+    let prune = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "keep audit", actor: .init(kind: .user))
+    XCTAssertNotNil(prune.audit)
+    for version in 13...24 {
+      previous = try commit(store, version: version, previous: previous).versionId
+      clock.advance()
+    }
+    XCTAssertTrue(try store.history(workflowName: "retention-flow").contains { $0.operation == .prune })
+  }
+
   func testConfiguredDefaultChangesAndPendingBackfillPreservesExplicitRetention() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -341,6 +479,8 @@ final class WorkflowDefinitionRetentionTests: XCTestCase {
     XCTAssertNil(preview.audit)
     let pruned = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "trim old edits", actor: .init(kind: .user))
     XCTAssertEqual(Set(pruned.removedVersionIds), Set([ids[1]]))
+    XCTAssertGreaterThan(pruned.removedBlobCount, 0)
+    XCTAssertGreaterThan(pruned.removedBlobBytes, 0)
     XCTAssertEqual(Set(pruned.keptVersionIds), Set([ids[0], ids[2], ids[3], ids[4]]))
     XCTAssertEqual(Set(pruned.protectedVersions.map(\.reason)), Set(["current", "lastFileImport", "activeSession"]))
     XCTAssertEqual(pruned.audit?.operation, .prune)
@@ -357,6 +497,24 @@ final class WorkflowDefinitionRetentionTests: XCTestCase {
     XCTAssertEqual(try store.head(workflowName: "retention-flow")?.currentVersionId, ids[3])
     XCTAssertThrowsError(try store.document(versionId: ids[4]))
     XCTAssertEqual(try count("definition_history_versions", db: database(root)), 3)
+    XCTAssertThrowsError(try database(root).execute("DELETE FROM definition_versions WHERE workflow_name='retention-flow'"))
+    XCTAssertThrowsError(try database(root).execute("DELETE FROM definition_history_versions WHERE key='retention-flow'"))
+  }
+
+  func testPurgeAuditPreservesFormerHeadProtectionForNextWrite() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, defaultHistoryRetention: 2)
+    var ids: [String] = []
+    for version in 1...4 {
+      ids.append(try commit(store, version: version, previous: ids.last,
+        operation: version == 1 ? .import : .update, defaultRetention: 2).versionId)
+    }
+    let result = try store.purgeHistory(workflowName: "retention-flow", reason: "preserve grace", actor: .init(kind: .user))
+    XCTAssertEqual(Set(result.keptVersionIds), Set(ids))
+    let next = try commit(store, version: 5, previous: ids.last, defaultRetention: 2)
+    XCTAssertEqual(try store.document(versionId: ids[1]), Data("{\"version\":2}".utf8))
+    XCTAssertNotNil(try store.document(versionId: next.versionId))
   }
 
   private func commit(_ store: WorkflowDefinitionStore, version: Int, previous: String?, operation: WorkflowDefinitionOperation = .update,

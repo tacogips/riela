@@ -720,6 +720,7 @@ Usage:
 
 ```
 riela storage compact [same root flags] [--apply] [--max-batch <n>] [--abandoned-after-hours <h>]
+                      [--allow-live-vacuum]
                       [--results-max-age-days N] [--results-max-total-bytes SIZE]
                       [--messages-max-age-days N] [--messages-max-total-bytes SIZE] [--output text|json]
 ```
@@ -743,6 +744,11 @@ the estimated bytes. With `--apply` it runs these steps per store, in order:
    `notConfigured` and deletes nothing.
 4. **Vacuum.** The manual reclaimer, conversion included.
 
+Full `VACUUM` is deferred while a session execution lock is held. Operators
+may explicitly pass `--allow-live-vacuum` to override that safeguard when they
+have independently stopped or coordinated all writers. The flag affects only
+full conversion; incremental vacuum remains bounded and unchanged.
+
 The work is resumable:
 
 - A partial run leaves mixed old and new rows, and both stay readable.
@@ -754,6 +760,11 @@ stop writers, checkpoint and close the source, then replace the database and
 remove stale `-wal`/`-shm` files before reopening it. A cross-volume rename is
 not atomic, and this CLI does not expose a store-wide lock; the command must
 not describe that sequence as an atomic replacement under a lock.
+
+For lock probing, the reclaimer checks existing lock files without creating
+them and uses a non-blocking shared flock probe. This avoids briefly claiming
+an idle session lock exclusively; `--allow-live-vacuum` is the explicit
+operator override for deployments that cannot reach a no-live-session window.
 
 The report is `{dryRun, stores: [{path, converted: {...counts, bytes},
 reconciled, prune: <gc target report>, reclamation: [...]}], workRemaining,

@@ -31,7 +31,7 @@ final class MemoryHistoryRetirementCommandTests: XCTestCase {
     let old = try run(["memory", "show-version", "m", "--record-id", "\(head.recordId)",
       "--memory-root", root.path, "--version", "1", "--output", "json"])
     XCTAssertNotEqual(old.exitCode, .success)
-    XCTAssertTrue(old.stdout.contains("retiredVersion"))
+    XCTAssertTrue(old.stdout.contains("version_not_retained"))
     XCTAssertFalse(apply.stdout.contains("old body"))
     XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 2), head)
   }

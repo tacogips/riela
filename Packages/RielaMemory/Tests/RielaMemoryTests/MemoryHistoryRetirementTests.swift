@@ -64,6 +64,14 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 96), head)
   }
 
+  func testUndoConvertsLegacyHistoryOnFirstTouch() throws {
+    let (store, head) = try fixture()
+    let moved = try store.undoRecord(memoryId: "m", recordId: head.recordId, expectedHeadVersion: 2)
+    XCTAssertEqual(moved.record.payload, .object(["body": .string(String(repeating: "OLD_BODY_SECRET_", count: 10000))]))
+    XCTAssertEqual(moved.headVersion, 1)
+    XCTAssertEqual(try store.evolutionHistory(memoryId: "m", recordId: head.recordId).map(\.version), [2, 1])
+  }
+
   func testRepeatedRetirementStartsAtPreviouslyRetainedFloor() throws {
     let (store, initial) = try fixture()
     XCTAssertEqual(try retire(store, initial).status, "retired")

@@ -37,6 +37,59 @@ final class WorkflowDefinitionServiceTests: XCTestCase {
     XCTAssertEqual(resolved.definitionSource?.storeRoot, fixture.storeRoot.standardizedFileURL.path)
   }
 
+  func testRestoreRequiresRetainedVersionAndAcceptsRetainedVersion() throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let clock = ServiceTestClock(Date())
+    let service = WorkflowDefinitionService(storeRoot: fixture.storeRoot.path,
+      fileResolver: FileSystemWorkflowBundleResolver(), now: { clock.now })
+    _ = try service.importDefinition(resolution: fixture.options, force: false, reason: nil,
+      evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+    var previousVersionId = try XCTUnwrap(WorkflowDefinitionStore(rootDirectory: fixture.storeRoot.path)
+      .head(workflowName: "service-flow")?.currentVersionId)
+    var droppedVersionId: String?
+    for number in 1...11 {
+      clock.advance()
+      let result = try service.updatePrompt(workflowName: "service-flow", nodeId: "worker",
+        field: WorkflowDefinitionPromptField(parsing: "promptTemplate"), text: "retained-test-\(number)",
+        reason: "advance definition window", expectedVersionId: previousVersionId, evidence: [],
+        actor: WorkflowDefinitionActor(kind: .user))
+      if number == 1 { droppedVersionId = result.0.versionId }
+      previousVersionId = result.0.versionId
+    }
+    let store = WorkflowDefinitionStore(rootDirectory: fixture.storeRoot.path)
+    let lastFileVersionId = try XCTUnwrap(store.head(workflowName: "service-flow")?.lastFileVersionId)
+    XCTAssertNoThrow(try service.restore(workflowName: "service-flow", versionId: lastFileVersionId,
+      reason: "restore retained source", evidence: [], actor: WorkflowDefinitionActor(kind: .user)))
+    XCTAssertThrowsError(try service.restore(workflowName: "service-flow", versionId: try XCTUnwrap(droppedVersionId),
+      reason: "restore expired version", evidence: [], actor: WorkflowDefinitionActor(kind: .user))) { error in
+      XCTAssertEqual((error as? WorkflowDefinitionStoreError)?.code, .versionNotRetained)
+      XCTAssertEqual((error as? WorkflowDefinitionStoreError)?.code.rawValue, "definition_version_not_retained")
+    }
+  }
+
+  func testServiceUndoRedoMovesDefinitionHeadAndRecordsAudits() throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let service = fixture.service
+    _ = try service.importDefinition(resolution: fixture.options, force: false, reason: nil,
+      evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+    let initial = try service.show(workflowName: "service-flow", versionId: nil).version
+    let update = try service.updatePrompt(workflowName: "service-flow", nodeId: "worker",
+      field: WorkflowDefinitionPromptField(parsing: "promptTemplate"), text: "undo-redo-value",
+      reason: "update before undo", expectedVersionId: initial.versionId, evidence: [], actor: .init(kind: .user))
+    let undone = try service.undo(workflowName: "service-flow", reason: "undo update", evidence: [], actor: .init(kind: .user),
+      expectedRevision: 2, expectedVersionId: update.0.versionId)
+    XCTAssertEqual(undone.audit.operation, .undo)
+    XCTAssertEqual(undone.revision, 3)
+    XCTAssertEqual(try service.lookup(workflowName: "service-flow")?.nodePayloads["worker"]?.promptTemplate, "original prompt")
+    let redone = try service.redo(workflowName: "service-flow", reason: "redo update", evidence: [], actor: .init(kind: .user),
+      expectedRevision: 3, expectedVersionId: initial.versionId)
+    XCTAssertEqual(redone.audit.operation, .redo)
+    XCTAssertEqual(redone.revision, 4)
+    XCTAssertEqual(try service.lookup(workflowName: "service-flow")?.nodePayloads["worker"]?.promptTemplate, "undo-redo-value")
+  }
+
   func testCanonicalNodeDashFilesRoundTripAndStayContained() throws {
     let fixture = try makeFixture()
     let workflowURL = fixture.workflowDirectory.appendingPathComponent("workflow.json")
@@ -185,6 +238,10 @@ final class WorkflowDefinitionServiceTests: XCTestCase {
     let restored = try service.restore(workflowName: "service-flow", versionId: promptResult.0.versionId, reason: "restore prompt", evidence: [], actor: .init(kind: .user))
     XCTAssertEqual(try service.lookup(workflowName: "service-flow")?.nodePayloads["worker"]?.promptTemplate, "stored prompt")
     XCTAssertEqual(restored.1.operation, .restore)
+    let sameHead = try service.restore(workflowName: "service-flow", versionId: restored.0.versionId,
+      reason: "restore current bytes", evidence: [], actor: .init(kind: .user))
+    XCTAssertEqual(sameHead.1.operation, .restore)
+    XCTAssertEqual(try WorkflowDefinitionStore(rootDirectory: fixture.storeRoot.path).history(workflowName: "service-flow").first?.operation, .restore)
   }
 
   func testUpdateUsesAuthoredOverlayAndRejectsWithoutRows() throws {
@@ -689,4 +746,12 @@ final class WorkflowDefinitionServiceTests: XCTestCase {
     }
     return digests
   }
+}
+
+private final class ServiceTestClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value: Date
+  init(_ value: Date) { self.value = value }
+  var now: Date { lock.lock(); defer { lock.unlock() }; return value }
+  func advance() { lock.lock(); value = value.addingTimeInterval(25 * 60 * 60); lock.unlock() }
 }

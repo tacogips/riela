@@ -150,8 +150,10 @@ public struct RielaCLIApplication: Sendable {
       case let .instance(options):
         return instanceCommandRunner.run(options)
       case let .doctor(options):
+        if options.scope == "storage" { return StorageDoctorCommandRunner().run(options.arguments) }
         return await doctorCommand.run(options)
       case let .gc(options):
+        if options.scope == "storage" { return StorageCompactCommandRunner().run(options.arguments) }
         return garbageCollectionCommand.run(options)
       case let .specialist(command):
         return await specialistCommandRunner.run(command)

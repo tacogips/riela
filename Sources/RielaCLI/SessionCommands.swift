@@ -550,7 +550,8 @@ public struct SessionRerunCommand: Sendable {
         scenarioPath: effectiveMockScenarioPath,
         workingDirectory: kaibaContext.workingDirectory,
         environment: kaibaContext.environment,
-        definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot)
+        definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot,
+          workingDirectory: kaibaContext.workingDirectory)
       )
       // Rerun re-acquires the same advisory per-workflow lease as a fresh run
       // (design S11); the lease binds to the new session on its first save.
@@ -816,7 +817,8 @@ public struct SessionResumeCommand: Sendable {
         scenarioPath: effectiveMockScenarioPath,
         workingDirectory: kaibaContext.workingDirectory,
         environment: kaibaContext.environment,
-        definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot)
+        definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot,
+          workingDirectory: kaibaContext.workingDirectory)
       )
       // Resume re-acquires the same advisory per-workflow lease as a fresh
       // run (design S11); the lease binds to the resumed session on its

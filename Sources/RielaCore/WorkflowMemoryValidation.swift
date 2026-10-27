@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 func validateMemoryDeclarations(
   _ memories: [WorkflowMemoryDeclaration]?,
@@ -23,6 +24,9 @@ func validateMemoryDeclarations(
     }
     if let defaultLimit = memory.defaultLimit, defaultLimit <= 0 {
       diagnostics.append(error("\(memoryPath).defaultLimit", "must be a positive integer"))
+    }
+    if let historyRetention = memory.historyRetention, !(1...1_000).contains(historyRetention) {
+      diagnostics.append(error("\(memoryPath).historyRetention", "must be an integer in 1...1000 for memory '\(memory.id)'"))
     }
   }
 }
@@ -83,7 +87,7 @@ func validateRawMemoryDeclarations(
       diagnostics.append(error(memoryPath, "must be an object"))
       continue
     }
-    let allowedKeys: Set<String> = ["id", "description", "purpose", "dataSchema", "scope", "defaultLimit"]
+    let allowedKeys: Set<String> = ["id", "description", "purpose", "dataSchema", "scope", "defaultLimit", "historyRetention"]
     for key in memory.keys where !allowedKeys.contains(key) {
       diagnostics.append(error("\(memoryPath).\(key)", "uses an unsupported memory declaration field"))
     }
@@ -103,6 +107,17 @@ func validateRawMemoryDeclarations(
     }
     if let defaultLimit = memory["defaultLimit"] {
       validatePositiveInteger(defaultLimit, path: "\(memoryPath).defaultLimit", diagnostics: &diagnostics)
+    }
+    if let historyRetention = memory["historyRetention"] {
+      guard let number = historyRetention as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(),
+        number.doubleValue.isFinite,
+        floor(number.doubleValue) == number.doubleValue,
+        (1...1_000).contains(number.intValue)
+      else {
+        diagnostics.append(error("\(memoryPath).historyRetention", "must be an integer in 1...1000 for memory '\(memory["id"] as? String ?? "")'"))
+        continue
+      }
     }
   }
 }

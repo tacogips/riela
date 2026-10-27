@@ -13,7 +13,7 @@ struct SQLiteDatabaseHistoryExecutor: VersionedHistorySQL {
     try database.query(sql, bindings: values.map(sqliteValue)).map { row in
       var result: [String: VersionedHistorySQLValue] = [:]
       for key in ["key", "revision", "head_version", "retained_generations", "version", "created_at", "content_sha256", "byte_count", "encoding", "anchor_version", "codec", "detached", "blob", "stored_bytes"] {
-        if let data = row.data(key) {
+        if key == "blob", let data = row.data(key) {
           result[key] = .blob(data)
         } else if let value = row[key] {
           if let integer = Int64(value), ["revision", "head_version", "retained_generations", "version", "byte_count", "anchor_version", "detached", "stored_bytes"].contains(key) {

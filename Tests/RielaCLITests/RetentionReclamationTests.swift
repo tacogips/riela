@@ -4,6 +4,15 @@ import RielaSQLite
 @testable import RielaCLI
 
 final class RetentionReclamationTests: XCTestCase {
+  func testFreshRuntimeStoreStartsInIncrementalAutoVacuumMode() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    let database = try SQLiteDatabase.open(path: path, options: .writableRuntimeStoreDefault)
+
+    XCTAssertEqual(try database.query("PRAGMA auto_vacuum").first?["auto_vacuum"], "2")
+  }
+
   func testAutomaticIncrementalVacuumShrinksWithoutFullVacuum() throws {
     let fixture = try makeDatabase(incremental: true)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -18,6 +27,17 @@ final class RetentionReclamationTests: XCTestCase {
     XCTAssertGreaterThan(result.reclaimedBytes, 0)
     XCTAssertLessThan(try fileSize(fixture.databasePath), before)
     XCTAssertFalse(recorder.statements.contains { $0.uppercased() == "VACUUM" })
+  }
+
+  func testManualIncrementalVacuumUsesBoundedPageBudget() throws {
+    let fixture = try makeDatabase(incremental: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let recorder = StatementRecorder()
+    let result = RetentionSQLiteReclaimer(manualPageBudget: 17, statementObserver: { recorder.append($0) })
+      .reclaim(databasePath: fixture.databasePath, mode: .manual)
+
+    XCTAssertEqual(result.action, .incrementalVacuum)
+    XCTAssertTrue(recorder.statements.contains("PRAGMA incremental_vacuum(17)"))
   }
 
   func testAutomaticModeDefersConversionAboveConfiguredSizeLimit() throws {

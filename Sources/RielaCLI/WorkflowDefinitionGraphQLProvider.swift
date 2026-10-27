@@ -7,12 +7,28 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
   private let workingDirectory: String
   private let sessionStoreRoot: String?
   private let environment: [String: String]
+  private let afterHeadMove: (@Sendable (Int) -> Void)?
   private let resolver = FileSystemWorkflowBundleResolver()
 
-  public init(workingDirectory: String, sessionStoreRoot: String?, environment: [String: String]) {
+  public init(
+    workingDirectory: String,
+    sessionStoreRoot: String?,
+    environment: [String: String]
+  ) {
+    self.init(workingDirectory: workingDirectory, sessionStoreRoot: sessionStoreRoot,
+      environment: environment, afterHeadMoveForTesting: nil)
+  }
+
+  init(
+    workingDirectory: String,
+    sessionStoreRoot: String?,
+    environment: [String: String],
+    afterHeadMoveForTesting: (@Sendable (Int) -> Void)?
+  ) {
     self.workingDirectory = workingDirectory
     self.sessionStoreRoot = sessionStoreRoot
     self.environment = environment
+    self.afterHeadMove = afterHeadMoveForTesting
   }
 
   public func workflowDefinitionHistory(workflowName: String, nodeId: String?, limit: Int?, storeScope: String?) async throws -> [GraphQLWorkflowDefinitionAuditRecord] {
@@ -25,7 +41,7 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
     let service = try service(workflowName: workflowName, storeScope: storeScope)
     let result = try mapDefinitionErrors { try service.show(workflowName: workflowName, versionId: versionId) }
     let documentJSON = try definitionDocumentJSON(result.document)
-    return versionDTO(result.version, documentJSON: documentJSON)
+    return versionDTO(result.version, documentJSON: documentJSON, revision: result.head.revision)
   }
 
   public func workflowDefinitionDiff(workflowName: String, fromVersionId: String?, toVersionId: String?, againstFile: Bool?, storeScope: String?) async throws -> [GraphQLWorkflowDefinitionDiffEntry] {
@@ -58,9 +74,10 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
       source = .authoredFiles(authored)
     } else { throw graphError("INVALID_DEFINITION_INPUT", "missing update source") }
     let result = try mapDefinitionErrors {
-      try service(workflowName: input.workflowName, storeScope: input.storeScope).update(
+      try service(workflowName: input.workflowName, storeScope: input.storeScope, forWrite: true).update(
         workflowName: input.workflowName, source: source, reason: reason,
-        expectedVersionId: input.expectedVersionId, evidence: try evidence(input.evidence), actor: actor
+        expectedVersionId: input.expectedVersionId, evidence: try evidence(input.evidence), actor: actor,
+        historyRetention: try validatedHistoryRetention(input.historyRetention)
       )
     }
     let doc = try result.version.map { try service(workflowName: input.workflowName, storeScope: input.storeScope).show(workflowName: input.workflowName, versionId: $0.versionId).document }
@@ -79,9 +96,10 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
       throw graphError("INVALID_DEFINITION_INPUT", "unsupported prompt field")
     }
     let (version, audit) = try mapDefinitionErrors {
-      try service(workflowName: input.workflowName, storeScope: input.storeScope).updatePrompt(
+      try service(workflowName: input.workflowName, storeScope: input.storeScope, forWrite: true).updatePrompt(
         workflowName: input.workflowName, nodeId: input.nodeId, field: field, text: input.text, reason: reason,
-        expectedVersionId: input.expectedVersionId, evidence: try evidence(input.evidence), actor: actor
+        expectedVersionId: input.expectedVersionId, evidence: try evidence(input.evidence), actor: actor,
+        historyRetention: try validatedHistoryRetention(input.historyRetention)
       )
     }
     let doc = try service(workflowName: input.workflowName, storeScope: input.storeScope).show(workflowName: input.workflowName, versionId: version.versionId).document
@@ -95,9 +113,9 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
     let actor = try actor(kind: input.actorKind, id: input.actorId)
     let reason = try requiredReason(input.reason)
     let (version, audit) = try mapDefinitionErrors {
-      try service(workflowName: input.workflowName, storeScope: input.storeScope).restore(
+      try service(workflowName: input.workflowName, storeScope: input.storeScope, forWrite: true).restore(
         workflowName: input.workflowName, versionId: input.versionId, reason: reason,
-        evidence: try evidence(input.evidence), actor: actor
+        evidence: try evidence(input.evidence), actor: actor, historyRetention: try validatedHistoryRetention(input.historyRetention)
       )
     }
     let doc = try service(workflowName: input.workflowName, storeScope: input.storeScope).show(workflowName: input.workflowName, versionId: version.versionId).document
@@ -105,6 +123,51 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
       version: versionDTO(version, documentJSON: try definitionDocumentJSON(doc)),
       audit: auditDTO(audit)
     )
+  }
+
+  public func undoWorkflowDefinition(input: UndoWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload {
+    try moveWorkflowDefinition(input: input, direction: .undo)
+  }
+
+  public func redoWorkflowDefinition(input: RedoWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload {
+    try moveWorkflowDefinition(input: input, direction: .redo)
+  }
+
+  private enum HeadMoveDirection { case undo, redo }
+
+  private func moveWorkflowDefinition(
+    workflowName: String, storeScope: String?, reason: String?, expectedRevision: Int?, expectedVersionId: String?,
+    evidence refs: [String]?, actorKind: String?, actorId: String?, direction: HeadMoveDirection
+  ) throws -> GraphQLWorkflowDefinitionMutationPayload {
+    guard expectedRevision == nil || expectedVersionId == nil else {
+      throw graphError("INVALID_DEFINITION_INPUT", "provide expectedRevision or expectedVersionId, not both")
+    }
+    let actor = try actor(kind: actorKind, id: actorId)
+    let reason = try requiredReason(reason)
+    let service = try service(workflowName: workflowName, storeScope: storeScope, forWrite: true)
+    let moved = try mapDefinitionErrors {
+      let args = (workflowName, reason, try evidence(refs), actor, expectedRevision.map(Int64.init), expectedVersionId)
+      switch direction {
+      case .undo: return try service.undo(workflowName: args.0, reason: args.1, evidence: args.2, actor: args.3, expectedRevision: args.4, expectedVersionId: args.5)
+      case .redo: return try service.redo(workflowName: args.0, reason: args.1, evidence: args.2, actor: args.3, expectedRevision: args.4, expectedVersionId: args.5)
+      }
+    }
+    afterHeadMove?(moved.revision)
+    let document = try service.show(workflowName: workflowName, versionId: moved.version.versionId).document
+    return GraphQLWorkflowDefinitionMutationPayload(version: versionDTO(moved.version,
+      documentJSON: try definitionDocumentJSON(document), revision: moved.revision), audit: auditDTO(moved.audit))
+  }
+
+  private func moveWorkflowDefinition(input: UndoWorkflowDefinitionInput, direction: HeadMoveDirection) throws -> GraphQLWorkflowDefinitionMutationPayload {
+    try moveWorkflowDefinition(workflowName: input.workflowName, storeScope: input.storeScope, reason: input.reason,
+      expectedRevision: input.expectedRevision, expectedVersionId: input.expectedVersionId, evidence: input.evidence,
+      actorKind: input.actorKind, actorId: input.actorId, direction: direction)
+  }
+
+  private func moveWorkflowDefinition(input: RedoWorkflowDefinitionInput, direction: HeadMoveDirection) throws -> GraphQLWorkflowDefinitionMutationPayload {
+    try moveWorkflowDefinition(workflowName: input.workflowName, storeScope: input.storeScope, reason: input.reason,
+      expectedRevision: input.expectedRevision, expectedVersionId: input.expectedVersionId, evidence: input.evidence,
+      actorKind: input.actorKind, actorId: input.actorId, direction: direction)
   }
 
   public func importWorkflowDefinition(input: ImportWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionImportPayload {
@@ -122,11 +185,11 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
       let file = try resolver.resolve(options)
       root = WorkflowDefinitionStoreSelection.seedRoot(sessionStore: sessionStoreRoot, resolution: options, fileBundle: file, environment: environment)
     }
-    let service = WorkflowDefinitionService(storeRoot: root, fileResolver: resolver)
+    let service = try configuredService(storeRoot: root, forWrite: true)
     let result = try mapDefinitionErrors {
       try service.importDefinition(
         resolution: options, force: input.force ?? false, reason: input.reason,
-        evidence: try evidence(input.evidence), actor: actor
+        evidence: try evidence(input.evidence), actor: actor, historyRetention: try validatedHistoryRetention(input.historyRetention)
       )
     }
     let version: GraphQLWorkflowDefinitionVersion?
@@ -138,20 +201,34 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
   }
 
   public func exportWorkflowDefinition(input: ExportWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionExportPayload {
-    let service = try service(workflowName: input.workflowName, storeScope: input.storeScope)
+    let service = try service(workflowName: input.workflowName, storeScope: input.storeScope, forWrite: true)
     let files = try mapDefinitionErrors {
       try service.export(workflowName: input.workflowName, versionId: input.versionId, target: input.writeToSource == true ? .source(overwrite: true) : nil)
     }
     return GraphQLWorkflowDefinitionExportPayload(files: files.map { GraphQLWorkflowDefinitionFile(path: $0.path, content: $0.content) }, wroteToSource: input.writeToSource == true)
   }
 
-  private func service(workflowName: String, storeScope: String?) throws -> WorkflowDefinitionService {
+  private func service(workflowName: String, storeScope: String?, forWrite: Bool = false) throws -> WorkflowDefinitionService {
     let scope = try workflowScope(storeScope)
     guard let root = try WorkflowDefinitionStoreSelection.rootWithHead(
       workflowName: workflowName, sessionStore: sessionStoreRoot, scope: scope,
       workingDirectory: workingDirectory, environment: environment
     ) else { throw graphError("DEFINITION_NOT_REGISTERED", "workflow \(workflowName) is not registered") }
-    return WorkflowDefinitionService(storeRoot: root, fileResolver: resolver)
+    return try configuredService(storeRoot: root, forWrite: forWrite)
+  }
+
+  private func configuredService(storeRoot: String, forWrite: Bool) throws -> WorkflowDefinitionService {
+    guard forWrite else { return WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: resolver) }
+    do {
+      let retention = try WorkflowDefinitionHistoryConfiguration.resolve(
+        homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+        projectDirectory: workingDirectory,
+        environment: environment
+      )
+      return WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: resolver, defaultHistoryRetention: retention)
+    } catch let error as WorkflowDefinitionHistoryConfiguration.ConfigurationError {
+      throw graphError("INVALID_WORKFLOW_DEFINITION_CONFIGURATION", error.description)
+    }
   }
 
   private func resolution(workflowName: String, scope: String? = nil, directory: String? = nil) -> WorkflowResolutionOptions {
@@ -187,6 +264,13 @@ public struct WorkflowDefinitionGraphQLProvider: WorkflowDefinitionGraphQLProvid
     }
     return reason
   }
+
+  private func validatedHistoryRetention(_ value: Int?) throws -> Int? {
+    guard value == nil || (0...10_000).contains(value ?? -1) else {
+      throw graphError("INVALID_DEFINITION_INPUT", "historyRetention must be between 0 and 10000")
+    }
+    return value
+  }
 }
 
 private func mapDefinitionErrors<T>(_ operation: () throws -> T) throws -> T {
@@ -209,21 +293,26 @@ private func mapDefinitionErrors<T>(_ operation: () throws -> T) throws -> T {
     case .staleHead: code = "DEFINITION_STALE"
     case .versionNotFound: code = "DEFINITION_VERSION_NOT_FOUND"
     case .missingReason: code = "DEFINITION_REASON_REQUIRED"
+    case .versionNotRetained: code = "DEFINITION_VERSION_NOT_RETAINED"
+    case .nothingToUndo: code = "DEFINITION_NOTHING_TO_UNDO"
+    case .nothingToRedo: code = "DEFINITION_NOTHING_TO_REDO"
+    case .staleRevision: code = "DEFINITION_STALE_REVISION"
     case .invalidEvidence: code = "INVALID_DEFINITION_INPUT"
     default: code = "DEFINITION_OPERATION_FAILED"
     }
-    throw graphError(code, error.message)
+    throw WorkflowDefinitionGraphQLError(code: code, message: error.message,
+      retainedVersionIds: error.retainedVersionIds, retainedGenerations: error.retainedGenerations)
   }
 }
 
 private func graphError(_ code: String, _ message: String) -> WorkflowDefinitionGraphQLError { .init(code: code, message: message) }
 
-private func versionDTO(_ version: WorkflowDefinitionVersion, documentJSON: String) -> GraphQLWorkflowDefinitionVersion {
+private func versionDTO(_ version: WorkflowDefinitionVersion, documentJSON: String, revision: Int? = nil) -> GraphQLWorkflowDefinitionVersion {
   GraphQLWorkflowDefinitionVersion(versionId: version.versionId, workflowName: version.workflowName,
     parentVersionId: version.parentVersionId, documentDigest: version.documentDigest, operation: version.operation.rawValue,
     sourceDirectory: version.sourceDirectory, sourceScope: version.sourceScope, provenance: version.provenance,
     actor: GraphQLWorkflowDefinitionActor(kind: version.actor.kind.rawValue, id: version.actor.id),
-    createdAt: ISO8601DateFormatter().string(from: version.createdAt), documentJSON: documentJSON)
+    createdAt: ISO8601DateFormatter().string(from: version.createdAt), documentJSON: documentJSON, revision: revision)
 }
 
 private func auditDTO(_ audit: WorkflowDefinitionAuditRecord) -> GraphQLWorkflowDefinitionAuditRecord {
@@ -235,7 +324,7 @@ private func auditDTO(_ audit: WorkflowDefinitionAuditRecord) -> GraphQLWorkflow
     actor: GraphQLWorkflowDefinitionActor(kind: audit.actor.kind.rawValue, id: audit.actor.id),
     approvalState: audit.approvalState.rawValue,
     overwrittenChanges: audit.overwrittenChanges.map { .init(sinceVersionId: $0.sinceVersionId, auditIds: $0.auditIds) },
-    createdAt: ISO8601DateFormatter().string(from: audit.createdAt))
+    createdAt: ISO8601DateFormatter().string(from: audit.createdAt), retained: audit.retained)
 }
 
 private func diffDTO(_ diff: WorkflowDefinitionDiffEntry) -> GraphQLWorkflowDefinitionDiffEntry {

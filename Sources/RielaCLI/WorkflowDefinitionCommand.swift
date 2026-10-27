@@ -32,6 +32,15 @@ private struct WorkflowDefinitionErrorJSON: Encodable {
   struct Detail: Encodable {
     var code: String
     var message: String
+    var retainedVersionIds: [String]?
+    var retainedGenerations: Int?
+
+    init(code: String, message: String, retainedVersionIds: [String]? = nil, retainedGenerations: Int? = nil) {
+      self.code = code
+      self.message = message
+      self.retainedVersionIds = retainedVersionIds
+      self.retainedGenerations = retainedGenerations
+    }
   }
   var accepted = false
   var error: Detail
@@ -61,6 +70,8 @@ public struct WorkflowDefinitionCommand: Sendable {
       return try execute(parsed)
     } catch let error as WorkflowDefinitionCLIError {
       return failure(code: error.code, message: error.message, usage: error.isUsage, json: parsed.output == .json)
+    } catch let error as WorkflowDefinitionHistoryConfiguration.ConfigurationError {
+      return failure(code: "invalid_configuration", message: error.description, usage: true, json: parsed.output == .json)
     } catch let error as WorkflowDefinitionServiceError {
       return failure(code: error.code.rawValue, message: error.message, usage: false, json: parsed.output == .json)
     } catch let error as WorkflowDefinitionStoreError {
@@ -70,6 +81,9 @@ public struct WorkflowDefinitionCommand: Sendable {
       case .staleHead: code = "definition_conflict"
       case .missingReason: code = "reason_required"
       default: code = error.code.rawValue
+      }
+      if parsed.output == .json, error.code == .versionNotRetained {
+        return retainedVersionFailure(error)
       }
       return failure(code: code, message: error.message, usage: false, json: parsed.output == .json)
     } catch {
@@ -101,7 +115,14 @@ public struct WorkflowDefinitionCommand: Sendable {
       }
       root = selected
     }
-    let service = WorkflowDefinitionService(storeRoot: root, fileResolver: resolver)
+    let writesHistory = [.import, .update, .updatePrompt, .restore, .undo, .redo].contains(parsed.operation)
+    let defaultRetention = writesHistory ? try WorkflowDefinitionHistoryConfiguration.resolve(
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+      projectDirectory: parsed.workingDirectory,
+      environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+    ) : 10
+    let service = WorkflowDefinitionService(storeRoot: root, fileResolver: resolver, defaultHistoryRetention: defaultRetention)
+    let historyRetention = parsed.value("--history-retention").flatMap(Int.init)
     let actor = WorkflowDefinitionActor(
       kind: WorkflowDefinitionActorKind(rawValue: parsed.value("--actor-kind") ?? "cli") ?? .cli,
       id: parsed.value("--actor") ?? NSUserName()
@@ -110,7 +131,10 @@ public struct WorkflowDefinitionCommand: Sendable {
     switch parsed.operation {
     case .history:
       let records = try service.history(workflowName: parsed.workflowName, nodeId: parsed.value("--node"), limit: parsed.value("--limit").flatMap(Int.init))
-      return try success(records, text: records.map(auditLine).joined(separator: "\n") + (records.isEmpty ? "" : "\n"), output: parsed.output)
+      let dropped = records.contains { !$0.retained }
+      let retainedVersions = records.filter(\.retained).count
+      let retentionLine = dropped ? "older versions dropped by retention (retained: \(retainedVersions) shown)\n" : ""
+      return try success(records, text: records.map(auditLine).joined(separator: "\n") + (records.isEmpty ? "" : "\n") + retentionLine, output: parsed.output)
     case .show:
       if parsed.has("--authored") {
         let authored = try service.authoredView(workflowName: parsed.workflowName, versionId: parsed.value("--version"))
@@ -156,12 +180,13 @@ public struct WorkflowDefinitionCommand: Sendable {
           reason: reason,
           expectedVersionId: parsed.value("--expected-version"),
           evidence: evidence,
-          actor: actor
+          actor: actor,
+          historyRetention: historyRetention
         )
       } else {
         let resolution = try resolution(for: parsed, directoryOption: "--from-file")
         if parsed.has("--force") {
-          let imported = try service.importDefinition(resolution: resolution, force: true, reason: reason, evidence: evidence, actor: actor)
+          let imported = try service.importDefinition(resolution: resolution, force: true, reason: reason, evidence: evidence, actor: actor, historyRetention: historyRetention)
           return try success(imported, text: "\(imported.outcome.rawValue) version=\(imported.version?.versionId ?? "")\n", output: parsed.output)
         }
         result = try service.update(
@@ -170,7 +195,8 @@ public struct WorkflowDefinitionCommand: Sendable {
           reason: reason,
           expectedVersionId: parsed.value("--expected-version"),
           evidence: evidence,
-          actor: actor
+          actor: actor,
+          historyRetention: historyRetention
         )
       }
       let json = WorkflowDefinitionUpdateJSON(
@@ -199,7 +225,8 @@ public struct WorkflowDefinitionCommand: Sendable {
         reason: parsed.value("--reason") ?? "",
         expectedVersionId: parsed.value("--expected-version"),
         evidence: evidence,
-        actor: actor
+        actor: actor,
+        historyRetention: historyRetention
       )
       return try success(
         WorkflowDefinitionRestoreJSON(version: result.0, audit: result.1),
@@ -212,9 +239,20 @@ public struct WorkflowDefinitionCommand: Sendable {
         versionId: parsed.value("--version") ?? "",
         reason: parsed.value("--reason") ?? "",
         evidence: evidence,
-        actor: actor
+        actor: actor,
+        historyRetention: historyRetention
       )
       return try success(WorkflowDefinitionRestoreJSON(version: result.0, audit: result.1), text: "restored version=\(result.0.versionId)\n", output: parsed.output)
+    case .undo, .redo:
+      let expectedVersion = parsed.value("--expected-version")
+      let expectedRevision = parsed.value("--expected-revision").flatMap(Int64.init)
+      let result = try parsed.operation == .undo
+        ? service.undo(workflowName: parsed.workflowName, reason: parsed.value("--reason") ?? "", evidence: evidence,
+                       actor: actor, expectedRevision: expectedRevision, expectedVersionId: expectedVersion)
+        : service.redo(workflowName: parsed.workflowName, reason: parsed.value("--reason") ?? "", evidence: evidence,
+                       actor: actor, expectedRevision: expectedRevision, expectedVersionId: expectedVersion)
+      return try success(WorkflowDefinitionRestoreJSON(version: result.version, audit: result.audit),
+                         text: "\(parsed.operation.rawValue) version=\(result.version.versionId)\n", output: parsed.output)
     case .import:
       let resolution = try resolution(for: parsed, directoryOption: "--workflow-definition-dir")
       let imported = try service.importDefinition(
@@ -222,7 +260,8 @@ public struct WorkflowDefinitionCommand: Sendable {
         force: parsed.has("--force"),
         reason: parsed.value("--reason"),
         evidence: evidence,
-        actor: actor
+        actor: actor,
+        historyRetention: historyRetention
       )
       return try success(imported, text: "\(imported.outcome.rawValue)\(imported.version.map { " version=\($0.versionId)" } ?? "")\n\(diffText(imported.diff))", output: parsed.output)
     case .export:
@@ -287,6 +326,12 @@ public struct WorkflowDefinitionCommand: Sendable {
     return CLICommandResult(exitCode: usage ? .usage : .failure, stderr: message + "\n")
   }
 
+  private func retainedVersionFailure(_ error: WorkflowDefinitionStoreError) -> CLICommandResult {
+    let envelope = WorkflowDefinitionErrorJSON(error: .init(code: error.code.rawValue, message: error.message,
+      retainedVersionIds: error.retainedVersionIds, retainedGenerations: error.retainedGenerations))
+    return CLICommandResult(exitCode: .failure, stdout: (try? encode(envelope)).map { $0 + "\n" } ?? "")
+  }
+
   private func encode<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -307,10 +352,22 @@ public struct WorkflowDefinitionCommand: Sendable {
   }
 
   private func auditLine(_ record: WorkflowDefinitionAuditRecord) -> String {
-    "\(record.createdAt) \(record.operation.rawValue) \(record.versionId) \(record.actor.kind.rawValue):\(record.actor.id ?? "") node=\(record.targetNodeId ?? "") field=\(record.targetField ?? "") reason=\(record.reason)"
+    "\(record.createdAt) \(record.operation.rawValue) \(record.versionId) \(record.actor.kind.rawValue):\(record.actor.id ?? "") " +
+      "node=\(record.targetNodeId ?? "") field=\(record.targetField ?? "") retained=\(record.retained) reason=\(record.reason)"
   }
 
   private func diffText(_ diff: [WorkflowDefinitionDiffEntry]) -> String {
-    diff.map { "\($0.op.rawValue) \($0.path)" }.joined(separator: "\n") + (diff.isEmpty ? "" : "\n")
+    diff.map { entry in
+      let before = entry.before.map(compactJSON) ?? "<absent>"
+      let after = entry.after.map(compactJSON) ?? "<absent>"
+      return "\(entry.op.rawValue) \(entry.path)\nbefore: \(before)\nafter: \(after)"
+    }.joined(separator: "\n") + (diff.isEmpty ? "" : "\n")
+  }
+
+  private func compactJSON(_ value: JSONValue) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    guard let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) else { return "null" }
+    return text
   }
 }

@@ -62,11 +62,9 @@ public struct WorkflowRunCommand: Sendable {
     do {
       try rejectUnsupportedRunOptions(options)
       if let result = try await remoteRunResult(options) { return result }
-      let resolution = options.resolution
-        ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
+      let resolution = options.resolution ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
       let preparedRun = try await prepareResolvedRun(options: options, resolution: resolution, taskContext: taskContext)
       let bundle = preparedRun.bundle
-      let variables = preparedRun.variables
       let prepared = preparedRun.execution
       let definitionSource = preparedRun.definitionSource
       gatewayValidationWarnings = prepared.gatewayValidationWarnings
@@ -95,6 +93,7 @@ public struct WorkflowRunCommand: Sendable {
         definitionRunContext: .init(
           definitionSource: definitionSource,
           sessionStoreRoot: storeRoot,
+          workingDirectory: resolution.workingDirectory,
           cliProcessRunner: improvementCLIProcessRunnerOverride
         )
       )
@@ -927,7 +926,7 @@ struct RunFinalizeContext {
   var telemetry: any RielaTelemetry
   var jsonlRecorder: WorkflowRunJSONLRecorder?
   var gatewayValidationWarnings: [String]
-  var canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
+  var canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore?
 }
 
 private func failsRequiredGate(_ gate: LoopGateResult, in workflow: WorkflowDefinition) -> Bool {

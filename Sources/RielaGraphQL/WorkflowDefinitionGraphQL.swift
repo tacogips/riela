@@ -17,6 +17,7 @@ public struct GraphQLWorkflowDefinitionAuditRecord: Codable, Equatable, Sendable
   public var approvalState: String
   public var overwrittenChanges: GraphQLWorkflowDefinitionOverwrittenChanges?
   public var createdAt: String
+  public var retained: Bool
   public init(
     auditId: String,
     workflowName: String,
@@ -32,12 +33,14 @@ public struct GraphQLWorkflowDefinitionAuditRecord: Codable, Equatable, Sendable
     actor: GraphQLWorkflowDefinitionActor,
     approvalState: String,
     overwrittenChanges: GraphQLWorkflowDefinitionOverwrittenChanges?,
-    createdAt: String
+    createdAt: String,
+    retained: Bool = true
   ) {
     self.auditId = auditId; self.workflowName = workflowName; self.operation = operation; self.versionId = versionId
     self.previousVersionId = previousVersionId; self.targetNodeId = targetNodeId; self.targetField = targetField
     self.beforeDigest = beforeDigest; self.afterDigest = afterDigest; self.reason = reason; self.evidence = evidence
     self.actor = actor; self.approvalState = approvalState; self.overwrittenChanges = overwrittenChanges; self.createdAt = createdAt
+    self.retained = retained
   }
 }
 
@@ -67,6 +70,7 @@ public struct GraphQLWorkflowDefinitionVersion: Codable, Equatable, Sendable {
   public var actor: GraphQLWorkflowDefinitionActor
   public var createdAt: String
   public var documentJSON: String
+  public var revision: Int?
   public init(
     versionId: String,
     workflowName: String,
@@ -78,11 +82,13 @@ public struct GraphQLWorkflowDefinitionVersion: Codable, Equatable, Sendable {
     provenance: String,
     actor: GraphQLWorkflowDefinitionActor,
     createdAt: String,
-    documentJSON: String
+    documentJSON: String,
+    revision: Int? = nil
   ) {
     self.versionId = versionId; self.workflowName = workflowName; self.parentVersionId = parentVersionId
     self.documentDigest = documentDigest; self.operation = operation; self.sourceDirectory = sourceDirectory
     self.sourceScope = sourceScope; self.provenance = provenance; self.actor = actor; self.createdAt = createdAt; self.documentJSON = documentJSON
+    self.revision = revision
   }
 }
 
@@ -144,6 +150,7 @@ public struct UpdateWorkflowDefinitionInput: Codable, Equatable, Sendable {
   public var actorKind: String?
   public var actorId: String?
   public var storeScope: String?
+  public var historyRetention: Int?
 }
 
 public struct UpdateWorkflowDefinitionPromptInput: Codable, Equatable, Sendable {
@@ -157,6 +164,7 @@ public struct UpdateWorkflowDefinitionPromptInput: Codable, Equatable, Sendable 
   public var actorKind: String?
   public var actorId: String?
   public var storeScope: String?
+  public var historyRetention: Int?
 }
 
 public struct RestoreWorkflowDefinitionInput: Codable, Equatable, Sendable {
@@ -167,6 +175,29 @@ public struct RestoreWorkflowDefinitionInput: Codable, Equatable, Sendable {
   public var actorKind: String?
   public var actorId: String?
   public var storeScope: String?
+  public var historyRetention: Int?
+}
+
+public struct UndoWorkflowDefinitionInput: Codable, Equatable, Sendable {
+  public var workflowName: String
+  public var storeScope: String?
+  public var reason: String?
+  public var expectedRevision: Int?
+  public var expectedVersionId: String?
+  public var evidence: [String]?
+  public var actorKind: String?
+  public var actorId: String?
+}
+
+public struct RedoWorkflowDefinitionInput: Codable, Equatable, Sendable {
+  public var workflowName: String
+  public var storeScope: String?
+  public var reason: String?
+  public var expectedRevision: Int?
+  public var expectedVersionId: String?
+  public var evidence: [String]?
+  public var actorKind: String?
+  public var actorId: String?
 }
 
 public struct ImportWorkflowDefinitionInput: Codable, Equatable, Sendable {
@@ -179,6 +210,7 @@ public struct ImportWorkflowDefinitionInput: Codable, Equatable, Sendable {
   public var actorKind: String?
   public var actorId: String?
   public var storeScope: String?
+  public var historyRetention: Int?
 }
 
 public struct ExportWorkflowDefinitionInput: Codable, Equatable, Sendable {
@@ -195,14 +227,30 @@ public protocol WorkflowDefinitionGraphQLProviding: Sendable {
   func updateWorkflowDefinition(input: UpdateWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionUpdatePayload
   func updateWorkflowDefinitionPrompt(input: UpdateWorkflowDefinitionPromptInput) async throws -> GraphQLWorkflowDefinitionMutationPayload
   func restoreWorkflowDefinition(input: RestoreWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload
+  func undoWorkflowDefinition(input: UndoWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload
+  func redoWorkflowDefinition(input: RedoWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload
   func importWorkflowDefinition(input: ImportWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionImportPayload
   func exportWorkflowDefinition(input: ExportWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionExportPayload
+}
+
+public extension WorkflowDefinitionGraphQLProviding {
+  func undoWorkflowDefinition(input: UndoWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload {
+    throw WorkflowDefinitionGraphQLError(code: "DEFINITION_OPERATION_UNSUPPORTED", message: "undoWorkflowDefinition is unsupported by this provider")
+  }
+
+  func redoWorkflowDefinition(input: RedoWorkflowDefinitionInput) async throws -> GraphQLWorkflowDefinitionMutationPayload {
+    throw WorkflowDefinitionGraphQLError(code: "DEFINITION_OPERATION_UNSUPPORTED", message: "redoWorkflowDefinition is unsupported by this provider")
+  }
 }
 
 public struct WorkflowDefinitionGraphQLError: Error, Equatable, Sendable {
   public var code: String
   public var message: String
-  public init(code: String, message: String) { self.code = code; self.message = message }
+  public var retainedVersionIds: [String]?
+  public var retainedGenerations: Int?
+  public init(code: String, message: String, retainedVersionIds: [String]? = nil, retainedGenerations: Int? = nil) {
+    self.code = code; self.message = message; self.retainedVersionIds = retainedVersionIds; self.retainedGenerations = retainedGenerations
+  }
 }
 
 // This executor name is pinned by the plan and referenced in every host chain.
@@ -211,7 +259,7 @@ public struct WorkflowDefinitionGraphQLDocumentExecutor: GraphQLDocumentExecutin
   public static let queryFields: Set<String> = ["workflowDefinitionHistory", "workflowDefinition", "workflowDefinitionDiff"]
   public static let mutationFields: Set<String> = [
     "updateWorkflowDefinition", "updateWorkflowDefinitionPrompt", "restoreWorkflowDefinition",
-    "importWorkflowDefinition", "exportWorkflowDefinition"
+    "importWorkflowDefinition", "exportWorkflowDefinition", "undoWorkflowDefinition", "redoWorkflowDefinition"
   ]
 
   public var provider: (any WorkflowDefinitionGraphQLProviding)?
@@ -273,6 +321,10 @@ public struct WorkflowDefinitionGraphQLDocumentExecutor: GraphQLDocumentExecutin
           result = try definitionJSON(try await provider.updateWorkflowDefinitionPrompt(input: requiredInput("input", root.arguments)))
         case "restoreWorkflowDefinition":
           result = try definitionJSON(try await provider.restoreWorkflowDefinition(input: requiredInput("input", root.arguments)))
+        case "undoWorkflowDefinition":
+          result = try definitionJSON(try await provider.undoWorkflowDefinition(input: requiredInput("input", root.arguments)))
+        case "redoWorkflowDefinition":
+          result = try definitionJSON(try await provider.redoWorkflowDefinition(input: requiredInput("input", root.arguments)))
         case "importWorkflowDefinition":
           result = try definitionJSON(try await provider.importWorkflowDefinition(input: requiredInput("input", root.arguments)))
         case "exportWorkflowDefinition":
@@ -281,7 +333,8 @@ public struct WorkflowDefinitionGraphQLDocumentExecutor: GraphQLDocumentExecutin
         }
         data[root.responseKey] = projectGraphQLValue(result, selections: root.selections)
       } catch let error as WorkflowDefinitionGraphQLError {
-        return definitionGraphQLError(code: error.code, message: error.message, completedData: data)
+        return definitionGraphQLError(code: error.code, message: error.message, completedData: data,
+          retainedVersionIds: error.retainedVersionIds, retainedGenerations: error.retainedGenerations)
       } catch {
         return definitionGraphQLError(code: "DEFINITION_OPERATION_FAILED", message: "definition operation failed: \(error)", completedData: data)
       }
@@ -326,10 +379,14 @@ private func boolArg(_ key: String, _ arguments: JSONObject) -> Bool? {
 private func invalidInput(_ message: String) -> WorkflowDefinitionGraphQLError {
   WorkflowDefinitionGraphQLError(code: "INVALID_DEFINITION_INPUT", message: message)
 }
-private func definitionGraphQLError(code: String, message: String, completedData: JSONObject = [:]) -> GraphQLDocumentExecutionResponse {
-  GraphQLDocumentExecutionResponse(handled: true, body: [
+private func definitionGraphQLError(code: String, message: String, completedData: JSONObject = [:],
+                                    retainedVersionIds: [String]? = nil, retainedGenerations: Int? = nil) -> GraphQLDocumentExecutionResponse {
+  var extensions: JSONObject = ["code": .string(code)]
+  if let retainedVersionIds { extensions["retainedVersionIds"] = .array(retainedVersionIds.map(JSONValue.string)) }
+  if let retainedGenerations { extensions["retainedGenerations"] = .number(Double(retainedGenerations)) }
+  return GraphQLDocumentExecutionResponse(handled: true, body: [
     "data": completedData.isEmpty ? .null : .object(completedData),
-    "errors": .array([.object(["message": .string(message), "extensions": .object(["code": .string(code)])])])
+    "errors": .array([.object(["message": .string(message), "extensions": .object(extensions)])])
   ])
 }
 
@@ -350,6 +407,7 @@ public let workflowDefinitionGraphQLSchemaTypes = """
     actor: WorkflowDefinitionActor!
     createdAt: String!
     documentJSON: String!
+    revision: Int
   }
   type WorkflowDefinitionDiffEntry { path: String! op: String! before: String after: String }
   type WorkflowDefinitionOverwrittenChanges { sinceVersionId: String! auditIds: [String!]! }
@@ -369,6 +427,7 @@ public let workflowDefinitionGraphQLSchemaTypes = """
     approvalState: String!
     overwrittenChanges: WorkflowDefinitionOverwrittenChanges
     createdAt: String!
+    retained: Boolean!
   }
   input WorkflowDefinitionFileInput { path: String! content: String! }
   input UpdateWorkflowDefinitionInput {
@@ -381,6 +440,7 @@ public let workflowDefinitionGraphQLSchemaTypes = """
     actorKind: String
     actorId: String
     storeScope: String
+    historyRetention: Int
   }
   input UpdateWorkflowDefinitionPromptInput {
     workflowName: String!
@@ -393,9 +453,32 @@ public let workflowDefinitionGraphQLSchemaTypes = """
     actorKind: String
     actorId: String
     storeScope: String
+    historyRetention: Int
   }
-  input RestoreWorkflowDefinitionInput { workflowName: String! versionId: String! reason: String! evidence: [String!] actorKind: String actorId: String storeScope: String }
-  input ImportWorkflowDefinitionInput { workflowName: String! scope: String workflowDefinitionDir: String force: Boolean reason: String evidence: [String!] actorKind: String actorId: String storeScope: String }
+  input RestoreWorkflowDefinitionInput {
+    workflowName: String!
+    versionId: String!
+    reason: String!
+    evidence: [String!]
+    actorKind: String
+    actorId: String
+    storeScope: String
+    historyRetention: Int
+  }
+  input UndoWorkflowDefinitionInput { workflowName: String! storeScope: String reason: String! expectedRevision: Int expectedVersionId: String evidence: [String!] actorKind: String actorId: String }
+  input RedoWorkflowDefinitionInput { workflowName: String! storeScope: String reason: String! expectedRevision: Int expectedVersionId: String evidence: [String!] actorKind: String actorId: String }
+  input ImportWorkflowDefinitionInput {
+    workflowName: String!
+    scope: String
+    workflowDefinitionDir: String
+    force: Boolean
+    reason: String
+    evidence: [String!]
+    actorKind: String
+    actorId: String
+    storeScope: String
+    historyRetention: Int
+  }
   input ExportWorkflowDefinitionInput { workflowName: String! versionId: String writeToSource: Boolean storeScope: String }
   type WorkflowDefinitionMutationPayload { version: WorkflowDefinitionVersion! audit: WorkflowDefinitionAuditRecord! }
   type WorkflowDefinitionUpdatePayload { outcome: String! versionId: String! digest: String! version: WorkflowDefinitionVersion audit: WorkflowDefinitionAuditRecord diff: [WorkflowDefinitionDiffEntry!]! }

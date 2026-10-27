@@ -23,10 +23,25 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   public struct PersistenceWriteSample: Sendable {
     public let boundBytes: Int
     public let statements: Int
+    public let headerEncodeInputBytes: Int
+    public let sqliteVMSteps: Int
+    public let sqliteFullScanSteps: Int
+    public let familyReleaseScans: Int
 
-    public init(boundBytes: Int, statements: Int) {
+    public init(
+      boundBytes: Int,
+      statements: Int,
+      headerEncodeInputBytes: Int = 0,
+      sqliteVMSteps: Int = 0,
+      sqliteFullScanSteps: Int = 0,
+      familyReleaseScans: Int = 0
+    ) {
       self.boundBytes = boundBytes
       self.statements = statements
+      self.headerEncodeInputBytes = headerEncodeInputBytes
+      self.sqliteVMSteps = sqliteVMSteps
+      self.sqliteFullScanSteps = sqliteFullScanSteps
+      self.familyReleaseScans = familyReleaseScans
     }
   }
 
@@ -35,6 +50,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   public var rootDirectory: String
   private let executionReuse = RuntimeExecutionReuse()
   let persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)?
+  let loadAssemblyObserver: (@Sendable () throws -> Void)?
 
   public init(
     rootDirectory: String,
@@ -42,6 +58,17 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   ) {
     self.rootDirectory = rootDirectory
     self.persistenceWriteObserver = persistenceWriteObserver
+    self.loadAssemblyObserver = nil
+  }
+
+  init(
+    rootDirectory: String,
+    persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)? = nil,
+    loadAssemblyObserver: @escaping @Sendable () throws -> Void
+  ) {
+    self.rootDirectory = rootDirectory
+    self.persistenceWriteObserver = persistenceWriteObserver
+    self.loadAssemblyObserver = loadAssemblyObserver
   }
 
   public static func defaultDatabasePath(rootDirectory: String) -> String {
@@ -194,7 +221,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let rows = try mapRuntimeSQLiteError {
       try db.query(
         """
-        SELECT json(session_json) AS session_json,
+        SELECT workflow_execution_id, json_type(session_json, '$._rielaExecutionStorage') AS execution_storage,
+          json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
           json(diagnostics_json) AS diagnostics_json,
           \(runtimeLoopEvidenceSelectSQL)
@@ -209,6 +237,26 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
     }
     return try snapshot(from: row, db: db)
+  }
+
+  /// Decodes only the persisted session header and never assembles execution rows.
+  public func loadSessionHeader(sessionId: String, in db: SQLiteDatabase) throws -> WorkflowSession {
+    guard isSafeId(sessionId) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
+    }
+    guard try runtimeSnapshotTableExists(db) else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    guard let sessionJSON = try db.query(
+      "SELECT json_remove(json(session_json), '$.executions') AS session_json "
+        + "FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
+      bindings: [.text(sessionId)]
+    ).first?["session_json"], let data = sessionJSON.data(using: .utf8) else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
+    return try decoder.decode(WorkflowSession.self, from: data)
   }
 
   private func load(
@@ -222,10 +270,12 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard try runtimeSnapshotTableExists(db) else {
       throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
     }
-    let rows = try mapRuntimeSQLiteError {
-      try db.query(
+    return try mapRuntimeSQLiteError {
+      try db.transaction(begin: "BEGIN") { database in
+        let rows = try database.query(
         """
-        SELECT json(session_json) AS session_json,
+        SELECT workflow_execution_id, json_type(session_json, '$._rielaExecutionStorage') AS execution_storage,
+          json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
           json(diagnostics_json) AS diagnostics_json,
           \(runtimeLoopEvidenceSelectSQL)
@@ -233,13 +283,14 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         WHERE workflow_execution_id = ?
         LIMIT 1
         """,
-        bindings: [.text(sessionId)]
-      )
+          bindings: [.text(sessionId)]
+        )
+        guard let row = rows.first else {
+          throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+        }
+        return try snapshot(from: row, db: database)
+      }
     }
-    guard let row = rows.first else {
-      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
-    }
-    return try snapshot(from: row, db: db)
   }
 
   /// Advances runtime ID high-water marks without materializing unrelated
@@ -251,6 +302,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       if try runtimeSnapshotTableExists(read),
          !(try SQLiteWorkflowStartupIdentities.isPrepared(read, source: .runtime)) {
         let write = try openDatabase()
+        try prepareSchema(in: write)
         try write.transaction { try SQLiteWorkflowStartupIdentities.backfill($0, source: .runtime) }
       }
     }
@@ -279,9 +331,11 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       return []
     }
     return try mapRuntimeSQLiteError {
-      try db.query(
+      try db.transaction(begin: "BEGIN") { database in
+        try database.query(
         """
-        SELECT json(session_json) AS session_json,
+        SELECT workflow_execution_id, json_type(session_json, '$._rielaExecutionStorage') AS execution_storage,
+          json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
           json(diagnostics_json) AS diagnostics_json,
           \(runtimeLoopEvidenceSelectSQL)
@@ -289,8 +343,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         ORDER BY updated_at DESC, workflow_execution_id
         """,
         bindings: []
-      )
-    }.map { try snapshot(from: $0, db: db) }
+        ).map { try snapshot(from: $0, db: database) }
+      }
+    }
   }
 
   public func loadSessionOverviews(_ filter: LoopSessionOverviewFilter) throws -> [LoopSessionOverview] {
@@ -670,12 +725,23 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   func upsertSnapshot(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
+    let workBefore = db.statementWorkSnapshot
     traceSnapshotAssembly("begin", count: snapshot.session.executions.count)
     try validateTaskTerminalWrite(snapshot, in: db)
+    let previousStatus = try db.query(
+      "SELECT session_status FROM workflow_runtime_snapshots WHERE workflow_execution_id=?",
+      bindings: [.text(snapshot.session.sessionId)]
+    ).first?["session_status"].flatMap(WorkflowSessionStatus.init(rawValue:))
+    let rootSessionId = snapshot.session.rootSessionId ?? snapshot.session.sessionId
+    let isRootSession = rootSessionId == snapshot.session.sessionId
+    let releaseAtRunEnd = isRootSession && snapshot.session.status.isTerminal && previousStatus?.isTerminal != true
     let cacheKey = Self.defaultDatabasePath(rootDirectory: rootDirectory) + ":" + snapshot.session.sessionId
     let witness = UUID().uuidString
-    if try reuseSnapshotExecutions(db, snapshot, cacheKey: cacheKey, witness: witness) { return }
-    let persistedHeader = try encodedHeaderJSON(for: snapshot.session, witness: witness)
+    if try reuseSnapshotExecutions(
+      db, snapshot, cacheKey: cacheKey, witness: witness, releaseAtRunEnd: releaseAtRunEnd, workBefore: workBefore
+    ) { return }
+    let encodedHeader = try encodedHeaderJSON(for: snapshot.session, witness: witness)
+    let persistedHeader = encodedHeader.json
     try mapRuntimeSQLiteError {
       traceSnapshotAssembly("full-ready", count: snapshot.session.executions.count)
       try db.execute(
@@ -696,14 +762,24 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       bindings: [.text(snapshot.session.sessionId), .text(persistedHeader)] + snapshotColumnBindings(snapshot)
       )
       let metrics = try writeExecutionRows(db, snapshot)
-      try completeSnapshotWrite(db, snapshot, cacheKey: cacheKey, witness: witness)
-      observeWrite(headerJSON: persistedHeader, executions: snapshot.session.executions, selected: Array(snapshot.session.executions.indices), statements: metrics.statements + 1)
+      let familyReleaseScans = try completeSnapshotWrite(db, snapshot, cacheKey: cacheKey, witness: witness, releaseAtRunEnd: releaseAtRunEnd)
+      let work = db.statementWorkSnapshot - workBefore
+      observeWrite(
+        headerJSON: persistedHeader,
+        headerEncodeInputBytes: encodedHeader.inputBytes,
+        executions: snapshot.session.executions,
+        selected: Array(snapshot.session.executions.indices),
+        statements: metrics.statements + 1,
+        sqliteVMSteps: work.vmSteps,
+        sqliteFullScanSteps: work.fullScanSteps,
+        familyReleaseScans: familyReleaseScans
+      )
     }
   }
 
   private func reuseSnapshotExecutions(
     _ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot,
-    cacheKey: String, witness: String
+    cacheKey: String, witness: String, releaseAtRunEnd: Bool, workBefore: SQLiteStatementWorkSnapshot
   ) throws -> Bool {
     let sessionId = snapshot.session.sessionId
     guard let previous = executionReuse.load(cacheKey),
@@ -714,7 +790,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let changed = snapshot.session.executions.indices.filter {
       $0 >= previous.executions.count || previous.executions[$0] != snapshot.session.executions[$0]
     }
-    let persistedHeader = try encodedHeaderJSON(for: snapshot.session, witness: witness)
+    let encodedHeader = try encodedHeaderJSON(for: snapshot.session, witness: witness)
+    let persistedHeader = encodedHeader.json
     let metadata = try snapshotColumnBindings(snapshot)
     let metadataTexts = metadata.prefix(4).map { value -> String? in
       switch value {
@@ -754,38 +831,34 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         throw WorkflowRuntimePersistenceStoreError.sqliteFailed("canonical execution witness changed")
       }
       let metrics = try writeExecutionRows(db, snapshot, selected: changed)
-      try completeSnapshotWrite(
-        db, snapshot, cacheKey: cacheKey, witness: witness,
-        executionIds: Array(snapshot.session.executions.dropFirst(previous.executions.count).map(\.executionId))
+      let familyReleaseScans = try completeSnapshotWrite(db, snapshot, cacheKey: cacheKey, witness: witness, releaseAtRunEnd: releaseAtRunEnd)
+      let work = db.statementWorkSnapshot - workBefore
+      observeWrite(
+        headerJSON: persistedHeader,
+        headerEncodeInputBytes: encodedHeader.inputBytes,
+        executions: snapshot.session.executions,
+        selected: changed,
+        statements: metrics.statements + 1,
+        sqliteVMSteps: work.vmSteps,
+        sqliteFullScanSteps: work.fullScanSteps,
+        familyReleaseScans: familyReleaseScans
       )
-      observeWrite(headerJSON: persistedHeader, executions: snapshot.session.executions, selected: changed, statements: metrics.statements + 1)
     }
     return true
   }
 
   private func completeSnapshotWrite(
     _ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot, cacheKey: String, witness: String,
-    executionIds: [String]? = nil
-  ) throws {
+    executionIds: [String]? = nil, releaseAtRunEnd: Bool
+  ) throws -> Int {
     try WorkflowDefinitionPins.recordPinIfNeeded(db, snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let projectedExecutionIds: [String]
-    if let executionIds {
-      let existing = try db.query(
-        "SELECT execution_ids_json FROM runtime_startup_identities WHERE session_id=?",
-        bindings: [.text(snapshot.session.sessionId)]
-      ).first?["execution_ids_json"].flatMap { text -> [String]? in
-        guard let data = text.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode([String].self, from: data)
-      } ?? []
-      projectedExecutionIds = existing + executionIds
-    } else {
-      projectedExecutionIds = snapshot.session.executions.map(\.executionId)
-    }
+    projectedExecutionIds = executionIds ?? snapshot.session.executions.map(\.executionId)
     try SQLiteWorkflowStartupIdentities.save(db, source: .runtime,
       sessionId: snapshot.session.sessionId, workflowId: snapshot.session.workflowId,
       executionIds: projectedExecutionIds)
     try touchLoopConcurrencyLease(db, snapshot)
-    if snapshot.session.status.isTerminal {
+    if releaseAtRunEnd {
       _ = try releaseUnreferencedPayloads(rootSessionId: snapshot.session.rootSessionId ?? snapshot.session.sessionId, in: db)
     }
     // A rollback removes this UUID, invalidating the optimization on next save.
@@ -802,6 +875,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       updatedAt: Self.dateString(snapshot.session.updatedAt)
     )
     traceSnapshotAssembly("written", count: snapshot.session.executions.count)
+    return releaseAtRunEnd ? 1 : 0
   }
 
   private func traceSnapshotAssembly(_ phase: String, count: Int, changed: Int = 0) {

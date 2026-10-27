@@ -124,7 +124,8 @@ public enum SQLiteWorkflowStartupIdentities {
     // materialize entire execution objects or unrelated outputs in Swift.
     let executionIDsExpression: String
     if source.projection == "runtime_startup_identities" {
-      executionIDsExpression = """
+      if try db.tableExists("workflow_runtime_executions") {
+        executionIDsExpression = """
         CASE WHEN json_type(s.session_json, '$.\(SQLiteWorkflowRuntimePersistenceStore.executionStorageMarkerKey)') = 'text' THEN
           COALESCE((SELECT json_group_array(ordered.execution_id) FROM (
                       SELECT e.execution_id FROM workflow_runtime_executions AS e
@@ -133,6 +134,12 @@ public enum SQLiteWorkflowStartupIdentities {
         ELSE COALESCE((SELECT json_group_array(json_extract(e.value, '$.executionId'))
                        FROM json_each(s.session_json, '$.executions') AS e), '[]') END
         """
+      } else {
+        executionIDsExpression = """
+          COALESCE((SELECT json_group_array(json_extract(e.value, '$.executionId'))
+                    FROM json_each(s.session_json, '$.executions') AS e), '[]')
+          """
+      }
     } else {
       executionIDsExpression = """
         COALESCE((SELECT json_group_array(json_extract(e.value, '$.executionId'))

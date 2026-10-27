@@ -35,24 +35,34 @@ enum TerminalRetentionMetadata {
       }
     }
     if try db.tableExists("workflow_nested_invocations") {
+      let abandonedColumn = try db.tableColumnNames("workflow_nested_invocations").contains("abandoned_at")
+        ? "abandoned_at IS NOT NULL AS abandoned" : "0 AS abandoned"
       for row in try db.query("""
         SELECT \(TerminalRetentionIndexes.parent) AS parent,
           \(TerminalRetentionIndexes.child) AS child,
           \(TerminalRetentionIndexes.nestedBytes) AS bytes,
-          \(TerminalRetentionIndexes.settled) AS settled
+          \(try TerminalRetentionIndexes.settled(in: db)) AS settled, \(abandonedColumn)
         FROM \(TerminalRetentionIndexes.source("workflow_nested_invocations", in: db))
         """) {
         let parent = row["parent"], child = row["child"]
         if let parent, let prior = sessions[parent], let bytes = row["bytes"].flatMap(Int64.init) {
           sessions[parent]?.payloadBytes = try adding(prior.payloadBytes, bytes)
         }
+        let abandoned = row["abandoned"] == "1"
         let valid = parent.flatMap { sessions[$0] } != nil && child.flatMap { sessions[$0] } != nil
           && child.flatMap { sessions[$0]?.parentId } == parent && row["settled"] == "1"
-        if !valid {
+        if !valid && !(abandoned && (child == nil || child.flatMap({ sessions[$0] }) == nil)) {
           for id in [parent, child].compactMap({ $0 }) where sessions[id] != nil {
             sessions[id]?.protection = "unsettledNestedInvocation"
           }
         }
+      }
+    }
+    if try db.tableExists("workflow_runtime_payloads") {
+      for row in try db.query("SELECT root_session_id AS id, sum(byte_count) AS bytes FROM workflow_runtime_payloads GROUP BY root_session_id") {
+        guard let id = row["id"], var session = sessions[id], let bytes = row["bytes"].flatMap(Int64.init) else { continue }
+        session.payloadBytes = try adding(session.payloadBytes, bytes)
+        sessions[id] = session
       }
     }
     if try db.tableExists("loop_baselines") {

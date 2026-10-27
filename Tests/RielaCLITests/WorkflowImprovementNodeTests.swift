@@ -7,6 +7,7 @@ import XCTest
 @testable import RielaCLI
 
 final class WorkflowImprovementNodeTests: XCTestCase {
+  private final class Clock: @unchecked Sendable { var now: Date; init(_ now: Date) { self.now = now } }
   private struct ValidationCase {
     var reason: String
     var patch: JSONValue
@@ -36,15 +37,24 @@ final class WorkflowImprovementNodeTests: XCTestCase {
 
     let second = try await run(command, fixture: fixture, mode: .service(.init(kind: .api, id: "test")))
     XCTAssertEqual(second.session.definitionSource?.versionId, seed)
+    let previousRow = try XCTUnwrap(CLIWorkflowSessionStore(rootDirectory: fixture.store.path)
+      .list(workflowName: "definition-store-self-improvement", limit: 100)
+      .first { $0.session.sessionId == first.session.sessionId })
+    XCTAssertTrue(previousRow.session.executions.isEmpty, "list rows should omit step executions")
     let context = try XCTUnwrap(addonPayload(second, stepId: "improve-context"))
     XCTAssertEqual(context["runDigest"]?.objectValue?["sessionId"], .string(first.session.sessionId))
     let digest = try XCTUnwrap(context["runDigest"]?.objectValue?["stepExecutions"]?.arrayValue)
-    XCTAssertTrue(digest.contains { $0.objectValue?["stepExecutionId"]?.stringValue == first.session.executions.first(where: { $0.stepId == "summarize" })?.executionId })
+    let summarizeExecutionId = first.session.executions.first(where: { $0.stepId == "summarize" })?.executionId
+    XCTAssertTrue(digest.contains { $0.objectValue?["stepExecutionId"]?.stringValue == summarizeExecutionId }, "digest=\(digest), expected=\(String(describing: summarizeExecutionId))")
+    XCTAssertTrue(digest.contains { $0.objectValue?["stepExecutionId"]?.stringValue == "summarize-attempt-1-exec-1" }, "digest=\(digest)")
     XCTAssertFalse(digest.contains { $0.objectValue?["nodeId"]?.stringValue?.hasPrefix("improve-") == true })
     XCTAssertEqual(addonPayload(second, stepId: "improve-apply")?["status"], .string("applied"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("tmp/efficient-history").path),
+      "self-improve patch files must stay in the OS temporary directory")
     XCTAssertEqual(runner.invocationCount, 1)
     let store = WorkflowDefinitionStore(rootDirectory: fixture.store.path)
     let audits = try store.history(workflowName: "definition-store-self-improvement")
+    XCTAssertTrue(audits.allSatisfy(\.retained), "without project config, the default history window retains the current versions")
     XCTAssertEqual(audits.first?.operation, .update)
     XCTAssertEqual(audits.first?.actor.kind, .improvementNode)
     XCTAssertEqual(audits.first?.reason, "summaries omitted the action items; require an action-item list")
@@ -56,6 +66,55 @@ final class WorkflowImprovementNodeTests: XCTestCase {
     let summarize = try XCTUnwrap(third.session.executions.first(where: { $0.stepId == "summarize" }))
     XCTAssertTrue(summarize.inputSnapshot? ["promptText"]?.stringValue?.contains("explicit action-item list") == true)
     XCTAssertEqual(try fileDigests(root: fixture.workflow), originalFiles)
+  }
+
+  func testProjectHistoryRetentionConfigAppliesToSelfImprovementWrite() async throws {
+    let fixture = try makeFixture(projectWorkflowLayout: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let config = fixture.root.appendingPathComponent(".riela/config.json")
+    try FileManager.default.createDirectory(at: config.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try #"{"workflowDefinitions":{"historyRetention":2}}"#.write(to: config, atomically: true, encoding: .utf8)
+
+    let clock = Clock(Date(timeIntervalSinceNow: -30 * 24 * 60 * 60))
+    let service = WorkflowDefinitionService(storeRoot: fixture.store.path, fileResolver: FileSystemWorkflowBundleResolver(),
+      defaultHistoryRetention: 10, now: { clock.now })
+    let resolution = WorkflowResolutionOptions(workflowName: "definition-store-self-improvement", scope: .project,
+      workingDirectory: fixture.root.path)
+    _ = try service.importDefinition(resolution: resolution, force: false, reason: nil, evidence: [], actor: WorkflowDefinitionActor(kind: .cli))
+    for prompt in ["historical two", "historical three", "historical four"] {
+      clock.now = clock.now.addingTimeInterval(25 * 60 * 60)
+      _ = try service.updatePrompt(workflowName: "definition-store-self-improvement", nodeId: "summarize",
+        field: .node(.promptTemplate), text: prompt, reason: "prepopulate", expectedVersionId: nil,
+        evidence: [], actor: WorkflowDefinitionActor(kind: .cli))
+    }
+    let beforeStore = WorkflowDefinitionStore(rootDirectory: fixture.store.path)
+    let beforeHistory = try beforeStore.history(workflowName: "definition-store-self-improvement", limit: 10)
+    let oldestNonFileVersions = Array(beforeHistory.filter { $0.operation == .updatePrompt }.reversed().prefix(2).map(\.versionId))
+    XCTAssertEqual(oldestNonFileVersions.count, 2)
+    let homeTmp = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("tmp/efficient-history")
+    let cwdTmp = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/efficient-history")
+    let homeTmpExisted = FileManager.default.fileExists(atPath: homeTmp.path)
+    let cwdTmpExisted = FileManager.default.fileExists(atPath: cwdTmp.path)
+
+    let runner = InProcessRielaCLIRunner()
+    var command = WorkflowRunCommand()
+    command.improvementCLIProcessRunnerOverride = runner
+    let first = try await run(command, fixture: fixture, mode: .service(.init(kind: .api, id: "config-retention")))
+    XCTAssertFalse(first.session.executions.contains { $0.stepId == "improve-apply" })
+    try writeProposal(reason: "apply configured history", patch: .array([.object([
+      "op": .string("replace"), "path": .string("/workflow.json/defaults/nodeTimeoutMs"), "value": .integer(31000)
+    ])]), to: fixture.scenario)
+    let second = try await run(command, fixture: fixture, mode: .service(.init(kind: .api, id: "config-retention")))
+    XCTAssertEqual(addonPayload(second, stepId: "improve-apply")?["status"], .string("applied"))
+    XCTAssertEqual(runner.invocationCount, 1)
+    let afterStore = WorkflowDefinitionStore(rootDirectory: fixture.store.path)
+    for versionId in oldestNonFileVersions {
+      XCTAssertThrowsError(try afterStore.document(versionId: versionId), "expected configured retention to drop \(versionId)")
+    }
+    XCTAssertEqual(FileManager.default.fileExists(atPath: homeTmp.path), homeTmpExisted,
+      "self-improve must not create a temporary directory under HOME")
+    XCTAssertEqual(FileManager.default.fileExists(atPath: cwdTmp.path), cwdTmpExisted,
+      "self-improve must not create a temporary directory under the current directory")
   }
 
   func testOneTimeRunSkipsImprovementWithoutStoreOrCLI() async throws {
@@ -399,14 +458,19 @@ final class WorkflowImprovementNodeTests: XCTestCase {
     ])
   }
 
-  private struct Fixture { let root: URL; let workflow: URL; let scenario: URL; let store: URL }
+  private struct Fixture { let root: URL; let workflow: URL; let scenario: URL; let store: URL; let projectWorkflowLayout: Bool }
 
-  private func makeFixture() throws -> Fixture {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("improvement-node-\(UUID().uuidString)", isDirectory: true)
-    let workflow = root.appendingPathComponent("definition-store-self-improvement", isDirectory: true)
+  private func makeFixture(projectWorkflowLayout: Bool = false) throws -> Fixture {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/efficient-history/improvement-node-\(UUID().uuidString)", isDirectory: true)
+    let workflow = projectWorkflowLayout
+      ? root.appendingPathComponent(".riela/workflows/definition-store-self-improvement", isDirectory: true)
+      : root.appendingPathComponent("definition-store-self-improvement", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: workflow.deletingLastPathComponent(), withIntermediateDirectories: true)
     try FileManager.default.copyItem(at: repositoryRoot().appendingPathComponent("examples/definition-store-self-improvement"), to: workflow)
-    return Fixture(root: root, workflow: workflow, scenario: workflow.appendingPathComponent("mock-scenario.json"), store: root.appendingPathComponent("store", isDirectory: true))
+    return Fixture(root: root, workflow: workflow, scenario: workflow.appendingPathComponent("mock-scenario.json"),
+      store: root.appendingPathComponent("store", isDirectory: true), projectWorkflowLayout: projectWorkflowLayout)
   }
 
   private func repositoryRoot() -> URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent() }
@@ -416,7 +480,8 @@ final class WorkflowImprovementNodeTests: XCTestCase {
       target: "definition-store-self-improvement",
       resolution: WorkflowResolutionOptions(
         workflowName: "definition-store-self-improvement",
-        workflowDefinitionDir: fixture.root.path,
+        scope: fixture.projectWorkflowLayout ? .project : .direct,
+        workflowDefinitionDir: fixture.projectWorkflowLayout ? nil : fixture.root.path,
         workingDirectory: fixture.root.path
       ),
       mockScenarioPath: fixture.scenario.path,
@@ -442,7 +507,7 @@ final class WorkflowImprovementNodeTests: XCTestCase {
       mode: .strictReadOnly,
       options: .readOnlyDefault
     )
-    return try ["definition_blobs", "definition_versions", "definition_heads", "definition_change_audit"].map { table in
+      return try ["definition_history_versions", "definition_versions", "definition_heads", "definition_change_audit"].map { table in
       Int(try XCTUnwrap(database.query("SELECT COUNT(*) AS count FROM \(table)").first?["count"])) ?? -1
     }
   }

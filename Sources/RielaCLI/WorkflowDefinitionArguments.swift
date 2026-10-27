@@ -16,6 +16,8 @@ enum WorkflowDefinitionCommandOperation: String, CaseIterable {
   case update
   case updatePrompt = "update-prompt"
   case restore
+  case undo
+  case redo
   case `import`
   case export
 }
@@ -29,13 +31,14 @@ struct ParsedWorkflowDefinitionCommand {
   static let valueOptions: Set<String> = [
     "--node", "--limit", "--version", "--from", "--to", "--patch", "--from-file", "--reason",
     "--expected-version", "--evidence", "--actor", "--actor-kind", "--field", "--text", "--text-file",
-    "--workflow-definition-dir", "--session-store", "--scope", "--working-dir", "--output"
+    "--workflow-definition-dir", "--session-store", "--scope", "--working-dir", "--output", "--history-retention",
+    "--expected-revision"
   ]
   static let flagOptions: Set<String> = ["--authored", "--file", "--force", "--to-source", "--overwrite"]
 
   init(_ arguments: [String]) throws {
     guard let first = arguments.first, let operation = WorkflowDefinitionCommandOperation(rawValue: first) else {
-      throw WorkflowDefinitionCLIError.usage("workflow definition requires history|show|diff|update|update-prompt|restore|import|export")
+      throw WorkflowDefinitionCLIError.usage("workflow definition requires history|show|diff|update|update-prompt|restore|undo|redo|import|export")
     }
     guard arguments.count > 1, !arguments[1].hasPrefix("--") else {
       throw WorkflowDefinitionCLIError.usage("workflow definition \(operation.rawValue) requires a workflow name")
@@ -107,6 +110,14 @@ struct ParsedWorkflowDefinitionCommand {
     case .restore:
       guard value("--version") != nil else { throw WorkflowDefinitionCLIError.usage("restore requires --version") }
       try requireReason()
+    case .undo, .redo:
+      try requireReason()
+      if value("--expected-revision") != nil && value("--expected-version") != nil {
+        throw WorkflowDefinitionCLIError.usage("--expected-revision and --expected-version cannot be combined")
+      }
+      if let revision = value("--expected-revision"), Int64(revision).map({ $0 >= 0 }) != true {
+        throw WorkflowDefinitionCLIError.usage("--expected-revision must be a non-negative integer")
+      }
     case .import:
       if has("--force") { try requireReason() }
     case .export:
@@ -123,14 +134,19 @@ struct ParsedWorkflowDefinitionCommand {
     let allowedValues = Self.operationValueOptions[operation, default: []].union(commonValues)
     let allowedFlags = Self.operationFlags[operation, default: []].union(commonFlags)
     try allow(allowedValues, flags: allowedFlags)
+    if let rawRetention = value("--history-retention"), Int(rawRetention).map({ (0...10_000).contains($0) }) != true {
+      throw WorkflowDefinitionCLIError.usage("--history-retention must be between 0 and 10000")
+    }
   }
 
   private static let operationValueOptions: [WorkflowDefinitionCommandOperation: Set<String>] = [
     .history: ["--node", "--limit"], .show: ["--version", "--node"], .diff: ["--from", "--to"],
-    .update: ["--patch", "--from-file", "--reason", "--expected-version", "--evidence", "--actor", "--actor-kind"],
-    .updatePrompt: ["--node", "--field", "--text", "--text-file", "--reason", "--expected-version", "--evidence", "--actor", "--actor-kind"],
-    .restore: ["--version", "--reason", "--evidence", "--actor"],
-    .import: ["--workflow-definition-dir", "--reason", "--evidence", "--actor"],
+    .update: ["--patch", "--from-file", "--reason", "--expected-version", "--evidence", "--actor", "--actor-kind", "--history-retention"],
+    .updatePrompt: ["--node", "--field", "--text", "--text-file", "--reason", "--expected-version", "--evidence", "--actor", "--actor-kind", "--history-retention"],
+    .restore: ["--version", "--reason", "--evidence", "--actor", "--history-retention"],
+    .undo: ["--reason", "--expected-revision", "--expected-version", "--evidence", "--actor"],
+    .redo: ["--reason", "--expected-revision", "--expected-version", "--evidence", "--actor"],
+    .import: ["--workflow-definition-dir", "--reason", "--evidence", "--actor", "--history-retention"],
     .export: ["--version", "--to"]
   ]
   private static let operationFlags: [WorkflowDefinitionCommandOperation: Set<String>] = [

@@ -36,6 +36,7 @@ struct RetentionSQLiteReclaimer: Sendable {
   }
   var automaticConversionLimitBytes: Int64 = 64 << 20
   var automaticPageBudget: Int = 65_536
+  var manualPageBudget: Int = 4_096
   var statementObserver: (@Sendable (String) -> Void)?
 
   func reclaim(databasePath: String, mode: RetentionReclamationMode) -> RetentionReclamationResult {
@@ -75,7 +76,7 @@ struct RetentionSQLiteReclaimer: Sendable {
       case 2:
         let vacuumSQL = mode == .automatic
           ? "PRAGMA incremental_vacuum(\(max(0, automaticPageBudget)))"
-          : "PRAGMA incremental_vacuum"
+          : "PRAGMA incremental_vacuum(\(max(0, manualPageBudget)))"
         _ = try query(vacuumSQL, database: database)
         result.action = try checkpoint(database) ? .checkpointPending : .incrementalVacuum
       case 1:

@@ -22,7 +22,9 @@ final class TerminalRetentionTests: XCTestCase {
       artifactRoot: root.appendingPathComponent("artifacts").path, memoryRoot: root.appendingPathComponent("memory").path)
     let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: paths.sessionRoot)
     try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
-    let db = try SQLiteDatabase.open(path: path)
+    let db = try SQLiteDatabase.open(path: path, options: .init(enableWAL: false, requireJSONB: false))
+    try db.execute("PRAGMA auto_vacuum=INCREMENTAL")
+    _ = try db.query("PRAGMA journal_mode=WAL")
     try db.execute("""
       CREATE TABLE workflow_runtime_snapshots(workflow_execution_id TEXT PRIMARY KEY,workflow_id TEXT,session_status TEXT,
         parent_session_id TEXT,root_session_id TEXT,updated_at TEXT,session_json BLOB,root_output_json BLOB,
@@ -84,6 +86,139 @@ final class TerminalRetentionTests: XCTestCase {
     XCTAssertThrowsError(try insert("old", db: db))
     XCTAssertThrowsError(try db.execute("INSERT INTO workflow_messages VALUES('old',jsonb('{}'),jsonb('[]'))"))
     XCTAssertEqual(try execute(paths).removedSessionCount, 0)
+  }
+
+  func testPruneReleasesRuntimePayloadsAndExecutionRowsAndCountsRootPayloadOnce() throws {
+    let fixture = try fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try insert("old", db: fixture.db)
+    try insert("child", parent: "old", root: "old", db: fixture.db)
+    try fixture.db.execute("CREATE TABLE workflow_runtime_payloads(root_session_id TEXT,digest TEXT,bytes BLOB,byte_count INTEGER)")
+    try fixture.db.execute("CREATE TABLE workflow_runtime_executions(workflow_execution_id TEXT,ordinal INTEGER)")
+    try fixture.db.execute("CREATE TABLE workflow_nested_invocation_refs(invocation_key TEXT,role TEXT,ordinal INTEGER,root_session_id TEXT,digest TEXT)")
+    let base = try TerminalRetentionMetadata.sessions(fixture.db)
+    try fixture.db.execute("INSERT INTO workflow_runtime_payloads VALUES('old','digest',jsonb('{}'),4096)")
+    try fixture.db.execute("INSERT INTO workflow_runtime_executions VALUES('old',0),('child',0)")
+    try fixture.db.execute("INSERT INTO workflow_nested_invocation_refs VALUES('key','parent',0,'old','digest')")
+    let databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: fixture.paths.sessionRoot)
+    _ = try fixture.db.query("PRAGMA wal_checkpoint(FULL)")
+    let beforeFile = try databaseSize(databasePath)
+    let before = try TerminalRetentionMetadata.sessions(fixture.db)
+    XCTAssertEqual(before.first(where: { $0.id == "old" })?.payloadBytes,
+      (base.first(where: { $0.id == "old" })?.payloadBytes ?? 0) + 4096)
+    XCTAssertEqual(before.first(where: { $0.id == "child" })?.payloadBytes,
+      base.first(where: { $0.id == "child" })?.payloadBytes)
+
+    let report = try execute(fixture.paths)
+
+    XCTAssertEqual(report.removedSessionCount, 2)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_runtime_payloads").isEmpty)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_runtime_executions").isEmpty)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_nested_invocation_refs").isEmpty)
+    XCTAssertGreaterThan(report.reclamation.reduce(Int64(0)) { $0 + $1.reclaimedBytes }, 0)
+    XCTAssertLessThan(try databaseSize(databasePath), beforeFile)
+  }
+
+  func testAbandonedAbsentChildRowAndRefsAreDeletedWhenFamilyIsPruned() throws {
+    let fixture = try fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try insert("old", db: fixture.db)
+    try fixture.db.execute("""
+      CREATE TABLE workflow_nested_invocations(invocation_key TEXT PRIMARY KEY,reservation_json BLOB,
+        child_terminal_json BLOB,parent_message_json BLOB,recovery_reason TEXT,abandoned_at TEXT)
+      """)
+    try fixture.db.execute("CREATE TABLE workflow_nested_invocation_refs(invocation_key TEXT,role TEXT,ordinal INTEGER,root_session_id TEXT,digest TEXT)")
+    try fixture.db.execute("""
+      INSERT INTO workflow_nested_invocations VALUES('absent',jsonb('{"parentSessionId":"old","childSnapshot":{"session":{"sessionId":"missing"}}}'),NULL,NULL,NULL,'2026-10-25T00:00:00Z')
+      """)
+    try fixture.db.execute("INSERT INTO workflow_nested_invocation_refs VALUES('absent','parent',0,'old','digest')")
+    let snapshotBytes = try fixture.db.query("SELECT sum(\(TerminalRetentionIndexes.runtimeBytes)) AS bytes FROM workflow_runtime_snapshots")
+      .first?["bytes"].flatMap(Int64.init) ?? 0
+    let nestedRowBytes = try fixture.db.query("SELECT length(CAST(reservation_json AS BLOB)) AS bytes FROM workflow_nested_invocations")
+      .first?["bytes"].flatMap(Int64.init) ?? 0
+    let messageBytes = try fixture.db.query("SELECT sum(\(TerminalRetentionIndexes.messageBytes)) AS bytes FROM workflow_messages")
+      .first?["bytes"].flatMap(Int64.init) ?? 0
+    let report = try execute(fixture.paths)
+    XCTAssertEqual(report.removedSessionCount, 1)
+    XCTAssertEqual(report.beforePayloadBytes, snapshotBytes + nestedRowBytes + messageBytes)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_nested_invocations").isEmpty)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_nested_invocation_refs").isEmpty)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM session_retention_tombstones WHERE cleanup_pending=1").isEmpty)
+  }
+
+  func testPendingCleanupDeletesNestedRowsAddedAfterFamilyCommit() throws {
+    let fixture = try fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try insert("old", db: fixture.db)
+    try fixture.db.execute("""
+      CREATE TABLE workflow_nested_invocations(invocation_key TEXT PRIMARY KEY,reservation_json BLOB,
+        child_terminal_json BLOB,parent_message_json BLOB,recovery_reason TEXT,abandoned_at TEXT)
+      """)
+    try fixture.db.execute("CREATE TABLE workflow_nested_invocation_refs(invocation_key TEXT,role TEXT,ordinal INTEGER,root_session_id TEXT,digest TEXT)")
+    let interrupted = TerminalRetentionExecutor(clock: { self.now }, beforeSecondaryCleanup: {
+      try fixture.db.execute("""
+        INSERT INTO workflow_nested_invocations VALUES('late',jsonb('{"parentSessionId":"old","childSnapshot":{"session":{"sessionId":"missing"}}}'),NULL,NULL,NULL,'2026-10-25T00:00:00Z')
+        """)
+      try fixture.db.execute("INSERT INTO workflow_nested_invocation_refs VALUES('late','parent',0,'old','digest')")
+      throw TerminalRetentionError.changedFamily
+    })
+    XCTAssertThrowsError(try execute(fixture.paths, executor: interrupted))
+    XCTAssertEqual(try fixture.db.query("SELECT cleanup_pending FROM session_retention_tombstones WHERE session_id='old'").first?["cleanup_pending"], "1")
+
+    let recovered = try execute(fixture.paths)
+
+    XCTAssertEqual(recovered.pendingCleanupCount, 0)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_nested_invocations WHERE invocation_key='late'").isEmpty)
+    XCTAssertTrue(try fixture.db.query("SELECT * FROM workflow_nested_invocation_refs WHERE invocation_key='late'").isEmpty)
+  }
+
+  func testNestedIndexUpgradeReplacesLegacyExpressionWithCoveringV2() throws {
+    let fixture = try fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.db.execute("""
+      CREATE TABLE workflow_nested_invocations(invocation_key TEXT PRIMARY KEY,reservation_json BLOB,
+        child_terminal_json BLOB,parent_message_json BLOB,recovery_reason TEXT)
+      """)
+    try fixture.db.execute("""
+      CREATE INDEX idx_retention_metadata_v1_workflow_nested_invocations ON workflow_nested_invocations(
+        json_extract(reservation_json,'$.childSnapshot.session.sessionId'),
+        json_extract(reservation_json,'$.parentSessionId'),length(CAST(reservation_json AS BLOB)),
+        (child_terminal_json IS NOT NULL AND parent_message_json IS NOT NULL AND recovery_reason IS NULL))
+      """)
+    try fixture.db.execute("ALTER TABLE workflow_nested_invocations ADD COLUMN abandoned_at TEXT")
+
+    try TerminalRetentionIndexes.prepare(fixture.db)
+
+    let indexSQL = try XCTUnwrap(fixture.db.query("SELECT sql FROM sqlite_master WHERE name='idx_retention_metadata_v2_workflow_nested_invocations'").first?["sql"])
+    XCTAssertTrue(indexSQL.contains("abandoned_at IS NOT NULL"))
+    XCTAssertTrue(try fixture.db.query("SELECT name FROM sqlite_master WHERE name='idx_retention_metadata_v1_workflow_nested_invocations'").isEmpty)
+    let plan = try fixture.db.query("""
+      EXPLAIN QUERY PLAN SELECT json_extract(reservation_json,'$.parentSessionId'),
+        json_extract(reservation_json,'$.childSnapshot.session.sessionId'),
+        length(CAST(reservation_json AS BLOB))+coalesce(length(CAST(child_terminal_json AS BLOB)),0)
+          +coalesce(length(CAST(parent_message_json AS BLOB)),0),
+        (child_terminal_json IS NOT NULL AND parent_message_json IS NOT NULL AND recovery_reason IS NULL)
+          OR abandoned_at IS NOT NULL
+      FROM workflow_nested_invocations INDEXED BY idx_retention_metadata_v2_workflow_nested_invocations
+      """)
+    XCTAssertTrue(plan.contains { ($0["detail"] ?? "").contains("COVERING INDEX") }, "\(plan)")
+    let parentDeletePlan = try fixture.db.query("""
+      EXPLAIN QUERY PLAN DELETE FROM workflow_nested_invocations
+      WHERE json_extract(reservation_json,'$.parentSessionId') IN ('parent-a','parent-b')
+      """)
+    XCTAssertTrue(parentDeletePlan.contains {
+      ($0["detail"] ?? "").contains("USING INDEX idx_workflow_nested_invocations_parent")
+    }, "\(parentDeletePlan)")
+  }
+
+  private func fileSize(_ path: String) throws -> Int64 {
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    return (attributes[.size] as? NSNumber)?.int64Value ?? 0
+  }
+
+  private func databaseSize(_ path: String) throws -> Int64 {
+    let walSize = FileManager.default.fileExists(atPath: path + "-wal") ? try fileSize(path + "-wal") : 0
+    return try fileSize(path) + walSize
   }
 
   func testDryRunAndPausedChildNeverDelete() throws {

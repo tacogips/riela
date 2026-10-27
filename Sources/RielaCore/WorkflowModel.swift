@@ -233,6 +233,7 @@ public struct WorkflowMemoryDeclaration: Codable, Equatable, Sendable {
   public var dataSchema: JSONValue?
   public var scope: WorkflowMemoryScope?
   public var defaultLimit: Int?
+  public var historyRetention: Int?
 
   public init(
     id: String,
@@ -240,7 +241,8 @@ public struct WorkflowMemoryDeclaration: Codable, Equatable, Sendable {
     purpose: String? = nil,
     dataSchema: JSONValue? = nil,
     scope: WorkflowMemoryScope? = nil,
-    defaultLimit: Int? = nil
+    defaultLimit: Int? = nil,
+    historyRetention: Int? = nil
   ) {
     self.id = id
     self.description = description
@@ -248,6 +250,7 @@ public struct WorkflowMemoryDeclaration: Codable, Equatable, Sendable {
     self.dataSchema = dataSchema
     self.scope = scope
     self.defaultLimit = defaultLimit
+    self.historyRetention = historyRetention
   }
 }
 

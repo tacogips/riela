@@ -167,7 +167,7 @@ enum CLIWorkflowSessionStoreError: case canonicalSnapshotMissing(sessionId: Stri
 ## Verification
 
 ```
-arch -arm64 /bin/zsh -lc 'swift test --filter "CLIWorkflowSessionEnvelopeTests|CLIWorkflowSessionStoreResilienceTests|SessionReconcileCommandTests|WorkflowCommandLivePersistence|SessionRecoveryHydrationScopeTests|RuntimeStoreFirstOpenerAutoVacuumTests|PrivateWorkflowTests"' > tmp/efficient-history/eh-06-cli-session-envelope/test.log 2>&1; echo $?
+arch -arm64 /bin/zsh -lc 'swift test --filter "CLIWorkflowSessionEnvelopeTests|CLIWorkflowSessionStoreResilienceTests|SessionReconcileCommandTests|WorkflowCommandLivePersistence|SessionRecoveryHydrationScopeTests|RuntimeStoreFirstOpenerAutoVacuumTests|PrivateWorkflowTests|WorkflowCommandSessionDiscoveryTests"' > tmp/efficient-history/eh-06-cli-session-envelope/test.log 2>&1; echo $?
 arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/CLIWorkflowSessionStore.swift Tests/RielaCLITests/CLIWorkflowSessionEnvelopeTests.swift Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift'
 ```
 

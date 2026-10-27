@@ -8,27 +8,62 @@ public struct PersistedCLIWorkflowSession: Codable, Equatable, Sendable {
   public var resolution: WorkflowResolutionOptions
   public var mockScenarioPath: String?
   public var runtimeVariables: JSONObject?
+  /// Summary count populated by `list`; execution payloads remain unloaded.
+  public var executionCount: Int?
 
   public init(
     workflowName: String,
     session: WorkflowSession,
     resolution: WorkflowResolutionOptions,
     mockScenarioPath: String? = nil,
-    runtimeVariables: JSONObject? = nil
+    runtimeVariables: JSONObject? = nil,
+    executionCount: Int? = nil
   ) {
     self.workflowName = workflowName
     self.session = session
     self.resolution = resolution
     self.mockScenarioPath = mockScenarioPath
     self.runtimeVariables = runtimeVariables
+    self.executionCount = executionCount
   }
 }
 
 public enum CLIWorkflowSessionStoreError: Error, Equatable, Sendable {
   case invalidSessionId(String)
   case notFound(String)
+  case canonicalSnapshotMissing(sessionId: String)
   case io(String)
   case sqliteFailed(String)
+}
+
+private struct CLIWorkflowSessionEnvelope: Codable {
+  struct SessionStub: Codable {
+    var sessionId: String
+    var workflowId: String
+    var status: WorkflowSessionStatus
+    var updatedAt: Date
+  }
+
+  var workflowName: String
+  var resolution: WorkflowResolutionOptions
+  var mockScenarioPath: String?
+  var runtimeVariables: JSONObject?
+  var sessionStorage: String
+  var session: SessionStub
+
+  init(_ record: PersistedCLIWorkflowSession) {
+    workflowName = record.workflowName
+    resolution = record.resolution
+    mockScenarioPath = record.mockScenarioPath
+    runtimeVariables = record.runtimeVariables
+    sessionStorage = "canonical"
+    session = SessionStub(
+      sessionId: record.session.sessionId,
+      workflowId: record.session.workflowId,
+      status: record.session.status,
+      updatedAt: record.session.updatedAt
+    )
+  }
 }
 
 public struct CLIWorkflowSessionStore: Sendable {
@@ -82,13 +117,38 @@ public struct CLIWorkflowSessionStore: Sendable {
   }
 
   public func save(_ record: PersistedCLIWorkflowSession) throws {
+    guard record.executionCount == nil else {
+      throw CLIWorkflowSessionStoreError.sqliteFailed(
+        "cannot save header-only session summary: \(record.session.sessionId)"
+      )
+    }
     guard isSafeSessionId(record.session.sessionId) else {
       throw CLIWorkflowSessionStoreError.invalidSessionId(record.session.sessionId)
     }
     try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true)
-    let db = try openDatabase()
-    try ensureSchema(db)
-    try upsertRecord(db, record)
+    let db = try openPersistenceDatabase()
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory)
+    )
+    try prepareRuntimePersistenceSchemas(in: db, runtimeStore: runtimeStore)
+    let seedSnapshot = WorkflowRuntimePersistenceProjector.snapshot(session: record.session)
+    try WorkflowDefinitionPins.recordForeignPinIfNeeded(
+      snapshot: seedSnapshot,
+      sessionStoreRoot: runtimeStore.rootDirectory
+    )
+    try db.transaction { database in
+      let snapshot: WorkflowRuntimePersistenceSnapshot
+      do {
+        var existing = try runtimeStore.load(sessionId: record.session.sessionId, in: database)
+        existing.session = record.session
+        snapshot = existing
+      } catch let error as WorkflowRuntimePersistenceStoreError {
+        guard case .notFound = error else { throw error }
+        snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: record.session)
+      }
+      try upsertRecord(database, record)
+      try runtimeStore.save(snapshot, in: database)
+    }
   }
 
   public func save(
@@ -151,6 +211,10 @@ public struct CLIWorkflowSessionStore: Sendable {
     runtimeStore: SQLiteWorkflowRuntimePersistenceStore
   ) throws {
     try validate(record: record, snapshot: snapshot)
+    try WorkflowDefinitionPins.recordForeignPinIfNeeded(
+      snapshot: snapshot,
+      sessionStoreRoot: runtimeStore.rootDirectory
+    )
     try db.transaction { database in
       try upsertRecord(database, record)
       try runtimeStore.save(snapshot, in: database)
@@ -165,6 +229,10 @@ public struct CLIWorkflowSessionStore: Sendable {
     runtimeStore: SQLiteWorkflowRuntimePersistenceStore
   ) throws {
     try validate(record: record, snapshot: snapshot)
+    try WorkflowDefinitionPins.recordForeignPinIfNeeded(
+      snapshot: snapshot,
+      sessionStoreRoot: runtimeStore.rootDirectory
+    )
     try db.transaction { database in
       try upsertRecord(database, record)
       try runtimeStore.save(snapshot, appendingWorkflowMessages: messages, in: database)
@@ -197,36 +265,46 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
-    let rows: [SQLiteRow]
     do {
-      rows = try mapSQLiteError {
-        try db.query(
-        "SELECT json(record_json) AS record_json FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
-        bindings: [.text(sessionId)]
+      return try db.transaction(begin: "BEGIN") { database in
+        let rows = try mapSQLiteError {
+          try database.query(
+            "SELECT json(record_json) AS record_json, json_type(record_json, '$.sessionStorage') AS storage FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
+            bindings: [.text(sessionId)]
+          )
+        }
+        guard let row = rows.first else {
+          throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+        }
+        guard let recordText = row["record_json"] else {
+          if strictDecoding {
+            throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is missing")
+          }
+          throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+        }
+        let record = try decodeStoredRecord(
+          recordText,
+          sessionId: sessionId,
+          in: database,
+          includeExecutions: true,
+          isLegacy: row["storage"] == nil
         )
+        if strictDecoding, record.session.sessionId != sessionId {
+          throw CLIWorkflowSessionStoreError.sqliteFailed("stored session ID does not match requested ID")
+        }
+        return record
       }
     } catch {
-      if strictDecoding {
-        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record query failed")
+      if let storeError = error as? CLIWorkflowSessionStoreError {
+        switch storeError {
+        case .notFound: throw storeError
+        case .canonicalSnapshotMissing where strictDecoding: throw storeError
+        case .canonicalSnapshotMissing:
+          warnAboutSkippedRecords(count: 1)
+          throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+        default: break
+        }
       }
-      throw error
-    }
-    guard let row = rows.first else {
-      throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
-    }
-    guard let recordText = row["record_json"] else {
-      if strictDecoding {
-        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is missing")
-      }
-      throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
-    }
-    do {
-      let record = try decodeRecord(recordText)
-      if strictDecoding, record.session.sessionId != sessionId {
-        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session ID does not match requested ID")
-      }
-      return record
-    } catch {
       if strictDecoding {
         throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is invalid or mismatched")
       }
@@ -243,10 +321,12 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       return []
     }
-    let rows = try mapSQLiteError {
-      try db.query("SELECT json(record_json) AS record_json FROM cli_workflow_sessions ORDER BY session_id")
+    return try db.transaction(begin: "BEGIN") { database in
+      let rows = try mapSQLiteError {
+        try database.query("SELECT session_id, json(record_json) AS record_json, json_type(record_json, '$.sessionStorage') AS storage FROM cli_workflow_sessions ORDER BY session_id")
+      }
+      return decodeRecords(rows, in: database, includeExecutions: true)
     }
-    return decodeRecords(rows)
   }
 
   /// Cheap existence probe used while reserving a fresh session id. It never
@@ -320,13 +400,28 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard FileManager.default.fileExists(atPath: databasePath) else { return }
     let db = try openDatabase(readOnly: true)
     guard try tableExists(db, name: "cli_workflow_sessions") else { return }
-    for row in try mapSQLiteError({
-      try db.query(
-        "SELECT json_extract(e.value, '$.executionId') AS execution_id "
-          + "FROM cli_workflow_sessions, json_each(record_json, '$.session.executions') AS e"
-      )
-    }) {
-      if let executionId = row["execution_id"] { generator.noteExistingStepExecutionId(executionId) }
+    let rows = try db.query(
+      "SELECT session_id, json_type(record_json, '$.sessionStorage') AS storage "
+        + "FROM cli_workflow_sessions ORDER BY session_id"
+    )
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory)
+    )
+    for row in rows {
+      guard let sessionId = row["session_id"] else { continue }
+      if row["storage"] == "text" {
+        try runtimeStore.executionIdentities(sessionId: sessionId)
+          .forEach { generator.noteExistingStepExecutionId($0) }
+      } else {
+        let identities = try db.query(
+          "SELECT json_extract(e.value, '$.executionId') AS execution_id "
+            + "FROM cli_workflow_sessions, json_each(record_json, '$.session.executions') AS e "
+            + "WHERE session_id = ?",
+          bindings: [.text(sessionId)]
+        )
+        identities.compactMap { $0["execution_id"] }
+          .forEach { generator.noteExistingStepExecutionId($0) }
+      }
     }
   }
 
@@ -342,6 +437,19 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       return []
     }
+    let query = try listSQL(workflowName: workflowName, status: status, limit: limit, in: db)
+    return try db.transaction(begin: "BEGIN") { database in
+      let rows = try mapSQLiteError { try database.query(query.sql, bindings: query.bindings) }
+      return decodeRecords(rows, in: database, includeExecutions: false)
+    }
+  }
+
+  func listSQL(
+    workflowName: String?,
+    status: WorkflowSessionStatus?,
+    limit: Int,
+    in db: SQLiteDatabase
+  ) throws -> (sql: String, bindings: [SQLiteValue]) {
     let boundedLimit = max(1, min(limit, 100))
     var predicates: [String] = []
     var bindings: [SQLiteValue] = []
@@ -349,23 +457,126 @@ public struct CLIWorkflowSessionStore: Sendable {
       predicates.append("workflow_name = ?")
       bindings.append(.text(workflowName))
     }
+    let hasSnapshots = try tableExists(db, name: "workflow_runtime_snapshots")
+    let hasExecutionRows = try tableExists(db, name: "workflow_runtime_executions")
+      && (try tableExists(db, name: "workflow_runtime_payloads"))
     if let status {
-      predicates.append("status = ?")
+      predicates.append(hasSnapshots
+        ? "COALESCE(runtime_snapshot.session_status, status) = ?"
+        : "status = ?")
       bindings.append(.text(status.rawValue))
     }
     let whereClause = predicates.isEmpty ? "" : " WHERE " + predicates.joined(separator: " AND ")
     bindings.append(.int(Int64(boundedLimit)))
+    let executionCountExpression: String
+    let snapshotJoin: String
+    if hasSnapshots {
+      snapshotJoin = """
+      LEFT JOIN workflow_runtime_snapshots AS runtime_snapshot
+        ON runtime_snapshot.workflow_execution_id = cli_workflow_sessions.session_id
+      """
+      let inlineCount = """
+      (SELECT COUNT(*) FROM json_each(runtime_snapshot.session_json, '$.executions') AS e
+        WHERE json_extract(e.value, '$.importedFrom') IS NULL)
+      """
+      let rowCount = hasExecutionRows
+        ? """
+          (SELECT COUNT(*) FROM workflow_runtime_executions AS e
+            JOIN workflow_runtime_payloads AS p
+              ON p.root_session_id=e.root_session_id AND p.digest=e.payload_digest
+            WHERE e.workflow_execution_id=cli_workflow_sessions.session_id
+              AND json_extract(p.bytes, '$.importedFrom') IS NULL)
+          """
+        : "0"
+      executionCountExpression = """
+      CASE
+        WHEN json_extract(runtime_snapshot.session_json, '$._rielaNewExecutionCount') IS NOT NULL
+          THEN json_extract(runtime_snapshot.session_json, '$._rielaNewExecutionCount')
+        WHEN json_type(runtime_snapshot.session_json, '$.executions') = 'array'
+          THEN \(inlineCount)
+        ELSE COALESCE(\(rowCount), 0)
+      END
+      """
+    } else {
+      snapshotJoin = ""
+      executionCountExpression = "(SELECT COUNT(*) FROM json_each(record_json, '$.session.executions') AS e WHERE json_extract(e.value, '$.importedFrom') IS NULL)"
+    }
     let sql = """
-    SELECT json(record_json) AS record_json
+    SELECT session_id, json(record_json) AS record_json,
+      json_type(record_json, '$.sessionStorage') AS storage,
+      CASE WHEN json_extract(record_json, '$.sessionStorage') = 'canonical'
+        THEN COALESCE(\(executionCountExpression), 0)
+        ELSE (SELECT COUNT(*) FROM json_each(record_json, '$.session.executions') AS e
+          WHERE json_extract(e.value, '$.importedFrom') IS NULL) END AS execution_count
     FROM cli_workflow_sessions
+    \(snapshotJoin)
     \(whereClause)
-    ORDER BY updated_at DESC, session_id
+    ORDER BY cli_workflow_sessions.updated_at DESC, cli_workflow_sessions.session_id
     LIMIT ?
     """
-    let rows = try mapSQLiteError {
-      try db.query(sql, bindings: bindings)
+    return (sql, bindings)
+  }
+
+  public func legacyFullRecordIds(limit: Int) throws -> [String] {
+    guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
+    let db = try openDatabase(readOnly: true)
+    guard try tableExists(db, name: "cli_workflow_sessions") else { return [] }
+    let boundedLimit = max(1, min(limit, 10_000))
+    return try db.query(
+      "SELECT session_id FROM cli_workflow_sessions "
+        + "WHERE json_extract(record_json, '$.sessionStorage') IS NOT 'canonical' "
+        + "ORDER BY session_id LIMIT ?",
+      bindings: [.int(Int64(boundedLimit))]
+    ).compactMap { $0["session_id"] }
+  }
+
+  /// Rewrites one legacy full row after ensuring its canonical snapshot exists.
+  /// The caller must hold the session execution lock for the entire operation.
+  @discardableResult
+  public func convertLegacyRecord(sessionId: String) throws -> Bool {
+    guard isSafeSessionId(sessionId) else {
+      throw CLIWorkflowSessionStoreError.invalidSessionId(sessionId)
     }
-    return decodeRecords(rows)
+    guard FileManager.default.fileExists(atPath: databasePath) else { return false }
+    let db = try openPersistenceDatabase()
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory)
+    )
+    try prepareRuntimePersistenceSchemas(in: db, runtimeStore: runtimeStore)
+    guard let row = try db.query(
+      "SELECT json(record_json) AS record_json, json_type(record_json, '$.sessionStorage') AS storage FROM cli_workflow_sessions WHERE session_id = ?",
+      bindings: [.text(sessionId)]
+    ).first, let text = row["record_json"], row["storage"] == nil else { return false }
+    let record = try decodeRecord(text)
+    let pinSnapshot: WorkflowRuntimePersistenceSnapshot
+    do {
+      pinSnapshot = try runtimeStore.load(sessionId: sessionId)
+    } catch let error as WorkflowRuntimePersistenceStoreError {
+      guard case .notFound = error else { throw error }
+      pinSnapshot = WorkflowRuntimePersistenceProjector.snapshot(session: record.session)
+    }
+    try WorkflowDefinitionPins.recordForeignPinIfNeeded(
+      snapshot: pinSnapshot,
+      sessionStoreRoot: runtimeStore.rootDirectory
+    )
+    return try db.transaction(begin: "BEGIN IMMEDIATE") { database in
+      guard let currentRow = try database.query(
+        "SELECT json(record_json) AS record_json, json_type(record_json, '$.sessionStorage') AS storage FROM cli_workflow_sessions WHERE session_id = ?",
+        bindings: [.text(sessionId)]
+      ).first, currentRow["storage"] == nil, let current = currentRow["record_json"] else { return false }
+      var converted = try decodeRecord(current)
+      let snapshot: WorkflowRuntimePersistenceSnapshot
+      do {
+        snapshot = try runtimeStore.load(sessionId: sessionId, in: database)
+        converted.session = snapshot.session
+      } catch let error as WorkflowRuntimePersistenceStoreError {
+        guard case .notFound = error else { throw error }
+        snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: converted.session)
+        try runtimeStore.save(snapshot, in: database)
+      }
+      try upsertRecord(database, converted)
+      return true
+    }
   }
 
   private func isSafeSessionId(_ sessionId: String) -> Bool {
@@ -458,7 +669,7 @@ public struct CLIWorkflowSessionStore: Sendable {
       """,
       bindings: [
         .text(record.session.sessionId),
-        .text(try jsonString(record)),
+        .text(try jsonString(CLIWorkflowSessionEnvelope(record))),
         .text(Self.dateString(record.session.updatedAt))
       ]
       )
@@ -483,18 +694,79 @@ public struct CLIWorkflowSessionStore: Sendable {
     return try decoder.decode(PersistedCLIWorkflowSession.self, from: data)
   }
 
-  private func decodeRecords(_ rows: [SQLiteRow]) -> [PersistedCLIWorkflowSession] {
+  private func decodeStoredRecord(
+    _ text: String,
+    sessionId: String,
+    in db: SQLiteDatabase,
+    includeExecutions: Bool,
+    isLegacy: Bool
+  ) throws -> PersistedCLIWorkflowSession {
+    if isLegacy { return try decodeRecord(text) }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    guard let data = text.data(using: .utf8) else {
+      throw CLIWorkflowSessionStoreError.sqliteFailed("stored session envelope is not UTF-8")
+    }
+    let envelope = try decoder.decode(CLIWorkflowSessionEnvelope.self, from: data)
+    guard envelope.sessionStorage == "canonical" else {
+      throw CLIWorkflowSessionStoreError.sqliteFailed("stored session envelope marker is invalid")
+    }
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory)
+    )
+    let session: WorkflowSession
+    do {
+      if includeExecutions {
+        session = try runtimeStore.load(sessionId: sessionId, in: db).session
+      } else {
+        session = try runtimeStore.loadSessionHeader(sessionId: sessionId, in: db)
+      }
+    } catch let error as WorkflowRuntimePersistenceStoreError {
+      if case .notFound = error {
+        throw CLIWorkflowSessionStoreError.canonicalSnapshotMissing(sessionId: sessionId)
+      }
+      throw error
+    }
+    return PersistedCLIWorkflowSession(
+      workflowName: envelope.workflowName,
+      session: session,
+      resolution: envelope.resolution,
+      mockScenarioPath: envelope.mockScenarioPath,
+      runtimeVariables: envelope.runtimeVariables
+    )
+  }
+
+  private func decodeRecords(
+    _ rows: [SQLiteRow],
+    in db: SQLiteDatabase,
+    includeExecutions: Bool
+  ) -> [PersistedCLIWorkflowSession] {
     var records: [PersistedCLIWorkflowSession] = []
     var skippedCount = 0
     for row in rows {
       guard let recordText = row["record_json"] else {
         continue
       }
-      guard let record = try? decodeRecord(recordText) else {
+      guard let sessionId = row["session_id"] else { continue }
+      let isLegacy = row["storage"] == nil
+      let record: PersistedCLIWorkflowSession
+      do {
+        record = try decodeStoredRecord(
+          recordText,
+          sessionId: sessionId,
+          in: db,
+          includeExecutions: includeExecutions,
+          isLegacy: isLegacy
+        )
+      } catch {
         skippedCount += 1
         continue
       }
-      records.append(record)
+      var summary = record
+      if !includeExecutions, let count = row["execution_count"].flatMap(Int.init) {
+        summary.executionCount = count
+      }
+      records.append(summary)
     }
     warnAboutSkippedRecords(count: skippedCount)
     return records

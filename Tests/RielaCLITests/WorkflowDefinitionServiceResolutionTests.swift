@@ -111,24 +111,22 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
   func testRerunUsesPinnedStoreVersionAfterHeadMoves() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try installTwoStepWorkflow(fixture)
     let scenario = fixture.root.appendingPathComponent("scenario.json")
     try #"{"worker":{"provider":"scenario-mock","when":{"always":true},"payload":{"ok":true}}}"#
       .write(to: scenario, atomically: true, encoding: .utf8)
+    let setup = try seedVersionThree(fixture)
     let provider = makeProvider(fixture: fixture)
     let first = try await provider.executeWorkflow(GraphQLExecuteWorkflowInput(workflowName: "service-flow"))
     let original = try loadSession(first.sessionId, storeRoot: fixture.store.path)
     let pinnedVersion = try XCTUnwrap(original.session.definitionSource?.versionId)
-    _ = try WorkflowDefinitionService(storeRoot: fixture.store.path, fileResolver: FileSystemWorkflowBundleResolver())
-      .updatePrompt(
-        workflowName: "service-flow",
-        nodeId: "worker",
-        field: WorkflowDefinitionPromptField(parsing: "promptTemplate"),
-        text: "NEW-HEAD",
-        reason: "pin rerun to source version",
-        expectedVersionId: nil,
-        evidence: [],
-        actor: WorkflowDefinitionActor(kind: .user)
-      )
+    try advanceDefinitionHead(setup.service, clock: setup.clock)
+    let definitionStore = WorkflowDefinitionStore(rootDirectory: fixture.store.path)
+    XCTAssertEqual(try definitionStore.history(workflowName: "service-flow").first?.versionId,
+      try definitionStore.head(workflowName: "service-flow")?.currentVersionId)
+    XCTAssertThrowsError(try definitionStore.version(versionId: setup.secondVersionId)) { error in
+      XCTAssertEqual((error as? WorkflowDefinitionStoreError)?.code, .versionNotRetained)
+    }
 
     let rerun = await SessionRerunCommand().run(SessionRerunOptions(
       sessionId: first.sessionId,
@@ -143,12 +141,14 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
     let rerunRecord = try loadSession(rerunResult.sessionId, storeRoot: fixture.store.path)
     XCTAssertEqual(rerunRecord.session.definitionSource?.versionId, pinnedVersion)
     XCTAssertEqual(promptText(rerunRecord), "FILE1")
+    XCTAssertEqual(try definitionStore.document(versionId: pinnedVersion) != nil, true)
   }
 
   func testResumeUsesPinnedStoreVersionAfterHeadMoves() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try installTwoStepWorkflow(fixture)
+    let setup = try seedVersionThree(fixture)
     let provider = makeProvider(fixture: fixture)
     let first = try await provider.executeWorkflow(GraphQLExecuteWorkflowInput(
       workflowName: "service-flow",
@@ -158,17 +158,11 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
     XCTAssertEqual(original.session.status, .failed)
     XCTAssertEqual(original.session.failureKind, .maxStepsExceeded)
     let pinnedVersion = try XCTUnwrap(original.session.definitionSource?.versionId)
-    _ = try WorkflowDefinitionService(storeRoot: fixture.store.path, fileResolver: FileSystemWorkflowBundleResolver())
-      .updatePrompt(
-        workflowName: "service-flow",
-        nodeId: "worker2",
-        field: WorkflowDefinitionPromptField(parsing: "promptTemplate"),
-        text: "NEW-HEAD",
-        reason: "pin resume to source version",
-        expectedVersionId: nil,
-        evidence: [],
-        actor: WorkflowDefinitionActor(kind: .user)
-      )
+    try advanceDefinitionHead(setup.service, clock: setup.clock)
+    let definitionStore = WorkflowDefinitionStore(rootDirectory: fixture.store.path)
+    XCTAssertThrowsError(try definitionStore.version(versionId: setup.secondVersionId)) { error in
+      XCTAssertEqual((error as? WorkflowDefinitionStoreError)?.code, .versionNotRetained)
+    }
     let scenario = fixture.root.appendingPathComponent("scenario.json")
     try #"{"worker":{"provider":"scenario-mock","when":{"always":true},"payload":{"ok":true}},"worker2":{"provider":"scenario-mock","when":{"always":true},"payload":{"ok":true}}}"#
       .write(to: scenario, atomically: true, encoding: .utf8)
@@ -190,6 +184,7 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
       resumedRecord.session.executions.first(where: { $0.nodeId == "worker2" })?.inputSnapshot?["promptText"]?.stringValue,
       "FILE1"
     )
+    XCTAssertEqual(try definitionStore.document(versionId: pinnedVersion) != nil, true)
   }
 
   func testEventRunnerUsesExistingStoreDefinition() async throws {
@@ -419,6 +414,32 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
     )
   }
 
+  private func seedVersionThree(_ fixture: Fixture) throws -> PinnedVersionSetup {
+    let clock = DefinitionClock(Date())
+    let service = WorkflowDefinitionService(storeRoot: fixture.store.path,
+      fileResolver: FileSystemWorkflowBundleResolver(), now: { clock.now })
+    _ = try service.importDefinition(resolution: WorkflowResolutionOptions(workflowName: "service-flow", workingDirectory: fixture.root.path),
+      force: false, reason: nil, evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+    let second = try service.updatePrompt(workflowName: "service-flow", nodeId: "worker",
+      field: WorkflowDefinitionPromptField(parsing: "promptTemplate"), text: "TEMP-V2", reason: "prepare version 3",
+      expectedVersionId: nil, evidence: [], actor: WorkflowDefinitionActor(kind: .user)).0
+    clock.advance()
+    _ = try service.updatePrompt(workflowName: "service-flow", nodeId: "worker",
+      field: WorkflowDefinitionPromptField(parsing: "promptTemplate"), text: "FILE1", reason: "restore source prompt",
+      expectedVersionId: nil, evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+    return PinnedVersionSetup(service: service, clock: clock, secondVersionId: second.versionId)
+  }
+
+  private func advanceDefinitionHead(_ service: WorkflowDefinitionService, clock: DefinitionClock) throws {
+    for number in 1...25 {
+      clock.advance()
+      _ = try service.updatePrompt(workflowName: "service-flow", nodeId: "worker2",
+        field: WorkflowDefinitionPromptField(parsing: "promptTemplate"), text: "HEAD-\(number)",
+        reason: "advance retention window \(number)", expectedVersionId: nil, evidence: [],
+        actor: WorkflowDefinitionActor(kind: .user))
+    }
+  }
+
   private func installTwoStepWorkflow(_ fixture: Fixture) throws {
     let workflowJSON = #"""
       {"workflowId":"service-flow","entryStepId":"work",
@@ -465,7 +486,7 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
       mode: .strictReadOnly,
       options: .readOnlyDefault
     )
-    return try ["definition_blobs", "definition_versions", "definition_heads", "definition_change_audit"].map { table in
+    return try ["definition_history_versions", "definition_versions", "definition_heads", "definition_change_audit"].map { table in
       Int(try XCTUnwrap(database.query("SELECT COUNT(*) AS count FROM \(table)").first?["count"])) ?? -1
     }
   }
@@ -480,6 +501,20 @@ private struct Fixture {
   var root: URL
   var workflow: URL
   var store: URL
+}
+
+private struct PinnedVersionSetup {
+  var service: WorkflowDefinitionService
+  var clock: DefinitionClock
+  var secondVersionId: String
+}
+
+private final class DefinitionClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value: Date
+  init(_ value: Date) { self.value = value }
+  var now: Date { lock.lock(); defer { lock.unlock() }; return value }
+  func advance() { lock.lock(); value = value.addingTimeInterval(25 * 60 * 60); lock.unlock() }
 }
 
 private struct EventLiveConfigProjection: Codable {

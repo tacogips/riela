@@ -596,6 +596,15 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   ) throws -> String {
     let references = try persistNestedReferences(reservation.childSnapshot, invocationKey: key, role: "reservation", in: db)
     var value = try nestedJSONObject(reservation)
+    let oldCalleeReferences = try db.query(
+      "DELETE FROM workflow_nested_invocation_refs WHERE invocation_key=? AND role='callee' RETURNING root_session_id,digest",
+      bindings: [.text(key)]
+    )
+    for row in oldCalleeReferences {
+      if let rootId = row["root_session_id"], let digest = row["digest"] {
+        try releasePayloadIfUnreferenced(rootId: rootId, digest: digest, in: db)
+      }
+    }
     if reservation.calleeWorkflow != nil || reservation.calleeNodePayloads != nil {
       let material = NestedCalleePayload(workflow: reservation.calleeWorkflow, nodePayloads: reservation.calleeNodePayloads)
       let payload = try nestedJSON(material)

@@ -6,6 +6,16 @@ import Crypto
 #endif
 import RielaSQLite
 
+struct ExecutionRowWriteMetrics {
+  let statements: Int
+  let bytes: Int
+}
+
+struct EncodedSessionHeader {
+  let json: String
+  let inputBytes: Int
+}
+
 public extension SQLiteWorkflowRuntimePersistenceStore {
   /// Returns the canonical snapshots sharing the target session's root.
   /// Missing stores, tables, and target rows have no known family members.
@@ -58,8 +68,10 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     return snapshots
   }
 
-  func encodedHeaderJSON(for session: WorkflowSession, witness: String) throws -> String {
-    let encoded = try jsonString(session)
+  internal func encodedHeaderJSON(for session: WorkflowSession, witness: String) throws -> EncodedSessionHeader {
+    var headerSession = session
+    headerSession.executions = []
+    let encoded = try jsonString(headerSession)
     guard let data = encoded.data(using: .utf8) else {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime session header encoding failed")
     }
@@ -67,20 +79,25 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     header.removeValue(forKey: "executions")
     header[Self.executionStorageMarkerKey] = .string("rows")
     header["_rielaCanonicalWrite"] = .string(witness)
-    return try jsonString(header)
+    header["_rielaNewExecutionCount"] = .integer(Int64(session.newExecutionCount))
+    return EncodedSessionHeader(json: try jsonString(header), inputBytes: encoded.utf8.count)
   }
 
-  func writeExecutionRows(
+  internal func writeExecutionRows(
     _ db: SQLiteDatabase,
     _ snapshot: WorkflowRuntimePersistenceSnapshot,
     selected: [Int]? = nil
-  ) throws -> (statements: Int, bytes: Int) {
+  ) throws -> ExecutionRowWriteMetrics {
     let sessionId = snapshot.session.sessionId
     let rootId = snapshot.session.rootSessionId ?? sessionId
     let indexes = selected ?? Array(snapshot.session.executions.indices)
     var bytes = 0
     var statements = 0
     for ordinal in indexes {
+      let oldDigest = try db.query(
+        "SELECT payload_digest FROM workflow_runtime_executions WHERE workflow_execution_id=? AND ordinal=?",
+        bindings: [.text(sessionId), .int(Int64(ordinal))]
+      ).first?["payload_digest"]
       let execution = snapshot.session.executions[ordinal]
       let payload = try payloadJSON(execution)
       let digest = Self.sha256(payload)
@@ -103,14 +120,32 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         bindings: [.text(sessionId), .int(Int64(ordinal)), .text(execution.executionId), .text(rootId), .text(digest)]
       )
       statements += 1
+      if let oldDigest, oldDigest != digest {
+        try releasePayloadIfUnreferenced(rootId: rootId, digest: oldDigest, in: db)
+      }
     }
-    try db.execute(
-      "DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=? AND ordinal>=?",
+    let truncated = try db.query(
+      "DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=? AND ordinal>=? RETURNING root_session_id, payload_digest",
       bindings: [.text(sessionId), .int(Int64(snapshot.session.executions.count))]
     )
     statements += 1
-    _ = try releaseUnreferencedPayloads(rootSessionId: rootId, in: db)
-    return (statements, bytes)
+    for row in truncated {
+      guard let oldRoot = row["root_session_id"], let oldDigest = row["payload_digest"] else { continue }
+      try releasePayloadIfUnreferenced(rootId: oldRoot, digest: oldDigest, in: db)
+    }
+    return ExecutionRowWriteMetrics(statements: statements, bytes: bytes)
+  }
+
+  func releasePayloadIfUnreferenced(rootId: String, digest: String, in db: SQLiteDatabase) throws {
+    try db.execute(
+      """
+      DELETE FROM workflow_runtime_payloads
+      WHERE root_session_id=? AND digest=?
+        AND NOT EXISTS (SELECT 1 FROM workflow_runtime_executions WHERE root_session_id=? AND payload_digest=?)
+        AND NOT EXISTS (SELECT 1 FROM workflow_nested_invocation_refs WHERE root_session_id=? AND digest=?)
+      """,
+      bindings: [.text(rootId), .text(digest), .text(rootId), .text(digest), .text(rootId), .text(digest)]
+    )
   }
 
   func releaseUnreferencedPayloads(rootSessionId: String, in db: SQLiteDatabase) throws -> Int64 {
@@ -155,7 +190,15 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     in db: SQLiteDatabase
   ) throws -> JSONObject {
     let rootId = snapshot.session.rootSessionId ?? snapshot.session.sessionId
-    try db.execute("DELETE FROM workflow_nested_invocation_refs WHERE invocation_key=? AND role=?", bindings: [.text(invocationKey), .text(role)])
+    let removed = try db.query(
+      "DELETE FROM workflow_nested_invocation_refs WHERE invocation_key=? AND role=? RETURNING root_session_id,digest",
+      bindings: [.text(invocationKey), .text(role)]
+    )
+    for row in removed {
+      if let rootId = row["root_session_id"], let digest = row["digest"] {
+        try releasePayloadIfUnreferenced(rootId: rootId, digest: digest, in: db)
+      }
+    }
     var header = snapshot
     header.session.executions = []
     header.rootOutput = nil
@@ -199,12 +242,28 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     return digest
   }
 
-  func observeWrite(headerJSON: String, executions: [WorkflowStepExecution], selected: [Int], statements: Int) {
+  func observeWrite(
+    headerJSON: String,
+    headerEncodeInputBytes: Int,
+    executions: [WorkflowStepExecution],
+    selected: [Int],
+    statements: Int,
+    sqliteVMSteps: Int,
+    sqliteFullScanSteps: Int,
+    familyReleaseScans: Int
+  ) {
     guard let persistenceWriteObserver else { return }
     let bytes = selected.reduce(headerJSON.utf8.count) { total, index in
       total + ((try? payloadJSON(executions[index]))?.utf8.count ?? 0)
     }
-    persistenceWriteObserver(SQLiteWorkflowRuntimePersistenceStore.PersistenceWriteSample(boundBytes: bytes, statements: statements))
+    persistenceWriteObserver(SQLiteWorkflowRuntimePersistenceStore.PersistenceWriteSample(
+      boundBytes: bytes,
+      statements: statements,
+      headerEncodeInputBytes: headerEncodeInputBytes,
+      sqliteVMSteps: sqliteVMSteps,
+      sqliteFullScanSteps: sqliteFullScanSteps,
+      familyReleaseScans: familyReleaseScans
+    ))
   }
 
   func payloadJSON<T: Encodable>(_ value: T) throws -> String {
@@ -291,7 +350,9 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
-    let session = try decoder.decode(WorkflowSession.self, from: assembledSessionData(from: sessionData, db: db))
+    let session = try decoder.decode(WorkflowSession.self, from: assembledSessionData(
+      from: sessionData, sessionId: row["workflow_execution_id"] ?? "", storageMarker: row["execution_storage"], db: db
+    ))
     let diagnostics = try decoder.decode([String].self, from: diagnosticsData)
     let rootOutput = try row["root_output_json"].flatMap { $0.data(using: .utf8) }.map { try decoder.decode(JSONObject.self, from: $0) }
     let loopEvidence = try row["loop_evidence_json"].flatMap { $0.data(using: .utf8) }.map { try decoder.decode(LoopEvidenceManifest.self, from: $0) }
@@ -303,32 +364,29 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     )
   }
 
-  func assembledSessionData(from headerData: Data, db: SQLiteDatabase) throws -> Data {
-    var object = try JSONDecoder().decode(JSONObject.self, from: headerData)
-    guard object[Self.executionStorageMarkerKey] == .string("rows") else { return headerData }
-    guard case let .string(id)? = object["sessionId"] else {
-      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime snapshot header has no session id")
+  func assembledSessionData(from headerData: Data, sessionId: String, storageMarker: String?, db: SQLiteDatabase) throws -> Data {
+    guard storageMarker == "text" else { return headerData }
+    try loadAssemblyObserver?()
+    guard let headerJSON = String(bytes: headerData, encoding: .utf8) else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime session header is not UTF-8")
     }
     let rows = try db.query(
       """
-      SELECT json(p.bytes) AS execution_json
-      FROM workflow_runtime_executions AS e
-      JOIN workflow_runtime_payloads AS p
-        ON p.root_session_id = e.root_session_id AND p.digest = e.payload_digest
-      WHERE e.workflow_execution_id = ?
-      ORDER BY e.ordinal
+      SELECT json_remove(json_set(json(?), '$.executions', COALESCE((
+        SELECT json_group_array(json(ordered.execution_json)) FROM (
+          SELECT json(p.bytes) AS execution_json
+          FROM workflow_runtime_executions AS e
+          JOIN workflow_runtime_payloads AS p ON p.root_session_id=e.root_session_id AND p.digest=e.payload_digest
+          WHERE e.workflow_execution_id=? ORDER BY e.ordinal
+        ) AS ordered
+      ), json('[]'))), '$._rielaExecutionStorage') AS session_json
       """,
-      bindings: [.text(id)]
+      bindings: [.text(headerJSON), .text(sessionId)]
     )
-    let executions: [JSONValue] = try rows.map { row in
-      guard let value = row["execution_json"], let data = value.data(using: .utf8) else {
-        throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime execution payload is missing")
-      }
-      return try JSONDecoder().decode(JSONValue.self, from: data)
+    guard let assembled = rows.first?["session_json"]?.data(using: .utf8) else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime session assembly failed")
     }
-    object.removeValue(forKey: Self.executionStorageMarkerKey)
-    object["executions"] = .array(executions)
-    return try JSONEncoder().encode(object)
+    return assembled
   }
 
   func summaryColumnOverview(from row: SQLiteRow) throws -> LoopSessionOverview? {
@@ -358,24 +416,26 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let db = try openDatabase(readOnly: true)
     guard try runtimeSnapshotTableExists(db) else { return [] }
-    if try db.tableExists("workflow_runtime_executions") {
-      let rows = try db.query(
+    return try db.transaction(begin: "BEGIN") { database in
+      if try database.tableExists("workflow_runtime_executions") {
+        let rows = try database.query(
         "SELECT execution_id FROM workflow_runtime_executions WHERE workflow_execution_id = ? ORDER BY ordinal",
         bindings: [.text(sessionId)]
       )
-      let marker = try db.query(
+        let marker = try database.query(
         "SELECT json_type(session_json, '$." + Self.executionStorageMarkerKey + "') AS marker FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?",
         bindings: [.text(sessionId)]
       ).first?["marker"]
-      if !rows.isEmpty || marker == "text" {
-        return rows.compactMap { $0["execution_id"] }
+        if !rows.isEmpty || marker == "text" {
+          return rows.compactMap { $0["execution_id"] }
+        }
       }
+      let rows = try database.query(
+        "SELECT json_extract(value, '$.executionId') AS execution_id FROM workflow_runtime_snapshots, json_each(session_json, '$.executions') WHERE workflow_execution_id = ? ORDER BY CAST(key AS INTEGER)",
+        bindings: [.text(sessionId)]
+      )
+      return rows.compactMap { $0["execution_id"] }
     }
-    let rows = try db.query(
-      "SELECT json_extract(value, '$.executionId') AS execution_id FROM workflow_runtime_snapshots, json_each(session_json, '$.executions') WHERE workflow_execution_id = ? ORDER BY CAST(key AS INTEGER)",
-      bindings: [.text(sessionId)]
-    )
-    return rows.compactMap { $0["execution_id"] }
   }
 
   public func legacyInlineSessionIds(limit: Int) throws -> [String] {

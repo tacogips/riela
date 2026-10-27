@@ -12,6 +12,8 @@ final class WorkflowDefinitionGraphQLContractTests: XCTestCase {
       "mutation { updateWorkflowDefinition(input: {workflowName: \"w\", reason: \"r\", patchJSON: \"[]\"}) { outcome } }",
       "mutation { updateWorkflowDefinitionPrompt(input: {workflowName: \"w\", nodeId: \"n\", field: \"promptTemplate\", text: \"x\", reason: \"r\"}) { version { versionId } } }",
       "mutation { restoreWorkflowDefinition(input: {workflowName: \"w\", versionId: \"v\", reason: \"r\"}) { version { versionId } } }",
+      "mutation { undoWorkflowDefinition(input: {workflowName: \"w\", reason: \"r\"}) { version { versionId } } }",
+      "mutation { redoWorkflowDefinition(input: {workflowName: \"w\", reason: \"r\"}) { version { versionId } } }",
       "mutation { importWorkflowDefinition(input: {workflowName: \"w\"}) { outcome } }",
       "mutation { exportWorkflowDefinition(input: {workflowName: \"w\"}) { wroteToSource } }"
     ]
@@ -38,10 +40,12 @@ final class WorkflowDefinitionGraphQLContractTests: XCTestCase {
 
     let schema = GraphQLContractProjector.schemaContract
     for field in ["workflowDefinitionHistory", "workflowDefinition(", "workflowDefinitionDiff", "updateWorkflowDefinition(",
-                 "updateWorkflowDefinitionPrompt", "restoreWorkflowDefinition", "importWorkflowDefinition", "exportWorkflowDefinition"] {
+                 "updateWorkflowDefinitionPrompt", "restoreWorkflowDefinition", "undoWorkflowDefinition", "redoWorkflowDefinition",
+                 "importWorkflowDefinition", "exportWorkflowDefinition"] {
       XCTAssertTrue(schema.contains(field), "missing schema field \(field)")
     }
     XCTAssertTrue(schema.contains("documentJSON: String!"))
+    XCTAssertTrue(schema.contains("retained: Boolean!"))
   }
 
   private func errorCode(_ value: JSONValue) -> String? {

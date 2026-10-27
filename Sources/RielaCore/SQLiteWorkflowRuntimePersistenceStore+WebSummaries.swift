@@ -94,10 +94,12 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let boundedLimit = max(1, min(limit, 200))
     let db = try openDatabase(readOnly: true)
+    let hasExecutionRows = try db.tableExists("workflow_runtime_executions")
     let rows = try summaryRows(
       database: db,
       whereClause: "snapshots.workflow_id = ?",
-      bindings: [.text(workflowId), .int(Int64(boundedLimit))]
+      bindings: [.text(workflowId), .int(Int64(boundedLimit))],
+      hasExecutionRows: hasExecutionRows
     )
     let decoder = JSONDecoder()
     return try rows.map { row in
@@ -162,7 +164,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     let snapshotRows = try mapRuntimeSQLiteError {
       try database.query(
         """
-        SELECT json(session_json) AS session_json,
+        SELECT workflow_execution_id, json_type(session_json, '$._rielaExecutionStorage') AS execution_storage,
+          json(session_json) AS session_json,
           json(diagnostics_json) AS diagnostics_json,
           \(runtimeLoopEvidenceSelectSQL)
         FROM workflow_runtime_snapshots
@@ -185,7 +188,9 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         "runtime web session detail row is malformed"
       )
     }
-    let assembledSessionData = try assembledSessionData(from: sessionData, db: database)
+    let assembledSessionData = try assembledSessionData(
+      from: sessionData, sessionId: sessionId, storageMarker: row["execution_storage"], db: database
+    )
     let session = try decoder.decode(WorkflowSession.self, from: assembledSessionData)
     let diagnostics = try decoder.decode([String].self, from: diagnosticsData)
     let loopEvidence: LoopEvidenceManifest?
@@ -240,9 +245,18 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   private func summaryRows(
     database: SQLiteDatabase,
     whereClause: String,
-    bindings: [SQLiteValue]
+    bindings: [SQLiteValue],
+    hasExecutionRows: Bool
   ) throws -> [SQLiteRow] {
-    try mapRuntimeSQLiteError {
+    let rowExecutionSQL = hasExecutionRows ? """
+      SELECT json_extract(p.bytes, '$.stepId') AS step_id
+      FROM workflow_runtime_executions AS e
+      JOIN workflow_runtime_payloads AS p ON p.root_session_id=e.root_session_id AND p.digest=e.payload_digest
+      WHERE e.workflow_execution_id=snapshots.workflow_execution_id
+        AND json_extract(p.bytes, '$.status') = 'running'
+      UNION ALL
+      """ : ""
+    return try mapRuntimeSQLiteError {
       try database.query(
         """
         SELECT snapshots.workflow_execution_id,
@@ -251,12 +265,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
           json_extract(snapshots.session_json, '$.currentStepId') AS current_step_id,
           COALESCE((
             SELECT json_group_array(step_id) FROM (
-              SELECT json_extract(p.bytes, '$.stepId') AS step_id
-              FROM workflow_runtime_executions AS e
-              JOIN workflow_runtime_payloads AS p ON p.root_session_id=e.root_session_id AND p.digest=e.payload_digest
-              WHERE e.workflow_execution_id=snapshots.workflow_execution_id
-                AND json_extract(p.bytes, '$.status') = 'running'
-              UNION ALL
+              \(rowExecutionSQL)
               SELECT json_extract(execution.value, '$.stepId') AS step_id
               FROM json_each(snapshots.session_json, '$.executions') AS execution
               WHERE json_type(snapshots.session_json, '$.\(SQLiteWorkflowRuntimePersistenceStore.executionStorageMarkerKey)') IS NULL

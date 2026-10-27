@@ -11,6 +11,7 @@ enum BuiltinWorkflowImprovementAddon: String, CaseIterable, Sendable {
 struct BuiltinDefinitionRunContext: Sendable {
   var definitionSource: WorkflowDefinitionSource?
   var sessionStoreRoot: String
+  var workingDirectory: String
   var cliProcessRunner: (any LocalProcessRunning)?
 }
 
@@ -64,7 +65,8 @@ extension BuiltinWorkflowAddonResolver {
     case .context:
       return try buildContext(input, operation: operation, source: source, versionId: versionId, storeRoot: storeRoot, sessionStoreRoot: runContext.sessionStoreRoot)
     case .apply:
-      return try await applyProposal(input, operation: operation, source: source, versionId: versionId, storeRoot: storeRoot, runner: runContext.cliProcessRunner ?? containerProcessRunner, deadline: context.deadline)
+      return try await applyProposal(input, operation: operation, source: source, versionId: versionId, storeRoot: storeRoot,
+        workingDirectory: runContext.workingDirectory, runner: runContext.cliProcessRunner ?? containerProcessRunner, deadline: context.deadline)
     }
   }
 
@@ -78,15 +80,18 @@ extension BuiltinWorkflowAddonResolver {
     let maxSteps = min(100, max(1, config["maxStepExecutions"]?.intValue ?? 20))
     let maxChars = min(20_000, max(100, config["maxFieldChars"]?.intValue ?? 2_000))
     let maxBytes = max(1, config["maxContextBytes"]?.intValue ?? 262_144)
-    let service = WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: FileSystemWorkflowBundleResolver())
+    let service = try WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: FileSystemWorkflowBundleResolver())
     let authored = try service.authoredView(workflowName: source.workflowName, versionId: versionId)
     let pinned = try service.loadPinned(versionId: versionId)
     let excluded = WorkflowImprovementDigest.excludedNodeIds(runtimeWorkflow: pinned.workflow, extra: extras)
     let currentSessionId = input.executionIdentity?.workflowExecutionId
-    let previous = try CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot).list(workflowName: source.workflowName, limit: 100)
-      .map(\.session).first {
-        $0.status.isTerminal && $0.definitionSource?.kind == .store && $0.sessionId != currentSessionId
-      }
+    let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
+    let previousSessionId = try sessionStore.list(workflowName: source.workflowName, limit: 100)
+      .first {
+        $0.session.status.isTerminal && $0.session.definitionSource?.kind == .store
+          && $0.session.sessionId != currentSessionId
+      }?.session.sessionId
+    let previous = try previousSessionId.map { try sessionStore.load(sessionId: $0).session }
     var digest: JSONValue = .null
     var evidence: [WorkflowDefinitionEvidenceRef] = []
     var reason: String?
@@ -116,7 +121,7 @@ extension BuiltinWorkflowAddonResolver {
 
   private func applyProposal(
     _ input: WorkflowAddonExecutionInput, operation: BuiltinWorkflowImprovementAddon,
-    source: WorkflowDefinitionSource, versionId: String, storeRoot: String,
+    source: WorkflowDefinitionSource, versionId: String, storeRoot: String, workingDirectory: String,
     runner: any LocalProcessRunning, deadline: Date?
   ) async throws -> AdapterExecutionOutput {
     let config = input.addon.config ?? [:]
@@ -131,7 +136,7 @@ extension BuiltinWorkflowAddonResolver {
           let proposal = proposerEntry.objectValue?["output"]?.objectValue?["payload"]?.objectValue else {
       throw AdapterExecutionError(.invalidInput, "improve-workflow-apply is missing upstream context or proposal")
     }
-    let service = WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: FileSystemWorkflowBundleResolver())
+    let service = try configuredWorkflowDefinitionService(storeRoot: storeRoot, projectDirectory: workingDirectory, forWrite: true)
     let pinned = try service.loadPinned(versionId: versionId)
     guard let contextNodeId = contextEntry.objectValue?["nodeId"]?.stringValue,
           pinned.workflow.nodeRegistry.first(where: { $0.id == contextNodeId })?.addon?.name == BuiltinWorkflowImprovementAddon.context.rawValue else {
@@ -160,6 +165,7 @@ extension BuiltinWorkflowAddonResolver {
       throw AdapterExecutionError(.policyBlocked, "missing runtime improvement operation identity")
     }
     let actor = "\(source.workflowName)/\(input.nodeId)@\(workflowExecutionId)/\(operationId)"
+    let workingDirectory = definitionRunContext?.workingDirectory ?? FileManager.default.currentDirectoryPath
     let patchURL = FileManager.default.temporaryDirectory.appendingPathComponent("riela-improve-\(UUID().uuidString).json")
     let patchData = try JSONCanonical.encode(JSONValue.array(patch))
     try patchData.write(to: patchURL, options: .atomic)
@@ -170,7 +176,7 @@ extension BuiltinWorkflowAddonResolver {
     }.flatMap { $0 }
     let args = ["workflow", "definition", "update", source.workflowName, "--patch", patchURL.path,
       "--reason", reason, "--expected-version", versionId] + evidenceArgs + ["--actor", actor,
-      "--actor-kind", "improvementNode", "--session-store", storeRoot, "--output", "json"]
+      "--actor-kind", "improvementNode", "--session-store", storeRoot, "--working-dir", workingDirectory, "--output", "json"]
     let executable = try executableConfiguration(args: args, config: config)
     let result: LocalProcessResult
     do {
@@ -228,6 +234,18 @@ extension BuiltinWorkflowAddonResolver {
     return AdapterExecutionOutput(provider: "riela-builtin-addon", model: input.addon.name,
       promptText: "", completionPassed: true, when: [whenKey: whenValue], payload: payload)
   }
+}
+
+private func configuredWorkflowDefinitionService(storeRoot: String, projectDirectory: String, forWrite: Bool) throws -> WorkflowDefinitionService {
+  guard forWrite else {
+    return WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: FileSystemWorkflowBundleResolver())
+  }
+  let retention = try WorkflowDefinitionHistoryConfiguration.resolve(
+    homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+    projectDirectory: projectDirectory,
+    environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+  )
+  return WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: FileSystemWorkflowBundleResolver(), defaultHistoryRetention: retention)
 }
 
 private func evidenceJSON(_ evidence: WorkflowDefinitionEvidenceRef) -> JSONValue {

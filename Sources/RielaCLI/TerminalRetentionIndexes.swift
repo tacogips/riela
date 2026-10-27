@@ -15,7 +15,17 @@ enum TerminalRetentionIndexes {
     """
   static let settled = "(child_terminal_json IS NOT NULL AND parent_message_json IS NOT NULL AND recovery_reason IS NULL)"
 
-  static func index(_ table: String) -> String { "idx_retention_metadata_v1_" + table }
+  static func settled(in db: SQLiteDatabase) throws -> String {
+    let columns = try db.tableColumnNames("workflow_nested_invocations")
+    if columns.contains("abandoned_at") {
+      return "(\(settled) OR abandoned_at IS NOT NULL)"
+    }
+    return settled
+  }
+
+  static func index(_ table: String) -> String {
+    "idx_retention_metadata_\(table == "workflow_nested_invocations" ? "v2" : "v1")_" + table
+  }
 
   static let columns: [(String, String)] = [
     ("workflow_runtime_snapshots", "workflow_execution_id,workflow_id,session_status,parent_session_id,root_session_id,updated_at,\(runtimeBytes)"),
@@ -29,8 +39,16 @@ enum TerminalRetentionIndexes {
 
   static func prepare(_ db: SQLiteDatabase) throws {
     try db.transaction { db in
+      if try db.tableExists("workflow_nested_invocations") {
+        try db.execute("DROP INDEX IF EXISTS idx_retention_metadata_v1_workflow_nested_invocations")
+        try db.execute("""
+          CREATE INDEX IF NOT EXISTS idx_workflow_nested_invocations_parent
+          ON workflow_nested_invocations(json_extract(reservation_json,'$.parentSessionId'))
+          """)
+      }
       for (table, expression) in columns where try db.tableExists(table) {
-        try db.execute("CREATE INDEX IF NOT EXISTS \(index(table)) ON \(table)(\(expression))")
+        let indexedExpression = table == "workflow_nested_invocations" ? "\(child),\(parent),\(nestedBytes),\(try settled(in: db))" : expression
+        try db.execute("CREATE INDEX IF NOT EXISTS \(index(table)) ON \(table)(\(indexedExpression))")
       }
     }
   }

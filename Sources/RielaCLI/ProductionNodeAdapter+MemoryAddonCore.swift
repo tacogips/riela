@@ -415,6 +415,7 @@ extension BuiltinWorkflowAddonResolver {
       let tags = try memoryTags(config: config, variables: variables)
       let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
       let files = try memoryFileReferences(config: config, variables: variables)
+      let historyRetention = memoryHistoryRetention(memoryId: memoryId, input: input)
       let record = try store.save(
         memoryId: memoryId,
         workflowId: input.workflowId,
@@ -422,7 +423,8 @@ extension BuiltinWorkflowAddonResolver {
         tags: tags,
         relatedRecordIds: relatedRecordIds,
         files: files,
-        payload: payload
+        payload: payload,
+        historyRetention: historyRetention
       )
       return memoryAddonOutput(
         input: input,
@@ -440,6 +442,7 @@ extension BuiltinWorkflowAddonResolver {
       let tags = try memoryTags(config: config, variables: variables)
       let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
       let files = try memoryUpdateFileReferences(config: config, variables: variables)
+      let historyRetention = memoryHistoryRetention(memoryId: memoryId, input: input)
       let record = try store.update(
         memoryId: memoryId,
         recordId: recordId,
@@ -448,7 +451,8 @@ extension BuiltinWorkflowAddonResolver {
         tags: tags,
         relatedRecordIds: relatedRecordIds,
         files: files,
-        payload: payload
+        payload: payload,
+        historyRetention: historyRetention
       )
       return memoryAddonOutput(
         input: input,
@@ -515,4 +519,8 @@ extension BuiltinWorkflowAddonResolver {
       )
     }
   }
+}
+
+func memoryHistoryRetention(memoryId: String, input: WorkflowAddonExecutionInput) -> Int? {
+  input.memoryHistoryRetentions?[memoryId]
 }

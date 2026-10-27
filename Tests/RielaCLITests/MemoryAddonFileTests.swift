@@ -5,6 +5,34 @@ import XCTest
 @testable import RielaCLI
 
 final class MemoryAddonFileTests: XCTestCase {
+  func testAddonInputHistoryRetentionPersistsOnTheRecord() async throws {
+    let memoryRoot = repositoryRoot() + "/tmp/test-addon-history-retention-\(UUID().uuidString)"
+    defer { try? FileManager.default.removeItem(atPath: memoryRoot) }
+    let store = RielaMemoryStore(rootDirectory: memoryRoot)
+    let initial = try store.save(memoryId: "chat-memory", workflowId: "workflow", payload: .string("one"), historyRetention: 1)
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+
+    _ = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "workflow",
+        stepId: "update-memory",
+        nodeId: "update-memory",
+        addon: WorkflowNodeAddonRef(name: "riela/memory-update", version: "1", config: [
+          "memoryId": .string("chat-memory"), "memoryRoot": .string(memoryRoot),
+          "recordId": .number(Double(initial.recordId)), "payload": .object(["text": .string("two")])
+        ]),
+        memoryHistoryRetentions: ["chat-memory": 3]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    for version in 3...5 {
+      _ = try store.update(memoryId: "chat-memory", recordId: initial.recordId, workflowId: "workflow",
+        payload: .string("write-\(version)"))
+    }
+    XCTAssertEqual(try store.evolutionHistory(memoryId: "chat-memory", recordId: initial.recordId).map(\.version), [5, 4, 3])
+  }
+
   func testPersonaMemoryWriteAndReadPreserveFileReferences() async throws {
     let root = repositoryRoot()
     let memoryRoot = "\(root)/tmp/test-persona-memory-files-\(UUID().uuidString)"

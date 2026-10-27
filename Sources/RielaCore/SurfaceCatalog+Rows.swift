@@ -188,21 +188,35 @@ extension SurfaceCatalog {
     surfaceRow(
       workflowDefaults, id: "workflow.definition.update", family: "workflow", kind: .mutation,
       cli: "workflow definition update",
+      cliOptions: ["--history-retention"],
       graphql: graphQLMutation("updateWorkflowDefinition")
     ),
     surfaceRow(
       workflowDefaults, id: "workflow.definition.update-prompt", family: "workflow", kind: .mutation,
       cli: "workflow definition update-prompt",
+      cliOptions: ["--history-retention"],
       graphql: graphQLMutation("updateWorkflowDefinitionPrompt")
     ),
     surfaceRow(
       workflowDefaults, id: "workflow.definition.restore", family: "workflow", kind: .mutation,
       cli: "workflow definition restore",
+      cliOptions: ["--history-retention"],
       graphql: graphQLMutation("restoreWorkflowDefinition")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.undo", family: "workflow", kind: .mutation,
+      cli: "workflow definition undo",
+      graphql: graphQLMutation("undoWorkflowDefinition")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.redo", family: "workflow", kind: .mutation,
+      cli: "workflow definition redo",
+      graphql: graphQLMutation("redoWorkflowDefinition")
     ),
     surfaceRow(
       workflowDefaults, id: "workflow.definition.import", family: "workflow", kind: .mutation,
       cli: "workflow definition import",
+      cliOptions: ["--history-retention"],
       graphql: graphQLMutation("importWorkflowDefinition")
     ),
     surfaceRow(
@@ -254,7 +268,7 @@ extension SurfaceCatalog {
       family: "session",
       kind: .mutation,
       cli: "session reconcile",
-      cliOptions: ["--scope", "--session-store", "--working-dir", "--session", "--apply", "--output"],
+      cliOptions: ["--scope", "--session-store", "--working-dir", "--session", "--apply", "--output", "--abandoned-after-hours"],
       graphqlState: SurfaceExclusion.localProcess("session reconciliation"),
       webState: SurfaceExclusion.notAConsoleOperation("session reconciliation"),
       libraryState: SurfaceExclusion.notALibraryEntryPoint("session reconciliation"),

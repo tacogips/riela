@@ -9,6 +9,7 @@ struct ParsedSessionReconcileArguments: ParsableArguments {
   @Option var workingDir: String?
   @Option(name: .customLong("session")) var sessionIds: [String] = []
   @Flag var apply = false
+  @Option var abandonedAfterHours = 24
   @Option var output = "json"
 }
 
@@ -24,6 +25,7 @@ private struct SessionReconcileResult: Encodable {
   var dryRun: Bool
   var sessionStore: String
   var sessions: [SessionReconcileEntry]
+  var nestedInvocations: [SessionNestedInvocationVerdict]
 }
 
 struct SessionReconcileCommandRunner {
@@ -43,6 +45,9 @@ struct SessionReconcileCommandRunner {
       guard ["project", "user"].contains(parsed.scope) else {
         throw CLIUsageError("session reconcile --scope must be project or user")
       }
+      guard (1...8760).contains(parsed.abandonedAfterHours) else {
+        throw CLIUsageError("--abandoned-after-hours must be between 1 and 8760")
+      }
       guard ["json", "text"].contains(parsed.output) else {
         throw CLIUsageError("session reconcile --output must be json or text")
       }
@@ -52,8 +57,18 @@ struct SessionReconcileCommandRunner {
         scope: WorkflowScope(rawValue: parsed.scope) ?? .project,
         workingDirectory: workingDirectory
       )
+      let runningActivity = try runningParentActivity(root: root)
       let sessions = try reconcile(root: root, selectedIds: parsed.sessionIds, apply: parsed.apply)
-      return render(sessions: sessions, root: root, apply: parsed.apply, output: parsed.output)
+      let activityOverrides = Dictionary(uniqueKeysWithValues: sessions.compactMap { entry -> (String, Date)? in
+        guard entry.verdict == "orphaned", entry.applied || !parsed.apply,
+              let updatedAt = runningActivity[entry.sessionId] else { return nil }
+        return (entry.sessionId, updatedAt)
+      })
+      let registry = SessionExecutionLockRegistry(sessionStoreRoot: root)
+      let nested = try SessionAbandonedInvocationReconciler(registry: registry).run(
+        sessionStoreRoot: root, abandonedAfter: TimeInterval(parsed.abandonedAfterHours * 3600), apply: parsed.apply,
+        parentActivityOverrides: activityOverrides)
+      return render(sessions: sessions, nested: nested, root: root, apply: parsed.apply, output: parsed.output)
     } catch {
       let message = (error as? CLIUsageError)?.message ?? String(describing: error)
       let data = (try? JSONEncoder().encode(["error": message])) ?? Data()
@@ -97,6 +112,16 @@ struct SessionReconcileCommandRunner {
       }
     }
     return candidates
+  }
+
+  private func runningParentActivity(root: String) throws -> [String: Date] {
+    let candidates = try runningCandidates(root: root)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root))
+    var values: [String: Date] = [:]
+    for id in candidates.keys {
+      if let snapshot = try? store.load(sessionId: id) { values[id] = snapshot.session.updatedAt }
+    }
+    return values
   }
 
   private func reconcile(
@@ -187,12 +212,15 @@ struct SessionReconcileCommandRunner {
     }
   }
 
-  private func render(sessions: [SessionReconcileEntry], root: String, apply: Bool, output: String) -> CLICommandResult {
+  private func render(sessions: [SessionReconcileEntry], nested: [SessionNestedInvocationVerdict], root: String,
+                      apply: Bool, output: String) -> CLICommandResult {
     if output == "text" {
-      let lines = sessions.map { "\($0.sessionId) \($0.verdict)\($0.applied ? " applied" : "")\($0.reason.map { " (\($0))" } ?? "")" }
+      let sessionLines = sessions.map { "\($0.sessionId) \($0.verdict)\($0.applied ? " applied" : "")\($0.reason.map { " (\($0))" } ?? "")" }
+      let nestedLines = nested.map { "\($0.invocationKey) \($0.verdict)\($0.applied ? " applied" : "")\($0.reason.map { " (\($0))" } ?? "")" }
+      let lines = sessionLines + nestedLines
       return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n"))
     }
-    let result = SessionReconcileResult(dryRun: !apply, sessionStore: root, sessions: sessions)
+    let result = SessionReconcileResult(dryRun: !apply, sessionStore: root, sessions: sessions, nestedInvocations: nested)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     return CLICommandResult(exitCode: .success, stdout: (String(data: (try? encoder.encode(result)) ?? Data(), encoding: .utf8) ?? "{}") + "\n")

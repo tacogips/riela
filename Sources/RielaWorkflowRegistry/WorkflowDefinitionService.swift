@@ -2,6 +2,18 @@ import Foundation
 import RielaAddons
 import RielaCore
 
+public struct WorkflowDefinitionHeadMoveResult: Equatable, Sendable {
+  public var version: WorkflowDefinitionVersion
+  public var audit: WorkflowDefinitionAuditRecord
+  public var revision: Int
+
+  public init(version: WorkflowDefinitionVersion, audit: WorkflowDefinitionAuditRecord, revision: Int) {
+    self.version = version
+    self.audit = audit
+    self.revision = revision
+  }
+}
+
 public enum WorkflowDefinitionPromptField: Equatable, Sendable {
   public enum Kind: String, Sendable { case promptTemplate, systemPromptTemplate, sessionStartPromptTemplate }
   case node(Kind)
@@ -107,7 +119,7 @@ public struct WorkflowDefinitionService: Sendable {
               defaultHistoryRetention: Int = WorkflowDefinitionStore.defaultHistoryRetention,
               now: @escaping @Sendable () -> Date = Date.init) {
     self.storeRoot = storeRoot
-    self.store = WorkflowDefinitionStore(rootDirectory: storeRoot, now: now)
+    self.store = WorkflowDefinitionStore(rootDirectory: storeRoot, defaultHistoryRetention: defaultHistoryRetention, now: now)
     self.fileResolver = fileResolver
     self.defaultHistoryRetention = defaultHistoryRetention
   }
@@ -120,7 +132,7 @@ public struct WorkflowDefinitionService: Sendable {
   }
 
   public func loadPinned(versionId: String) throws -> ResolvedWorkflowBundle {
-    guard let version = try store.version(versionId: versionId), let data = try store.blob(digest: version.documentDigest) else {
+    guard let version = try store.version(versionId: versionId), let data = try store.document(versionId: versionId) else {
       throw WorkflowDefinitionStoreError(code: .versionNotFound, message: "definition version \(versionId) was not found")
     }
     return try document(data).resolvedBundle(head: nil, version: version, storeRoot: storeRoot)
@@ -142,7 +154,8 @@ public struct WorkflowDefinitionService: Sendable {
       sourceScope: fileBundle.sourceScope.rawValue,
       provenance: fileBundle.provenance.rawValue,
       actor: actor,
-      reason: "seeded from \(fileBundle.workflowDirectory) on first service run"
+      reason: "seeded from \(fileBundle.workflowDirectory) on first service run",
+      defaultHistoryRetention: defaultHistoryRetention
     )
     do {
       switch try store.commit(write) {
@@ -180,7 +193,8 @@ public struct WorkflowDefinitionService: Sendable {
         actor: actor,
         reason: reason?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "initial import from \(bundle.workflowDirectory)",
         evidence: evidence,
-        historyRetention: historyRetention
+        historyRetention: historyRetention,
+        defaultHistoryRetention: defaultHistoryRetention
       )
       do {
         guard case let .created(version, audit) = try store.commit(write) else {
@@ -199,7 +213,7 @@ public struct WorkflowDefinitionService: Sendable {
     }
     let overwrittenAudits = try store.auditRecords(workflowName: resolution.workflowName, afterVersionId: current.head.lastFileVersionId)
       .filter { [.updatePrompt, .update, .restore].contains($0.operation) }
-    let baseline = try store.version(versionId: current.head.lastFileVersionId).flatMap { try store.blob(digest: $0.documentDigest) }
+    let baseline = try store.document(versionId: current.head.lastFileVersionId)
     let overwritten = WorkflowDefinitionOverwrittenChanges(
       sinceVersionId: current.head.lastFileVersionId,
       auditIds: overwrittenAudits.map(\.auditId),
@@ -219,7 +233,8 @@ public struct WorkflowDefinitionService: Sendable {
       diff: diff,
       overwrittenChanges: overwritten,
       expectedCurrentVersionId: current.head.currentVersionId,
-      historyRetention: historyRetention
+      historyRetention: historyRetention,
+      defaultHistoryRetention: defaultHistoryRetention
     )
     do {
       guard case let .created(version, audit) = try store.commit(write) else { throw WorkflowDefinitionStoreError(code: .staleHead, message: "definition changed during force import") }
@@ -350,7 +365,7 @@ public struct WorkflowDefinitionService: Sendable {
     try requireReason(reason)
     guard let current = try store.current(workflowName: workflowName) else { throw notRegistered(workflowName) }
     guard let target = try store.version(versionId: versionId), target.workflowName == workflowName,
-          let data = try store.blob(digest: target.documentDigest) else {
+          let data = try store.document(versionId: versionId) else {
       throw WorkflowDefinitionStoreError(code: .versionNotFound, message: "definition version \(versionId) was not found for \(workflowName)")
     }
     let targetDoc = try document(data)
@@ -368,7 +383,8 @@ public struct WorkflowDefinitionService: Sendable {
       evidence: evidence,
       diff: diff,
       expectedCurrentVersionId: current.head.currentVersionId,
-      historyRetention: historyRetention
+      historyRetention: historyRetention,
+      defaultHistoryRetention: defaultHistoryRetention
     )
     do {
       guard case let .created(version, audit) = try store.commit(write) else { throw invalidDefinition("restore did not create a version") }
@@ -378,6 +394,41 @@ public struct WorkflowDefinitionService: Sendable {
 
   public func history(workflowName: String, nodeId: String?, limit: Int?) throws -> [WorkflowDefinitionAuditRecord] {
     try store.history(workflowName: workflowName, nodeId: nodeId, limit: limit)
+  }
+
+  public func undo(workflowName: String, reason: String, evidence: [WorkflowDefinitionEvidenceRef],
+                   actor: WorkflowDefinitionActor, expectedRevision: Int64? = nil,
+                   expectedVersionId: String? = nil) throws -> WorkflowDefinitionHeadMoveResult {
+    try moveHead(workflowName: workflowName, direction: .undo, reason: reason, evidence: evidence,
+      actor: actor, expectedRevision: expectedRevision, expectedVersionId: expectedVersionId)
+  }
+
+  public func redo(workflowName: String, reason: String, evidence: [WorkflowDefinitionEvidenceRef],
+                   actor: WorkflowDefinitionActor, expectedRevision: Int64? = nil,
+                   expectedVersionId: String? = nil) throws -> WorkflowDefinitionHeadMoveResult {
+    try moveHead(workflowName: workflowName, direction: .redo, reason: reason, evidence: evidence,
+      actor: actor, expectedRevision: expectedRevision, expectedVersionId: expectedVersionId)
+  }
+
+  private func moveHead(
+    workflowName: String,
+    direction: WorkflowDefinitionHeadMoveDirection,
+    reason: String,
+    evidence: [WorkflowDefinitionEvidenceRef],
+    actor: WorkflowDefinitionActor,
+    expectedRevision: Int64?,
+    expectedVersionId: String?
+  ) throws -> WorkflowDefinitionHeadMoveResult {
+    try requireReason(reason)
+    do {
+      let moved = try store.moveHeadWithRevision(workflowName: workflowName, direction: direction,
+        reason: reason, expectedRevision: expectedRevision, expectedVersionId: expectedVersionId,
+        evidence: evidence, actorKind: actor.kind.rawValue, actorId: actor.id)
+      guard case let .created(version, audit) = moved.outcome else {
+        throw notRegistered(workflowName)
+      }
+      return WorkflowDefinitionHeadMoveResult(version: version, audit: audit, revision: moved.revision)
+    } catch { throw map(error) }
   }
 
   // The plan-pinned API returns head, version, and document together.
@@ -521,7 +572,8 @@ public struct WorkflowDefinitionService: Sendable {
       targetField: targetField,
       diff: diff,
       expectedCurrentVersionId: current.head.currentVersionId,
-      historyRetention: request.historyRetention
+      historyRetention: request.historyRetention,
+      defaultHistoryRetention: defaultHistoryRetention
     )
     do {
       guard case let .created(version, audit) = try store.commit(write) else { throw conflict("definition head changed during update") }
@@ -544,7 +596,7 @@ public struct WorkflowDefinitionService: Sendable {
 
   private func versionDocument(versionId: String, workflowName: String) throws -> WorkflowDefinitionDocument {
     let version = try checkedVersion(versionId: versionId, workflowName: workflowName)
-    guard let data = try store.blob(digest: version.documentDigest) else {
+    guard let data = try store.document(versionId: versionId) else {
       throw WorkflowDefinitionStoreError(code: .versionNotFound, message: "definition blob \(version.documentDigest) was not found")
     }
     return try document(data)
@@ -553,9 +605,8 @@ public struct WorkflowDefinitionService: Sendable {
   private func document(_ data: Data) throws -> WorkflowDefinitionDocument { try WorkflowDefinitionDocument.decode(data) }
 
   private func diffDocuments(_ before: WorkflowDefinitionDocument?, _ after: WorkflowDefinitionDocument) -> [WorkflowDefinitionDiffEntry] {
-    guard let before, let lhs = try? JSONDecoder().decode(JSONValue.self, from: (try? before.canonicalData()) ?? Data()),
-          let rhs = try? JSONDecoder().decode(JSONValue.self, from: (try? after.canonicalData()) ?? Data()) else { return [] }
-    return WorkflowDefinitionDiff.compute(before: lhs, after: rhs)
+    guard let before, let beforeData = try? before.canonicalData(), let afterData = try? after.canonicalData() else { return [] }
+    return WorkflowDefinitionDiff.compute(beforeJSON: beforeData, afterJSON: afterData)
   }
 
   private func requireReason(_ reason: String?) throws {

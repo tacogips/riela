@@ -4,9 +4,72 @@ import RielaAdapters
 import RielaCore
 import RielaGraphQL
 import RielaSQLite
+import RielaWorkflowRegistry
 @testable import RielaCLI
 
 final class WorkflowDefinitionGraphQLTests: XCTestCase {
+  private final class Clock: @unchecked Sendable { var now: Date; init(_ now: Date) { self.now = now } }
+  private final class RevisionBox: @unchecked Sendable { var value: Int? }
+
+  func testUndoPayloadKeepsRevisionCapturedByHeadMoveWhenHeadAdvances() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let service = WorkflowDefinitionService(storeRoot: fixture.store.path, fileResolver: FileSystemWorkflowBundleResolver())
+    let resolution = WorkflowResolutionOptions(workflowName: "w", scope: .direct,
+      workflowDefinitionDir: fixture.workflowRoot.path, workingDirectory: fixture.root.path)
+    _ = try service.importDefinition(resolution: resolution, force: false, reason: nil,
+      evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+    _ = try service.updatePrompt(workflowName: "w", nodeId: "worker", field: .node(.promptTemplate),
+      text: "before undo", reason: "advance before undo", expectedVersionId: nil,
+      evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+    let moveRevision = RevisionBox()
+    let provider = WorkflowDefinitionGraphQLProvider(workingDirectory: fixture.root.path,
+      sessionStoreRoot: fixture.store.path, environment: ["HOME": fixture.root.path], afterHeadMoveForTesting: { revision in
+        moveRevision.value = revision
+        _ = try? service.updatePrompt(workflowName: "w", nodeId: "worker", field: .node(.promptTemplate),
+          text: "competing write", reason: "advance after undo", expectedVersionId: nil,
+          evidence: [], actor: WorkflowDefinitionActor(kind: .user))
+      })
+    let executor = WorkflowDefinitionGraphQLDocumentExecutor(provider: provider)
+    let response = await execute(executor,
+      #"mutation { undoWorkflowDefinition(input: {workflowName: "w", reason: "rollback", expectedRevision: 2}) { version { versionId revision } } }"#)
+    XCTAssertNil(response.body["errors"])
+    let payload = try XCTUnwrap(dataObject(response)?["undoWorkflowDefinition"].flatMap(field("version")))
+    guard case let .object(payloadFields) = payload else { return XCTFail("missing version payload object") }
+    XCTAssertEqual(payloadFields["revision"], .number(Double(try XCTUnwrap(moveRevision.value))))
+    XCTAssertEqual(try service.show(workflowName: "w", versionId: nil).head.revision, moveRevision.value.map { $0 + 1 })
+  }
+
+  func testDroppedWorkflowVersionReturnsClosedErrorAndRetentionDetails() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let clock = Clock(Date(timeIntervalSinceNow: -30 * 24 * 60 * 60))
+    let service = WorkflowDefinitionService(storeRoot: fixture.store.path, fileResolver: FileSystemWorkflowBundleResolver(),
+      defaultHistoryRetention: 2, now: { clock.now })
+    let resolution = WorkflowResolutionOptions(workflowName: "w", scope: .direct,
+      workflowDefinitionDir: fixture.workflowRoot.path, workingDirectory: fixture.root.path)
+    let seed = try XCTUnwrap(try service.importDefinition(resolution: resolution, force: false, reason: nil,
+      evidence: [], actor: WorkflowDefinitionActor(kind: .cli)).version?.versionId)
+    var dropped = ""
+    for prompt in ["two", "three", "four"] {
+      clock.now = clock.now.addingTimeInterval(25 * 60 * 60)
+      let update = try service.updatePrompt(workflowName: "w", nodeId: "worker", field: .node(.promptTemplate),
+        text: prompt, reason: "advance", expectedVersionId: nil, evidence: [], actor: WorkflowDefinitionActor(kind: .cli), historyRetention: 2)
+      dropped = prompt == "two" ? update.0.versionId : dropped
+    }
+    let executor = WorkflowDefinitionGraphQLDocumentExecutor(provider: WorkflowDefinitionGraphQLProvider(
+      workingDirectory: fixture.root.path, sessionStoreRoot: fixture.store.path, environment: ["HOME": fixture.root.path]))
+    let response = await execute(executor, "{ workflowDefinition(workflowName: \"w\", versionId: \"\(dropped)\") { versionId } }")
+    XCTAssertEqual(errorCode(response), "DEFINITION_VERSION_NOT_RETAINED")
+    XCTAssertEqual(errorExtension(response, key: "retainedGenerations"), JSONValue.number(2.0))
+    guard case .array? = errorExtension(response, key: "retainedVersionIds") else {
+      return XCTFail("missing retainedVersionIds metadata in GraphQL error")
+    }
+    XCTAssertNotEqual(seed, dropped)
+  }
+
+  // The end-to-end GraphQL workflow sequence is kept together to preserve its mutation ordering.
+  // swiftlint:disable:next function_body_length
   func testImportPromptAuditHistoryAndSafeExportThroughCompositeExecutor() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -96,10 +159,10 @@ final class WorkflowDefinitionGraphQLTests: XCTestCase {
     mutation {
       updateWorkflowDefinitionPrompt(input: {
         workflowName: "w", nodeId: "worker", field: "promptTemplate", text: "stored prompt",
-        reason: "r", evidence: ["session:s1"], actorKind: "user"
+        reason: "r", evidence: ["session:s1"], actorKind: "user", historyRetention: 2
       }) {
         version { versionId actor { kind } }
-        audit { auditId reason evidence actor { kind } }
+        audit { auditId reason evidence actor { kind } retained }
       }
     }
     """)
@@ -108,6 +171,16 @@ final class WorkflowDefinitionGraphQLTests: XCTestCase {
     XCTAssertEqual(audit["reason"], .string("r"))
     XCTAssertEqual(audit["actor"].flatMap(field("kind")), .string("user"))
     XCTAssertEqual(audit["evidence"], .array([.string("session:s1")]))
+    XCTAssertEqual(audit["retained"], .bool(true))
+    let definitionDatabase = try SQLiteDatabase.open(
+      path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: fixture.store.path),
+      mode: .strictReadOnly,
+      options: .readOnlyDefault
+    )
+    XCTAssertEqual(
+      try definitionDatabase.query("SELECT retained_generations FROM definition_history_heads WHERE key='w'").first?["retained_generations"],
+      "2"
+    )
     let promptVersion = try XCTUnwrap(dataObject(promptUpdate)?["updateWorkflowDefinitionPrompt"].flatMap(field("version"))?.flatMap(field("versionId")).flatMap(stringValue))
     let promptAuditId = try XCTUnwrap(audit["auditId"].flatMap(stringValue))
 
@@ -120,9 +193,54 @@ final class WorkflowDefinitionGraphQLTests: XCTestCase {
     guard case let .array(diffEntries)? = dataObject(diff)?["workflowDefinitionDiff"] else { return XCTFail("missing diff") }
     XCTAssertTrue(diffEntries.contains { field("path")($0) == .string("/authoredFiles/prompts~1a.md") })
 
+    let undoMissingReason = await execute(executor, "mutation { undoWorkflowDefinition(input: {workflowName: \"w\"}) { version { versionId } } }")
+    XCTAssertEqual(errorCode(undoMissingReason), "DEFINITION_REASON_REQUIRED")
+    let revisionQuery = await execute(executor, "{ workflowDefinition(workflowName: \"w\") { versionId revision } }")
+    guard let revisionJSON = dataObject(revisionQuery)?["workflowDefinition"].flatMap(field("revision")) else {
+      return XCTFail("workflowDefinition did not expose the revision CAS token: \(revisionQuery.body)")
+    }
+    let revision: Int
+    switch revisionJSON {
+    case let .integer(value): revision = Int(value)
+    case let .number(value): revision = Int(value)
+    default: return XCTFail("workflowDefinition revision was not an integer: \(revisionJSON)")
+    }
+    let undone = await execute(executor, """
+    mutation { undoWorkflowDefinition(input: {workflowName: "w", reason: "undo", expectedRevision: \(revision)}) { version { versionId revision } audit { operation retained } } }
+    """)
+    XCTAssertNil(errorCode(undone), String(describing: undone.body))
+    XCTAssertEqual(dataObject(undone)?["undoWorkflowDefinition"].flatMap(field("version"))?.flatMap(field("versionId")), .string(seedVersion))
+    XCTAssertEqual(dataObject(undone)?["undoWorkflowDefinition"].flatMap(field("version"))?.flatMap(field("revision")), .number(Double(revision + 1)))
+    XCTAssertEqual(dataObject(undone)?["undoWorkflowDefinition"].flatMap(field("audit"))?.flatMap(field("operation")), .string("undo"))
+    let redone = await execute(executor, "mutation { redoWorkflowDefinition(input: {workflowName: \"w\", reason: \"redo\"}) { version { versionId revision } audit { operation } } }")
+    XCTAssertNil(errorCode(redone), String(describing: redone.body))
+    XCTAssertEqual(dataObject(redone)?["redoWorkflowDefinition"].flatMap(field("version"))?.flatMap(field("versionId")), .string(promptVersion))
+    XCTAssertEqual(dataObject(redone)?["redoWorkflowDefinition"].flatMap(field("audit"))?.flatMap(field("operation")), .string("redo"))
+    let bothCAS = await execute(executor, """
+    mutation { undoWorkflowDefinition(input: {workflowName: "w", reason: "bad", expectedRevision: 1, expectedVersionId: "x"}) { version { versionId } } }
+    """)
+    XCTAssertEqual(errorCode(bothCAS), "INVALID_DEFINITION_INPUT")
+    let staleRevision = await execute(executor, "mutation { undoWorkflowDefinition(input: {workflowName: \"w\", reason: \"stale\", expectedRevision: 1}) { version { versionId } } }")
+    XCTAssertEqual(errorCode(staleRevision), "DEFINITION_STALE_REVISION")
+    let staleVersion = await execute(executor, "mutation { undoWorkflowDefinition(input: {workflowName: \"w\", reason: \"stale\", expectedVersionId: \"wrong\"}) { version { versionId } } }")
+    XCTAssertEqual(errorCode(staleVersion), "DEFINITION_STALE")
+    let oldest = await execute(executor, "mutation { undoWorkflowDefinition(input: {workflowName: \"w\", reason: \"oldest\"}) { version { versionId } } }")
+    XCTAssertNil(errorCode(oldest), String(describing: oldest.body))
+    XCTAssertEqual(dataObject(oldest)?["undoWorkflowDefinition"].flatMap(field("version"))?.flatMap(field("versionId")), .string(seedVersion))
+    let exhausted = await execute(executor, "mutation { undoWorkflowDefinition(input: {workflowName: \"w\", reason: \"oldest\"}) { version { versionId } } }")
+    XCTAssertEqual(errorCode(exhausted), "DEFINITION_NOTHING_TO_UNDO")
+    let branch = await execute(executor, """
+    mutation { updateWorkflowDefinitionPrompt(input: {workflowName: "w", nodeId: "worker", field: "promptTemplate", text: "branch", reason: "branch"}) { version { versionId } } }
+    """)
+    XCTAssertNil(errorCode(branch), String(describing: branch.body))
+    let branchVersion = dataObject(branch)?["updateWorkflowDefinitionPrompt"].flatMap(field("version"))?.flatMap(field("versionId"))
+    let noRedo = await execute(executor, "mutation { redoWorkflowDefinition(input: {workflowName: \"w\", reason: \"redo\"}) { version { versionId } } }")
+    XCTAssertEqual(errorCode(noRedo), "DEFINITION_NOTHING_TO_REDO")
+
     let show = await execute(executor, "{ workflowDefinition(workflowName: \"w\") { versionId documentJSON } }")
-    XCTAssertEqual(dataObject(show)?["workflowDefinition"].flatMap(field("versionId")), dataObject(promptUpdate)?["updateWorkflowDefinitionPrompt"].flatMap(field("version"))?.flatMap(field("versionId")))
-    let shownDocument = try XCTUnwrap(dataObject(show)?["workflowDefinition"].flatMap(field("documentJSON")).flatMap(stringValue))
+    XCTAssertEqual(dataObject(show)?["workflowDefinition"].flatMap(field("versionId")), branchVersion)
+    let promptShow = await execute(executor, "{ workflowDefinition(workflowName: \"w\", versionId: \"\(promptVersion)\") { documentJSON } }")
+    let promptDocument = try XCTUnwrap(dataObject(promptShow)?["workflowDefinition"].flatMap(field("documentJSON")).flatMap(stringValue))
 
     let export = await execute(executor, "mutation { exportWorkflowDefinition(input: {workflowName: \"w\", writeToSource: false}) { wroteToSource files { path content } } }")
     XCTAssertNil(errorCode(export), String(describing: export.body))
@@ -178,7 +296,7 @@ final class WorkflowDefinitionGraphQLTests: XCTestCase {
     let restore = await execute(executor, "mutation { restoreWorkflowDefinition(input: {workflowName: \"w\", versionId: \"\(promptVersion)\", reason: \"restore prompt\"}) { version { documentJSON } } }")
     XCTAssertNil(errorCode(restore), String(describing: restore.body))
     let restoredDocument = dataObject(restore)?["restoreWorkflowDefinition"].flatMap(field("version"))?.flatMap(field("documentJSON"))
-    XCTAssertEqual(restoredDocument, .string(shownDocument))
+    XCTAssertEqual(restoredDocument, .string(promptDocument))
 
     let exportToSource = await execute(executor, "mutation { exportWorkflowDefinition(input: {workflowName: \"w\", writeToSource: true}) { wroteToSource } }")
     XCTAssertEqual(dataObject(exportToSource)?["exportWorkflowDefinition"].flatMap(field("wroteToSource")), .bool(true))
@@ -264,6 +382,13 @@ final class WorkflowDefinitionGraphQLTests: XCTestCase {
     return code
   }
 
+  private func errorExtension(_ response: GraphQLDocumentExecutionResponse, key: String) -> JSONValue? {
+    guard case let .array(errors)? = response.body["errors"],
+          case let .object(error)? = errors.first,
+          case let .object(extensions)? = error["extensions"] else { return nil }
+    return extensions[key]
+  }
+
   private func dataObject(_ response: GraphQLDocumentExecutionResponse) -> JSONObject? {
     guard case let .object(data)? = response.body["data"] else { return nil }; return data
   }
@@ -278,7 +403,7 @@ final class WorkflowDefinitionGraphQLTests: XCTestCase {
       path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: store.path),
       mode: .strictReadOnly, options: .readOnlyDefault
     )
-    return try ["definition_blobs", "definition_versions", "definition_heads", "definition_change_audit"].map { table in
+    return try ["definition_history_versions", "definition_versions", "definition_heads", "definition_change_audit"].map { table in
       Int(try XCTUnwrap(database.query("SELECT COUNT(*) AS count FROM \(table)").first?["count"])) ?? -1
     }
   }

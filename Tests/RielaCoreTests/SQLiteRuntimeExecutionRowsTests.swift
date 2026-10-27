@@ -89,6 +89,8 @@ final class SQLiteRuntimeExecutionRowsTests: XCTestCase {
     XCTAssertEqual(try store.nestedInvocationRecord(reservation)?.childTerminalSnapshot, terminal)
 
     XCTAssertGreaterThan(try scalar(db, "SELECT COUNT(*) AS value FROM workflow_nested_invocation_refs"), 0)
+    XCTAssertEqual(try scalar(db, "SELECT COUNT(*) AS value FROM workflow_nested_invocation_refs WHERE role='terminal'"), 4)
+    XCTAssertEqual(try scalar(db, "SELECT COUNT(DISTINCT digest) AS value FROM workflow_nested_invocation_refs WHERE role='terminal'"), 4)
     let stored = try XCTUnwrap(db.query(
       "SELECT json(reservation_json) AS reservation FROM workflow_nested_invocations LIMIT 1"
     ).first?["reservation"])
@@ -162,6 +164,79 @@ final class SQLiteRuntimeExecutionRowsTests: XCTestCase {
     XCTAssertEqual(try scalar(db, "SELECT COUNT(*) AS value FROM workflow_runtime_payloads WHERE digest='orphan-local'"), 0)
     XCTAssertEqual(try scalar(db, "SELECT COUNT(*) AS value FROM workflow_runtime_payloads WHERE digest='orphan-foreign'"), 1)
     XCTAssertEqual(try scalar(db, "SELECT COUNT(*) AS value FROM workflow_runtime_payloads WHERE digest=(SELECT payload_digest FROM workflow_runtime_executions WHERE workflow_execution_id='terminal-session')"), 1)
+  }
+
+  func testFastPathTerminalSavePreservesCompleteIdentityProjection() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    var executions: [WorkflowStepExecution] = []
+    for index in 1...4 {
+      executions.append(execution(id: "step-attempt-1-exec-\(index)", output: "v\(index)", date: date.addingTimeInterval(Double(index))))
+      try store.save(snapshot(id: "identity-session", executions: executions, date: date.addingTimeInterval(Double(index))))
+    }
+    var terminal = snapshot(id: "identity-session", executions: executions, date: date.addingTimeInterval(5))
+    terminal.session.status = .completed
+    try store.save(terminal)
+    let db = try database(root: root)
+    let projection = try XCTUnwrap(db.query(
+      "SELECT execution_ids_json FROM runtime_startup_identities WHERE session_id='identity-session'"
+    ).first?["execution_ids_json"])
+    XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(projection.utf8)), try store.executionIdentities(sessionId: "identity-session"))
+
+    let generator = MonotonicWorkflowRuntimeIDGenerator()
+    try store.observePersistedIdentities(generator)
+    let next = try generator.nextStepExecutionId(stepId: "step", attempt: 1)
+    XCTAssertEqual(next, "step-attempt-1-exec-5")
+  }
+
+  func testReadTransactionKeepsHeaderAndExecutionRowsFromOneCommittedSave() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let writer = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let old = snapshot(id: "consistent-session", executions: [execution(id: "old-exec", output: "old", date: date)], date: date)
+    try writer.save(old)
+    var updated = snapshot(id: "consistent-session", executions: [
+      execution(id: "old-exec", output: "old", date: date),
+      execution(id: "new-exec", output: "new", date: date.addingTimeInterval(1))
+    ], date: date.addingTimeInterval(1))
+    updated.session.status = .completed
+    let new = updated
+    let hookedReader = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: root.path,
+      loadAssemblyObserver: { try writer.save(new) }
+    )
+    XCTAssertEqual(try hookedReader.load(sessionId: "consistent-session").session, old.session)
+    XCTAssertEqual(try writer.load(sessionId: "consistent-session").session, new.session)
+  }
+
+  func testGenerationTenInlineExecutionStoreSupportsSummariesAndIdentityBackfill() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let original = snapshot(id: "generation-ten-session", executions: [
+      execution(id: "step-attempt-1-exec-41", output: "legacy", date: date)
+    ], date: date)
+    try store.save(original)
+    let db = try database(root: root)
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = RuntimeSnapshotDates.encoding
+    let inline = String(data: try encoder.encode(original.session), encoding: .utf8)!
+    try db.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
+      bindings: [.text(inline), .text(original.session.sessionId)])
+    try db.execute("DROP TABLE workflow_runtime_executions")
+    try db.execute("DROP TABLE workflow_nested_invocation_refs")
+    try db.execute("DROP TABLE workflow_runtime_payloads")
+    try db.execute("DELETE FROM runtime_startup_identities WHERE session_id=?", bindings: [.text(original.session.sessionId)])
+    let summaries = try store.loadSessionSummaries(workflowId: "workflow", limit: 10)
+    XCTAssertEqual(summaries.map(\.sessionId), [original.session.sessionId])
+    let generator = MonotonicWorkflowRuntimeIDGenerator()
+    try store.observePersistedIdentities(generator)
+    XCTAssertEqual(try generator.nextStepExecutionId(stepId: "step", attempt: 1), "step-attempt-1-exec-42")
+    XCTAssertEqual(try store.load(sessionId: original.session.sessionId).session, original.session)
   }
 
   private func snapshot(id: String, executions: [WorkflowStepExecution], date: Date) -> WorkflowRuntimePersistenceSnapshot {

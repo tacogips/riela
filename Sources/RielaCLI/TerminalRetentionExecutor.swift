@@ -160,6 +160,8 @@ struct TerminalRetentionExecutor {
               if case .followResults = messages { try TerminalRetentionSecondary.deleteMessages(id: id, db: transactionDB) }
               try deleteResultRows(id, db: transactionDB)
             }
+            try deleteNestedInvocationRows(parentIds: family.ids, db: transactionDB)
+            try deleteFamilyPayloads(rootId: family.rootId, db: transactionDB)
           }
         } catch TerminalRetentionError.changedFamily {
           protected[family.rootId] = "changedDuringAdmission"
@@ -375,6 +377,9 @@ struct TerminalRetentionExecutor {
               """, bindings: [.text(id), .text(row.workflowId), .text(family.rootId), .text(Self.timestamp(now)),
                 .text(paths.artifactRoot ?? ""), .text(paths.memoryRoot ?? ""), .int(row.payloadBytes)])
             try TerminalRetentionSecondary.deleteMessages(id: id, db: db)
+            if try db.tableExists("workflow_runtime_executions") {
+              try db.execute("DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=?", bindings: [.text(id)])
+            }
             if try db.tableExists("workflow_runtime_snapshots") {
               try db.execute("DELETE FROM workflow_runtime_snapshots WHERE workflow_execution_id=?", bindings: [.text(id)])
             }
@@ -385,9 +390,11 @@ struct TerminalRetentionExecutor {
               try db.execute("DELETE FROM loop_baselines WHERE session_id=?", bindings: [.text(id)])
             }
             if try db.tableExists("workflow_nested_invocations") {
-              try db.execute("DELETE FROM workflow_nested_invocations WHERE json_extract(reservation_json,'$.childSnapshot.session.sessionId')=?", bindings: [.text(id)])
+              try deleteNestedInvocationRows(childId: id, db: db)
             }
           }
+          try deleteNestedInvocationRows(parentIds: family.ids, db: db)
+          try deleteFamilyPayloads(rootId: family.rootId, db: db)
         }
       } catch TerminalRetentionError.changedFamily {
         report.protectedFamilies[family.rootId] = "changedDuringAdmission"
@@ -574,6 +581,9 @@ struct TerminalRetentionExecutor {
   }
 
   private func deleteResultRows(_ id: String, db: SQLiteDatabase) throws {
+    if try db.tableExists("workflow_runtime_executions") {
+      try db.execute("DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=?", bindings: [.text(id)])
+    }
     if try db.tableExists("workflow_runtime_snapshots") {
       try db.execute("DELETE FROM workflow_runtime_snapshots WHERE workflow_execution_id=?", bindings: [.text(id)])
     }
@@ -581,9 +591,46 @@ struct TerminalRetentionExecutor {
       try db.execute("DELETE FROM cli_workflow_sessions WHERE session_id=?", bindings: [.text(id)])
     }
     if try db.tableExists("loop_baselines") { try db.execute("DELETE FROM loop_baselines WHERE session_id=?", bindings: [.text(id)]) }
-    if try db.tableExists("workflow_nested_invocations") {
-      try db.execute("DELETE FROM workflow_nested_invocations WHERE json_extract(reservation_json,'$.childSnapshot.session.sessionId')=?",
-        bindings: [.text(id)])
+    if try db.tableExists("workflow_nested_invocations") { try deleteNestedInvocationRows(childId: id, db: db) }
+  }
+
+  private func deleteNestedInvocationRows(childId: String, db: SQLiteDatabase) throws {
+    let hasInvocationKey = try db.tableColumnNames("workflow_nested_invocations").contains("invocation_key")
+    let keys = hasInvocationKey ? try db.query("SELECT invocation_key FROM workflow_nested_invocations WHERE json_extract(reservation_json,'$.childSnapshot.session.sessionId')=?",
+      bindings: [.text(childId)]).compactMap { $0["invocation_key"] } : []
+    if try db.tableExists("workflow_nested_invocation_refs") {
+      for key in keys { try db.execute("DELETE FROM workflow_nested_invocation_refs WHERE invocation_key=?", bindings: [.text(key)]) }
+    }
+    try db.execute("DELETE FROM workflow_nested_invocations WHERE json_extract(reservation_json,'$.childSnapshot.session.sessionId')=?",
+      bindings: [.text(childId)])
+  }
+
+  private func deleteNestedInvocationRows(parentIds: [String], db: SQLiteDatabase) throws {
+    guard !parentIds.isEmpty, try db.tableExists("workflow_nested_invocations") else { return }
+    let hasInvocationKey = try db.tableColumnNames("workflow_nested_invocations").contains("invocation_key")
+    let placeholders = Array(repeating: "?", count: parentIds.count).joined(separator: ",")
+    let bindings = parentIds.map(SQLiteValue.text)
+    let keys = hasInvocationKey ? try db.query(
+      "SELECT invocation_key FROM workflow_nested_invocations WHERE json_extract(reservation_json,'$.parentSessionId') IN (\(placeholders))",
+      bindings: bindings
+    ).compactMap { $0["invocation_key"] } : []
+    if try db.tableExists("workflow_nested_invocation_refs") {
+      for key in keys {
+        try db.execute("DELETE FROM workflow_nested_invocation_refs WHERE invocation_key=?", bindings: [.text(key)])
+      }
+    }
+    try db.execute(
+      "DELETE FROM workflow_nested_invocations WHERE json_extract(reservation_json,'$.parentSessionId') IN (\(placeholders))",
+      bindings: bindings
+    )
+  }
+
+  private func deleteFamilyPayloads(rootId: String, db: SQLiteDatabase) throws {
+    if try db.tableExists("workflow_runtime_payloads") {
+      try db.execute("DELETE FROM workflow_runtime_payloads WHERE root_session_id=?", bindings: [.text(rootId)])
+    }
+    if try db.tableExists("workflow_nested_invocation_refs"), try db.tableExists("session_retention_tombstones") {
+      try db.execute("DELETE FROM workflow_nested_invocation_refs WHERE root_session_id=?", bindings: [.text(rootId)])
     }
   }
 
@@ -701,7 +748,21 @@ struct TerminalRetentionExecutor {
     let reclamation = try TerminalRetentionSecondary.clean(ids: ids, workflows: workflows, paths: paths, mode: mode,
       reclaimer: reclaimer)
     try db.transaction { db in
-      for id in ids { try db.execute("UPDATE session_retention_tombstones SET cleanup_pending=0,payload_bytes=0 WHERE session_id=?", bindings: [.text(id)]) }
+      for id in ids {
+        if try db.tableExists("workflow_runtime_executions") {
+          try db.execute("DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=?", bindings: [.text(id)])
+        }
+        if try db.tableExists("workflow_nested_invocations") {
+          try deleteNestedInvocationRows(childId: id, db: db)
+        }
+        if let root = try db.query("SELECT root_id FROM session_retention_tombstones WHERE session_id=?",
+          bindings: [.text(id)]).first?["root_id"] {
+          try deleteFamilyPayloads(rootId: root, db: db)
+        }
+        try db.execute("UPDATE session_retention_tombstones SET cleanup_pending=0,payload_bytes=0 WHERE session_id=?",
+          bindings: [.text(id)])
+      }
+      try deleteNestedInvocationRows(parentIds: ids, db: db)
     }
     return reclamation
   }

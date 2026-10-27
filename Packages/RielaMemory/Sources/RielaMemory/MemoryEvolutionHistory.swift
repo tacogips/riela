@@ -216,6 +216,12 @@ extension RielaMemoryStore {
     try execute(db, "BEGIN IMMEDIATE")
     defer { try? execute(db, "ROLLBACK") }
     let current = try record(memoryId: memoryId, recordId: recordId, db: db)
+    let hasNewHistory = try memoryHistoryExists(recordId: recordId, db: db)
+    let hasLegacyHistory = try !queryRows(db, sql: "SELECT 1 FROM memory_evolution WHERE record_id=? LIMIT 1",
+      bindings: [.int64(recordId)]).isEmpty
+    if !hasNewHistory, hasLegacyHistory {
+      _ = try historyWrite(previous: current, next: current, db: db)
+    }
     let engine = try memoryHistoryStore(db: db)
     let moved = try (redo
       ? engine.redo(key: String(recordId), currentHeadValue: memoryHistoryHeadBytes(current), expectedRevision: expectedRevision)

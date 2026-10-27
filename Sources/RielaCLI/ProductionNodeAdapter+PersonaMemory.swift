@@ -66,6 +66,7 @@ extension BuiltinWorkflowAddonResolver {
     let context = try personaMemoryContext(input)
     let variables = try addonVariables(for: input)
     let files = try memoryFileReferences(config: input.addon.config ?? [:], variables: variables)
+    let historyRetention = memoryHistoryRetention(memoryId: context.memoryId, input: input)
     let personaPayload = latestPersonaPayload(input.resolvedInputPayload)
     let entries = personaMemoryEntries(from: personaPayload["memoryEntries"])
     let recordedAt = currentPersonaMemoryTimestamp()
@@ -113,7 +114,8 @@ extension BuiltinWorkflowAddonResolver {
             "source": entry.source.map(MemoryJSONValue.string) ?? .null,
             "content": .string(entry.content),
             "recordedAt": .string(recordedAt)
-          ])
+          ]),
+          historyRetention: historyRetention
         ))
       }
     }

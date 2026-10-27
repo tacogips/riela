@@ -1,6 +1,17 @@
 import Foundation
 
 public enum RielaCLIMain {
+  static func runEndMaintenance(
+    result: CLICommandResult,
+    arguments: [String],
+    cancelled: Bool,
+    environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+  ) -> (result: CLICommandResult, warnings: [String]) {
+    let warnings = AutomaticRetentionHook.runIfApplicable(
+      arguments: arguments, exitCode: result.exitCode, cancelled: cancelled, environment: environment)
+    return (result, warnings)
+  }
+
   public static func run() async {
     let arguments = Array(CommandLine.arguments.dropFirst())
     if arguments == [PrivateWorkflowWorker.command] {
@@ -69,12 +80,8 @@ public enum RielaCLIMain {
     if !result.stderr.isEmpty {
       FileHandle.standardError.write(Data((result.stderr + "\n").utf8))
     }
-    let retentionWarnings = AutomaticRetentionHook.runIfApplicable(
-      arguments: arguments,
-      exitCode: result.exitCode,
-      cancelled: runTask.isCancelled
-    )
-    for line in retentionWarnings {
+    let completion = runEndMaintenance(result: result, arguments: arguments, cancelled: runTask.isCancelled)
+    for line in completion.warnings {
       FileHandle.standardError.write(Data((line + "\n").utf8))
     }
     Foundation.exit(result.exitCode.rawValue)

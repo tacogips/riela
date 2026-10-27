@@ -2,6 +2,14 @@ import Foundation
 import RielaMemory
 
 extension DeterministicWorkflowRunner {
+  func effectiveMemoryDeclarations(
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef,
+    payload: AgentNodePayload?
+  ) -> [WorkflowMemoryDeclaration] {
+    deduplicatedMemories(effectiveNodeMemories(workflow: workflow, step: step, payload: payload) + (workflow.memories ?? []))
+  }
+
   func effectiveNodeMemories(
     workflow: WorkflowDefinition,
     step: WorkflowStepRef,
@@ -31,6 +39,9 @@ extension DeterministicWorkflowRunner {
     }
     if let defaultLimit = memory.defaultLimit {
       object["defaultLimit"] = .number(Double(defaultLimit))
+    }
+    if let historyRetention = memory.historyRetention {
+      object["historyRetention"] = .number(Double(historyRetention))
     }
     return .object(object)
   }
@@ -97,11 +108,7 @@ extension DeterministicWorkflowRunner {
     payload: AgentNodePayload?,
     request: DeterministicWorkflowRunRequest
   ) throws {
-    let memories = deduplicatedMemories(effectiveNodeMemories(
-      workflow: workflow,
-      step: step,
-      payload: payload
-    ) + (workflow.memories ?? []))
+    let memories = effectiveMemoryDeclarations(workflow: workflow, step: step, payload: payload)
     guard !memories.isEmpty else {
       return
     }
@@ -167,7 +174,7 @@ extension DeterministicWorkflowRunner {
       valueKey: "input",
       value: .object(resolvedInputPayload)
     )
-    try save(memoryPayload, to: memories, store: store, workflowId: workflow.workflowId, nodeId: step.nodeId)
+    try save(memoryPayload, to: memories, workflow: workflow, step: step, nodePayload: payload, store: store)
   }
 
   func recordNodeMemoryOutbox(
@@ -205,7 +212,7 @@ extension DeterministicWorkflowRunner {
       extra: extra
     )
     let store = RielaMemoryStore(rootDirectory: resolvedMemoryRootDirectory(request: request))
-    try save(memoryPayload, to: memories, store: store, workflowId: workflow.workflowId, nodeId: step.nodeId)
+    try save(memoryPayload, to: memories, workflow: workflow, step: step, nodePayload: payload, store: store)
   }
 
   func recordNodeMemoryFailureOutbox(
@@ -236,7 +243,7 @@ extension DeterministicWorkflowRunner {
       ]
     )
     let store = RielaMemoryStore(rootDirectory: resolvedMemoryRootDirectory(request: request))
-    try save(memoryPayload, to: memories, store: store, workflowId: workflow.workflowId, nodeId: step.nodeId)
+    try save(memoryPayload, to: memories, workflow: workflow, step: step, nodePayload: payload, store: store)
   }
 
   func memoryEnvironmentVariables(request: DeterministicWorkflowRunRequest) -> JSONObject {
@@ -246,12 +253,17 @@ extension DeterministicWorkflowRunner {
   private func save(
     _ payload: MemoryJSONValue,
     to memories: [WorkflowMemoryDeclaration],
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef,
+    nodePayload: AgentNodePayload?,
     store: RielaMemoryStore,
-    workflowId: String,
-    nodeId: String
   ) throws {
+    let retentionById = Dictionary(uniqueKeysWithValues: effectiveMemoryDeclarations(
+      workflow: workflow, step: step, payload: nodePayload
+    ).compactMap { memory in memory.historyRetention.map { (memory.id, $0) } })
     for memory in memories {
-      try store.save(memoryId: memory.id, workflowId: workflowId, nodeId: nodeId, payload: payload)
+      try store.save(memoryId: memory.id, workflowId: workflow.workflowId, nodeId: step.nodeId, payload: payload,
+        historyRetention: retentionById[memory.id] ?? memory.historyRetention)
     }
   }
 
@@ -356,7 +368,8 @@ private extension WorkflowMemoryDeclaration {
       purpose: purpose ?? other.purpose,
       dataSchema: dataSchema ?? other.dataSchema,
       scope: scope ?? other.scope,
-      defaultLimit: defaultLimit ?? other.defaultLimit
+      defaultLimit: defaultLimit ?? other.defaultLimit,
+      historyRetention: historyRetention ?? other.historyRetention
     )
   }
 }

@@ -428,6 +428,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       }
       throw CLIUsageError(message)
     }
+    if let familyCommand = try parseCommandFamilyRoute(route) { return familyCommand }
     switch route {
     case let route as WorkflowRoute:
       return try parseWorkflow(route.passthroughArguments)
@@ -452,6 +453,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     case let route as InstanceRoute:
       return .instance(try parseInstance(route.passthroughArguments))
     case let route as DoctorRoute:
+      if route.passthroughArguments.first == "storage" {
+        let arguments = Array(route.passthroughArguments.dropFirst())
+        return .doctor(CLICommandOptions(scope: "storage", command: "doctor", arguments: arguments, output: .text))
+      }
       return .doctor(try parseGeneric(
         scope: "doctor",
         command: "doctor",
@@ -467,14 +472,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         allowTableOutput: false,
         defaultOutput: .text
       ))
-    case let route as SpecialistRoute:
-      return .specialist(try parseSpecialist(route.passthroughArguments))
-    case let route as SessionRoute:
-      return try parseSession(route.passthroughArguments)
-    case let route as LoopRoute:
-      return .loop(try parseLoop(route.passthroughArguments))
-    case let route as TaskRoute:
-      return .task(try parseTask(route.passthroughArguments))
+    case let route as StorageRoute:
+      guard let token = route.passthroughArguments.first, StorageClientAction(rawValue: token) != nil else {
+        throw CLIUsageError("storage requires compact")
+      }
+      return .gc(CLICommandOptions(scope: "storage", command: "compact", arguments: route.passthroughArguments, output: .text))
     case let route as GraphQLRoute:
       return .scoped(try parseScoped(kind: .graphql, arguments: route.passthroughArguments))
     case let route as GQLRoute:
@@ -497,6 +499,21 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .version
     default:
       return arguments.contains("--version") ? .version : .help
+    }
+  }
+
+  private func parseCommandFamilyRoute(_ route: any ParsableCommand) throws -> RielaCommand? {
+    switch route {
+    case let route as SpecialistRoute:
+      return .specialist(try parseSpecialist(route.passthroughArguments))
+    case let route as SessionRoute:
+      return try parseSession(route.passthroughArguments)
+    case let route as LoopRoute:
+      return .loop(try parseLoop(route.passthroughArguments))
+    case let route as TaskRoute:
+      return .task(try parseTask(route.passthroughArguments))
+    default:
+      return nil
     }
   }
 
@@ -904,7 +921,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     guard let memoryId = route.target else {
       throw CLIUsageError("memory \(kind.rawValue) requires a memory id")
     }
-    let options = try parseMemoryOptions(memoryId: memoryId, tokens: route.options)
+    let parsedOptions = try ParsedMemoryOptions(route.options)
+    try parsedOptions.validateCommandOptions(for: kind)
+    let options = parsedOptions.commandOptions(memoryId: memoryId)
     switch kind {
     case .save, .update:
       if options.payloadJSON != nil && options.payloadFile != nil {
@@ -929,7 +948,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       if options.workflowId == nil && !options.allWorkflows {
         throw CLIUsageError("memory \(kind.rawValue) requires --workflow-id")
       }
-    case .metadata, .tags, .relatedIds, .history, .showVersion, .restoreVersion, .retireHistory:
+    case .metadata, .tags, .relatedIds, .history, .showVersion, .restoreVersion, .undo, .redo, .retireHistory:
       break
     }
     return MemoryCommand(kind: kind, options: options)

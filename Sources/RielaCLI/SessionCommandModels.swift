@@ -118,7 +118,7 @@ public struct SessionDiscoveryRow: Codable, Equatable, Sendable {
     self.status = record.session.status
     self.failureKind = record.session.failureKind
     self.currentStepId = record.session.currentStepId
-    self.executionCount = record.session.newExecutionCount
+    self.executionCount = record.executionCount ?? record.session.newExecutionCount
     self.updatedAt = record.session.updatedAt
     self.sessionStore = sessionStore
   }

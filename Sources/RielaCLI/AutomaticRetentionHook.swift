@@ -80,7 +80,12 @@ enum AutomaticRetentionHook {
       environment: environment,
       currentDirectory: FileManager.default.currentDirectoryPath
     )
-    return runAutomaticPass(retentionRequest, service: service)
+    let retentionWarnings = runAutomaticPass(retentionRequest, service: service)
+    let targets = RetentionTargetResolver.resolve(scope: retentionRequest.scope,
+      homeDirectory: retentionRequest.homeDirectory, projectDirectory: retentionRequest.projectDirectory,
+      explicitSessionStore: retentionRequest.explicitSessionStore, environment: retentionRequest.environment)
+    let roots = targets.compactMap(\.sessionStoreRoot)
+    return retentionWarnings + RunEndStorageMaintenance.run(sessionStoreRoots: roots)
   }
 
   private static func splitOption(_ argument: String) -> (String, String)? {

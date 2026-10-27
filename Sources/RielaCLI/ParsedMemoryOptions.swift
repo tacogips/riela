@@ -8,9 +8,11 @@ struct ParsedMemoryOptions: ParsableArguments {
   @Option var nodeId: String?
   @Option var recordId: Int64?
   @Option var version: Int64?
+  @Option(name: .customLong("diff-against")) var diffAgainst: String?
   @Option var beforeVersion: Int64?
   @Option var expectedHeadVersion: Int64?
   @Option var throughVersion: Int64?
+  @Option(name: .customLong("history-retention")) var historyRetention: Int?
   @Flag var dryRun = false
   @Option var payloadJSON: String?
   @Option var payloadFile: String?
@@ -51,9 +53,11 @@ struct ParsedMemoryOptions: ParsableArguments {
       nodeId: nodeId,
       recordId: recordId,
       version: version,
+      diffAgainst: diffAgainst,
       beforeVersion: beforeVersion,
       expectedHeadVersion: expectedHeadVersion,
       throughVersion: throughVersion,
+      historyRetention: historyRetention,
       dryRun: dryRun,
       payloadJSON: payloadJSON,
       payloadFile: payloadFile,
@@ -77,6 +81,12 @@ struct ParsedMemoryOptions: ParsableArguments {
     for value in [version, beforeVersion, expectedHeadVersion, throughVersion].compactMap({ $0 }) where value <= 0 {
       throw CLIUsageError("history version options must be positive integers")
     }
+    if let historyRetention, !(1...1_000).contains(historyRetention) {
+      throw CLIUsageError("--history-retention must be an integer in 1...1000")
+    }
+    if let diffAgainst, diffAgainst != "head", Int64(diffAgainst).map({ $0 > 0 }) != true {
+      throw CLIUsageError("--diff-against must be a positive version or 'head'")
+    }
     if let recordId, recordId <= 0 {
       throw CLIUsageError("--record-id must be a positive integer")
     }
@@ -96,6 +106,15 @@ struct ParsedMemoryOptions: ParsableArguments {
       throw CLIUsageError(
         "`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, package list, node search, node list, note list, note search, and note notebook list"
       )
+    }
+  }
+
+  func validateCommandOptions(for kind: MemoryCommandKind) throws {
+    if diffAgainst != nil, kind != .showVersion {
+      throw CLIUsageError("--diff-against is only supported by memory show-version")
+    }
+    if historyRetention != nil, ![.save, .update, .restoreVersion].contains(kind) {
+      throw CLIUsageError("--history-retention is only supported by memory save, update, and restore-version")
     }
   }
 }

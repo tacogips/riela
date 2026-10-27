@@ -155,6 +155,8 @@ private struct SessionStoreSearchOutcome: Sendable {
     switch error {
     case let .invalidSessionId(value):
       return "invalid session id: \(value)"
+    case let .canonicalSnapshotMissing(sessionId):
+      return "canonical session snapshot is missing: \(sessionId)"
     case let .notFound(message), let .io(message), let .sqliteFailed(message):
       return message
     }

@@ -38,10 +38,12 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let boundedLimit = max(1, min(limit, Self.defaultRollupSnapshotLimit))
     let db = try openDatabase(readOnly: true, strictReadOnly: true)
-    let rows = try mapRollupSQLiteError {
-      try db.query(
+    let (truncated, snapshots) = try mapRollupSQLiteError {
+      try db.transaction(begin: "BEGIN") { database in
+       let rows = try database.query(
         """
-        SELECT json(session_json) AS session_json,
+        SELECT workflow_execution_id, json_type(session_json, '$._rielaExecutionStorage') AS execution_storage,
+          json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
           json(diagnostics_json) AS diagnostics_json,
           \(runtimeLoopEvidenceSelectSQL)
@@ -62,15 +64,17 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
           .text(sessionId),
           .text(sessionId),
           .int(Int64(boundedLimit + 1))
-        ]
-      )
-    }
-    guard !rows.isEmpty else {
-      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+        ],
+       )
+       guard !rows.isEmpty else {
+         throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+       }
+       return (rows.count > boundedLimit, try rows.prefix(boundedLimit).map { try snapshot(from: $0, db: database) })
+      }
     }
     return SessionRollupSnapshotPage(
-      snapshots: try rows.prefix(boundedLimit).map { try snapshot(from: $0, db: db) },
-      truncated: rows.count > boundedLimit,
+      snapshots: snapshots,
+      truncated: truncated,
       limit: boundedLimit
     )
   }

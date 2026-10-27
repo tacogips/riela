@@ -340,6 +340,7 @@ store the head's value version, not the revision:
   - New-format entries are the §2.4 entry shape.
   - The head entry also carries `revision`.
   - Legacy entries keep `reverseDelta`.
+  - Text output shows each version's storage encoding and stored byte count, marks the head with its revision, and reports when retention dropped older versions.
   - A version below the retained window is reported as `version_not_retained`.
 - `memory show-version` and `memory restore-version` work for retained
   versions and fail with `version_not_retained` otherwise.
@@ -396,6 +397,11 @@ the engine head.
 
 Rule 4 covers the gap between a service run reading its pinned version and
 that session's first save.
+
+Definition stores also keep `definition_version_identities` as an immutable,
+document-free index for every committed version. It lets lookups distinguish a
+known version whose payload was pruned from an unknown version id. These small
+identity rows are permanent metadata and are not covered by payload retention.
 
 How pin rows are written and released:
 
@@ -472,10 +478,27 @@ Bool`.
 - The tiny `session` stub keeps the existing generated columns
   (`workflow_name`, `workflow_id`, `status`) without a table rebuild. It
   holds scalars only, never executions.
-- `CLIWorkflowSessionStore` read, load, list and loadAll join the canonical
-  session in the same read transaction.
+- New canonical snapshot headers store `_rielaNewExecutionCount`, the count
+  of non-imported executions. `list` reads that scalar without joining or
+  decoding payload blobs. For older canonical headers that lack the scalar,
+  list derives the count from inline executions or uses the legacy execution
+  row fallback. The query is assembled according to the tables present, so
+  read-only listing works against generation-10 stores before migration.
+- `CLIWorkflowSessionStore` read, load and loadAll join the full canonical
+  session in the same read transaction. `list` decodes only the canonical
+  session header and projects the non-imported execution count separately;
+  it does not assemble execution payloads. When filtering by status, the
+  canonical status wins over the envelope stub. For legacy inline snapshots,
+  list removes `executions` before decoding and derives the count in SQL.
 - An envelope without a canonical snapshot is reported through the existing
   decode-resilience path as `canonicalSnapshotMissing`.
+- Strict reads surface `canonicalSnapshotMissing`. Non-strict `load` warns
+  and returns `notFound`, allowing family hydration to continue and skip the
+  missing session while trying the canonical snapshot path.
+- `list` returns header-only `PersistedCLIWorkflowSession` values with
+  `executionCount` populated. Passing such a summary to CLI-only `save(_:)`
+  throws `headerOnlyRecordCannotBeSaved` so its empty execution array cannot
+  delete canonical execution rows.
 - `observePersistedExecutionIdentities` reads the execution rows below.
 - A CLI save always writes the canonical snapshot and the envelope in one
   transaction, as `save(_:runtimeSnapshot:)` does today. A CLI save without a
@@ -517,8 +540,9 @@ workflow_nested_invocation_refs(invocation_key TEXT, role TEXT, ordinal INTEGER,
   family, which is also the retention unit. Deleting a family deletes its
   payloads.
 - **Other columns.** `root_output_json`, `diagnostics_json` and the loop
-  columns are written only when they changed. Startup identities receive only
-  the appended execution ids.
+  columns are written only when they changed. The startup identity projection
+  stores the full ordered execution-id list on each save because the snapshot
+  update trigger invalidates its prior projection before completion runs.
 - **Fast path.** The witnessed fast path keeps its contract (commits
   `c1375bcb..a4e2cbfd`):
   - cache, prefix and witness check;
@@ -543,6 +567,10 @@ workflow_nested_invocation_refs(invocation_key TEXT, role TEXT, ordinal INTEGER,
   - The existing fences (parent publication and `recovery_reason`) are
     unchanged.
   - The decoder accepts embedded legacy rows.
+  - Re-encoding replaces refs for that invocation role and releases payloads
+    that become unreferenced. eh-07 retention must delete
+    `workflow_nested_invocation_refs` together with each deleted
+    `workflow_nested_invocations` row, including the `callee` role.
 
 **Run end.** The automatic run-end work is bounded and family-local (QA Q1):
 
@@ -557,6 +585,11 @@ and automatic passes also delete the new tables' rows for pruned families.
 Their tombstone insert triggers extend to `workflow_runtime_executions` and
 `workflow_runtime_payloads`. Result byte accounting includes execution
 payload bytes.
+
+**Storage notes.** `fanoutGroups` and `reviewFindings` remain in the rewritten
+session header, so per-save header bytes depend on the size of those fields.
+The duplicate CLI `record_json` remains eh-06's migration scope; this plan does
+not remove that second representation.
 
 ## 6. Abandoned runs (`riela session reconcile`)
 
@@ -671,6 +704,10 @@ The per-file report:
   uses `SUM(length(col))` over the known columns with `estimated: true`.
 - **Prune-blocked reasons** come from a dry-run `TerminalRetentionPlan` over
   all workflows.
+- **Definition pins are released lazily.** A session prune does not immediately
+  reclaim pinned definition versions. They remain protected until the next
+  definition commit after the 24-hour pin age; storage doctor must not report
+  them as reclaimed by the session prune that removed the session rows.
 - **Exit code** is 0. Text output prints one block per file.
 
 ### 8.2 `riela storage compact`
@@ -729,6 +766,20 @@ two mutations are added:
 `undoWorkflowDefinition(input: {workflowName, storeScope, reason,
 expectedRevision, expectedVersionId, evidence, actorKind, actorId})` and
 `redoWorkflowDefinition(...)`. Both return `{version, audit}`.
+
+The `WorkflowDefinitionVersion` GraphQL object exposes its current `revision`
+as a nullable field so clients can obtain the CAS token. Definition mutation
+history errors use upper-snake codes: `DEFINITION_NOTHING_TO_UNDO`,
+`DEFINITION_NOTHING_TO_REDO`, `DEFINITION_STALE_REVISION`, and
+`DEFINITION_VERSION_NOT_RETAINED`. A revision mismatch uses the stale-revision
+code; an expected-version mismatch remains `DEFINITION_STALE`.
+Undo and redo return the revision created by their own committed head move.
+This keeps the version and CAS token in the mutation payload from different
+head updates from being paired if another writer advances the head before the
+payload is assembled.
+Existing `WorkflowDefinitionGraphQLProviding` conformers that do not support
+the new mutations use default implementations that return
+`DEFINITION_OPERATION_UNSUPPORTED`.
 
 - `historyRetention` is added to the update, update-prompt, restore and
   import inputs.

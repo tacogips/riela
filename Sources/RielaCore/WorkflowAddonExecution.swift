@@ -347,6 +347,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
   public var resolvedInputPayload: JSONObject
   public var attachments: [String: WorkflowAddonAttachmentValue]
   public var executionIdentity: WorkflowAddonExecutionIdentity?
+  public var memoryHistoryRetentions: [String: Int]?
 
   public init(
     workflowId: String,
@@ -356,7 +357,8 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     variables: JSONObject = [:],
     resolvedInputPayload: JSONObject = [:],
     attachments: [String: WorkflowAddonAttachmentValue] = [:],
-    executionIdentity: WorkflowAddonExecutionIdentity? = nil
+    executionIdentity: WorkflowAddonExecutionIdentity? = nil,
+    memoryHistoryRetentions: [String: Int]? = nil
   ) {
     self.workflowId = workflowId
     self.stepId = stepId
@@ -366,6 +368,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     self.resolvedInputPayload = resolvedInputPayload
     self.attachments = attachments
     self.executionIdentity = executionIdentity
+    self.memoryHistoryRetentions = memoryHistoryRetentions
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -377,6 +380,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     case resolvedInputPayload
     case attachments
     case executionIdentity
+    case memoryHistoryRetentions
   }
 
   public init(from decoder: Decoder) throws {
@@ -389,6 +393,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     self.resolvedInputPayload = try container.decodeIfPresent(JSONObject.self, forKey: .resolvedInputPayload) ?? [:]
     self.attachments = try container.decodeIfPresent([String: WorkflowAddonAttachmentValue].self, forKey: .attachments) ?? [:]
     self.executionIdentity = try container.decodeIfPresent(WorkflowAddonExecutionIdentity.self, forKey: .executionIdentity)
+    self.memoryHistoryRetentions = try container.decodeIfPresent([String: Int].self, forKey: .memoryHistoryRetentions)
   }
 }
 

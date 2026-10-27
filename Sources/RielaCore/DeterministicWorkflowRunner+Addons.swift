@@ -51,6 +51,8 @@ extension DeterministicWorkflowRunner {
       } catch let error as WorkflowAddonOperationIdentityError {
         throw AdapterExecutionError(.invalidInput, error.diagnosticCode)
       }
+      let declaredMemoryRetentions = effectiveMemoryDeclarations(workflow: workflow, step: step, payload: nil)
+        .compactMap { memory in memory.historyRetention.map { (memory.id, $0) } }
       let addonInput = WorkflowAddonExecutionInput(
         workflowId: workflow.workflowId,
         stepId: step.id,
@@ -66,7 +68,10 @@ extension DeterministicWorkflowRunner {
           attempt: executionIndex,
           predecessorStepExecutionId: predecessorExecutionIds.first,
           predecessorStepExecutionIds: predecessorExecutionIds
-        )
+        ),
+        memoryHistoryRetentions: declaredMemoryRetentions.isEmpty
+          ? nil
+          : Dictionary(uniqueKeysWithValues: declaredMemoryRetentions)
       )
       adapterOutput = try await executePlacedAddon(
         addonInput, step: step, executionId: "\(sessionId)/\(startedExecution.execution.executionId)",

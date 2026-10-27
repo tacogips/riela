@@ -613,6 +613,8 @@ extension GraphQLContractProjector {
     updateWorkflowDefinition(input: UpdateWorkflowDefinitionInput!): WorkflowDefinitionUpdatePayload!
     updateWorkflowDefinitionPrompt(input: UpdateWorkflowDefinitionPromptInput!): WorkflowDefinitionMutationPayload!
     restoreWorkflowDefinition(input: RestoreWorkflowDefinitionInput!): WorkflowDefinitionMutationPayload!
+    undoWorkflowDefinition(input: UndoWorkflowDefinitionInput!): WorkflowDefinitionMutationPayload!
+    redoWorkflowDefinition(input: RedoWorkflowDefinitionInput!): WorkflowDefinitionMutationPayload!
     importWorkflowDefinition(input: ImportWorkflowDefinitionInput!): WorkflowDefinitionImportPayload!
     exportWorkflowDefinition(input: ExportWorkflowDefinitionInput!): WorkflowDefinitionExportPayload!
     rerunSession(input: RerunSessionInput!): SessionMutationPayload!

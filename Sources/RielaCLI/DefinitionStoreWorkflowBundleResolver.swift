@@ -56,7 +56,7 @@ public struct DefinitionStoreWorkflowBundleResolver: WorkflowBundleResolving {
       fileBundle: fileBundle,
       environment: environment
     )
-    return try WorkflowDefinitionService(storeRoot: root, fileResolver: inner)
+    return try makeService(storeRoot: root, projectDirectory: options.workingDirectory)
       .seedIfAbsent(fileBundle: fileBundle, workflowName: options.workflowName, actor: actor)
   }
 
@@ -82,5 +82,14 @@ public struct DefinitionStoreWorkflowBundleResolver: WorkflowBundleResolving {
       path: "definitionStore.sourceDirectory",
       message: "using stored definition seeded from \(storedPath); request names \(requestedPath)"
     ))
+  }
+
+  private func makeService(storeRoot: String, projectDirectory: String) throws -> WorkflowDefinitionService {
+    let retention = try WorkflowDefinitionHistoryConfiguration.resolve(
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+      projectDirectory: projectDirectory,
+      environment: environment
+    )
+    return WorkflowDefinitionService(storeRoot: storeRoot, fileResolver: inner, defaultHistoryRetention: retention)
   }
 }

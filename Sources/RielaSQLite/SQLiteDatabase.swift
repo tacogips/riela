@@ -50,6 +50,17 @@ public struct SQLiteOpenOptions: Sendable {
   public static let readOnlyDefault = SQLiteOpenOptions(enableWAL: false, waitForLocks: true)
 }
 
+public struct SQLiteStatementWorkSnapshot: Sendable, Equatable {
+  /// Total virtual machine instructions executed by prepared statements.
+  public let vmSteps: Int
+  /// SQLite full-scan steps for application tables; schema-catalog lookups are excluded.
+  public let fullScanSteps: Int
+
+  public static func - (lhs: Self, rhs: Self) -> Self {
+    Self(vmSteps: lhs.vmSteps - rhs.vmSteps, fullScanSteps: lhs.fullScanSteps - rhs.fullScanSteps)
+  }
+}
+
 public enum SQLiteErrorOperation: String, Sendable {
   case open
   case execute
@@ -119,6 +130,15 @@ public final class SQLiteDatabase: @unchecked Sendable {
   public let path: String?
   private let handle: OpaquePointer?
   private let ownsHandle: Bool
+  private let statementWorkLock = NSLock()
+  private var accumulatedVMSteps = 0
+  private var accumulatedFullScanSteps = 0
+
+  public var statementWorkSnapshot: SQLiteStatementWorkSnapshot {
+    statementWorkLock.lock()
+    defer { statementWorkLock.unlock() }
+    return SQLiteStatementWorkSnapshot(vmSteps: accumulatedVMSteps, fullScanSteps: accumulatedFullScanSteps)
+  }
 
   private init(path: String?, handle: OpaquePointer?, ownsHandle: Bool) {
     self.path = path
@@ -250,6 +270,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
       throw sqliteError(operation: .execute, sql: sql)
     }
     defer {
+      recordStatementWork(statement)
       sqlite3_finalize(statement)
     }
     try bind(bindings, to: statement)
@@ -265,6 +286,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
       throw sqliteError(operation: .query, sql: sql)
     }
     defer {
+      recordStatementWork(statement)
       sqlite3_finalize(statement)
     }
     try bind(bindings, to: statement)
@@ -281,6 +303,20 @@ public final class SQLiteDatabase: @unchecked Sendable {
         throw sqliteError(operation: .query, sql: sql)
       }
     }
+  }
+
+  private func recordStatementWork(_ statement: OpaquePointer?) {
+    guard let statement else { return }
+    let vmSteps = Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 0))
+    let fullScanSteps = Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_FULLSCAN_STEP, 0))
+    let sql = sqlite3_sql(statement).map { String(cString: $0) } ?? ""
+    let isSchemaCatalogQuery = sql.localizedCaseInsensitiveContains("sqlite_master")
+      || sql.localizedCaseInsensitiveContains("sqlite_schema")
+    statementWorkLock.lock()
+    accumulatedVMSteps += vmSteps
+    // Catalog lookups are bounded by schema size and are not payload/family scans.
+    if !isSchemaCatalogQuery { accumulatedFullScanSteps += fullScanSteps }
+    statementWorkLock.unlock()
   }
 
   public func requireJSONBAvailable() throws {

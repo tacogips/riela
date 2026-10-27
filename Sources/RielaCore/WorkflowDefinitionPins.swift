@@ -1,14 +1,16 @@
 import Foundation
 import RielaSQLite
 
-enum WorkflowDefinitionPins {
+public enum WorkflowDefinitionPins {
   private struct Target {
     var root: String
     var path: String
     var localPath: String
+    var localRoot: String
     var sessionId: String
     var workflowName: String
     var versionId: String
+    var createdAt: Date
     var terminal: Bool
     var foreign: Bool { path != localPath }
   }
@@ -27,7 +29,7 @@ enum WorkflowDefinitionPins {
     try insertPin(target, number: number, database: db)
   }
 
-  static func recordForeignPinIfNeeded(
+  public static func recordForeignPinIfNeeded(
     snapshot: WorkflowRuntimePersistenceSnapshot,
     sessionStoreRoot: String
   ) throws {
@@ -52,6 +54,10 @@ enum WorkflowDefinitionPins {
     return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
   }
 
+  static func normalizedStoreRoot(rootDirectory: String) -> String {
+    URL(fileURLWithPath: rootDirectory, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath().path
+  }
+
   private static func target(
     snapshot: WorkflowRuntimePersistenceSnapshot,
     sessionStoreRoot: String
@@ -59,9 +65,11 @@ enum WorkflowDefinitionPins {
     guard let source = snapshot.session.definitionSource, source.kind == .store,
           let versionId = source.versionId else { return nil }
     let localPath = normalizedDatabasePath(rootDirectory: sessionStoreRoot)
+    let localRoot = normalizedStoreRoot(rootDirectory: sessionStoreRoot)
     let root = source.storeRoot ?? sessionStoreRoot
     return Target(root: root, path: normalizedDatabasePath(rootDirectory: root), localPath: localPath,
-      sessionId: snapshot.session.sessionId, workflowName: source.workflowName, versionId: versionId,
+      localRoot: localRoot, sessionId: snapshot.session.sessionId, workflowName: source.workflowName, versionId: versionId,
+      createdAt: snapshot.session.updatedAt,
       terminal: snapshot.session.status.isTerminal)
   }
 
@@ -75,8 +83,14 @@ enum WorkflowDefinitionPins {
       INSERT OR IGNORE INTO definition_version_pins(
         workflow_name, history_version, session_store_root, session_id, created_at
       ) VALUES (?, ?, ?, ?, ?)
-      """, bindings: [.text(target.workflowName), .int(number), .text(target.localPath),
-                       .text(target.sessionId), .text(ISO8601DateFormatter().string(from: Date()))])
+      """, bindings: [.text(target.workflowName), .int(number), .text(target.localRoot),
+                       .text(target.sessionId), .text(canonicalDate(target.createdAt))])
+  }
+
+  private static func canonicalDate(_ date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
   }
 }
 

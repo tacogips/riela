@@ -37,6 +37,14 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     try createHistoricalStore(path: path, session: original, generation: 9)
     let fixture = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
     try SQLiteWorkflowRuntimePersistenceStore.createGeneration10DefinitionSchema(in: fixture)
+    try fixture.execute(
+      "UPDATE workflow_runtime_snapshots SET created_at=?, updated_at=? WHERE workflow_execution_id=?",
+      bindings: [
+        .text(SQLiteWorkflowRuntimePersistenceStore.dateString(date)),
+        .text(SQLiteWorkflowRuntimePersistenceStore.dateString(date)),
+        .text(original.sessionId)
+      ]
+    )
     try fixture.execute("PRAGMA user_version = 10")
 
     let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
@@ -45,6 +53,75 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
 
     XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 11)
     XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
+  }
+
+  func testGenerationTenInlineExecutionFixtureSupportsReadOnlySummaryAndStartupBackfill() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let execution = WorkflowStepExecution(
+      executionId: "step-attempt-1-exec-41", stepId: "step", nodeId: "node", attempt: 1,
+      inputSnapshot: [:], status: .completed, createdAt: date, updatedAt: date
+    )
+    let session = WorkflowSession(
+      workflowId: "generation-ten", sessionId: "generation-ten-session", status: .running,
+      entryStepId: "step", createdAt: date, updatedAt: date, executions: [execution]
+    )
+    let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    try createHistoricalStore(path: path, session: session, generation: 9)
+    let fixture = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
+    try SQLiteWorkflowRuntimePersistenceStore.createGeneration10DefinitionSchema(in: fixture)
+    try fixture.execute(
+      "UPDATE workflow_runtime_snapshots SET created_at=?, updated_at=? WHERE workflow_execution_id=?",
+      bindings: [
+        .text(SQLiteWorkflowRuntimePersistenceStore.dateString(date)),
+        .text(SQLiteWorkflowRuntimePersistenceStore.dateString(date)),
+        .text(session.sessionId)
+      ]
+    )
+    let child = WorkflowSession(
+      workflowId: "nested-child", sessionId: "generation-ten-child", status: .created,
+      entryStepId: "step", createdAt: date, updatedAt: date,
+      parentSessionId: session.sessionId, rootSessionId: session.sessionId
+    )
+    let reservation = WorkflowNestedInvocationReservation(
+      parentSessionId: session.sessionId, parentStepId: "step", resumeStepId: "resume",
+      sourceStepExecutionId: "step-attempt-1-exec-41", branchId: "legacy-branch",
+      childSnapshot: WorkflowRuntimePersistenceSnapshot(session: child)
+    )
+    let nestedEncoder = JSONEncoder()
+    nestedEncoder.dateEncodingStrategy = .iso8601
+    let nestedJSON = try XCTUnwrap(String(data: nestedEncoder.encode(reservation), encoding: .utf8))
+    try fixture.execute(
+      "INSERT INTO workflow_nested_invocations(invocation_key,reservation_json,created_at,updated_at) VALUES(?,jsonb(?),?,?)",
+      bindings: [
+        .text("generation-ten-invocation"), .text(nestedJSON),
+        .text(SQLiteWorkflowRuntimePersistenceStore.dateString(date)),
+        .text(SQLiteWorkflowRuntimePersistenceStore.dateString(date))
+      ]
+    )
+    try fixture.execute("PRAGMA user_version = 10")
+
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    XCTAssertEqual(try store.loadSessionSummaries(workflowId: session.workflowId, limit: 10).map(\.sessionId), [session.sessionId])
+    let generator = MonotonicWorkflowRuntimeIDGenerator()
+    try store.observePersistedIdentities(generator)
+    XCTAssertEqual(try generator.nextStepExecutionId(stepId: "step", attempt: 1), "step-attempt-1-exec-42")
+    XCTAssertEqual(try store.load(sessionId: session.sessionId).session, session)
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
+    XCTAssertEqual(try store.load(sessionId: session.sessionId).session, session)
+    XCTAssertEqual(try store.legacyEmbeddedNestedInvocationKeys(limit: 10), ["generation-ten-invocation"])
+    XCTAssertTrue(try store.convertLegacyNestedInvocation(invocationKey: "generation-ten-invocation"))
+    let migrated = try SQLiteDatabase.open(path: path, mode: .readOnly)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: migrated), 11)
+    XCTAssertEqual(
+      try store.nestedInvocationRecord(key: "generation-ten-invocation", in: migrated)?.reservation,
+      reservation
+    )
+    XCTAssertGreaterThan(
+      try migrated.query("SELECT COUNT(*) AS value FROM workflow_nested_invocation_refs").first?["value"].flatMap(Int.init) ?? 0,
+      0
+    )
   }
 
   func testGeneration9UpgradesThrough10To11WithoutLosingSnapshot() throws {

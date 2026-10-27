@@ -1,9 +1,45 @@
 import Foundation
 import RielaCore
+import RielaMemory
 import XCTest
 @testable import RielaCLI
 
 final class PersonaMemoryAddonTests: XCTestCase {
+  func testPersonaWritePersistsWorkflowHistoryRetention() async throws {
+    let memoryRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-persona-memory-retention-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: memoryRoot) }
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "persona-workflow",
+        stepId: "write-persona-memory",
+        nodeId: "write-persona-memory",
+        addon: WorkflowNodeAddonRef(name: "riela/chat-persona-memory-write", version: "1", config: [
+          "personaId": .string("yui"), "personaName": .string("Yui Codex"),
+          "memoryId": .string("persona-chat-memory"), "memoryRoot": .string(memoryRoot.path)
+        ]),
+        resolvedInputPayload: ["replyText": .string("Saved."), "memoryEntries": .array([
+          .object(["kind": .string("note"), "importance": .string("normal"), "content": .string("A retention test entry.")])
+        ])],
+        memoryHistoryRetentions: ["persona-chat-memory": 3]
+      ),
+      context: AdapterExecutionContext()
+    )
+    let memory = try XCTUnwrap(jsonObject(output.payload["memory"]))
+    guard case let .array(recordIds)? = memory["recordIds"] else {
+      return XCTFail("persona memory record ids were not returned")
+    }
+    guard case let .number(recordIdNumber)? = recordIds.first, let recordId = Int64(exactly: recordIdNumber) else {
+      return XCTFail("persona memory record id was not returned")
+    }
+    let store = RielaMemoryStore(rootDirectory: memoryRoot.path)
+    for version in 2...5 {
+      _ = try store.update(memoryId: "persona-chat-memory", recordId: recordId, workflowId: "persona-workflow",
+        payload: .object(["version": .number(Double(version))]))
+    }
+    XCTAssertEqual(try store.evolutionHistory(memoryId: "persona-chat-memory", recordId: recordId).map(\.version), [5, 4, 3])
+  }
+
   func testPersonaMemoryWriteBlocksSelfHandoffAndRemovesDanglingMention() async throws {
     let memoryRoot = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-persona-memory-addon-\(UUID().uuidString)", isDirectory: true)

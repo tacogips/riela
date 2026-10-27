@@ -4,7 +4,7 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowDefinitionStoreTests: XCTestCase {
-  func testFreshStoreCreatesDefinitionSchemaAtGenerationTen() throws {
+  func testFreshStoreCreatesDefinitionSchemaAtGenerationEleven() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let store = WorkflowDefinitionStore(rootDirectory: root.path)
@@ -14,10 +14,11 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
       mode: .strictReadOnly,
       options: .readOnlyDefault
     )
-    for table in ["definition_blobs", "definition_versions", "definition_heads", "definition_change_audit"] {
+    for table in ["definition_versions", "definition_heads", "definition_change_audit", "definition_history_heads", "definition_history_versions", "definition_version_pins", "definition_version_identities"] {
       XCTAssertTrue(try database.tableExists(table), "missing \(table)")
     }
-    XCTAssertEqual(try database.query("PRAGMA user_version").first?["user_version"], "10")
+    XCTAssertFalse(try database.tableExists("definition_blobs"))
+    XCTAssertEqual(try database.query("PRAGMA user_version").first?["user_version"], "11")
   }
 
   func testGenerationNineMigratesInPlaceAndKeepsSession() async throws {
@@ -32,7 +33,9 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
     try persistence.save(WorkflowRuntimePersistenceSnapshot(session: session))
     let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
     let database = try SQLiteDatabase.open(path: path)
-    for table in ["definition_change_audit", "definition_heads", "definition_versions", "definition_blobs"] {
+    for table in ["definition_change_audit", "definition_heads", "definition_versions", "definition_blobs",
+                  "definition_history_heads", "definition_history_versions", "definition_version_pins",
+                  "definition_retention_guard", "definition_store_state"] {
       try database.execute("DROP TABLE IF EXISTS \(table)")
     }
     try database.execute("PRAGMA user_version = 9")
@@ -40,7 +43,8 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
     XCTAssertNil(try WorkflowDefinitionStore(rootDirectory: root.path).head(workflowName: "keep"))
     XCTAssertEqual(try persistence.load(sessionId: session.sessionId).session, session)
     let reopened = try SQLiteDatabase.open(path: path, mode: .strictReadOnly, options: .readOnlyDefault)
-    XCTAssertEqual(try reopened.query("PRAGMA user_version").first?["user_version"], "10")
+    XCTAssertEqual(try reopened.query("PRAGMA user_version").first?["user_version"], "11")
+    XCTAssertTrue(try reopened.tableExists("definition_history_versions"))
   }
 
   func testSeedRaceAndRepeatedSeedDoNotCreateExtraRows() async throws {
@@ -97,7 +101,17 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
     XCTAssertEqual(try store.history(workflowName: "workflow").first, audit)
     XCTAssertThrowsError(try database.execute("UPDATE definition_change_audit SET reason = 'changed'"))
     XCTAssertThrowsError(try database.execute("DELETE FROM definition_versions WHERE version_id = '\(version.versionId)'"))
-    XCTAssertThrowsError(try database.execute("UPDATE definition_blobs SET size = 0"))
+    XCTAssertThrowsError(try database.execute("DELETE FROM definition_change_audit WHERE audit_id = '\(audit.auditId)'"))
+    XCTAssertThrowsError(try database.execute("DELETE FROM definition_history_versions WHERE key='workflow' AND version=1"))
+    XCTAssertThrowsError(try database.execute("DELETE FROM definition_heads WHERE workflow_name='workflow'"))
+    XCTAssertThrowsError(try database.execute("DELETE FROM definition_history_heads WHERE key='workflow'"))
+    XCTAssertThrowsError(try database.execute("INSERT OR REPLACE INTO definition_versions SELECT * FROM definition_versions WHERE version_id='\(version.versionId)'"))
+    XCTAssertThrowsError(try database.execute("INSERT OR REPLACE INTO definition_change_audit SELECT * FROM definition_change_audit WHERE audit_id='\(audit.auditId)'"))
+    XCTAssertThrowsError(try database.execute("INSERT OR REPLACE INTO definition_history_versions SELECT * FROM definition_history_versions WHERE key='workflow' AND version=1"))
+    XCTAssertThrowsError(try database.execute("INSERT OR REPLACE INTO definition_version_identities SELECT * FROM definition_version_identities WHERE version_id='\(version.versionId)'"))
+    try database.execute("INSERT INTO definition_retention_guard(id) VALUES(1)")
+    XCTAssertThrowsError(try database.execute("INSERT INTO definition_retention_guard(id) VALUES(1)"))
+    try database.execute("DELETE FROM definition_retention_guard WHERE id=1")
   }
 
   func testIdenticalDocumentsShareBlobAndHistoryFiltersNewestFirst() throws {
@@ -108,11 +122,13 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
       operation: .seed, reason: "seed", targetNode: "one"
     )) else { return XCTFail("expected seed") }
     guard case .created = try store.commit(makeWrite(
-      operation: .updatePrompt, reason: "prompt", expected: first.versionId, targetNode: "two"
+      operation: .updatePrompt, reason: "prompt", expected: first.versionId, targetNode: "two",
+      documentData: makeDocument()
     )) else { return XCTFail("expected update") }
     let database = try rawDatabase(root)
-    XCTAssertEqual(try count("definition_blobs", database: database), 1)
+    XCTAssertFalse(try database.tableExists("definition_blobs"))
     XCTAssertEqual(try count("definition_versions", database: database), 2)
+    XCTAssertEqual(try count("definition_history_versions", database: database), 2)
     let history = try store.history(workflowName: "workflow")
     XCTAssertEqual(history.map(\.reason), ["prompt", "seed"])
     XCTAssertEqual(try store.history(workflowName: "workflow", nodeId: "one").map(\.auditId), [firstAudit.auditId])
@@ -128,11 +144,13 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
       return XCTFail("expected seed")
     }
     guard case let .created(update, _) = try store.commit(makeWrite(
-      operation: .update, reason: "change", expected: seed.versionId
+      operation: .update, reason: "change", expected: seed.versionId,
+      documentData: Data(#"{"runtime":{"workflow":"change"}}"#.utf8)
     )) else { return XCTFail("expected update") }
     XCTAssertEqual(try store.head(workflowName: "workflow")?.lastFileVersionId, seed.versionId)
     guard case .created = try store.commit(makeWrite(
-      operation: .forceUpdate, reason: "force", expected: update.versionId
+      operation: .forceUpdate, reason: "force", expected: update.versionId,
+      documentData: Data(#"{"runtime":{"workflow":"change"}}"#.utf8)
     )) else { return XCTFail("expected force update") }
     XCTAssertEqual(try store.head(workflowName: "workflow")?.lastFileVersionId, try store.head(workflowName: "workflow")?.currentVersionId)
   }
@@ -186,9 +204,10 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
     operation: WorkflowDefinitionOperation,
     reason: String,
     expected: String? = nil,
-    targetNode: String? = nil
+    targetNode: String? = nil,
+    documentData: Data? = nil
   ) -> WorkflowDefinitionWrite {
-    let document = makeDocument()
+    let document = documentData ?? makeDocument()
     return WorkflowDefinitionWrite(
       workflowName: "workflow", operation: operation, documentData: document,
       documentDigest: JSONCanonical.sha256Hex(document), sourceDirectory: "/workflow", sourceScope: "project",
@@ -208,7 +227,7 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
   private func rawCounts(_ root: URL) throws -> [Int] {
     let database = try rawDatabase(root)
     return [
-      try count("definition_blobs", database: database), try count("definition_versions", database: database),
+      try count("definition_history_versions", database: database), try count("definition_versions", database: database),
       try count("definition_heads", database: database), try count("definition_change_audit", database: database)
     ]
   }

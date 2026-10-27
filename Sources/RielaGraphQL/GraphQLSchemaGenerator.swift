@@ -628,6 +628,8 @@ public enum GraphQLSchemaGenerator {
     "Mutation.updateWorkflowDefinition": .init(name: "updateWorkflowDefinition", arguments: "input: UpdateWorkflowDefinitionInput!", type: "WorkflowDefinitionUpdatePayload!"),
     "Mutation.updateWorkflowDefinitionPrompt": .init(name: "updateWorkflowDefinitionPrompt", arguments: "input: UpdateWorkflowDefinitionPromptInput!", type: "WorkflowDefinitionMutationPayload!"),
     "Mutation.restoreWorkflowDefinition": .init(name: "restoreWorkflowDefinition", arguments: "input: RestoreWorkflowDefinitionInput!", type: "WorkflowDefinitionMutationPayload!"),
+    "Mutation.undoWorkflowDefinition": .init(name: "undoWorkflowDefinition", arguments: "input: UndoWorkflowDefinitionInput!", type: "WorkflowDefinitionMutationPayload!"),
+    "Mutation.redoWorkflowDefinition": .init(name: "redoWorkflowDefinition", arguments: "input: RedoWorkflowDefinitionInput!", type: "WorkflowDefinitionMutationPayload!"),
     "Mutation.importWorkflowDefinition": .init(name: "importWorkflowDefinition", arguments: "input: ImportWorkflowDefinitionInput!", type: "WorkflowDefinitionImportPayload!"),
     "Mutation.exportWorkflowDefinition": .init(name: "exportWorkflowDefinition", arguments: "input: ExportWorkflowDefinitionInput!", type: "WorkflowDefinitionExportPayload!"),
     "Query.workflowExecution": .init(name: "workflowExecution", arguments: "workflowExecutionId: String!", type: "WorkflowExecutionSummary"),

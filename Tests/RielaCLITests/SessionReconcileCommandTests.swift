@@ -22,6 +22,8 @@ final class SessionReconcileCommandTests: XCTestCase {
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     let report = try JSONDecoder().decode(ReconcileReport.self, from: Data(result.stdout.utf8))
     XCTAssertTrue(report.dryRun)
+    XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    XCTAssertEqual(report.nestedInvocations, [])
     XCTAssertEqual(Dictionary(uniqueKeysWithValues: report.sessions.map { ($0.sessionId, $0.verdict) }), [
       "orphan-a": "orphaned", "live-b": "live"
     ])
@@ -61,6 +63,91 @@ final class SessionReconcileCommandTests: XCTestCase {
     XCTAssertEqual(try recordJSON(root: root.path, ids: ["live-b"]), beforeLive)
   }
 
+  func testApplyAbandonsOldNestedRowInTheSamePassThatCancelsParent() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("session-reconcile-nested-apply")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let old = Date().addingTimeInterval(-25 * 3600)
+    var parent = makeSession(id: "orphan-parent", status: .running)
+    parent.updatedAt = old
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let record = PersistedCLIWorkflowSession(workflowName: parent.workflowId, session: parent,
+      resolution: WorkflowResolutionOptions(workflowName: parent.workflowId))
+    try store.save(record, runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: parent))
+    let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+    try insertNested("old-nested", parent: parent.sessionId, updatedAt: old, db: db)
+
+    let result = await RielaCLIApplication().run([
+      "session", "reconcile", "--session-store", root.path, "--abandoned-after-hours", "24", "--apply"
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let report = try JSONDecoder().decode(ReconcileReport.self, from: Data(result.stdout.utf8))
+    XCTAssertEqual(report.sessions.first(where: { $0.sessionId == parent.sessionId })?.verdict, "orphaned")
+    XCTAssertEqual(report.sessions.first(where: { $0.sessionId == parent.sessionId })?.applied, true)
+    XCTAssertEqual(report.nestedInvocations.first(where: { $0.invocationKey == "old-nested" })?.verdict, "abandoned")
+    XCTAssertEqual(report.nestedInvocations.first(where: { $0.invocationKey == "old-nested" })?.applied, true)
+    XCTAssertNotNil(try db.query("SELECT abandoned_at FROM workflow_nested_invocations WHERE invocation_key='old-nested'").first?["abandoned_at"])
+  }
+
+  func testDryRunPredictsAbandonmentForParentItWouldCancel() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("session-reconcile-nested-dry")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let old = Date().addingTimeInterval(-25 * 3600)
+    var parent = makeSession(id: "orphan-parent", status: .running)
+    parent.updatedAt = old
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    try store.save(PersistedCLIWorkflowSession(workflowName: parent.workflowId, session: parent,
+      resolution: WorkflowResolutionOptions(workflowName: parent.workflowId)),
+      runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: parent))
+    let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+    try insertNested("old-nested", parent: parent.sessionId, updatedAt: old, db: db)
+
+    let result = await RielaCLIApplication().run(["session", "reconcile", "--session-store", root.path])
+
+    let report = try JSONDecoder().decode(ReconcileReport.self, from: Data(result.stdout.utf8))
+    XCTAssertEqual(report.sessions.first?.verdict, "orphaned")
+    XCTAssertEqual(report.nestedInvocations.first?.verdict, "abandoned")
+    XCTAssertNil(try db.query("SELECT abandoned_at FROM workflow_nested_invocations WHERE invocation_key='old-nested'").first?["abandoned_at"])
+    XCTAssertEqual(try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
+    ).load(sessionId: parent.sessionId).session.status, .running)
+  }
+
+  func testSelectedReconcileDoesNotTreatOtherRunningParentAsOrphaned() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("session-reconcile-selected-parent-safety")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let old = Date().addingTimeInterval(-25 * 3600)
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    for id in ["A", "B"] {
+      var session = makeSession(id: id, status: .running)
+      session.updatedAt = old
+      try store.save(PersistedCLIWorkflowSession(workflowName: session.workflowId, session: session,
+        resolution: WorkflowResolutionOptions(workflowName: session.workflowId)),
+        runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: session))
+    }
+    let child = makeSession(id: "B-child", status: .created)
+    try store.save(PersistedCLIWorkflowSession(workflowName: child.workflowId, session: child,
+      resolution: WorkflowResolutionOptions(workflowName: child.workflowId)),
+      runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: child))
+    let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+    try insertNested("B-nested", parent: "B", childSessionId: "B-child", updatedAt: old, db: db)
+
+    let result = await RielaCLIApplication().run([
+      "session", "reconcile", "--session-store", root.path, "--session", "A", "--apply"
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let report = try JSONDecoder().decode(ReconcileReport.self, from: Data(result.stdout.utf8))
+    XCTAssertEqual(report.sessions.first(where: { $0.sessionId == "A" })?.verdict, "orphaned")
+    XCTAssertEqual(report.nestedInvocations.first(where: { $0.invocationKey == "B-nested" })?.verdict, "skipped")
+    XCTAssertEqual(report.nestedInvocations.first(where: { $0.invocationKey == "B-nested" })?.reason,
+      "parent is absent or nonterminal")
+    XCTAssertNil(try db.query("SELECT abandoned_at FROM workflow_nested_invocations WHERE invocation_key='B-nested'").first?[
+      "abandoned_at"])
+    XCTAssertEqual(try store.load(sessionId: "B-child").session.status, .created)
+    XCTAssertEqual(try store.load(sessionId: "B").session.status, .running)
+  }
+
   func testSelectedNonRunningSessionIsReportedAndCanonicalOnlySnapshotIsApplied() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("session-reconcile-canonical-only")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -90,6 +177,10 @@ final class SessionReconcileCommandTests: XCTestCase {
     XCTAssertTrue(help.stdout.contains("riela session reconcile"))
     let invalid = await RielaCLIApplication().run(["session", "reconcile", "--unknown"])
     XCTAssertEqual(invalid.exitCode, .usage)
+    let invalidHours = await RielaCLIApplication().run(["session", "reconcile", "--abandoned-after-hours", "0"])
+    XCTAssertEqual(invalidHours.exitCode, .usage)
+    let validHours = await RielaCLIApplication().run(["session", "reconcile", "--help"])
+    XCTAssertTrue(validHours.stdout.contains("abandoned-after-hours"))
   }
 
   func testTombstonedRunningSessionIsRetired() async throws {
@@ -173,6 +264,17 @@ final class SessionReconcileCommandTests: XCTestCase {
     )
   }
 
+  private func insertNested(_ key: String, parent: String, childSessionId: String? = nil,
+                            updatedAt: Date, db: SQLiteDatabase) throws {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let timestamp = formatter.string(from: updatedAt)
+    let childId = childSessionId ?? "missing-\(key)"
+    let json = "{\"parentSessionId\":\"\(parent)\",\"childSnapshot\":{\"session\":{\"sessionId\":\"\(childId)\"}}}"
+    try db.execute("INSERT INTO workflow_nested_invocations(invocation_key,reservation_json,created_at,updated_at) VALUES(?,jsonb(?),?,?)",
+      bindings: [.text(key), .text(json), .text(timestamp), .text(timestamp)])
+  }
+
   private func recordJSON(root: String, ids: [String]) throws -> [String: String] {
     let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root)
     let db = try SQLiteDatabase.open(path: path, mode: .readOnly, options: .readOnlyDefault)
@@ -194,6 +296,7 @@ private struct ReconcileReport: Decodable {
   }
   var dryRun: Bool
   var sessions: [Session]
+  var nestedInvocations: [SessionNestedInvocationVerdict]
 }
 
 private final class ReconcileHookCounter: @unchecked Sendable {

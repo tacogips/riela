@@ -943,9 +943,13 @@ it with `kv-delete` when resetting.
 
 Values come from `config.value` (literal JSON), `config.valueTemplate`
 (template-rendered JSON, preserving types for exact `{{...}}` references), or
-rendered `addon.inputs.value`. Databases live under `.riela/kv/<storeId>.sqlite`
-in the working directory (default `storeId` is `workflow-kv`; override the root
-with addon config `kvRoot` or workflow input `kvRoot`). `kv-get` reports
+rendered `addon.inputs.value`. Workflow validation reports template syntax in
+the literal `config.value` field: a value consisting of one placeholder is an error, and
+a placeholder embedded in other text is a warning. Use `config.valueTemplate`
+when the stored value should be rendered. Databases live under
+`.riela/kv/<storeId>.sqlite` in the working directory (default `storeId` is
+`workflow-kv`; override the root with addon config `kvRoot` or workflow input
+`kvRoot`). `kv-get` reports
 `found` plus the stored `value`, `kv-delete` reports `deleted`, and `kv-list`
 enumerates scoped keys with an optional `keyPrefix` filter. The reference
 bundle is `examples/x-incremental-posts-kv`. The digest add-ons reuse the same

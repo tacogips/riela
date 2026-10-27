@@ -70,6 +70,31 @@ through the existing memory/workflow command surfaces. Machine-readable outputs
 must expose direction, source/target version IDs, timestamp and provenance.
 Restoration must reuse existing validation and authorization boundaries.
 
+## Superseded memory storage encoding (2026-10-27)
+
+For memory records, `design-efficient-history-and-storage.md` replaces the
+storage encoding above and adds the retention this design lacked. It also
+corrects the claim that distant edits only "can retain a large middle span".
+In production, a header change plus an appended item kept 99.6% of a 660 KB
+document per version, base64-encoded in JSON (1.23x the document per
+version).
+
+What changes:
+
+- Records move onto the shared `VersionedHistory` component.
+- Each retained non-head version is a compressed BLOB holding either the full
+  value or the same byte splice, whichever is smaller. No base64, no JSON.
+- `historyRetention` defaults to 2 generations for ordinary records and 1 for
+  snapshot-store records.
+- Undo and redo are head moves.
+- `memory_evolution` rows stay readable and convert on the next write or on
+  `riela storage compact`.
+
+What is kept:
+
+- the direction, hash, transaction and "restore is a new version" rules;
+- the workflow and prompt snapshot format (`content-addressed-chunks`).
+
 ## Completion evidence
 
 Required gates: codec round trips and malformed input rejection; transactional

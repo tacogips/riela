@@ -193,6 +193,23 @@ optional because session snapshots persisted before generation 10 must
 still decode after the in-place migration. It is not a compatibility shim:
 every new run writes the field.
 
+**Bounded history (2026-10-27).** `design-efficient-history-and-storage.md`
+§4 supersedes three parts of the model above: the keep-forever
+`definition_versions` and `definition_change_audit` delete triggers, the
+`definition_blobs` table, and unbounded history. In generation 11:
+
+- Documents live in the shared `VersionedHistory` tables, and
+  `definition_blobs` is dropped.
+- Versions gain `history_version`.
+- Deletes are allowed only through the guarded retention path. The default
+  window is 10 generations, and pinned, head and `last_file_version_id`
+  versions are always protected.
+- Session pins are recorded in `definition_version_pins`.
+- `undo` and `redo` are new audited operations.
+- The §6 diff algorithm moves unchanged into the shared component.
+
+Version ids, digests and `definitionSource` are unchanged.
+
 ## 4. Store selection and service resolution
 
 `WorkflowRunOptions` gains `executionMode: oneTime | service(actor)`, with

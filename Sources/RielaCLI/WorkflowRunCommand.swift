@@ -25,6 +25,12 @@ public struct WorkflowRunCommand: Sendable {
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
   var improvementCLIProcessRunnerOverride: (any LocalProcessRunning)?
+  /// An embedded caller can return a bounded result without serializing the
+  /// complete execution transcript. Canonical persistence is unchanged.
+  var outputProjection: (@Sendable (WorkflowRunResult) throws -> JSONObject)?
+  /// Embedded execution retains the fail-closed canonical runtime record but
+  /// does not also maintain a duplicate CLI inspection projection per event.
+  var recordsCLIProjection = true
   /// Projects loop evidence for required-gate enforcement; injectable so a
   /// projector failure can be exercised without a broken evidence fixture.
   var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
@@ -148,7 +154,13 @@ public struct WorkflowRunCommand: Sendable {
         // The fail-closed runtime store is the canonical effect boundary.
         // This established CLI projection remains an inspectability/event
         // record and never determines whether a node may start.
-        if await persistenceState.shouldPersist(event: event) {
+        if !recordsCLIProjection {
+          // The event follows the canonical store's durable mutation. Keep
+          // failure/session identity without re-encoding its full transcript.
+          if workflowRunEventTriggersLiveSessionPersistence(event) {
+            await persistenceState.recordSuccess(sessionId: event.sessionId)
+          }
+        } else if await persistenceState.shouldPersist(event: event) {
           // Cross-workflow callee sessions share the runtime store and event
           // stream; persist them under the callee workflow identity so they
           // stay inspectable and resumable on their own.
@@ -228,7 +240,8 @@ public struct WorkflowRunCommand: Sendable {
           storeRoot: storeRoot,
           telemetry: telemetry,
           jsonlRecorder: jsonlRecorder,
-          gatewayValidationWarnings: gatewayValidationWarnings
+          gatewayValidationWarnings: gatewayValidationWarnings,
+          canonicalPersistenceStore: durableRuntime.canonicalPersistenceStore
         )
       )
     } catch let error as CLIUsageError {
@@ -346,17 +359,20 @@ public struct WorkflowRunCommand: Sendable {
       hydration: options.resumeSessionId.map { .family(of: $0) } ?? .none
     )
     let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    let canonicalPersistenceStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot)
     let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
       backing: backingStore, rootDirectory: canonicalRoot,
       beforeTerminalPersistence: beforeTerminalPersistence,
-      deferTerminalPersistence: deferTerminalPersistence
+      deferTerminalPersistence: deferTerminalPersistence,
+      persistenceStore: canonicalPersistenceStore
     )
     if let sessionId = options.resumeSessionId { try await durableStore.hydrate(familyOf: sessionId) }
     return WorkflowRunProductionDurableRuntime(
       backingStore: backingStore,
       runtimeStore: durableStore,
-      nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot),
-      nestedRecoveryCheckpointer: try workflowRunNestedRecoveryCheckpointer(options: options)
+      nestedInvocationPersistenceStore: canonicalPersistenceStore,
+      nestedRecoveryCheckpointer: try workflowRunNestedRecoveryCheckpointer(options: options),
+      canonicalPersistenceStore: canonicalPersistenceStore
     )
   }
 
@@ -464,6 +480,12 @@ public struct WorkflowRunCommand: Sendable {
   }
 
   private func rejectUnsupportedRunOptions(_ options: WorkflowRunOptions) throws {
+    if options.entryStepId != nil && options.endpoint != nil {
+      throw CLIUsageError("--entry-step is supported only for local workflow runs")
+    }
+    if options.entryStepId != nil && options.resumeSessionId != nil {
+      throw CLIUsageError("--entry-step cannot change a resumed session's entry")
+    }
     if options.endpoint != nil && options.runtimeEnvironmentFile != nil {
       throw CLIUsageError("--runtime-environment-file is local-only")
     }
@@ -500,7 +522,8 @@ public struct WorkflowRunCommand: Sendable {
     bundle: ResolvedWorkflowBundle,
     variables: JSONObject,
     options: WorkflowRunOptions,
-    loopEvidence: LoopEvidenceManifest? = nil
+    loopEvidence: LoopEvidenceManifest? = nil,
+    canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
   ) throws {
     let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
       resolution: resolution,
@@ -520,6 +543,13 @@ public struct WorkflowRunCommand: Sendable {
       loopEvidence: loopEvidence
     )
     if deferTerminalPersistence != nil { try requireCommittedCanonicalTerminal(snapshot, sessionStoreRoot: storeRoot) }
+    if !recordsCLIProjection {
+      // Final evidence/gate status still belongs in the canonical record.
+      // Only the redundant CLI projection is omitted for embedded callers.
+      try (canonicalPersistenceStore ?? SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+        canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))).save(snapshot)
+      return
+    }
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,
@@ -627,39 +657,7 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  func resolveRunBundle(
-    options: WorkflowRunOptions,
-    resolution: WorkflowResolutionOptions,
-    taskContext: TaskPlacementExecutionContext?,
-    effectiveResolver: any WorkflowBundleResolving,
-    pendingDefinitionSeed: inout ResolvedWorkflowBundle?
-  ) throws -> ResolvedWorkflowBundle {
-    if let taskContext {
-      guard let bundle = taskContext.bundles[options.target] else {
-        throw WorkStoreError("reserved task root is absent from admitted bundles")
-      }
-      return bundle
-    }
-    let bundle: ResolvedWorkflowBundle
-    if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
-      bundle = temporary
-    } else if options.fromRegistry { bundle = try resolveRegistryRunBundle(options: options) } else {
-      if let storeResolver = effectiveResolver as? DefinitionStoreWorkflowBundleResolver {
-        if let stored = try storeResolver.lookup(resolution) {
-          bundle = stored
-        } else {
-          bundle = try resolver.resolve(resolution)
-          pendingDefinitionSeed = bundle
-        }
-      } else {
-        // one-time runs never open definition tables (issue #179 policy)
-        bundle = try effectiveResolver.resolve(resolution)
-      }
-    }
-    return bundle
-  }
-
-  private func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {
+  func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {
     guard WorkflowPackageManifestValidator.isSafePackageName(options.target) else {
       throw CLIUsageError("invalid package name '\(options.target)'")
     }
@@ -711,7 +709,7 @@ public struct WorkflowRunCommand: Sendable {
     throw WorkflowResolutionError.notFound(options.target, errors)
   }
 
-  private func loadTemporaryWorkflowIfPresent(_ target: String, workingDirectory: String) throws -> ResolvedWorkflowBundle? {
+  func loadTemporaryWorkflowIfPresent(_ target: String, workingDirectory: String) throws -> ResolvedWorkflowBundle? {
     let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
     let data: Data
     let directory: URL
@@ -764,6 +762,7 @@ public struct WorkflowRunCommand: Sendable {
   ) async throws -> String {
     switch output {
     case .json:
+      if let outputProjection { return try jsonString(outputProjection(result)) }
       return try jsonString(result)
     case .jsonl:
       let record = try jsonString(WorkflowRunResultRecord(result: result))
@@ -846,6 +845,7 @@ private struct WorkflowRunProductionDurableRuntime {
   let runtimeStore: any WorkflowRuntimeStore
   let nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
   let nestedRecoveryCheckpointer: (any NestedRecoveryCheckpointing)?
+  let canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
 }
 
 private func isTemporaryWorkflowRunTarget(_ target: String, workingDirectory: String) -> Bool {
@@ -927,6 +927,7 @@ struct RunFinalizeContext {
   var telemetry: any RielaTelemetry
   var jsonlRecorder: WorkflowRunJSONLRecorder?
   var gatewayValidationWarnings: [String]
+  var canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
 }
 
 private func failsRequiredGate(_ gate: LoopGateResult, in workflow: WorkflowDefinition) -> Bool {
@@ -979,7 +980,8 @@ extension WorkflowRunCommand {
         bundle: context.bundle,
         variables: context.effectiveVariables,
         options: context.options,
-        loopEvidence: loopEvidence
+        loopEvidence: loopEvidence,
+        canonicalPersistenceStore: context.canonicalPersistenceStore
       )
     }
     if Task.isCancelled {

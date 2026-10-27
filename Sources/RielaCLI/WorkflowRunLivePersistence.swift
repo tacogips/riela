@@ -146,7 +146,7 @@ func requireCommittedCanonicalTerminal(
   guard session.status.isTerminal else { return }
   let canonical = try SQLiteWorkflowRuntimePersistenceStore(
     rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
-  ).load(sessionId: session.sessionId).session
+  ).loadStatus(sessionId: session.sessionId)
   guard canonical.status == session.status, canonical.failureKind == session.failureKind else {
     throw CLIWorkflowSessionStoreError.io(
       "terminal CLI projection requires a matching committed canonical session"

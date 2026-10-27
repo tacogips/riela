@@ -1,5 +1,6 @@
 import RielaCore
 import RielaKaibaSupport
+import RielaWork
 
 struct KaibaPreflightedRunContext: Sendable {
   let workingDirectory: String
@@ -47,6 +48,7 @@ extension WorkflowRunCommand {
       effectiveResolver: effectiveResolver,
       pendingDefinitionSeed: &pendingDefinitionSeed
     )
+    try applyEntryStep(options.entryStepId, to: &bundle)
     let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
     let execution = try await prepareRunExecution(
       options: options,
@@ -63,6 +65,7 @@ extension WorkflowRunCommand {
       bundle = try storeResolver.seed(fileBundle: pendingDefinitionSeed, options: resolution)
       bundle.workflow.nodes = preparedNodes
       bundle.nodePayloads = preparedPayloads
+      try applyEntryStep(options.entryStepId, to: &bundle)
     }
     let definitionSource = bundle.definitionSource
       ?? WorkflowDefinitionDocument.fileDefinitionSource(for: bundle, workflowName: options.target)
@@ -72,6 +75,46 @@ extension WorkflowRunCommand {
       execution: execution,
       definitionSource: definitionSource
     )
+  }
+
+  func resolveRunBundle(
+    options: WorkflowRunOptions,
+    resolution: WorkflowResolutionOptions,
+    taskContext: TaskPlacementExecutionContext?,
+    effectiveResolver: any WorkflowBundleResolving,
+    pendingDefinitionSeed: inout ResolvedWorkflowBundle?
+  ) throws -> ResolvedWorkflowBundle {
+    if let taskContext {
+      guard let bundle = taskContext.bundles[options.target] else {
+        throw WorkStoreError("reserved task root is absent from admitted bundles")
+      }
+      return bundle
+    }
+    let bundle: ResolvedWorkflowBundle
+    if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
+      bundle = temporary
+    } else if options.fromRegistry { bundle = try resolveRegistryRunBundle(options: options) } else {
+      if let storeResolver = effectiveResolver as? DefinitionStoreWorkflowBundleResolver {
+        if let stored = try storeResolver.lookup(resolution) {
+          bundle = stored
+        } else {
+          bundle = try resolver.resolve(resolution)
+          pendingDefinitionSeed = bundle
+        }
+      } else {
+        // one-time runs never open definition tables (issue #179 policy)
+        bundle = try effectiveResolver.resolve(resolution)
+      }
+    }
+    return bundle
+  }
+
+  private func applyEntryStep(_ entryStepId: String?, to bundle: inout ResolvedWorkflowBundle) throws {
+    guard let entryStepId else { return }
+    guard bundle.workflow.steps.contains(where: { $0.id == entryStepId }) else {
+      throw AdapterExecutionError(.invalidInput, "workflow entry step does not exist")
+    }
+    bundle.workflow.entryStepId = entryStepId
   }
 
   func prepareRunExecution(

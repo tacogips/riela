@@ -19,7 +19,7 @@ enum PrivateWorkflowWorker {
     let operation = Task {
       do {
         // Check the boundary before reading any credential or private input.
-        try verifyGuest()
+        try verifyGuest(maximumTemporaryMiB: 4096)
         let request = try readRequest()
         guard request.version == PrivateWorkflowRequest.currentVersion else {
           var record = SandboxNodeRecord(kind: .failure, failure: .init(.init(.policyBlocked,
@@ -29,6 +29,7 @@ enum PrivateWorkflowWorker {
           return
         }
         try request.plan.validate()
+        try verifyGuest(maximumTemporaryMiB: request.plan.temporaryStorageMiB ?? 256)
         try PrivateWorkflowPlan.validateEnvironment(request.environment)
         try SandboxNodeWorker.preparePrivateHome(credentials: request.credentials)
         let home = URL(fileURLWithPath: ProcessInfo.processInfo.environment["HOME"] ?? "")
@@ -82,11 +83,15 @@ enum PrivateWorkflowWorker {
     }
     let resolution = WorkflowResolutionOptions(workflowName: request.plan.workflowId,
       workflowDefinitionDir: request.plan.definitionRoot, workingDirectory: work.path)
-    let result = await WorkflowRunCommand().runWithoutSpecialistMonitor(.init(target: request.plan.workflowId,
+    var command = WorkflowRunCommand()
+    command.outputProjection = rootResult
+    command.recordsCLIProjection = false
+    let result = await command.runWithoutSpecialistMonitor(.init(target: request.plan.workflowId,
       resolution: resolution, variables: try JSONValue.object(request.plan.variables).compactJSONString(), output: .json,
       maxSteps: request.plan.maxSteps ?? 1000, maxConcurrency: request.plan.maxConcurrency ?? 4,
-      maxLoopIterations: 1000, timeoutMs: milliseconds, artifactRoot: root.appendingPathComponent("artifacts").path,
-      sessionStore: root.appendingPathComponent("sessions").path, workingDirectory: work.path))
+      maxLoopIterations: 1000, timeoutMs: milliseconds,
+      sessionStore: root.appendingPathComponent("sessions").path, workingDirectory: work.path,
+      entryStepId: request.plan.entryStepId))
     let bytes = result.stdout.data(using: .utf8) ?? Data()
     let envelope: JSONObject? = bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes
       ? (try? JSONDecoder().decode(JSONObject.self, from: bytes)) : nil
@@ -113,7 +118,16 @@ enum PrivateWorkflowWorker {
     return try SandboxNodeWorker.privateOutput(output, contract: .init(jsonSchema: request.plan.outputSchema))
   }
 
-  static func verifyGuest() throws {
+  /// Only the declared root and finite lifecycle metadata leave embedded
+  /// execution. Full sessions remain in the canonical guest runtime store.
+  static func rootResult(_ result: WorkflowRunResult) -> JSONObject {
+    ["rootOutput": result.rootOutput.map(JSONValue.object) ?? .null,
+     "sessionId": .string(result.session.sessionId), "status": .string(result.status.rawValue),
+     "exitCode": .integer(Int64(result.exitCode)),
+     "failureKind": result.session.failureKind.map { .string($0.rawValue) } ?? .null]
+  }
+
+  static func verifyGuest(maximumTemporaryMiB: Int = 256) throws {
     #if os(Linux)
     guard riela_private_worker_prepared() == 1 else { throw PrivateWorkflowPlan.invalid() }
     let taskRoot = URL(fileURLWithPath: "/proc/self/task")
@@ -124,14 +138,17 @@ enum PrivateWorkflowWorker {
     guard statvfs("/tmp", &stats) == 0 else { throw PrivateWorkflowPlan.invalid() }
     let (bytes, overflow) = UInt64(stats.f_blocks).multipliedReportingOverflow(by: UInt64(stats.f_frsize))
     guard !overflow else { throw PrivateWorkflowPlan.invalid() }
-    try verifyGuestMetadata(status: status, mounts: mounts, temporaryBytes: bytes)
+    try verifyGuestMetadata(status: status, mounts: mounts, temporaryBytes: bytes,
+      maximumTemporaryMiB: maximumTemporaryMiB)
     #else
     throw AdapterExecutionError(.policyBlocked, "private workflow worker requires a Linux container")
     #endif
   }
 
-  static func verifyGuestMetadata(status: [String], mounts: String, temporaryBytes: UInt64) throws {
-    guard !status.isEmpty, temporaryBytes > 0, temporaryBytes <= 256 * 1024 * 1024 else { throw PrivateWorkflowPlan.invalid() }
+  static func verifyGuestMetadata(status: [String], mounts: String, temporaryBytes: UInt64,
+    maximumTemporaryMiB: Int = 256) throws {
+    guard (64...4096).contains(maximumTemporaryMiB), !status.isEmpty, temporaryBytes > 0,
+      temporaryBytes <= UInt64(maximumTemporaryMiB) * 1024 * 1024 else { throw PrivateWorkflowPlan.invalid() }
     for text in status {
       var fields: [String: String] = [:]
       for line in text.split(separator: "\n") {

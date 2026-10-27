@@ -33,6 +33,8 @@ struct ParsedWorkflowOptions: ParsableArguments {
   /// normal workflow-run options so an independently monitored child can
   /// resume the exact session reserved in canonical SQLite.
   @Option var resumeSessionId: String?
+  @Option(name: .customLong("entry-step"), help: "Start a declared step in a local workflow; incompatible with resume.")
+  var entryStepId: String?
   @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
   var workingDirectory: String?
   @Option var endpoint: String?
@@ -53,6 +55,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--artifact-root",
     "--session-store",
     "--resume-session-id",
+    "--entry-step",
     "--auth-token",
     "--auth-token-env",
     "--max-steps",

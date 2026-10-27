@@ -127,6 +127,22 @@ final class XCollectionTests: XCTestCase {
     XCTAssertEqual(result["failures"], .array([.object(["shard": .integer(0), "stage": .string("page"), "code": .string("page-unavailable")])]))
   }
 
+  func testPageFailureRetainsOnlyFiniteReaderDiagnostics() async throws {
+    let result = try await XAuthorCollector(options: .init(options())).collect { operation, _, _ in
+      if operation == "accountMe" { return ["id": .string("7"), "username": .string("owner")] }
+      throw AdapterExecutionError(.providerError, "private query token=secret (code=PERMISSION_DENIED, httpStatus=403, retryable=false, requestAttempts=1, retryAttempts=0, backoffMs=0, retryStopReason=non-retryable, private=secret)")
+    }
+    guard case let .array(failures)? = result["failures"], let failure = failures.first else { return XCTFail("missing partial failure") }
+    let fields = try object(try object(failure)["diagnostics"])
+    XCTAssertEqual(fields["code"], .string("PERMISSION_DENIED"))
+    XCTAssertEqual(fields["httpStatus"], .integer(403))
+    XCTAssertEqual(fields["retryAttempts"], .integer(0))
+    XCTAssertEqual(fields["backoffMs"], .integer(0))
+    XCTAssertNil(fields["private"])
+    XCTAssertFalse(try JSONValue.object(result).compactJSONString().contains("secret"))
+    XCTAssertFalse(try complete(result))
+  }
+
   func testImportedShardsKeepIndependentTokensAndOneFailureDoesNotStopAnother() async throws {
     var values = options()
     values["authorHandles"] = .array((0..<36).map { .string(String(format: "u%014d", $0)) })

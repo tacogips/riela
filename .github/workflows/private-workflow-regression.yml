@@ -1,0 +1,99 @@
+name: Private workflow regression
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Sources/RielaCLI/PrivateWorkflow*.swift'
+      - 'Sources/RielaCLI/WorkflowRunCommand.swift'
+      - 'Sources/RielaCLI/WorkflowRunLivePersistence.swift'
+      - 'Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift'
+      - 'Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift'
+      - 'Sources/RielaCore/RuntimeExecutionReuse.swift'
+      - 'Sources/RielaCLI/RielaCommand.swift'
+      - 'Sources/RielaCLI/ParsedWorkflowOptions.swift'
+      - 'Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift'
+      - 'Sources/RielaCLI/RuntimeEnvironmentPreparation.swift'
+      - 'Sources/RielaCLI/WorkflowValidateInspectCommands.swift'
+      - 'Sources/RielaCore/WorkflowEnvironmentRequirements.swift'
+      - 'Tests/RielaCoreTests/RuntimeEnvironmentPropagationTests.swift'
+      - 'Tests/RielaCLITests/PrivateWorkflowTests.swift'
+      - 'Tests/RielaCLITests/EventCronOverlap*.swift'
+      - 'Tests/RielaCLITests/ServeWebHostRuntimeEnvironmentTests.swift'
+      - 'Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift'
+      - '.github/workflows/private-workflow-regression.yml'
+      - 'Package.swift'
+  pull_request:
+    paths:
+      - 'Sources/RielaCLI/PrivateWorkflow*.swift'
+      - 'Sources/RielaCLI/WorkflowRunCommand.swift'
+      - 'Sources/RielaCLI/WorkflowRunLivePersistence.swift'
+      - 'Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift'
+      - 'Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift'
+      - 'Sources/RielaCore/RuntimeExecutionReuse.swift'
+      - 'Sources/RielaCLI/RielaCommand.swift'
+      - 'Sources/RielaCLI/ParsedWorkflowOptions.swift'
+      - 'Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift'
+      - 'Sources/RielaCLI/RuntimeEnvironmentPreparation.swift'
+      - 'Sources/RielaCLI/WorkflowValidateInspectCommands.swift'
+      - 'Sources/RielaCore/WorkflowEnvironmentRequirements.swift'
+      - 'Tests/RielaCoreTests/RuntimeEnvironmentPropagationTests.swift'
+      - 'Tests/RielaCLITests/PrivateWorkflowTests.swift'
+      - 'Tests/RielaCLITests/EventCronOverlap*.swift'
+      - 'Tests/RielaCLITests/ServeWebHostRuntimeEnvironmentTests.swift'
+      - 'Tests/RielaCoreTests/WorkflowFanoutObservationBoundTests.swift'
+      - '.github/workflows/private-workflow-regression.yml'
+      - 'Package.swift'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-workflow-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-workflow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build fixed Swift test environment
+        env:
+          SWIFT_IMAGE: swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278
+        run: |
+          set -euo pipefail
+          docker build --build-arg "SWIFT_IMAGE=$SWIFT_IMAGE" -t riela-private-tests - <<'DOCKERFILE'
+          ARG SWIFT_IMAGE
+          FROM ${SWIFT_IMAGE}
+          RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libcurl4-openssl-dev libxml2-dev libsqlite3-dev python3 && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+      - name: Run focused private execution tests
+        run: |
+          set -euo pipefail
+          docker run --rm -e RIELA_TEST_SUITE=private-workflow -v "$GITHUB_WORKSPACE:/workspace" -w /workspace riela-private-tests bash -lc '
+            set -euo pipefail
+            swift scripts/strip-macos-only-pins.swift Package.resolved
+            swift test --jobs 2 --filter "PrivateWorkflowTests|RuntimeEnvironmentPropagationTests|RuntimeEnvironmentSurfaceNamesTests"
+          '
+      - name: Run canonical persistence contracts
+        run: |
+          set -euo pipefail
+          docker run --rm -e RIELA_TEST_SUITE=canonical-persistence -v "$GITHUB_WORKSPACE:/workspace" -w /workspace riela-private-tests bash -lc '
+            set -euo pipefail
+            swift test --jobs 2 --filter "SQLiteRuntimeSchemaMigrationTests|SQLitePersistenceSessionExistsTests|RuntimeSnapshotDatesTests|WorkflowPreservedHistoryTests|WorkflowCommandLivePersistence|SessionRecoveryHydrationScopeTests|SessionReconcileCommandTests"
+          '
+      - name: Run ten-copy bulk graph with original resource limits
+        run: |
+          set -euo pipefail
+          docker run --rm --memory 2g --memory-swap 2g --network none --read-only --cap-drop ALL \
+            -e RIELA_BULK_RESOURCE_DIAGNOSTICS=1 \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1024m \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" -w /tmp riela-private-tests \
+            timeout 180 /workspace/.build/x86_64-unknown-linux-gnu/debug/rielaPackageTests.xctest \
+            RielaCLITests.PrivateWorkflowTests/testEmbeddedBulkGraphRetainsCanonicalHistoryWithoutCLIProjection \
+            | tee "$RUNNER_TEMP/riela-private-bulk.log"
+          grep -Eq 'Executed 1 test, with 0 failures' "$RUNNER_TEMP/riela-private-bulk.log"

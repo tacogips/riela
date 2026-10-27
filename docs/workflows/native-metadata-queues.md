@@ -209,3 +209,17 @@ full reference trees and unused generations within the store. The aggregate
 projected result retains the scan's 7,990,000-byte bound; input snapshots can
 still be up to the configured per-head limit. Oversized *selected metadata*
 is refused explicitly rather than truncated or acknowledged.
+
+## Metadata-only cache availability (0.2.73)
+
+Set `includePayload: false` on `riela/cache-exchange` with `action: "read-set"`
+when a workflow needs only exact-reference availability. Each result contains
+`id` and `status` (`hit`, `missing`, or `expired`). Omitting the flag retains
+the existing body-bearing result. The flag must be a JSON boolean.
+
+The SDK verifies revision, fetch timestamp and content integrity internally in
+bounded batches. Bodies never enter adapter output or workflow execution
+records in this mode; their aggregate size does not become the metadata output
+limit. `RielaCacheExchange.availability` exposes the same verification in the
+embedded memory library. Normal cache policy and LRU rules still apply; no
+provider IDs, publication receipts, cursors or fetch timestamps are advanced.

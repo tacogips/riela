@@ -6,7 +6,8 @@ import RielaMemory
 /// keys in different stores. Availability never acknowledges durable work.
 extension BuiltinWorkflowAddonResolver {
   func executeCacheReadSet(_ input: WorkflowAddonExecutionInput, config: JSONObject) throws -> AdapterExecutionOutput {
-    guard Set(config.keys) == ["action", "stores", "requests"], config["action"] == .string("read-set"),
+    guard Set(config.keys).isSubset(of: ["action", "stores", "requests", "includePayload"]), config["action"] == .string("read-set"),
+      case let .bool(includePayload) = config["includePayload"] ?? .bool(true),
       case let .object(stores)? = config["stores"], (1...16).contains(stores.count),
       case let .array(requests)? = config["requests"], requests.count <= 10_000,
       try JSONEncoder().encode(config).count <= RielaCacheStore.maximumFrameBytes - 8192 else { throw cacheReadSetInvalid() }
@@ -25,11 +26,15 @@ extension BuiltinWorkflowAddonResolver {
       for name in groups.keys.sorted() {
         let exchange = exchanges[name]!, rows = groups[name]!
         _ = try exchange.store.configure(cacheId: exchange.cacheId, policy: exchange.policy)
-        let read = try exchange.get(rows.map(\.reference))
+        let read = includePayload ? try exchange.get(rows.map(\.reference)) : CacheBodyRead()
+        let statuses = includePayload ? [:] : try exchange.availability(rows.map(\.reference))
         let missing = Set(read.missing), expired = Set(read.expired)
         for row in rows {
           var result: JSONObject = ["id": .string(row.id)]
-          if let body = read.hits[row.reference.key] {
+          if !includePayload {
+            guard let status = statuses[row.reference.key] else { throw cacheReadSetInvalid() }
+            result["status"] = .string(status.rawValue)
+          } else if let body = read.hits[row.reference.key] {
             result["status"] = .string("hit")
             result["payload"] = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(body))
           } else if missing.contains(row.reference.key) { result["status"] = .string("missing")

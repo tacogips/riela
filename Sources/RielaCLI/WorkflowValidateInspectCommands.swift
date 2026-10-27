@@ -314,6 +314,7 @@ struct ReachableWorkflowMaps {
   var nodePayloads: [String: [String: AgentNodePayload]]
   var nodeHostRequirements: [String: [String: WorkflowNodeHostRequirement]]
   var localAddonExecutables: [String: Bool]
+  var reachableNodeIds: [String: Set<String>] = [:]
 }
 
 private struct WorkflowHostAssessment {
@@ -425,6 +426,7 @@ func reachableWorkflowMaps(
   var localAddonExecutables: [String: Bool] = [:]
   var pending = [(workflowId: bundle.workflow.workflowId, stepId: entryStepId ?? bundle.workflow.entryStepId)]
   var visited: Set<String> = []
+  var reachableNodeIds: [String: Set<String>] = [:]
   let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
 
   while !pending.isEmpty {
@@ -442,6 +444,7 @@ func reachableWorkflowMaps(
     guard let step = workflows[next.workflowId]?.steps.first(where: { $0.id == next.stepId }) else {
       throw WorkflowRequirementResolutionError.unknownStep(workflowId: next.workflowId, stepId: next.stepId)
     }
+    reachableNodeIds[next.workflowId, default: []].insert(step.nodeId)
     if let currentBundle = bundles[next.workflowId] {
       localAddonExecutables.merge(localAddonExecutableAvailability(
         in: currentBundle, nodeId: step.nodeId, workingDirectory: resolution.workingDirectory
@@ -467,7 +470,8 @@ func reachableWorkflowMaps(
     workflows: workflows,
     nodePayloads: nodePayloads,
     nodeHostRequirements: nodeHostRequirements,
-    localAddonExecutables: localAddonExecutables
+    localAddonExecutables: localAddonExecutables,
+    reachableNodeIds: reachableNodeIds
   )
 }
 

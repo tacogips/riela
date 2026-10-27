@@ -6,6 +6,31 @@
   "remote": "origin",
   "gitPush": true,
   "originalHead": "2dce3fd73dded13ea13da128e1d1fbf8bc3ede83",
+  "continuation": {
+    "workflowExecutionId": "opus-luna-design-and-implement-review-loop-session-523",
+    "continuesFrom": "opus-luna-design-and-implement-review-loop-session-518",
+    "continuationHead": "4d72853b7452b2d773f6cc90c78abb7e2873d90f",
+    "originMainHead": "2f8cae645a138e73ff00d61294e6fedca20e8245",
+    "acceptedPlans": ["eh-01-history-engine", "eh-02-runtime-contract"],
+    "inTreePartialPlans": ["eh-03-memory-history", "eh-04-definition-history", "eh-05-session-rows"],
+    "preserveWorkingTree": "All tracked modifications and untracked paths present at continuationHead are accepted wave-1 or partial wave-2 work. No plan reverts, regenerates or rewrites eh-01/eh-02 work; partial plans resume from the files as they are, using the current file hash as their pre-edit baseline (design §13).",
+    "blockedCause": "eh-04 and eh-05 ran in the same wave. eh-05's suites open a fresh runtime store, which runs eh-04's in-progress WorkflowDefinitionHistorySchema.create, which created a guarded-delete trigger on definition_history_versions before that table existed ('no such table: main.definition_history_versions', tmp/efficient-history/eh-05-session-rows/test-final-source-2.log). eh-03 lacked MemoryModels.swift for RielaMemoryError.invalidHistoryRetention."
+  },
+  "waves": [
+    {"wave": "W1", "plans": ["eh-01-history-engine", "eh-02-runtime-contract"], "status": "accepted (session 518); do not dispatch again"},
+    {"wave": "W2a", "plans": ["eh-03-memory-history", "eh-04-definition-history"], "status": "resume from working tree"},
+    {"wave": "W2b", "plans": ["eh-05-session-rows"], "status": "resume from working tree after W2a gate; re-verify, rework only own files"},
+    {"wave": "W3", "plans": ["eh-06-cli-session-envelope", "eh-07-abandoned-and-retention", "eh-08-memory-surfaces", "eh-09-definition-surfaces"], "status": "each member starts once its own dependsOn are accepted (eh-08 and eh-09 may start after W2a; eh-06 and eh-07 need W2b)"},
+    {"wave": "W4", "plans": ["eh-10-storage-commands"], "status": "pending"},
+    {"wave": "W5", "plans": ["eh-11-catalog-help-docs"], "status": "pending"}
+  ],
+  "waveGates": [
+    "After every wave, serial reconcile runs, in the foreground with logs under tmp/efficient-history/wave-<id>/: arch -arm64 /bin/zsh -lc 'swift build' and the union of the wave members' focused filters. The next wave starts only when the build exits 0 and every member's gating focused suite passes (SurfaceParityCLITests excepted until eh-11; for W2a the gating suites and the eh-05 handover rule are defined below).",
+    "W2a gate (judges only eh-03/eh-04-owned code plus schema-open health): (a) eh-03 verification exits 0; (b) eh-04's own suites exit 0: arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinitionStoreTests|WorkflowDefinitionSessionPinTests|WorkflowDefinitionRetentionTests|WorkflowDefinitionServiceTests|WorkflowDefinitionServiceResolutionTests\"' > tmp/efficient-history/wave-W2a/definition-suites.log 2>&1; echo $?; (c) generation-open tests exit 0: arch -arm64 /bin/zsh -lc 'swift test --filter \"SQLiteRuntimeSchemaMigrationTests/(testAnOlderSessionStoreIsDiscardedAndRecreatedAtTheCurrentGeneration|testGeneration10UpgradesTo11WithoutLosingSnapshot|testGeneration9UpgradesThrough10To11WithoutLosingSnapshot)\"' > tmp/efficient-history/wave-W2a/schema-open.log 2>&1; echo $? (3 tests executed); (d) schema-open health over the store suites: arch -arm64 /bin/zsh -lc 'swift test --filter \"SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests\"' > tmp/efficient-history/wave-W2a/store-suites.log 2>&1; echo $? is recorded but not gating, and grep -c -e 'no such table' -e 'already exists' tmp/efficient-history/wave-W2a/store-suites.log prints 0.",
+    "W2a failure attribution: any other failure in tmp/efficient-history/wave-W2a/store-suites.log whose failing frame or assertion is in an eh-05 writePath (SQLiteWorkflowRuntimePersistenceStore*.swift, SQLiteRuntimeExecutionRowsSchema.swift, RuntimeExecutionReuse.swift, SQLiteWorkflowStartupIdentities.swift) or in the eh-05 sharedPath fixture (Tests/RielaCLITests/PrivateWorkflowTests.swift) is written to tmp/efficient-history/wave-W2a/handover-eh-05.md as '<TestClass.testName> | <log path>:<line> | <first error line>'. It is handed to eh-05, does not block eh-04 acceptance or the W2b start, and eh-04 does not edit those files. A failure whose frame is in an eh-04 writePath blocks eh-04. A failure whose frame is in neither set (for example Sources/RielaCLI/PrivateWorkflowWorker.swift 'private inner workflow did not complete') is also written to handover-eh-05.md with the marker 'unattributed', is non-blocking for W2a, and must be green at the W2b gate like every other handover item.",
+    "W2b gate (eh-05 acceptance): arch -arm64 /bin/zsh -lc 'swift build' exits 0 and the full eh-05 focused suite exits 0, including complete SQLiteRuntimeSchemaMigrationTests and PrivateWorkflowTests with the four fast-path/fence tests (testEmbeddedBulkGraphRetainsCanonicalHistoryWithoutCLIProjection, testCanonicalTerminalFenceUsesCommittedStatusAndFailureKind, testCanonicalReuseKeepsExactInputsOrderAndReplacesOptionalMetadata, testCanonicalReuseRefusesRolledBackAndLegacyWriterWitnesses); every handover-eh-05.md item is listed in impl-plans/progress/eh-05-session-rows.md as resolved with the passing log line.",
+    "Parallel members of one wave have disjoint writePaths (checked: W2a eh-03 is package-local to Packages/RielaMemory, eh-04 is RielaCore/RielaWorkflowRegistry; W3 eh-06/eh-07/eh-08/eh-09 share no writePath). A compile error inside a sibling's writePath is logged as outOfScope and the command is rerun after the sibling reports its own build green; it is never fixed by the non-owner."
+  ],
   "designDocPaths": [
     "design-docs/specs/design-efficient-history-and-storage.md",
     "design-docs/specs/design-evolution-history.md",
@@ -15,7 +40,7 @@
   "overviewPlanPath": "impl-plans/active/efficient-history.md",
   "evidenceRoot": "tmp/efficient-history",
   "reviewContext": {
-    "issueReference": "Owner issue 'One shared versioned history (diff, undo/redo, retention: memory 2 / state 1 / workflow definitions 10) and efficient session storage with storage doctor/compact' (no GitHub number); workflowExecutionId opus-luna-design-and-implement-review-loop-session-518; design accepted step3 comm-009607; plan revision comm-009610 answering step5 EH5-F1/F2/F3; plan acceptance comm-009611 from step5-impl-plan-review",
+    "issueReference": "No GitHub issue. Inline owner request 'Shared versioned history and efficient session storage (continuation from wave 2)'. workflowExecutionId opus-luna-design-and-implement-review-loop-session-523 continues session 518 (design accepted step3 comm-009607, plans accepted comm-009611). The continuation design was accepted by step3 in comm-009700 and the amended plans by step5-impl-plan-review in comm-009702.",
     "userProblem": "Riela SQLite stores grew to about 60 GB for one application (ART) whose real data is small. Memory history (memory_evolution.reverse_delta_json) keeps one prefix/suffix splice per version, so a header change plus an appended item retains 99.6% of a 660 KB document, base64-encoded in JSON (1.23x per version), and history is never retired automatically. The runtime session store keeps the same session JSON twice (workflow_runtime_snapshots.session_json and cli_workflow_sessions.record_json, 12.2 GB each), rewrites the whole session JSON on every save, embeds parent/child copies in workflow_nested_invocations (10.1 GB), protects 387 crashed/cancelled families from prune forever, and never vacuums after deletes. The #179 definition store keeps every version and blob forever (design §1).",
     "requiredOutcomes": [
       "One shared VersionedHistory component inside the RielaMemory module (Packages/RielaMemory/Sources/RielaMemory/VersionedHistory) owns codec, table layout, write/undo/redo/restore, retention, pins, detachment and the RFC 6902-style structural diff; memory and workflow definitions only adapt to it (design §2, eh-01).",
@@ -50,7 +75,10 @@
       "The only manifest edit is the CZlib systemLibrary target in Packages/RielaMemory/Package.swift (eh-01); dependency lines stay untouched because a concurrent run on main changes pins.",
       "Cross-wave path handoffs: SQLiteWorkflowRuntimePersistenceStore.swift eh-02 then eh-05; WorkflowDefinitionHistorySchema.swift and WorkflowDefinitionPins.swift eh-02 stubs then eh-04; SQLiteRuntimeExecutionRowsSchema.swift eh-02 stub then eh-05; CLIWorkflowSessionStore.swift eh-02 one options line then eh-06 (keeps that line byte-identical); RielaCLIApplication.swift eh-10 dispatch then eh-11 help text.",
       "SurfaceParityCLITests is expected red between waves 3 and 5 (eh-09 undo/redo rows, eh-10 storage/doctor storage routes) until eh-11 updates CLISurfaceEnumeration.swift and RielaClientFamilyArguments.swift; serial reconcile must not treat it as a regression before eh-11.",
-      "Scratch files only under tmp/efficient-history/ and never committed."
+      "Scratch files only under tmp/efficient-history/ and never committed.",
+      "Continuation sequencing (session 523): eh-05 runs after eh-04 (W2b) because both are exercised by every fresh runtime-store open (generation-11 schema); eh-03 owns MemoryModels.swift.",
+      "Rebase before push: rebase feat/efficient-history onto origin/main (2f8cae64 or newer: 35a910d5 deps, cron previousScheduledAt, agentToolPolicy presets). Conflicts keep main's side for Package.swift, Package.resolved, cron files and tool-policy code; this branch's side only for its own writePaths. After the rebase rerun swift build, scripts/surface-parity/generate-sdl.sh (commit any regenerated SDL), swift test --filter SurfaceParity and the final-gate focused filter.",
+      "Full-suite gate is 'no new failures' by exact test name against the baseline: DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession, HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip, ServeWebHostTests.testBrowserExecutionUsesProfileStoreAndGatesSummaryReads, SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal, WorkflowCommandTests.testCancellationWithoutAutoImprovePersistsTerminalFailure, WorkflowHostCapabilityTests.testIssue116BuiltinsResolveWithoutExternalExecutable; flaky WorkflowCommandTests.testConcurrentFreshRunsReceiveDistinctSessionIds."
     ],
     "designDecisionsAndRationale": [
       "VersionedHistory lives inside the existing RielaMemory module because RielaCore already depends on that product, so the root Package.swift stays untouched (design §2.1).",
@@ -118,73 +146,30 @@
       "Tests/RielaCLITests/PrivateWorkflowTests.swift"
     ]
   },
-  "plans": [
+  "acceptedDependencies": [
     {
       "planId": "eh-01-history-engine",
       "planPath": "impl-plans/active/efficient-history-01-history-engine.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Packages/RielaMemory/Package.swift",
-        "Packages/RielaMemory/Sources/CZlib",
-        "Packages/RielaMemory/Sources/RielaMemory/VersionedHistory",
-        "Packages/RielaMemory/Tests/RielaMemoryTests/VersionedHistoryTests.swift",
-        "impl-plans/progress/eh-01-history-engine.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "The pinned contract compiles with the exact names: grep -n \"public struct VersionedHistoryStore\" -r Packages/RielaMemory/Sources matches.",
-        "git diff Packages/RielaMemory/Package.swift shows only the CZlib target and dependency lines; no dependency pin changes.",
-        "All VersionedHistoryTests listed in the plan exist and pass; build, test and lint exit 0 with logs saved and a non-zero executed test count.",
-        "Progress log impl-plans/progress/eh-01-history-engine.md is complete."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift build --package-path Packages/RielaMemory' > tmp/efficient-history/eh-01-history-engine/build.log 2>&1; echo $?",
-        "arch -arm64 /bin/zsh -lc 'swift test --package-path Packages/RielaMemory --filter VersionedHistoryTests' > tmp/efficient-history/eh-01-history-engine/test.log 2>&1; echo $?",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Packages/RielaMemory/Sources/RielaMemory/VersionedHistory Packages/RielaMemory/Tests/RielaMemoryTests/VersionedHistoryTests.swift'"
+      "commit": "4d72853b7452b2d773f6cc90c78abb7e2873d90f",
+      "provides": [
+        "Shared VersionedHistory engine in Packages/RielaMemory/Sources/RielaMemory/VersionedHistory (codec, table layout, write/undo/redo/restore, retention, pins, detachment, RFC 6902-style structural diff) plus the CZlib systemLibrary target in Packages/RielaMemory/Package.swift.",
+        "Evidence: impl-plans/progress/eh-01-history-engine.md, VersionedHistoryTests 11 tests, 0 failures (logs under tmp/efficient-history/eh-01-history-engine/).",
+        "Accepted in session 518. The implementation is uncommitted in the working tree on top of this checkpoint parent. It is preserved and never re-dispatched."
       ]
     },
     {
       "planId": "eh-02-runtime-contract",
       "planPath": "impl-plans/active/efficient-history-02-runtime-contract.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaSQLite/SQLiteDatabase.swift",
-        "Tests/RielaSQLiteTests/SQLiteDatabaseBlobAndAutoVacuumTests.swift",
-        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
-        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift",
-        "Sources/RielaCore/SQLiteWorkflowMessageLog.swift",
-        "Sources/RielaCore/WorkflowDefinitionHistorySchema.swift",
-        "Sources/RielaCore/WorkflowDefinitionPins.swift",
-        "Sources/RielaCore/SQLiteRuntimeExecutionRowsSchema.swift",
-        "Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift",
-        "Tests/RielaCoreTests/SQLiteRuntimeAutoVacuumTests.swift",
-        "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
-        "Sources/RielaWork/WorkStore.swift",
-        "Tests/RielaCLITests/RuntimeStoreFirstOpenerAutoVacuumTests.swift",
-        "Tests/RielaWorkTests/WorkStoreFirstOpenerAutoVacuumTests.swift",
-        "impl-plans/progress/eh-02-runtime-contract.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {"path": "Sources/RielaCLI/CLIWorkflowSessionStore.swift", "intendedEdit": "ONE edit only: the options argument in openDatabase(readOnly:strictReadOnly:) (~:411) becomes `readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault`. eh-06 owns this file in wave 3 and keeps that line byte-identical."},
-        {"path": "Sources/RielaWork/WorkStore.swift", "intendedEdit": "ONE edit only: the options argument of the writable open in openWritable() (~:390) becomes `.writableRuntimeStoreDefault`."}
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "grep -n \"schemaGeneration: Int64 = 11\" and grep -n \"fromGeneration: 10\" both match.",
-        "WorkflowDefinitionHistorySchema.swift, WorkflowDefinitionPins.swift and SQLiteRuntimeExecutionRowsSchema.swift stubs exist with the exact signatures including both pin hooks; completeSnapshotWrite calls recordPinIfNeeded.",
-        "grep -n recordForeignPinIfNeeded Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift shows exactly two calls, each before the openDatabase() line of save(_:) and save(_:appendingWorkflowMessages:).",
-        "writableRuntimeStoreDefault matches in CLIWorkflowSessionStore.swift, WorkStore.swift, SQLiteWorkflowRuntimePersistenceStore.swift and SQLiteWorkflowMessageLog.swift; git diff --numstat shows 1 1 for the CLI store and WorkStore.",
-        "Listed tests pass with a non-zero executed count; the four PrivateWorkflowTests fast-path/fence tests stay green; a WorkflowDefinitionStoreTests generation assertion failure is logged as outOfScope for eh-04.",
-        "Progress log complete, including pre/post hashes for SQLiteWorkflowRuntimePersistenceStore.swift."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/efficient-history/eh-02-runtime-contract/build.log 2>&1; echo $?",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SQLiteDatabaseBlobAndAutoVacuumTests|SQLiteDatabaseTests|SQLiteRuntimeSchemaMigrationTests|SQLiteRuntimeAutoVacuumTests|RuntimeStoreFirstOpenerAutoVacuumTests|WorkStoreFirstOpenerAutoVacuumTests|WorkStoreTests|SQLiteWorkflowMessageLogTests|SQLitePersistenceSessionExistsTests|PrivateWorkflowTests\"' > tmp/efficient-history/eh-02-runtime-contract/test.log 2>&1; echo $?",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaSQLite/SQLiteDatabase.swift Tests/RielaSQLiteTests/SQLiteDatabaseBlobAndAutoVacuumTests.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift Sources/RielaCore/SQLiteWorkflowMessageLog.swift Sources/RielaCore/WorkflowDefinitionHistorySchema.swift Sources/RielaCore/WorkflowDefinitionPins.swift Sources/RielaCore/SQLiteRuntimeExecutionRowsSchema.swift Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift Tests/RielaCoreTests/SQLiteRuntimeAutoVacuumTests.swift Sources/RielaCLI/CLIWorkflowSessionStore.swift Sources/RielaWork/WorkStore.swift Tests/RielaCLITests/RuntimeStoreFirstOpenerAutoVacuumTests.swift Tests/RielaWorkTests/WorkStoreFirstOpenerAutoVacuumTests.swift'"
+      "commit": "4d72853b7452b2d773f6cc90c78abb7e2873d90f",
+      "provides": [
+        "SQLiteOpenOptions.writableRuntimeStoreDefault with incremental auto_vacuum for new files, runtime schema generation 11 seams (fromGeneration: 10), WorkflowDefinitionHistorySchema.swift / WorkflowDefinitionPins.swift / SQLiteRuntimeExecutionRowsSchema.swift stubs with both pin hooks, recordPinIfNeeded in completeSnapshotWrite and two recordForeignPinIfNeeded calls in the runtime store save entry points.",
+        "One-line writableRuntimeStoreDefault edits in Sources/RielaCLI/CLIWorkflowSessionStore.swift and Sources/RielaWork/WorkStore.swift. eh-06 keeps the CLI line byte-identical.",
+        "Evidence: impl-plans/progress/eh-02-runtime-contract.md, 81 tests, 0 failures (logs under tmp/efficient-history/eh-02-runtime-contract/).",
+        "Accepted in session 518. The implementation is uncommitted in the working tree on top of this checkpoint parent. It is preserved and never re-dispatched. eh-04 resumes WorkflowDefinitionHistorySchema.swift and WorkflowDefinitionPins.swift, and eh-05 resumes SQLiteWorkflowRuntimePersistenceStore.swift and SQLiteRuntimeExecutionRowsSchema.swift, from these stubs."
       ]
-    },
+    }
+  ],
+  "plans": [
     {
       "planId": "eh-03-memory-history",
       "planPath": "impl-plans/active/efficient-history-03-memory-history.md",
@@ -197,6 +182,7 @@
         "Packages/RielaMemory/Sources/RielaMemory/MemorySnapshotRetention.swift",
         "Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryRetirement.swift",
         "Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryAdapter.swift",
+        "Packages/RielaMemory/Sources/RielaMemory/MemoryModels.swift",
         "Packages/RielaMemory/Tests/RielaMemoryTests/MemoryHistoryRetentionTests.swift",
         "Packages/RielaMemory/Tests/RielaMemoryTests/MemoryEvolutionHistoryTests.swift",
         "Packages/RielaMemory/Tests/RielaMemoryTests/MemorySnapshotTests.swift",
@@ -211,11 +197,14 @@
         "grep -n \"currentSchemaVersion = 7\" matches; INSERT INTO memory_evolution appears only in test fixtures, if anywhere (no new reverse_delta_json writes).",
         "The pinned memory history API is present with the exact names.",
         "The full RielaMemory package test suite passes with MemoryHistoryRetentionTests listed; every changed pre-existing test is justified in the progress log.",
+        "Continuation audit: the progress log opens with a done/missing table of this plan's pinned API, tests and done criteria against the current working tree, with the current SHA-256 of every owned file as its pre-edit baseline.",
+        "MemoryModels.swift changes are limited to RielaMemoryError cases for history retention (invalidHistoryRetention); public RielaMemory API used by RielaCore/RielaCLI stays source-compatible (additive only); VersionedHistory/ (eh-01) is not edited.",
         "Progress log impl-plans/progress/eh-03-memory-history.md is complete."
       ],
       "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build --package-path Packages/RielaMemory' > tmp/efficient-history/eh-03-memory-history/build.log 2>&1; echo $?",
         "arch -arm64 /bin/zsh -lc 'swift test --package-path Packages/RielaMemory' > tmp/efficient-history/eh-03-memory-history/test.log 2>&1; echo $?",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Packages/RielaMemory/Sources/RielaMemory/RielaMemory.swift Packages/RielaMemory/Sources/RielaMemory/SQLiteMemorySupport.swift Packages/RielaMemory/Sources/RielaMemory/MemoryEvolutionHistory.swift Packages/RielaMemory/Sources/RielaMemory/MemorySnapshot.swift Packages/RielaMemory/Sources/RielaMemory/MemorySnapshotRetention.swift Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryRetirement.swift Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryAdapter.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemoryHistoryRetentionTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemoryEvolutionHistoryTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemorySnapshotTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemorySnapshotRetentionTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemoryHistoryRetirementTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/RielaMemoryTests.swift'"
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Packages/RielaMemory/Sources/RielaMemory/RielaMemory.swift Packages/RielaMemory/Sources/RielaMemory/SQLiteMemorySupport.swift Packages/RielaMemory/Sources/RielaMemory/MemoryEvolutionHistory.swift Packages/RielaMemory/Sources/RielaMemory/MemorySnapshot.swift Packages/RielaMemory/Sources/RielaMemory/MemorySnapshotRetention.swift Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryRetirement.swift Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryAdapter.swift Packages/RielaMemory/Sources/RielaMemory/MemoryModels.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemoryHistoryRetentionTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemoryEvolutionHistoryTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemorySnapshotTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemorySnapshotRetentionTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/MemoryHistoryRetirementTests.swift Packages/RielaMemory/Tests/RielaMemoryTests/RielaMemoryTests.swift'"
       ]
     },
     {
@@ -244,18 +233,24 @@
         "The pinned definition history API exists with the exact names; blob(digest:) keeps its signature.",
         "Both pin hooks are implemented; the held-foreign-lock test passes; grep -n \"SQLiteWorkflowRuntimePersistenceStore(rootDirectory\" Sources/RielaCore/WorkflowDefinitionPins.swift matches only inside recordForeignPinIfNeeded.",
         "25 updates leave exactly 10 versions plus pinned ones, head and last-file versions retained, a session pinned to version 3 still resumes, unreferenced blobs removed, manual DELETE outside retention aborts, over-window restore fails clearly (tests advance the now: clock 25 h per commit).",
+        "Generation-11 ordering: WorkflowDefinitionHistorySchema.create(in:) and migrateToGeneration11(in:) create the engine tables (definition_history_*) before any trigger, index or view that references them. Proven by the W2a gate (waveGates): the three SQLiteRuntimeSchemaMigrationTests generation-open tests exit 0 and the SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests log has zero 'no such table'/'already exists' matches.",
+        "eh-04 acceptance is judged only on eh-04-owned code: its five definition suites plus schema-open health. Other SQLiteRuntimeSchemaMigrationTests/PrivateWorkflowTests failures attributed to eh-05 writePaths or the eh-05 fixture go to tmp/efficient-history/wave-W2a/handover-eh-05.md and do not block eh-04.",
+        "eh-04 is the sole RielaCore schema editor in W2a and does not edit SQLiteWorkflowRuntimePersistenceStore*.swift or SQLiteRuntimeExecutionRowsSchema.swift (eh-05-owned); the eh-02 seams in those files already call WorkflowDefinitionHistorySchema.create/migrateToGeneration11.",
+        "Continuation: resume from the in-tree source listed in impl-plans/progress/eh-04-definition-history.md 'Remaining eh-04 work'; current SHA-256 of each owned file is the pre-edit baseline.",
         "All listed suites pass; the progress log records every changed pre-existing assertion with its reason."
       ],
       "verification": [
         "arch -arm64 /bin/zsh -lc 'swift build' > tmp/efficient-history/eh-04-definition-history/build.log 2>&1; echo $?",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinitionStoreTests|WorkflowDefinitionSessionPinTests|WorkflowDefinitionRetentionTests|WorkflowDefinitionServiceTests|WorkflowDefinitionServiceResolutionTests|SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests\"' > tmp/efficient-history/eh-04-definition-history/test.log 2>&1; echo $?",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinitionStoreTests|WorkflowDefinitionSessionPinTests|WorkflowDefinitionRetentionTests|WorkflowDefinitionServiceTests|WorkflowDefinitionServiceResolutionTests\"' > tmp/efficient-history/eh-04-definition-history/test.log 2>&1; echo $?",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SQLiteRuntimeSchemaMigrationTests/(testAnOlderSessionStoreIsDiscardedAndRecreatedAtTheCurrentGeneration|testGeneration10UpgradesTo11WithoutLosingSnapshot|testGeneration9UpgradesThrough10To11WithoutLosingSnapshot)\"' > tmp/efficient-history/eh-04-definition-history/schema-open.log 2>&1; echo $?",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests\"' > tmp/efficient-history/eh-04-definition-history/store-suites.log 2>&1; echo $? (recorded, not gating); grep -c -e 'no such table' -e 'already exists' tmp/efficient-history/eh-04-definition-history/store-suites.log must print 0; remaining failures are attributed per waveGates and written to tmp/efficient-history/wave-W2a/handover-eh-05.md",
         "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaCore/WorkflowDefinitionStoreSchema.swift Sources/RielaCore/WorkflowDefinitionStore.swift Sources/RielaCore/WorkflowDefinitionDiff.swift Sources/RielaCore/WorkflowDefinitionHistorySchema.swift Sources/RielaCore/WorkflowDefinitionPins.swift Sources/RielaCore/SQLiteDatabaseHistoryExecutor.swift Sources/RielaWorkflowRegistry/WorkflowDefinitionService.swift Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift Tests/RielaCoreTests/WorkflowDefinitionSessionPinTests.swift Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift Tests/RielaCLITests/WorkflowDefinitionServiceTests.swift Tests/RielaCLITests/WorkflowDefinitionServiceResolutionTests.swift'"
       ]
     },
     {
       "planId": "eh-05-session-rows",
       "planPath": "impl-plans/active/efficient-history-05-session-rows.md",
-      "dependsOn": ["eh-02-runtime-contract"],
+      "dependsOn": ["eh-02-runtime-contract", "eh-04-definition-history"],
       "writePaths": [
         "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
         "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift",
@@ -279,7 +274,9 @@
         "The eh-02 recordPinIfNeeded call is still present and grep -c recordForeignPinIfNeeded Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift prints 2.",
         "The pinned API and tables (workflow_runtime_payloads, workflow_runtime_executions, workflow_nested_invocation_refs) exist; header-only snapshots, append-only execution rows, payload dedupe and nested references are covered by tests.",
         "RuntimePersistenceBoundedWriteTests asserts bounded bytes written per step for a 500-step session.",
-        "All listed suites pass including the four PrivateWorkflowTests fast-path/fence tests; any PrivateWorkflowTests fixture edit is listed in the progress log with a before/after summary and no assertion edited."
+        "All listed suites pass including the four PrivateWorkflowTests fast-path/fence tests; any PrivateWorkflowTests fixture edit is listed in the progress log with a before/after summary and no assertion edited.",
+        "W2b gate: the full SQLiteRuntimeSchemaMigrationTests and PrivateWorkflowTests suites exit 0 inside the focused suite, including the four named fast-path/fence tests, and every item in tmp/efficient-history/wave-W2a/handover-eh-05.md is recorded as resolved in the progress log with its passing log line.",
+        "Continuation: the source-complete in-tree implementation is re-verified against the eh-04-accepted schema with a fresh swift build and the exact focused suite; rework touches only eh-05 writePaths; the existing PrivateWorkflowTests fixture edit (testCanonicalReuseRefusesRolledBackAndLegacyWriterWitnesses) is kept as recorded in impl-plans/progress/eh-05-session-rows.md."
       ],
       "verification": [
         "arch -arm64 /bin/zsh -lc 'swift build' > tmp/efficient-history/eh-05-session-rows/build.log 2>&1; echo $?",

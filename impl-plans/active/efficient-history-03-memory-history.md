@@ -5,7 +5,7 @@
   "planId": "eh-03-memory-history",
   "planPath": "impl-plans/active/efficient-history-03-memory-history.md",
   "dependsOn": ["eh-01-history-engine"],
-  "wave": 2,
+  "wave": "W2a",
   "writePaths": [
     "Packages/RielaMemory/Sources/RielaMemory/RielaMemory.swift",
     "Packages/RielaMemory/Sources/RielaMemory/SQLiteMemorySupport.swift",
@@ -14,6 +14,7 @@
     "Packages/RielaMemory/Sources/RielaMemory/MemorySnapshotRetention.swift",
     "Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryRetirement.swift",
     "Packages/RielaMemory/Sources/RielaMemory/MemoryHistoryAdapter.swift",
+    "Packages/RielaMemory/Sources/RielaMemory/MemoryModels.swift",
     "Packages/RielaMemory/Tests/RielaMemoryTests/MemoryHistoryRetentionTests.swift",
     "Packages/RielaMemory/Tests/RielaMemoryTests/MemoryEvolutionHistoryTests.swift",
     "Packages/RielaMemory/Tests/RielaMemoryTests/MemorySnapshotTests.swift",
@@ -25,6 +26,21 @@
   "sharedPaths": []
 }
 ```
+
+## Continuation (session 523, design §13)
+
+- The working tree already holds partial eh-03 work (modified RielaMemory
+  sources/tests, new `MemoryHistoryAdapter.swift` and
+  `MemoryHistoryRetentionTests.swift`, one `invalidHistoryRetention` case in
+  `MemoryModels.swift`) but no progress record. First audit it: open
+  `impl-plans/progress/eh-03-memory-history.md` with a done/missing table
+  for the pinned API, tests and done criteria, and the current SHA-256 of
+  every owned file as the pre-edit baseline. Then finish only what is
+  missing. Do not rewrite accepted eh-01 code under `VersionedHistory/`.
+- `MemoryModels.swift` edits are limited to `RielaMemoryError` history
+  retention cases. Public RielaMemory API used by RielaCore and RielaCLI
+  stays source-compatible (additive only), so the parallel W2a sibling
+  eh-04 keeps building the root package.
 
 ## Intent and context
 
@@ -217,6 +233,7 @@ New `MemoryHistoryRetentionTests.swift`:
 ## Verification
 
 ```
+arch -arm64 /bin/zsh -lc 'swift build --package-path Packages/RielaMemory' > tmp/efficient-history/eh-03-memory-history/build.log 2>&1; echo $?
 arch -arm64 /bin/zsh -lc 'swift test --package-path Packages/RielaMemory' > tmp/efficient-history/eh-03-memory-history/test.log 2>&1; echo $?
 arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache <owned Swift files>'
 ```
@@ -232,4 +249,10 @@ Expected: exit 0 for the whole RielaMemory package suite, with
 - [ ] The pinned API is present with the exact names.
 - [ ] The full RielaMemory test package passes. Every changed pre-existing
       test is justified in the progress log.
+- [ ] The progress log opens with the continuation audit table and the
+      pre-edit baselines.
+- [ ] `git diff -- Packages/RielaMemory/Sources/RielaMemory/MemoryModels.swift`
+      adds only history-retention `RielaMemoryError` cases; the progress log
+      records no eh-03 edit under `VersionedHistory/` (eh-01-owned; its final
+      hashes are in `impl-plans/progress/eh-01-history-engine.md`).
 - [ ] The progress log is complete.

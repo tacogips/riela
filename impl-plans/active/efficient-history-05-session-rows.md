@@ -4,8 +4,8 @@
 {
   "planId": "eh-05-session-rows",
   "planPath": "impl-plans/active/efficient-history-05-session-rows.md",
-  "dependsOn": ["eh-02-runtime-contract"],
-  "wave": 2,
+  "dependsOn": ["eh-02-runtime-contract", "eh-04-definition-history"],
+  "wave": "W2b",
   "writePaths": [
     "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
     "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift",
@@ -25,6 +25,23 @@
   ]
 }
 ```
+
+## Continuation (session 523, design §13)
+
+- Runs in W2b, after eh-04 is accepted and the W2a gate passes. Every
+  fresh runtime-store open runs eh-04's generation-11 definition schema, so
+  this plan's suites cannot pass before that schema is complete (the
+  session-518 run failed with `no such table: main.definition_history_versions`,
+  `tmp/efficient-history/eh-05-session-rows/test-final-source-2.log`).
+- The in-tree source is recorded as source-complete in
+  `impl-plans/progress/eh-05-session-rows.md`. Resume from it: take the
+  current SHA-256 of each owned file as the pre-edit baseline, run a fresh
+  `swift build` and the exact focused suite, and rework only this plan's
+  writePaths. Keep the recorded `PrivateWorkflowTests` fixture edit.
+- First read `tmp/efficient-history/wave-W2a/handover-eh-05.md` (if it
+  exists). It lists `SQLiteRuntimeSchemaMigrationTests`/`PrivateWorkflowTests`
+  failures attributed to this plan's code during W2a. Each one must be green
+  before this plan is accepted.
 
 ## Intent and context
 
@@ -253,6 +270,11 @@ pass, which is the CI canonical-persistence suite set
       `grep -c "recordForeignPinIfNeeded" Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`
       still prints `2`.
 - [ ] The pinned API and tables exist.
+- [ ] W2b gate: the full `SQLiteRuntimeSchemaMigrationTests` and
+      `PrivateWorkflowTests` suites pass inside the focused run, including
+      the four fast-path/fence tests named in the sharedPathNotes. Every item
+      in `tmp/efficient-history/wave-W2a/handover-eh-05.md` is listed in the
+      progress log as resolved, with its passing log line.
 - [ ] All listed tests pass. Any `PrivateWorkflowTests` fixture edit is
       listed in the progress log with a before/after diff summary, and no
       assertion was edited.

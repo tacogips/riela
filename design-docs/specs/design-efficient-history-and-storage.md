@@ -1,6 +1,8 @@
 # Efficient history and session storage: one shared versioned history, bounded retention, storage doctor and compact
 
-Status: proposed 2026-10-27 on branch `feat/efficient-history`. The source is
+Status: accepted 2026-10-27 (step3, comm-009607); amended 2026-10-27 for
+the session-523 continuation (§13, implementation sequencing only; no
+behavior change). Branch `feat/efficient-history`. The source is
 the owner issue "One shared versioned history (diff, undo/redo, retention:
 memory 2 / state 1 / workflow definitions 10) and efficient session storage
 with storage doctor/compact". It has no GitHub number. Open decisions, each
@@ -887,3 +889,101 @@ Update:
 
 Add `docs/storage-doctor-and-compact.md`, covering session storage, `doctor
 storage` and `storage compact`.
+
+## 13. Continuation sequencing (session 523)
+
+This section changes only how the accepted design is implemented. Behavior,
+schemas and surfaces in §2-§12 are unchanged.
+
+**State at `4d72853b`.**
+
+- Wave 1 is accepted and uncommitted: eh-01 (`VersionedHistory/`, `CZlib`)
+  and eh-02 (BLOB binding, generation-11 seams, pin-hook call sites,
+  first-opener auto_vacuum). It is kept as is and not dispatched again.
+- eh-03, eh-04 and eh-05 are partly done in the working tree. Every plan
+  resumes from the files as they are. The current SHA-256 of each owned
+  file is its pre-edit baseline. No plan reverts a foreign change.
+
+**Why wave 2 blocked.**
+
+- eh-03 needed `MemoryModels.swift` for
+  `RielaMemoryError.invalidHistoryRetention`, which was not in its
+  `writePaths`. It is now eh-03-owned. Edits there are limited to the
+  history-retention error cases.
+- eh-04 and eh-05 ran in parallel, but every fresh runtime-store open runs
+  `WorkflowDefinitionHistorySchema.create` (generation 11). eh-04's
+  in-progress `create(in:)` and `migrateToGeneration11(in:)` call
+  `createVersionTriggers` (which creates the guarded-delete trigger on
+  `definition_history_versions`) before `VersionedHistoryStore.ensureSchema()`
+  creates that table. So every eh-05 suite failed with
+  `no such table: main.definition_history_versions`
+  (`tmp/efficient-history/eh-05-session-rows/test-final-source-2.log`).
+
+**Ordering rule.** Generation-11 creation and migration create the engine
+tables first. Triggers, indexes and views that reference them come after.
+eh-04 owns this fix.
+
+**Ownership.**
+
+- eh-04 is the only plan that edits RielaCore schema code in its wave. It
+  does not edit `SQLiteWorkflowRuntimePersistenceStore*.swift` or
+  `SQLiteRuntimeExecutionRowsSchema.swift`, because the eh-02 seams already
+  call its schema functions.
+- eh-05 owns those store files and runs after eh-04.
+
+**Waves.**
+
+| Wave | Plans | Starts when |
+| --- | --- | --- |
+| W2a | eh-03, eh-04 (disjoint: RielaMemory package vs RielaCore/RielaWorkflowRegistry) | now |
+| W2b | eh-05 | eh-04 accepted and the W2a gate passes |
+| W3 | eh-06, eh-07, eh-08, eh-09 (disjoint `writePaths`) | each member's own `dependsOn` accepted; eh-08/eh-09 after W2a, eh-06/eh-07 after W2b |
+| W4 | eh-10 | eh-03, eh-04, eh-06, eh-07, eh-09 accepted |
+| W5 | eh-11 | eh-08, eh-09, eh-10 accepted |
+
+**Compatibility across the W2a pair.** eh-03 keeps the public RielaMemory
+API used by RielaCore and RielaCLI source-compatible (additive only), and it
+does not edit `VersionedHistory/`. So eh-04's root `swift build` is never
+broken by eh-03. A compile error inside a sibling's path is logged as
+`outOfScope` and the command is rerun after the sibling reports its own build
+green.
+
+**Wave gate.**
+
+- After each wave: `swift build` plus the union of the members' focused
+  filters, in the foreground, logs under `tmp/efficient-history/wave-<id>/`.
+  `SurfaceParityCLITests` is excepted until eh-11.
+- A gate judges a wave only on code the wave owns. The W2a gate passes when
+  all of these hold:
+  - eh-03's verification passes;
+  - eh-04's own definition suites pass;
+  - the schema opens. The three `SQLiteRuntimeSchemaMigrationTests`
+    generation-open tests pass (fresh store recreated at the current
+    generation, 10→11, 9→10→11), and the
+    `SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests` log has zero
+    `no such table`/`already exists` matches.
+- Failure attribution in W2a:
+  - A remaining failure in those two suites whose failing frame or assertion
+    is in an eh-05 writePath, or in the eh-05 `PrivateWorkflowTests` fixture,
+    is written to `tmp/efficient-history/wave-W2a/handover-eh-05.md` (test
+    name, log line, first error). It is handed to eh-05 and does not block
+    eh-04 or the W2b start. eh-04 does not edit those files.
+  - A failure in an eh-04 writePath blocks eh-04.
+  - A failure whose frame is in neither set is logged to the same file
+    marked `unattributed`. It is non-blocking for W2a and must be green at
+    W2b.
+- The W2b gate (eh-05 acceptance) requires the full
+  `SQLiteRuntimeSchemaMigrationTests` and `PrivateWorkflowTests` suites
+  green, including the four fast-path/fence tests and every handover item.
+
+**Finalization.**
+
+1. Rebase onto `origin/main` (at or after `2f8cae64`, which has the
+   `35a910d5` deps, cron `previousScheduledAt` and `agentToolPolicy`
+   presets). On conflicts, keep main's side for `Package.swift`,
+   `Package.resolved`, cron files and tool-policy code.
+2. After the rebase, rerun `swift build`, the SDL regeneration,
+   `SurfaceParity` and the final-gate focused filter.
+3. The full `swift test` must show no new failures, by exact test name,
+   against the baseline in the dispatch manifest.
+4. Push to `origin` (`gitPush=true`).

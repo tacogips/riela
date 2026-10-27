@@ -72,8 +72,29 @@ Current code:
 
 - No CLI, GraphQL, catalog or SDL changes; eh-09 owns those.
 - No session-store changes. Do not edit
-  `SQLiteWorkflowRuntimePersistenceStore*.swift`; eh-05 owns them in this
-  wave.
+  `SQLiteWorkflowRuntimePersistenceStore*.swift` or
+  `SQLiteRuntimeExecutionRowsSchema.swift`; eh-05 owns them and runs in the
+  next wave (W2b). The eh-02 seams there already call
+  `WorkflowDefinitionHistorySchema.create` / `.migrateToGeneration11`.
+
+## Continuation (session 523, design §13)
+
+- Runs in W2a next to eh-03 (disjoint paths). Resume from the in-tree
+  source and the "Remaining eh-04 work" list in
+  `impl-plans/progress/eh-04-definition-history.md`; take the current
+  SHA-256 of each owned file as the pre-edit baseline.
+- Entry fix: `create(in:)` and `migrateToGeneration11(in:)` must create the
+  engine tables (`definition_history_*`) before any trigger, index or view
+  that references them. The guarded-delete trigger on
+  `definition_history_versions` was created first, so every fresh runtime
+  store failed to open.
+- W2a gate before eh-05 resumes: `swift build` exits 0, eh-04's own
+  definition suites exit 0, and the schema opens. "The schema opens" means
+  the three `SQLiteRuntimeSchemaMigrationTests` generation-open tests pass
+  and the `SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests` log has
+  zero `no such table`/`already exists` matches. Remaining failures in
+  eh-05-owned code go to `tmp/efficient-history/wave-W2a/handover-eh-05.md`
+  and do not block (see Verification).
 - No changes to the legacy file snapshot store (`WorkflowHistoryStore`).
 
 ## Pinned API (eh-09 and eh-10 depend on it)
@@ -348,11 +369,32 @@ generation is now 11, `definition_blobs` is gone, deletes are guarded):
 
 ```
 arch -arm64 /bin/zsh -lc 'swift build' > tmp/efficient-history/eh-04-definition-history/build.log 2>&1; echo $?
-arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowDefinitionStoreTests|WorkflowDefinitionSessionPinTests|WorkflowDefinitionRetentionTests|WorkflowDefinitionServiceTests|WorkflowDefinitionServiceResolutionTests|SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests"' > tmp/efficient-history/eh-04-definition-history/test.log 2>&1; echo $?
+arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowDefinitionStoreTests|WorkflowDefinitionSessionPinTests|WorkflowDefinitionRetentionTests|WorkflowDefinitionServiceTests|WorkflowDefinitionServiceResolutionTests"' > tmp/efficient-history/eh-04-definition-history/test.log 2>&1; echo $?
+arch -arm64 /bin/zsh -lc 'swift test --filter "SQLiteRuntimeSchemaMigrationTests/(testAnOlderSessionStoreIsDiscardedAndRecreatedAtTheCurrentGeneration|testGeneration10UpgradesTo11WithoutLosingSnapshot|testGeneration9UpgradesThrough10To11WithoutLosingSnapshot)"' > tmp/efficient-history/eh-04-definition-history/schema-open.log 2>&1; echo $?
+arch -arm64 /bin/zsh -lc 'swift test --filter "SQLiteRuntimeSchemaMigrationTests|PrivateWorkflowTests"' > tmp/efficient-history/eh-04-definition-history/store-suites.log 2>&1; echo $?
+grep -c -e 'no such table' -e 'already exists' tmp/efficient-history/eh-04-definition-history/store-suites.log
 arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache <owned Swift files>'
 ```
 
-Expected: exit 0, with every listed suite executed.
+Expected:
+
+- The definition suites and the three generation-open tests exit 0, and
+  every listed suite or test executes (3 tests for `schema-open.log`).
+- The `store-suites.log` grep prints `0`.
+- The exit status of `store-suites.log` is recorded but does not gate
+  eh-04. Attribute each remaining failure by its failing frame or assertion:
+  - In an eh-04 writePath: it blocks eh-04. Fix it.
+  - In an eh-05 writePath (`SQLiteWorkflowRuntimePersistenceStore*.swift`,
+    `SQLiteRuntimeExecutionRowsSchema.swift`, `RuntimeExecutionReuse.swift`,
+    `SQLiteWorkflowStartupIdentities.swift`) or the eh-05 fixture
+    (`Tests/RielaCLITests/PrivateWorkflowTests.swift`): append
+    `<TestClass.testName> | <log path>:<line> | <first error line>` to
+    `tmp/efficient-history/wave-W2a/handover-eh-05.md`. It does not block
+    eh-04, and eh-04 does not edit those files.
+  - Frame in neither set (for example
+    `Sources/RielaCLI/PrivateWorkflowWorker.swift` "private inner workflow did
+    not complete"): append it the same way with the marker `unattributed`.
+    It is non-blocking for W2a. The W2b gate requires it green.
 
 ## Done criteria
 
@@ -363,5 +405,8 @@ Expected: exit 0, with every listed suite executed.
 - [ ] Both pin hooks are implemented; the held-foreign-lock test passes; and
       `grep -n "SQLiteWorkflowRuntimePersistenceStore(rootDirectory" Sources/RielaCore/WorkflowDefinitionPins.swift`
       matches only inside `recordForeignPinIfNeeded`.
-- [ ] All listed tests pass. The progress log records every changed
-      pre-existing assertion with its reason.
+- [ ] The definition suites and the three generation-open tests pass. The
+      `store-suites.log` grep for `no such table`/`already exists` prints
+      `0`. Every other store-suite failure is attributed, and the eh-05 ones
+      are in `tmp/efficient-history/wave-W2a/handover-eh-05.md`. The progress
+      log records every changed pre-existing assertion with its reason.

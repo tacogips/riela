@@ -42,8 +42,8 @@ final class AgentToolPolicyPresetContractTests: XCTestCase {
       "--disable", "apps", "--disable", "auth_elicitation", "--disable", "browser_annotation_api",
       "--disable", "browser_use",
       "--disable", "browser_use_external", "--disable", "browser_use_full_cdp_access",
-      "--disable", "code_mode_host", "--disable", "code_mode_interrupt", "--disable", "computer_use",
-      "--disable", "goals", "--disable", "image_generation", "--disable", "in_app_browser",
+      "--disable", "computer_use", "--disable", "goals", "--disable", "image_generation",
+      "--disable", "in_app_browser",
       "--disable", "memories",
       "--disable", "plugin_sharing", "--disable", "plugins", "--disable", "remote_plugin",
       "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "unified_exec_tty",
@@ -62,6 +62,24 @@ final class AgentToolPolicyPresetContractTests: XCTestCase {
     webSearchArguments[4] = #"web_search="live""#
     XCTAssertEqual(AgentToolPolicyPresetArguments.cliArguments(.webSearch, backend: .codexAgent, sessionReuse: false),
       webSearchArguments)
+
+    for arguments in [noToolsArguments, webSearchArguments] {
+      let disabledFeatures = arguments.enumerated().compactMap { index, argument -> String? in
+        guard argument == "--disable", arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+      }
+      XCTAssertFalse(disabledFeatures.contains("code_mode_host"))
+      XCTAssertFalse(disabledFeatures.contains("code_mode_interrupt"))
+    }
+    XCTAssertTrue(zip(noToolsArguments, noToolsArguments.dropFirst()).contains {
+      $0.0 == "-c" && $0.1 == #"web_search="disabled""#
+    })
+    XCTAssertTrue(zip(noToolsArguments, noToolsArguments.dropFirst()).contains {
+      $0.0 == "--disable" && $0.1 == "shell_tool"
+    })
+    XCTAssertTrue(zip(noToolsArguments, noToolsArguments.dropFirst()).contains {
+      $0.0 == "--disable" && $0.1 == "unified_exec"
+    })
   }
 
   func testClaudePresetArguments() throws {

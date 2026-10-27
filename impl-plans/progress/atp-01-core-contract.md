@@ -37,8 +37,8 @@ exited 0 and each kept row reported `false` in
 | `browser_use` | keep | 17 | Browser capability |
 | `browser_use_external` | keep | 18 | External browser capability |
 | `browser_use_full_cdp_access` | keep | 19 | Browser/CDP capability |
-| `code_mode_host` | keep | 24 | Code execution host capability |
-| `code_mode_interrupt` | keep | 26 | Code execution control capability |
+| `code_mode_host` | remove | 24 | codex-cli 0.164 uses this host to route tool calls; disabling it prevents web search |
+| `code_mode_interrupt` | remove | 26 | Keep enabled alongside the code-mode host for tool routing |
 | `computer_use` | keep | 36 | Computer interaction capability |
 | `image_generation` | keep | 74 | Image generation capability |
 | `in_app_browser` | keep | 76 | Browser capability |
@@ -73,13 +73,22 @@ printf '%s\n' 'Run the shell command `echo RIELA_PRESET_EXEC_PROBE_7f3a` and rep
 ```
 
 Exit 0; log: `tmp/agent-tool-policy-preset/atp-01-core-contract/probe-none-exec.log`.
-PASS: no JSONL `command_execution` or exec/shell tool call item appeared; the
-probe marker was not emitted as command output; final assistant message was
-`NO_EXEC_TOOL`. The log reports that Code Mode is unavailable because
-`code_mode_host` is disabled, and the model failed closed. This confirms that
-disabling `shell_tool` removes executable tools on codex-cli 0.164.0; keeping
-`unified_exec` is defense in depth, despite its feature-list row remaining
-true.
+The probe produced no JSONL `command_execution` or exec/shell tool call item,
+the marker was not emitted, and the final assistant message was
+`NO_EXEC_TOOL`. The log also reports that Code Mode is unavailable because
+`code_mode_host` is disabled. That message means tool routing was disabled, so
+this probe did not establish the effect of `shell_tool` by itself.
+
+### Codex tool-routing correction (2026-10-28)
+
+Live comparison on codex-cli 0.164.0 showed that `code_mode_host` and
+`code_mode_interrupt` must stay enabled: with both omitted from the `--disable`
+list, web-search preset runs produce web search items, while shell tools remain
+unavailable. `code_mode` reports `under development` and `false`, so keeping
+the routing host enabled does not enable code execution. The earlier result
+above is superseded as evidence for tool availability. The current opt-in
+regression test is `AgentToolPolicyLiveIntegrationTests`; run it with
+`RIELA_TEST_LIVE_CODEX_TOOL_POLICY=1 swift test --filter AgentToolPolicyLiveIntegrationTests`.
 
 ### Codex fixed flags and session reuse
 

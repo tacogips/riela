@@ -91,7 +91,8 @@ The host runtime expands CLI presets to explicit arguments before dispatch, so
 sandbox and container guests receive the resolved policy. Authored
 `additionalArguments` follow the preset arguments, then the backend-specific
 arguments. Codex ignores user config and rules, clears MCP servers, disables
-tool features, selects web search `disabled` or `live`, and uses an ephemeral
+shell, unified execution and other unrelated tool features, selects web search
+`disabled` or `live`, and uses an ephemeral
 session unless the node reuses its session. Claude Code limits tools to `""`
 or `WebSearch` (with `--allowedTools WebSearch` for web search), uses a strict
 empty MCP config, and disables slash commands. The exact argument lists are in

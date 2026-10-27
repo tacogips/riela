@@ -131,11 +131,14 @@ ordered list with a header comment recording "verified against codex-cli
   keeps its literal TOML quotes.
 - The `--disable` list starts from the issue's names: `shell_tool`,
   `unified_exec`, `view_image`, `apps`, `plugins` and `goals`. The issue elided
-  the rest with "…". The implementer completes the list with every other
-  tool-providing feature that `codex features list` reports on 0.164.0, and
-  drops any name the CLI rejects. Every kept name must be accepted, because an
-  unknown `--disable` name aborts the run. The final list and the CLI output
-  that justifies it go into the implementation evidence and the code comment.
+  the rest with "…". The implementer completes the list with other features
+  that should stay unavailable and drops any name the CLI rejects. Do not
+  disable `code_mode_host` or `code_mode_interrupt`: codex-cli 0.164 routes
+  tool calls through that host. `code_mode` remains off by default, so keeping
+  the host enabled does not expose code execution. Every kept name must be
+  accepted, because an unknown `--disable` name aborts the run. The final list
+  and the CLI output that justifies it go into the implementation evidence and
+  the code comment.
 - `multi_agent` is not in the preset list. The adapter's existing
   `--disable multi_agent` already applies by default. The
   `--supervisor-mode` case is user-QA Q1.

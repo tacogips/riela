@@ -1,8 +1,9 @@
 import Foundation
 
 public enum AgentToolPolicyPresetArguments {
-  // Verified 2026-10-27 against codex-cli 0.164.0 with `codex features list`,
-  // `codex exec --help`, `codex exec resume --help`, and offline --disable probes.
+  // Verified against codex-cli 0.164.0. Keep code_mode_host enabled because it
+  // routes tool calls; code_mode stays off by default, so this exposes no code execution.
+  // `code_mode_interrupt` stays enabled as part of the tool-routing host.
   // Keep `unified_exec`: the CLI accepts it, although features list still says true.
   // Features are in argv order; multi_agent stays excluded because the adapter owns it.
   public static let codexDisabledFeatures = [
@@ -12,8 +13,6 @@ public enum AgentToolPolicyPresetArguments {
     "browser_use",
     "browser_use_external",
     "browser_use_full_cdp_access",
-    "code_mode_host",
-    "code_mode_interrupt",
     "computer_use",
     "goals",
     "image_generation",

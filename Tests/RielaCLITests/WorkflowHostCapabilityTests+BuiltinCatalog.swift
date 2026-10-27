@@ -96,13 +96,22 @@ extension WorkflowHostCapabilityTests {
       memoryId = nil
     }
     let memories = memoryId.map { [WorkflowMemoryDeclaration(id: $0)] }
+    let addonConfig: JSONObject?
+    switch name {
+    case "riela/gmail-gateway-read":
+      addonConfig = ["queryTemplate": .string("{ labels { id name } }")]
+    case "riela/x-gateway-read":
+      addonConfig = ["queryTemplate": .string("query { accountMe { id } }")]
+    default:
+      addonConfig = nil
+    }
     let workflow = WorkflowDefinition(
       workflowId: "issue-116-addon-check",
       defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 1),
       memories: memories,
       entryStepId: "run",
       nodeRegistry: [WorkflowNodeRegistryRef(
-        id: "tool", addon: WorkflowNodeAddonRef(name: name, version: version), memories: memories
+        id: "tool", addon: WorkflowNodeAddonRef(name: name, version: version, config: addonConfig), memories: memories
       )],
       steps: [WorkflowStepRef(id: "run", nodeId: "tool")],
       nodes: []

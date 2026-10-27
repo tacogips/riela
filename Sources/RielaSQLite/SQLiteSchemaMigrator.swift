@@ -146,6 +146,10 @@ public enum SQLiteSchemaMigrator {
       .sorted { $0.fromGeneration < $1.fromGeneration }
     for step in steps {
       try db.transaction { db in
+        // A concurrent opener may have advanced the store while this
+        // connection waited for SQLite's write lock. Re-read under that lock
+        // so each migration body runs only for its expected input generation.
+        guard try stampedGeneration(in: db) == step.fromGeneration else { return }
         try step.migrate(db)
         try db.execute("PRAGMA user_version = \(step.fromGeneration + 1)")
       }

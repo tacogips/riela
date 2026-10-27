@@ -5,11 +5,7 @@ import RielaSQLite
 public extension WorkStore {
   private func handoverReadOnlyIfPresent() throws -> SQLiteDatabase? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let db = try SQLiteDatabase.open(
-      path: databasePath,
-      mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-      options: .readOnlyDefault
-    )
+    let db = try openReadOnlyDatabase()
     guard try db.tableExists("work_handovers") else { return nil }
     return db
   }

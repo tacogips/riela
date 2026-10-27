@@ -252,33 +252,36 @@ extension WorkflowCommandTests {
 
   func testConcurrentFreshRunsReceiveDistinctSessionIds() async throws {
     let repository = repositoryRoot()
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-concurrent-run-ids-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let arguments = [
-      "workflow", "run", "worker-only-single-step",
-      "--workflow-definition-dir", "\(repository)/examples",
-      "--mock-scenario", "\(repository)/examples/worker-only-single-step/mock-scenario.json",
-      "--working-directory", root.path,
-      "--session-store", root.path,
-      "--output", "json"
-    ]
-    let environment = ["HOME": root.path]
+    for round in 0..<20 {
+      let root = URL(fileURLWithPath: repository, isDirectory: true)
+        .appendingPathComponent("tmp/concurrent-fresh-runs/\(round)-\(UUID().uuidString)", isDirectory: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+      let arguments = [
+        "workflow", "run", "worker-only-single-step",
+        "--workflow-definition-dir", "\(repository)/examples",
+        "--mock-scenario", "\(repository)/examples/worker-only-single-step/mock-scenario.json",
+        "--working-directory", root.path,
+        "--session-store", root.path,
+        "--output", "json"
+      ]
+      let environment = ["HOME": root.path]
 
-    async let first = RielaCLIApplication().run(arguments, environment: environment)
-    async let second = RielaCLIApplication().run(arguments, environment: environment)
-    async let third = RielaCLIApplication().run(arguments, environment: environment)
-    let results = await [first, second, third]
+      async let first = RielaCLIApplication().run(arguments, environment: environment)
+      async let second = RielaCLIApplication().run(arguments, environment: environment)
+      async let third = RielaCLIApplication().run(arguments, environment: environment)
+      let results = await [first, second, third]
 
-    var sessionIds = Set<String>()
-    for result in results {
-      XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
-      XCTAssertFalse((result.stderr + result.stdout).contains("owned by another live execution"), result.stderr + result.stdout)
-      let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
-      sessionIds.insert(run.session.sessionId)
+      var sessionIds = Set<String>()
+      for result in results {
+        XCTAssertEqual(result.exitCode, .success, "round \(round): \(result.stderr + result.stdout)")
+        XCTAssertFalse((result.stderr + result.stdout).contains("owned by another live execution"),
+                       "round \(round): \(result.stderr + result.stdout)")
+        let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
+        sessionIds.insert(run.session.sessionId)
+      }
+      XCTAssertEqual(sessionIds.count, results.count, "round \(round): each concurrent run must own a distinct session id")
+      let persisted = try CLIWorkflowSessionStore(rootDirectory: root.path).loadAll()
+      XCTAssertEqual(Set(persisted.map(\.session.sessionId)), sessionIds, "round \(round)")
     }
-    XCTAssertEqual(sessionIds.count, results.count, "each concurrent run must own a distinct session id: \(sessionIds)")
-    let persisted = try CLIWorkflowSessionStore(rootDirectory: root.path).loadAll()
-    XCTAssertEqual(Set(persisted.map(\.session.sessionId)), sessionIds)
   }
 }

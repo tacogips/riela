@@ -54,8 +54,10 @@ public struct WorkflowValidateCommand: Sendable {
         bundle.nodePayloads[nodeId].map { validateAgentNodePayload($0, path: "nodes.\(nodeId)") } ?? []
       }
       let hostDiagnostics = await hostDiagnostics(bundle: bundle, options: options)
-      let diagnostics = bundle.diagnostics +
-        DefaultWorkflowValidator(context: .production()).validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
+      let productionDiagnostics = DefaultWorkflowValidator(context: .production())
+        .validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
+        .filter { !bundle.diagnostics.contains($0) }
+      let diagnostics = bundle.diagnostics + productionDiagnostics +
         patchedProviderDiagnostics +
         (await runtimeCapabilityDiagnostics(
           bundle: bundle,

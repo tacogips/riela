@@ -147,11 +147,7 @@ public enum AttemptReservationResult: Equatable, Sendable {
 public extension WorkStore {
   private func reservationReadOnlyIfPresent() throws -> SQLiteDatabase? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(
-      path: databasePath,
-      mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-      options: .readOnlyDefault
-    )
+    let database = try openReadOnlyDatabase()
     guard try database.tableExists("work_pending_reservations"),
           try database.tableExists("work_decisions") else { return nil }
     return database

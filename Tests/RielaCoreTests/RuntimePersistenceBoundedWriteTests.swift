@@ -8,7 +8,8 @@ final class RuntimePersistenceBoundedWriteTests: XCTestCase {
     let root = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let samples = PersistenceWriteSampleCollector()
-    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path) { samples.append($0) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path,
+      persistenceWriteObserver: { samples.append($0) }, measureSQLiteStatementWork: true)
     let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
     var executions: [WorkflowStepExecution] = []
     var fileSizes: [Int] = []
@@ -56,8 +57,10 @@ final class RuntimePersistenceBoundedWriteTests: XCTestCase {
     }
     let controlSamples = PersistenceWriteSampleCollector()
     let seededSamples = PersistenceWriteSampleCollector()
-    let controlStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: controlRoot.path) { controlSamples.append($0) }
-    let seededStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: seededRoot.path) { seededSamples.append($0) }
+    let controlStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: controlRoot.path,
+      persistenceWriteObserver: { controlSamples.append($0) }, measureSQLiteStatementWork: true)
+    let seededStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: seededRoot.path,
+      persistenceWriteObserver: { seededSamples.append($0) }, measureSQLiteStatementWork: true)
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     let seededDB = try SQLiteDatabase.open(
       path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: seededRoot.path),

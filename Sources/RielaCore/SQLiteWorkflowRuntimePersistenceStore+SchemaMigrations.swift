@@ -2,6 +2,9 @@ import Foundation
 import RielaSQLite
 
 extension SQLiteWorkflowRuntimePersistenceStore {
+  static func invalidatePreparedSchemaCache(databasePath: String) {
+    RuntimeSchemaSetupCache.shared.invalidate(databasePath: databasePath)
+  }
   /// Frozen generation-10 definition-store schema. eh-02 preserves this shape
   /// so a 9 → 10 → 11 migration stays independent of future schema builders.
   static func createGeneration10DefinitionSchema(in database: SQLiteDatabase) throws {
@@ -237,9 +240,24 @@ extension SQLiteWorkflowRuntimePersistenceStore {
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
     let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
-    if !readOnly, !strictReadOnly {
-      Self.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+    let schemaLock: DistributedStoreLock?
+    if !strictReadOnly, !readOnly || needsInitializationLock(databasePath: databasePath) {
+      let lock: DistributedStoreLock
+      do {
+        lock = try DistributedStoreLock(url: URL(fileURLWithPath: rootDirectory, isDirectory: true)
+          .appendingPathComponent(".riela/runtime-schema.lock"))
+        try lock.acquire()
+      } catch {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed(
+          "failed to open sqlite database at \(databasePath): \(error.localizedDescription)"
+        )
+      }
+      schemaLock = lock
+    } else {
+      schemaLock = nil
     }
+    defer { schemaLock?.release() }
+    if !readOnly, !strictReadOnly { Self.discardIncompatibleStoreIfNeeded(databasePath: databasePath) }
     let mode: SQLiteOpenMode
     if strictReadOnly {
       mode = .strictReadOnlyWithImmutableFallback
@@ -247,17 +265,90 @@ extension SQLiteWorkflowRuntimePersistenceStore {
       mode = readOnly ? .readOnly : .readWriteCreate
     }
     return try mapRuntimeSQLiteError {
+      var options = readOnly ? SQLiteOpenOptions.readOnlyDefault : SQLiteOpenOptions.writableRuntimeStoreDefault
+      options.trackStatementWork = !readOnly && measuresSQLiteStatementWork
       let database = try SQLiteDatabase.open(
         path: databasePath,
         mode: mode,
-        options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
+        options: options
       )
       if !readOnly && !strictReadOnly {
+        // Serialize the destructive compatibility probe with first creation,
+        // migration and schema setup so peers cannot unlink a partial database.
+        try prepareSchemaIfNeeded(in: database, databasePath: databasePath)
         // The assembly table is transient, not another durable journal.
         // Avoid duplicating it on the guest's size-limited tmpfs volume.
         try database.execute("PRAGMA temp_store = MEMORY")
       }
       return database
     }
+  }
+
+  private func needsInitializationLock(databasePath: String) -> Bool {
+    let size = (try? FileManager.default.attributesOfItem(atPath: databasePath)[.size] as? NSNumber)?.int64Value
+    return size == nil || size == 0
+  }
+
+  private func prepareSchemaIfNeeded(in database: SQLiteDatabase, databasePath: String) throws {
+    let currentSchemaVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init)
+    // A compatible prepared store is always stamped at this generation. Use
+    // the expected stamp in the cache key, then let the compatibility check
+    // perform the single authoritative user_version read on a hit.
+    let userVersion = Int(Self.schemaGeneration)
+    guard let currentSchemaVersion, RuntimeSchemaSetupCache.shared.hasPrepared(
+      databasePath: databasePath, schemaVersion: currentSchemaVersion, userVersion: userVersion
+    ) else {
+      try prepareSchema(in: database)
+      if let updatedVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init) {
+        RuntimeSchemaSetupCache.shared.markPrepared(
+          databasePath: databasePath, schemaVersion: updatedVersion, userVersion: userVersion
+        )
+      }
+      return
+    }
+    // These checks are part of the compatibility contract even when expensive
+    // DDL is cached. In particular, a different build may have migrated the
+    // store since this process last opened it.
+    try database.requireJSONBAvailable()
+    try Self.requireCompatibleSchemaGeneration(in: database)
+  }
+}
+
+private final class RuntimeSchemaSetupCache: @unchecked Sendable {
+  static let shared = RuntimeSchemaSetupCache()
+
+  private let lock = NSLock()
+  private struct Entry: Equatable {
+    let device: UInt64
+    let inode: UInt64
+    let schemaVersion: Int
+    let userVersion: Int
+  }
+  private var versions: [String: Entry] = [:]
+
+  func hasPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let expected = entry(databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion) else { return false }
+    return versions[databasePath] == expected
+  }
+
+  func markPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    versions[databasePath] = entry(databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion)
+  }
+
+  func invalidate(databasePath: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    versions.removeValue(forKey: databasePath)
+  }
+
+  private func entry(databasePath: String, schemaVersion: Int, userVersion: Int) -> Entry? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: databasePath),
+          let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
+          let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value else { return nil }
+    return Entry(device: device, inode: inode, schemaVersion: schemaVersion, userVersion: userVersion)
   }
 }

@@ -130,8 +130,8 @@ Rules:
   dispatcher, or `cronLastCheckedAt`. A tick that was skipped, coalesced,
   missed while serve was down, or gated by a routine still counts as the
   previous occurrence.
-- Coalesced catch-up ticks each get their own schedule-derived previous
-  value.
+- When overlap coalescing dispatches only the latest pending tick, only that
+  dispatched tick receives its schedule-derived previous value.
 - `[previousScheduledAt, scheduledAt)` is the run window for the tick: the
   start is inclusive and the end is exclusive.
 - The same `ISO8601DateFormatter` and `DateFormatter` used for the existing
@@ -248,9 +248,10 @@ the rendered runtime variables contain the computed values.
   > `2026-10-27 13:55:00`. A binding that maps
   > `"windowStart": "{{event.input.previousScheduledAt}}"` and
   > `"windowEnd": "{{event.input.scheduledAt}}"` processes exactly the items in
-  > `[windowStart, windowEnd)`. The window covers every hour even if the
-  > previous tick was skipped by the overlap policy or serve was down. It does
-  > not depend on run history.
+  > `[windowStart, windowEnd)`. This spans only the interval between the
+  > dispatched tick and its immediately preceding scheduled occurrence. Skipped,
+  > coalesced, or downtime intervals can be missed; it does not depend on run
+  > history.
 - `examples/event-sources/README.md` cron section: one sentence naming the
   two new keys, with a pointer to the README subsection.
 - `design-docs/specs/event-listener-workflow-trigger/provider-source-types.md`

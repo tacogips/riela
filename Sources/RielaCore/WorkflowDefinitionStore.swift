@@ -761,10 +761,7 @@ public struct WorkflowDefinitionStore: Sendable {
     try schemaLock.acquire()
     defer { schemaLock.release() }
     let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
-    let database = try persistence.openDatabase()
-    try persistence.prepareSchema(in: database)
-    try WorkflowDefinitionStoreSchema.create(in: database)
-    return database
+    return try persistence.openDatabase()
   }
 
   func history(in database: SQLiteDatabase) throws -> VersionedHistoryStore {

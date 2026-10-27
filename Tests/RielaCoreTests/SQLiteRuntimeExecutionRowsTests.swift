@@ -4,6 +4,92 @@ import XCTest
 @testable import RielaCore
 
 final class SQLiteRuntimeExecutionRowsTests: XCTestCase {
+  private final class SampleCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [SQLiteWorkflowRuntimePersistenceStore.PersistenceWriteSample] = []
+
+    var values: [SQLiteWorkflowRuntimePersistenceStore.PersistenceWriteSample] {
+      lock.lock()
+      defer { lock.unlock() }
+      return stored
+    }
+
+    func append(_ sample: SQLiteWorkflowRuntimePersistenceStore.PersistenceWriteSample) {
+      lock.lock()
+      stored.append(sample)
+      lock.unlock()
+    }
+  }
+
+  func testStoreCopiesShareIncrementalExecutionReuse() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let samples = SampleCollector()
+    let firstStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path,
+      persistenceWriteObserver: { samples.append($0) })
+    let secondStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path,
+      persistenceWriteObserver: { samples.append($0) })
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    var executions: [WorkflowStepExecution] = []
+
+    for index in 1...8 {
+      executions.append(execution(id: "copy-exec-\(index)", output: "out-\(index)", date: date.addingTimeInterval(Double(index))))
+      let session = WorkflowSession(workflowId: "copies", sessionId: "copies-session", status: .running,
+        entryStepId: "step-1", currentStepId: "step-\(index)", createdAt: date,
+        updatedAt: date.addingTimeInterval(Double(index)), executions: executions)
+      let store = index.isMultiple(of: 2) ? firstStore : secondStore
+      try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
+    }
+
+    XCTAssertEqual(samples.values.count, 8)
+    XCTAssertTrue(samples.values.dropFirst().allSatisfy { $0.statements <= 8 },
+      "store copies should write only the appended execution rows")
+  }
+
+  func testTerminalSnapshotEvictsExecutionReuseEntry() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let running = snapshot(id: "terminal-cache", executions: [execution(id: "terminal-exec", output: "done", date: date)], date: date)
+    try store.save(running)
+    let key = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path) + ":terminal-cache"
+    XCTAssertNotNil(RuntimeExecutionReuse.shared.load(key))
+    var terminal = running
+    terminal.session.status = .completed
+    terminal.session.updatedAt = date.addingTimeInterval(1)
+    try store.save(terminal)
+    XCTAssertNil(RuntimeExecutionReuse.shared.load(key))
+  }
+
+  func testCachedSchemaRejectsDatabaseMigratedByNewerBuild() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    try store.save(snapshot(id: "generation-cache", executions: [], date: date))
+    try database(root: root).execute("PRAGMA user_version = 12")
+    XCTAssertThrowsError(try store.save(snapshot(id: "generation-cache", executions: [], date: date))) {
+      XCTAssertTrue(String(describing: $0).contains("generation 12"))
+    }
+  }
+
+  func testSchemaCacheDetectsRecreatedDatabaseAtSamePath() throws {
+    let root = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    try store.save(snapshot(id: "recreated-cache", executions: [], date: date))
+    let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    let oldSchemaVersion = try database(root: root).query("PRAGMA schema_version").first?["schema_version"] ?? "0"
+    try FileManager.default.removeItem(atPath: path)
+    let replacement = try SQLiteDatabase.open(path: path)
+    try replacement.execute("PRAGMA user_version = 11")
+    try replacement.execute("PRAGMA schema_version = \(oldSchemaVersion)")
+    try store.save(snapshot(id: "after-recreate", executions: [], date: date))
+    XCTAssertEqual(try store.load(sessionId: "after-recreate").session.sessionId, "after-recreate")
+  }
+
   func testHeaderRowsPayloadDedupeCleanupAndCascade() throws {
     let root = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

@@ -250,6 +250,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     statements: Int,
     sqliteVMSteps: Int,
     sqliteFullScanSteps: Int,
+    sqliteCatalogFullScanSteps: Int,
     familyReleaseScans: Int
   ) {
     guard let persistenceWriteObserver else { return }
@@ -262,6 +263,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       headerEncodeInputBytes: headerEncodeInputBytes,
       sqliteVMSteps: sqliteVMSteps,
       sqliteFullScanSteps: sqliteFullScanSteps,
+      sqliteCatalogFullScanSteps: sqliteCatalogFullScanSteps,
       familyReleaseScans: familyReleaseScans
     ))
   }
@@ -274,7 +276,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   }
 
   static func sha256(_ value: String) -> String {
-    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    JSONCanonical.sha256Hex(Data(value.utf8))
   }
 
   func optionalText(_ value: SQLiteValue) -> String? {
@@ -467,7 +469,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let snapshot = try load(sessionId: sessionId)
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { try upsertSnapshot($0, snapshot) }
     return true
   }
@@ -488,7 +489,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       return false
     }
     let db = try openDatabase()
-    try prepareSchema(in: db)
     return try db.transaction { database in
       guard try database.query(
         "SELECT json_type(reservation_json, '$.childSnapshotStorage') AS marker FROM workflow_nested_invocations WHERE invocation_key=?",
@@ -510,7 +510,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   @discardableResult
   public func releaseUnreferencedPayloads(rootSessionId: String) throws -> Int64 {
     let db = try openDatabase()
-    try prepareSchema(in: db)
     return try db.transaction { try releaseUnreferencedPayloads(rootSessionId: rootSessionId, in: $0) }
   }
 

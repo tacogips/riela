@@ -58,11 +58,17 @@ struct ParsedWorkflowDefinitionCommand {
     var index = allWorkflows ? 1 : 2
     while index < arguments.count {
       let token = arguments[index]
-      if Self.flagOptions.contains(token) {
+      if let separator = token.firstIndex(of: "="), Self.valueOptions.contains(String(token[..<separator])) {
+        let option = String(token[..<separator])
+        values[option, default: []].append(String(token[token.index(after: separator)...]))
+        index += 1
+      } else if Self.flagOptions.contains(token) {
         guard flags.insert(token).inserted else { throw WorkflowDefinitionCLIError.usage("duplicate option \(token)") }
         index += 1
       } else if Self.valueOptions.contains(token) {
-        guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
+        guard index + 1 < arguments.count,
+              !arguments[index + 1].hasPrefix("--"),
+              !Self.valueOptions.contains(arguments[index + 1]) else {
           throw WorkflowDefinitionCLIError.usage("\(token) requires a value")
         }
         values[token, default: []].append(arguments[index + 1])
@@ -100,7 +106,7 @@ struct ParsedWorkflowDefinitionCommand {
     case .show:
       if has("--authored"), value("--node") != nil { throw WorkflowDefinitionCLIError.usage("--authored cannot be combined with --node") }
     case .diff:
-      if has("--file"), value("--from") != nil || has("--file"), value("--to") != nil {
+      if has("--file"), value("--from") != nil || value("--to") != nil {
         throw WorkflowDefinitionCLIError.usage("--file cannot be combined with --from or --to")
       }
     case .update:

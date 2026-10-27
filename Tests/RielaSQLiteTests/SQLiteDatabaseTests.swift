@@ -1,8 +1,39 @@
 import Foundation
-import RielaSQLite
+@testable import RielaSQLite
 import XCTest
 
 final class SQLiteDatabaseTests: XCTestCase {
+  func testDisabledStatementAccountingPathSkipsAccountingForRepeatedQueries() throws {
+    let database = try SQLiteDatabase.open(path: temporaryDatabasePath())
+    let clock = ContinuousClock()
+    let start = clock.now
+    for _ in 0..<2_000 {
+      _ = try database.query("SELECT 1 AS value")
+    }
+    let elapsed = start.duration(to: clock.now)
+
+    XCTAssertEqual(database.statementWorkAccountingCalls, 0)
+    XCTAssertEqual(database.statementWorkSnapshot, SQLiteStatementWorkSnapshot(
+      vmSteps: 0, fullScanSteps: 0, catalogFullScanSteps: 0
+    ))
+    XCTAssertGreaterThan(elapsed, .zero)
+  }
+
+  func testCatalogFullScansAreReportedSeparatelyWhenAccountingIsEnabled() throws {
+    let database = try SQLiteDatabase.open(
+      path: temporaryDatabasePath(),
+      options: SQLiteOpenOptions(trackStatementWork: true)
+    )
+    for index in 0..<32 {
+      try database.execute("CREATE TABLE catalog_probe_\(index) (value INTEGER)")
+    }
+    _ = try database.query("SELECT name FROM sqlite_master WHERE type='table'")
+
+    let work = database.statementWorkSnapshot
+    XCTAssertGreaterThan(work.catalogFullScanSteps, 0)
+    XCTAssertEqual(work.fullScanSteps, 0)
+  }
+
   func testWritableOpenAppliesWALBusyTimeoutAndJSONBProbe() throws {
     let database = try SQLiteDatabase.open(path: temporaryDatabasePath())
 

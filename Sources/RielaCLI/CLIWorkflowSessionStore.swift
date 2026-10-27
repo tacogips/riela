@@ -201,8 +201,24 @@ public struct CLIWorkflowSessionStore: Sendable {
     in db: SQLiteDatabase,
     runtimeStore: SQLiteWorkflowRuntimePersistenceStore
   ) throws {
+    let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
+    let schemaVersion = try db.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init)
+    let userVersion = Int(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
+    if let schemaVersion, CLIWorkflowSchemaSetupCache.shared.hasPrepared(
+         databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion
+       ) {
+      try db.requireJSONBAvailable()
+      try SQLiteWorkflowRuntimePersistenceStore.requireCompatibleSchemaGeneration(in: db)
+      return
+    }
     try ensureSchema(db)
     try runtimeStore.prepareSchema(in: db)
+    let updatedSchemaVersion = try db.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init)
+    if let updatedSchemaVersion {
+      CLIWorkflowSchemaSetupCache.shared.markPrepared(
+        databasePath: databasePath, schemaVersion: updatedSchemaVersion, userVersion: userVersion
+      )
+    }
   }
 
   func save(
@@ -211,14 +227,21 @@ public struct CLIWorkflowSessionStore: Sendable {
     in db: SQLiteDatabase,
     runtimeStore: SQLiteWorkflowRuntimePersistenceStore
   ) throws {
-    try validate(record: record, snapshot: snapshot)
-    try WorkflowDefinitionPins.recordForeignPinIfNeeded(
-      snapshot: snapshot,
-      sessionStoreRoot: runtimeStore.rootDirectory
-    )
-    try db.transaction { database in
-      try upsertRecord(database, record)
-      try runtimeStore.save(snapshot, in: database)
+    do {
+      try validate(record: record, snapshot: snapshot)
+      try WorkflowDefinitionPins.recordForeignPinIfNeeded(
+        snapshot: snapshot,
+        sessionStoreRoot: runtimeStore.rootDirectory
+      )
+      try db.transaction { database in
+        try upsertRecord(database, record)
+        try runtimeStore.save(snapshot, in: database)
+      }
+    } catch {
+      if String(describing: error).contains("no such table") {
+        CLIWorkflowSchemaSetupCache.shared.invalidate(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
+      }
+      throw error
     }
   }
 
@@ -609,6 +632,27 @@ public struct CLIWorkflowSessionStore: Sendable {
     readOnly: Bool = false,
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
+    let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory)
+    if strictReadOnly {
+      return try openDatabaseBody(runtimeRoot: runtimeRoot, readOnly: readOnly, strictReadOnly: strictReadOnly)
+    }
+    if readOnly {
+      return try RuntimeDatabaseAccess.withSchemaLockIfUninitialized(
+        rootDirectory: runtimeRoot, databasePath: databasePath
+      ) {
+        try openDatabaseBody(runtimeRoot: runtimeRoot, readOnly: true, strictReadOnly: false)
+      }
+    }
+    return try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: runtimeRoot) {
+      try openDatabaseBody(runtimeRoot: runtimeRoot, readOnly: false, strictReadOnly: false)
+    }
+  }
+
+  private func openDatabaseBody(
+    runtimeRoot: String,
+    readOnly: Bool,
+    strictReadOnly: Bool
+  ) throws -> SQLiteDatabase {
     if !readOnly, !strictReadOnly {
       SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
     }
@@ -618,13 +662,18 @@ public struct CLIWorkflowSessionStore: Sendable {
     } else {
       mode = readOnly ? .readOnly : .readWriteCreate
     }
-    return try mapSQLiteError {
+    let database = try mapSQLiteError {
       try SQLiteDatabase.open(
         path: databasePath,
         mode: mode,
         options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
       )
     }
+    if !readOnly, !strictReadOnly {
+      let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
+      try prepareRuntimePersistenceSchemas(in: database, runtimeStore: runtimeStore)
+    }
+    return database
   }
 
   private func ensureSchema(_ db: SQLiteDatabase) throws {
@@ -902,5 +951,44 @@ private func mapSQLiteError<T>(_ body: () throws -> T) throws -> T {
     return try body()
   } catch let error as SQLiteError {
     throw CLIWorkflowSessionStoreError.sqliteFailed(error.message)
+  }
+}
+
+private final class CLIWorkflowSchemaSetupCache: @unchecked Sendable {
+  static let shared = CLIWorkflowSchemaSetupCache()
+  private struct Entry: Equatable {
+    let device: UInt64
+    let inode: UInt64
+    let schemaVersion: Int
+    let userVersion: Int
+  }
+  private let lock = NSLock()
+  private var entries: [String: Entry] = [:]
+
+  func hasPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) -> Bool {
+    guard let identity = fileIdentity(databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion) else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    return entries[databasePath] == identity
+  }
+
+  func markPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) {
+    guard let identity = fileIdentity(databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion) else { return }
+    lock.lock()
+    defer { lock.unlock() }
+    entries[databasePath] = identity
+  }
+
+  func invalidate(databasePath: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeValue(forKey: databasePath)
+  }
+
+  private func fileIdentity(databasePath: String, schemaVersion: Int, userVersion: Int) -> Entry? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: databasePath),
+          let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
+          let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value else { return nil }
+    return Entry(device: device, inode: inode, schemaVersion: schemaVersion, userVersion: userVersion)
   }
 }

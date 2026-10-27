@@ -4,6 +4,8 @@ import Foundation
 /// the persistence store share this bounded cache; unrelated stores do not.
 /// Execution values share their immutable payload storage with the live runner.
 final class RuntimeExecutionReuse: @unchecked Sendable {
+  static let shared = RuntimeExecutionReuse()
+
   struct Entry: Sendable {
     let witness: String
     let executions: [WorkflowStepExecution]
@@ -23,6 +25,13 @@ final class RuntimeExecutionReuse: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return entries[key]
+  }
+
+  func remove(_ key: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeValue(forKey: key)
+    order.removeAll { $0 == key }
   }
 
   func remember(
@@ -50,7 +59,7 @@ final class RuntimeExecutionReuse: @unchecked Sendable {
     )
     order.removeAll { $0 == key }
     order.append(key)
-    while order.count > 8 {
+    while order.count > 64 {
       entries.removeValue(forKey: order.removeFirst())
     }
   }

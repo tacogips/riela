@@ -75,13 +75,33 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
         }
       }
     }
-    if addonNames.contains(where: { $0.hasPrefix("riela/memory-") || $0.hasPrefix("riela/kv-") })
-      && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
-      diagnostics.append(WorkflowValidationDiagnostic(
-        severity: .warning,
-        path: "workflow.nodes",
-        message: "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
-      ))
+    let implicitLocalNodePaths = workflow.nodeRegistry.enumerated().compactMap { index, node -> String? in
+      guard let addon = node.addon else { return nil }
+      let rootKey: String
+      if addon.name.hasPrefix("riela/kv-") {
+        rootKey = "kvRoot"
+      } else if addon.name.hasPrefix("riela/memory-") {
+        rootKey = "memoryRoot"
+      } else {
+        return nil
+      }
+      let configured = addon.config?[rootKey]
+      let input = addon.inputs?[rootKey]
+      let hasExplicitRoot = [configured, input].compactMap { value -> String? in
+        guard case let .string(root)? = value else { return nil }
+        return root
+      }
+        .contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+      return hasExplicitRoot ? nil : "workflow.nodes[\(index)]"
+    }
+    if !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
+      for path in implicitLocalNodePaths {
+        diagnostics.append(WorkflowValidationDiagnostic(
+          severity: .warning,
+          path: path,
+          message: "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
+        ))
+      }
     }
 
     if !stepIds.contains(workflow.entryStepId) {

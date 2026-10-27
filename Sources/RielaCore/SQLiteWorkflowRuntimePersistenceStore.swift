@@ -26,6 +26,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     public let headerEncodeInputBytes: Int
     public let sqliteVMSteps: Int
     public let sqliteFullScanSteps: Int
+    public let sqliteCatalogFullScanSteps: Int
     public let familyReleaseScans: Int
 
     public init(
@@ -34,6 +35,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       headerEncodeInputBytes: Int = 0,
       sqliteVMSteps: Int = 0,
       sqliteFullScanSteps: Int = 0,
+      sqliteCatalogFullScanSteps: Int = 0,
       familyReleaseScans: Int = 0
     ) {
       self.boundBytes = boundBytes
@@ -41,6 +43,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       self.headerEncodeInputBytes = headerEncodeInputBytes
       self.sqliteVMSteps = sqliteVMSteps
       self.sqliteFullScanSteps = sqliteFullScanSteps
+      self.sqliteCatalogFullScanSteps = sqliteCatalogFullScanSteps
       self.familyReleaseScans = familyReleaseScans
     }
   }
@@ -48,17 +51,20 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// The generation-11 stamp and 10→11 step live in the schema extension below.
   /// Search tokens: `schemaGeneration: Int64 = 11`, `fromGeneration: 10`.
   public var rootDirectory: String
-  private let executionReuse = RuntimeExecutionReuse()
+  private let executionReuse = RuntimeExecutionReuse.shared
   let persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)?
   let loadAssemblyObserver: (@Sendable () throws -> Void)?
+  let measuresSQLiteStatementWork: Bool
 
   public init(
     rootDirectory: String,
-    persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)? = nil
+    persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)? = nil,
+    measureSQLiteStatementWork: Bool = false
   ) {
     self.rootDirectory = rootDirectory
     self.persistenceWriteObserver = persistenceWriteObserver
     self.loadAssemblyObserver = nil
+    self.measuresSQLiteStatementWork = measureSQLiteStatementWork
   }
 
   init(
@@ -69,6 +75,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     self.rootDirectory = rootDirectory
     self.persistenceWriteObserver = persistenceWriteObserver
     self.loadAssemblyObserver = loadAssemblyObserver
+    self.measuresSQLiteStatementWork = false
   }
 
   public static func defaultDatabasePath(rootDirectory: String) -> String {
@@ -100,7 +107,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     try WorkflowDefinitionPins.recordForeignPinIfNeeded(snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { database in
       try save(snapshot, in: database)
     }
@@ -110,9 +116,16 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard isSafeId(snapshot.session.sessionId) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(snapshot.session.sessionId)
     }
-    try upsertSnapshot(db, snapshot)
-    try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
-      .replaceMessages(for: snapshot.session.sessionId, with: snapshot.workflowMessages, in: db)
+    do {
+      try upsertSnapshot(db, snapshot)
+      try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
+        .replaceMessages(for: snapshot.session.sessionId, with: snapshot.workflowMessages, in: db)
+    } catch {
+      if String(describing: error).contains("no such table") {
+        Self.invalidatePreparedSchemaCache(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
+      }
+      throw error
+    }
   }
 
   public func save(
@@ -125,7 +138,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     try WorkflowDefinitionPins.recordForeignPinIfNeeded(snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let db = try openDatabase()
-    try prepareSchema(in: db)
     try db.transaction { database in
       try save(snapshot, appendingWorkflowMessages: messages, in: database)
     }
@@ -302,7 +314,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       if try runtimeSnapshotTableExists(read),
          !(try SQLiteWorkflowStartupIdentities.isPrepared(read, source: .runtime)) {
         let write = try openDatabase()
-        try prepareSchema(in: write)
         try write.transaction { try SQLiteWorkflowStartupIdentities.backfill($0, source: .runtime) }
       }
     }
@@ -688,7 +699,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.requireJSONBAvailable()
       try Self.requireCompatibleSchemaGeneration(in: db)
       try WorkflowDefinitionStoreSchema.create(in: db)
-      try WorkflowDefinitionHistorySchema.create(in: db)
       // The summary columns are generated from session_json so they can never
       // drift from the snapshot payload. created_at/updated_at stay explicit:
       // the JSON dates are second-granularity ISO8601 while ordering needs the
@@ -772,6 +782,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         statements: metrics.statements + 1,
         sqliteVMSteps: work.vmSteps,
         sqliteFullScanSteps: work.fullScanSteps,
+        sqliteCatalogFullScanSteps: work.catalogFullScanSteps,
         familyReleaseScans: familyReleaseScans
       )
     }
@@ -841,6 +852,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         statements: metrics.statements + 1,
         sqliteVMSteps: work.vmSteps,
         sqliteFullScanSteps: work.fullScanSteps,
+        sqliteCatalogFullScanSteps: work.catalogFullScanSteps,
         familyReleaseScans: familyReleaseScans
       )
     }
@@ -860,6 +872,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try touchLoopConcurrencyLease(db, snapshot)
     if releaseAtRunEnd {
       _ = try releaseUnreferencedPayloads(rootSessionId: snapshot.session.rootSessionId ?? snapshot.session.sessionId, in: db)
+      executionReuse.remove(cacheKey)
+      traceSnapshotAssembly("released", count: snapshot.session.executions.count)
+      return 1
     }
     // A rollback removes this UUID, invalidating the optimization on next save.
     let columns = try snapshotColumnBindings(snapshot)
@@ -876,12 +891,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     )
     traceSnapshotAssembly("written", count: snapshot.session.executions.count)
     return releaseAtRunEnd ? 1 : 0
-  }
-
-  private func traceSnapshotAssembly(_ phase: String, count: Int, changed: Int = 0) {
-    guard ProcessInfo.processInfo.environment["RIELA_BULK_RESOURCE_DIAGNOSTICS"] == "1" else { return }
-    // Numeric test diagnostics only; never emit inputs, outputs, IDs or env.
-    FileHandle.standardError.write(Data("canonical-resource phase=\(phase) executions=\(count) changed=\(changed)\n".utf8))
   }
 
   func isSafeId(_ value: String) -> Bool {
@@ -909,6 +918,10 @@ func mapRuntimeSQLiteError<T>(_ body: () throws -> T) throws -> T {
   do {
     return try body()
   } catch let error as SQLiteError {
-    throw WorkflowRuntimePersistenceStoreError.sqliteFailed(error.message)
+    let code = error.code.map(String.init) ?? "unknown"
+    let statement = error.sql.map { ", sql=\($0)" } ?? ""
+    throw WorkflowRuntimePersistenceStoreError.sqliteFailed(
+      "\(error.message) [operation=\(error.operation.rawValue), code=\(code)\(statement)]"
+    )
   }
 }

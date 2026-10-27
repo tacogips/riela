@@ -3,7 +3,16 @@ import Crypto
 import CZlib
 
 public enum VersionedHistoryCodec {
-  static func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+  static func sha256(_ data: Data) -> String {
+    let digits = Array("0123456789abcdef".utf8)
+    var output = [UInt8]()
+    output.reserveCapacity(64)
+    for byte in SHA256.hash(data: data) {
+      output.append(digits[Int(byte >> 4)])
+      output.append(digits[Int(byte & 0x0f)])
+    }
+    return String(bytes: output, encoding: .utf8) ?? ""
+  }
 
   static func compressed(_ data: Data) throws -> (Data, String) {
     if data.isEmpty { return (data, "none") }

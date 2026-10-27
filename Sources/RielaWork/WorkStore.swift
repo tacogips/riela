@@ -383,29 +383,48 @@ public struct WorkStore: Sendable {
 
   func openWritable() throws -> SQLiteDatabase {
     try createRootDirectoryIfNeeded()
-    // Session stores hold regenerable run history, so a generation without a
-    // migration path is discarded and recreated rather than hard-failing.
-    SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
-    let db = try mapSQLiteError {
-      try SQLiteDatabase.open(path: databasePath, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
+    let runtimeRoot = URL(fileURLWithPath: databasePath, isDirectory: false).deletingLastPathComponent().path
+    return try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: runtimeRoot) {
+      // Session stores hold regenerable run history, so a generation without a
+      // migration path is discarded and recreated rather than hard-failing.
+      SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+      let db = try mapSQLiteError {
+        try SQLiteDatabase.open(path: databasePath, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
+      }
+      try mapSQLiteError {
+        try Self.prepareSchema(in: db)
+      }
+      return db
     }
-    try mapSQLiteError {
-      try Self.prepareSchema(in: db)
+  }
+
+  func openReadOnlyDatabase() throws -> SQLiteDatabase {
+    let runtimeRoot = URL(fileURLWithPath: databasePath, isDirectory: false).deletingLastPathComponent().path
+    return try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: runtimeRoot) {
+      try mapSQLiteError {
+        try SQLiteDatabase.open(
+          path: databasePath,
+          mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
+          options: .readOnlyDefault
+        )
+      }
     }
-    return db
+  }
+
+  func openStrictReadOnlyDatabase() throws -> SQLiteDatabase {
+    let runtimeRoot = URL(fileURLWithPath: databasePath, isDirectory: false).deletingLastPathComponent().path
+    return try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: runtimeRoot) {
+      try mapSQLiteError {
+        try SQLiteDatabase.open(path: databasePath, mode: .strictReadOnlyWithImmutableFallback, options: .readOnlyDefault)
+      }
+    }
   }
 
   private func openReadOnlyIfPresent() throws -> SQLiteDatabase? {
     guard FileManager.default.fileExists(atPath: databasePath) else {
       return nil
     }
-    let db = try mapSQLiteError {
-      try SQLiteDatabase.open(
-        path: databasePath,
-        mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
-        options: .readOnlyDefault
-      )
-    }
+    let db = try openReadOnlyDatabase()
     // A database written before the Work Runtime existed has no work_* tables;
     // a read of it is empty, not an error, and the next writable open rebuilds
     // it under the current generation.

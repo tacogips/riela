@@ -24,8 +24,10 @@ struct WorkflowImprovementApplyOutcome: Equatable, Sendable {
   var digest: String?
 
   static func classify(updateStdout: String, historyStdout: String?, expectedActorId: String) -> Self? {
-    guard let update = parse(updateStdout), let object = update.objectValue,
-          let accepted = object["accepted"]?.boolValue else { return nil }
+    guard let update = parse(updateStdout), let object = update.objectValue else { return nil }
+    guard let accepted = object["accepted"]?.boolValue else {
+      return Self(status: .rejected, reason: "cliUsage", versionId: nil, auditId: nil, digest: nil)
+    }
     if accepted {
       let status: Status = object["outcome"]?.stringValue == "unchanged" ? .unchanged : .applied
       return Self(status: status, reason: nil, versionId: object["versionId"]?.stringValue,
@@ -175,7 +177,7 @@ extension BuiltinWorkflowAddonResolver {
       return ["--evidence", "\(kind):\(id)"]
     }.flatMap { $0 }
     let args = ["workflow", "definition", "update", source.workflowName, "--patch", patchURL.path,
-      "--reason", reason, "--expected-version", versionId] + evidenceArgs + ["--actor", actor,
+      "--reason=\(reason)", "--expected-version", versionId] + evidenceArgs + ["--actor", actor,
       "--actor-kind", "improvementNode", "--session-store", storeRoot, "--working-dir", workingDirectory, "--output", "json"]
     let executable = try executableConfiguration(args: args, config: config)
     let result: LocalProcessResult

@@ -53,15 +53,14 @@ final class DeliverableCollectorTests: XCTestCase {
     ])
   }
 
-  func testCollectsKVAsLocalOnlyUsingDatabasePath() {
+  func testConfiguredKVRootIsNotReportedAsCwdLocalDeliverable() {
     let workflow = makeWorkflow(nodes: [addonNode("kv", "riela/kv-set", config: ["kvRoot": .string("configured-root")])], steps: ["save": "kv"])
     let snapshot = makeSnapshot([
       execution("save", nodeId: "kv", payload: ["databasePath": .string("/tmp/workflow-kv.sqlite")])
     ])
 
-    XCTAssertEqual(collect(workflow: workflow, snapshot: snapshot), [
-      .localOnly(LocalOnlyDeliverable(kind: "kv", path: "/tmp/workflow-kv.sqlite"))
-    ])
+    XCTAssertEqual(collect(workflow: workflow, snapshot: snapshot), [],
+      "an explicit kvRoot is not a cwd-local store")
   }
 
   func testIgnoresFailedAndUnacceptedExecutions() {
@@ -78,8 +77,8 @@ final class DeliverableCollectorTests: XCTestCase {
     let workflow = makeWorkflow(nodes: [
       addonNode("kaiba-z", "kaiba/note-create", config: ["kaibaInstanceId": .string("z")]),
       addonNode("kaiba-a", "kaiba/note-create", config: ["kaibaInstanceId": .string("a")]),
-      addonNode("kv", "riela/kv-set", config: ["kvRoot": .string("fallback-kv")]),
-      addonNode("memory", "riela/memory-save", config: ["memoryRoot": .string("fallback-memory")])
+      addonNode("kv", "riela/kv-set"),
+      addonNode("memory", "riela/memory-save")
     ], steps: ["z": "kaiba-z", "a": "kaiba-a", "kv": "kv", "memory": "memory"])
     let first = makeSnapshot([
       execution("z", nodeId: "kaiba-z", payload: ["noteId": .string("z-note")]),
@@ -97,8 +96,8 @@ final class DeliverableCollectorTests: XCTestCase {
     let expected = [
       DeliverableRef.document(DocumentDeliverable(store: "kaiba", instance: "a", ids: ["a-note"], producedByStepIds: ["a"])),
       .document(DocumentDeliverable(store: "kaiba", instance: "z", ids: ["z-note"], producedByStepIds: ["z"])),
-      .localOnly(LocalOnlyDeliverable(kind: "kv", path: "fallback-kv")),
-      .localOnly(LocalOnlyDeliverable(kind: "memory", path: "fallback-memory"))
+      .localOnly(LocalOnlyDeliverable(kind: "kv", path: "cwd-local store")),
+      .localOnly(LocalOnlyDeliverable(kind: "memory", path: "cwd-local store"))
     ]
     XCTAssertEqual(collect(workflow: workflow, snapshot: first), expected)
     XCTAssertEqual(collect(workflow: workflow, snapshot: shuffled), expected)

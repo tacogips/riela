@@ -116,6 +116,17 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   }
 }
 
+private func hasSessionReuseConsumer(
+  of step: WorkflowStepRef,
+  request: DeterministicWorkflowRunRequest
+) -> Bool {
+  request.workflow.steps.contains { candidate in
+    let policy = candidate.sessionPolicy ?? request.nodePayloads[candidate.nodeId]?.sessionPolicy
+    return policy?.mode == .reuse
+      && policy?.inheritFromStepId?.trimmingCharacters(in: .whitespacesAndNewlines) == step.id
+  }
+}
+
 /// Explicit recovery-boundary seam for durable nested execution. Production
 /// does not install one; tests use it either for an in-process controlled stop
 /// or, through the CLI test gate, an actual OS-process termination.
@@ -646,7 +657,8 @@ extension DeterministicWorkflowRunner {
     executionPayload.agentToolPolicy = try resolveAgentToolPolicy(
       executionPayload.agentToolPolicy,
       executionBackend: executionPayload.executionBackend,
-      sessionReuse: (step.sessionPolicy ?? executionPayload.sessionPolicy)?.mode == .reuse,
+      sessionReuse: hasSessionReuseConsumer(of: step, request: request)
+        || (step.sessionPolicy ?? executionPayload.sessionPolicy)?.mode == .reuse,
       variables: mergedVariables,
       trustedVariables: agentToolPolicyTrustedVariables(
         nodeVariables: executionPayload.variables, workflowInput: request.variables

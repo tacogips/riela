@@ -26,7 +26,7 @@ extension SpecialistSupervisorStore {
 
   public func trackerTaskId(taskId: String) throws -> String? {
     guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     return try dispatch(taskId: taskId, in: database)
   }
@@ -71,7 +71,7 @@ extension SpecialistSupervisorStore {
 
   public func outboxEvents(taskId: String) throws -> [SpecialistOutboxEvent] {
     guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     return try database.query(
       "SELECT json(event_json) AS event_json FROM specialist_outbox WHERE task_id = ? ORDER BY sequence ASC, event_id ASC",
@@ -85,7 +85,7 @@ extension SpecialistSupervisorStore {
   /// `fenceExpiredDeliveries`, never silently retried as a fresh write.
   public func pendingOutboxEvents(limit: Int = 100, now: Date = Date()) throws -> [SpecialistOutboxEvent] {
     guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     let bounded = max(1, min(limit, 200))
     return try database.query(
@@ -114,7 +114,7 @@ extension SpecialistSupervisorStore {
   /// durable correlation receipt to delivered.
   public func uncertainOutboxEvents(limit: Int = 100) throws -> [SpecialistOutboxEvent] {
     guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
-    let database = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let database = try openReadOnly()
     try verifySchema(database)
     let bounded = max(1, min(limit, 200))
     return try database.query(

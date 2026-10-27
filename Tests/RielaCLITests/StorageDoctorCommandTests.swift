@@ -7,6 +7,40 @@ import RielaSQLite
 @testable import RielaMemory
 
 final class StorageDoctorCommandTests: XCTestCase {
+  func testDoctorMemoryReadsStayConsistentWithConcurrentDeleteJournalWriter() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let memoryRoot = root.appendingPathComponent("memory", isDirectory: true)
+    let emptySessionRoot = root.appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: memoryRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: emptySessionRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let path = memoryRoot.appendingPathComponent("state.sqlite").path
+    let database = try SQLiteDatabase.open(path: path, options: .init(enableWAL: false, requireJSONB: false))
+    try database.execute("CREATE TABLE memory_entries(record_id INTEGER PRIMARY KEY,payload_json TEXT,tags_json TEXT,related_record_ids_json TEXT)")
+    try database.execute("INSERT INTO memory_entries VALUES(1,'{\"value\":\"seed\"}','[]','[]')")
+    XCTAssertEqual(try database.query("PRAGMA journal_mode").first?["journal_mode"], "delete")
+
+    let writer = Task.detached {
+      for index in 0..<80 {
+        try database.transaction { transaction in
+          try transaction.execute("UPDATE memory_entries SET payload_json=? WHERE record_id=1",
+            bindings: [.text("{\"value\":\"revision-\(index)\"}")])
+        }
+      }
+    }
+    for _ in 0..<50 {
+      let result = await RielaCLIApplication().run([
+        "doctor", "storage", "--session-store", emptySessionRoot.path, "--memory-root", memoryRoot.path, "--output", "json"
+      ])
+      XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+      let files = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+      let memoryFile = try XCTUnwrap(files.first(where: { $0["kind"] as? String == "memory" }), result.stdout)
+      let memory = try XCTUnwrap(memoryFile["memory"] as? [String: Any], result.stdout)
+      XCTAssertEqual(memory["records"] as? Int64 ?? Int64(memory["records"] as? Int ?? 0), 1)
+    }
+    _ = try await writer.value
+  }
+
   func testDoctorStorageReadsDatabaseWithoutChangingBytesOrModificationDate() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -53,6 +87,7 @@ final class StorageDoctorCommandTests: XCTestCase {
       updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
     try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
       .save(WorkflowRuntimePersistenceSnapshot(session: session))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: databasePath), databasePath)
     do {
       let database = try SQLiteDatabase.open(path: databasePath)
       _ = try database.query("PRAGMA journal_mode=WAL")
@@ -66,7 +101,7 @@ final class StorageDoctorCommandTests: XCTestCase {
 
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     let files = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
-    XCTAssertTrue(files.contains { $0["kind"] as? String == "session" })
+    XCTAssertTrue(files.contains { $0["kind"] as? String == "session" && $0["path"] as? String == databasePath }, result.stderr + result.stdout)
   }
 
   func testDoctorReadOnlyReconciliationLeavesTreeAndLocksUntouched() async throws {

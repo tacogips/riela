@@ -8,6 +8,16 @@ import RielaWorkflowRegistry
 final class WorkflowDefinitionCommandTests: XCTestCase {
   private final class Clock: @unchecked Sendable { var now: Date; init(_ now: Date) { self.now = now } }
 
+  func testDiffRejectsFileWithEitherVersionSelectorAndAcceptsLeadingDashValues() throws {
+    for selector in ["--from", "--to"] {
+      XCTAssertThrowsError(try ParsedWorkflowDefinitionCommand(["diff", "w", "--file", selector, "v1"]))
+    }
+    let parsed = try ParsedWorkflowDefinitionCommand(["update", "w", "--patch", "patch.json", "--reason", "--x"])
+    XCTAssertEqual(parsed.value("--reason"), "--x")
+    let equalsParsed = try ParsedWorkflowDefinitionCommand(["update", "w", "--patch", "patch.json", "--reason=--x"])
+    XCTAssertEqual(equalsParsed.value("--reason"), "--x")
+  }
+
   func testDefinitionImportPromptAuditForceRestoreAndExport() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

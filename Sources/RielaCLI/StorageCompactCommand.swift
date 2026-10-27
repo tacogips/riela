@@ -322,7 +322,7 @@ struct StorageCompactCommandRunner {
       result.bytes = try estimateSessionBytes(path: path)
       result.hasWork = result.counts.sessions > 0 || result.counts.cliRecords > 0 || result.counts.nestedInvocations > 0
     } else {
-      let database = try SQLiteDatabase.open(path: path, mode: .strictReadOnlyWithImmutableFallback, options: .readOnlyDefault)
+      let database = try SQLiteDatabase.open(path: path, mode: .strictReadOnly, options: .readOnlyDefault)
       if kind == "memory", try database.tableExists("memory_evolution") {
         let sql = "SELECT count(DISTINCT e.record_id) AS count FROM memory_evolution e " +
           "LEFT JOIN memory_history_heads h ON h.key=CAST(e.record_id AS TEXT) WHERE h.key IS NULL"

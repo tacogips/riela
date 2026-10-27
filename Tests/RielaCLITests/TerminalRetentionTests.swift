@@ -88,6 +88,44 @@ final class TerminalRetentionTests: XCTestCase {
     XCTAssertEqual(try execute(paths).removedSessionCount, 0)
   }
 
+  func testEditedManagerJournalHistoryProtectsSessionAndUneditedHistoryIsDeleted() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    try insert("edited", db: f.db)
+    try insert("plain", db: f.db)
+    let memory = RielaMemoryStore(rootDirectory: try XCTUnwrap(f.paths.memoryRoot))
+    let edited = try memory.save(memoryId: "manager", workflowId: "news", payload: .object([
+      "source": .string("riela-node-manager"), "direction": .string("inbox"),
+      "workflowId": .string("news"), "sessionId": .string("edited"), "text": .string("v1")
+    ]))
+    _ = try memory.update(memoryId: "manager", recordId: edited.recordId, payload: .object([
+      "source": .string("riela-node-manager"), "direction": .string("inbox"),
+      "workflowId": .string("news"), "sessionId": .string("edited"), "text": .string("v2")
+    ]))
+    let plain = try memory.save(memoryId: "manager", workflowId: "news", payload: .object([
+      "source": .string("riela-node-manager"), "direction": .string("inbox"),
+      "workflowId": .string("news"), "sessionId": .string("plain"), "text": .string("plain")
+    ]))
+
+    let report = try execute(f.paths)
+    XCTAssertEqual(report.removedSessionCount, 1)
+    XCTAssertEqual(report.protectedFamilies["edited"], "journalHasEditedHistory")
+    let memoryDB = try SQLiteDatabase.open(path: memory.databasePath(memoryId: "manager"),
+      mode: .strictReadOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try memoryDB.query("SELECT count(*) AS n FROM memory_entries WHERE record_id=?",
+      bindings: [.int(edited.recordId)]).first?["n"], "1")
+    XCTAssertEqual(try memoryDB.query("SELECT count(*) AS n FROM memory_history_heads WHERE key=?",
+      bindings: [.text(String(edited.recordId))]).first?["n"], "1")
+    XCTAssertEqual(try memoryDB.query("SELECT count(*) AS n FROM memory_history_versions WHERE key=?",
+      bindings: [.text(String(edited.recordId))]).first?["n"], "2")
+    XCTAssertEqual(try memoryDB.query("SELECT count(*) AS n FROM memory_entries WHERE record_id=?",
+      bindings: [.int(plain.recordId)]).first?["n"], "0")
+    XCTAssertEqual(try memoryDB.query("SELECT count(*) AS n FROM memory_history_versions WHERE key=?",
+      bindings: [.text(String(plain.recordId))]).first?["n"], "0")
+    XCTAssertTrue(try memoryDB.query("SELECT key FROM memory_history_heads WHERE key NOT IN (SELECT CAST(record_id AS TEXT) FROM memory_entries)").isEmpty)
+    XCTAssertTrue(try memoryDB.query("SELECT key FROM memory_history_versions WHERE key NOT IN (SELECT CAST(record_id AS TEXT) FROM memory_entries)").isEmpty)
+  }
+
   func testPruneReleasesRuntimePayloadsAndExecutionRowsAndCountsRootPayloadOnce() throws {
     let fixture = try fixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

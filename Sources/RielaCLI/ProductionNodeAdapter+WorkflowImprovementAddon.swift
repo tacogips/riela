@@ -175,7 +175,7 @@ extension BuiltinWorkflowAddonResolver {
       return ["--evidence", "\(kind):\(id)"]
     }.flatMap { $0 }
     let args = ["workflow", "definition", "update", source.workflowName, "--patch", patchURL.path,
-      "--reason", reason, "--expected-version", versionId] + evidenceArgs + ["--actor", actor,
+      "--reason=\(reason)", "--expected-version", versionId] + evidenceArgs + ["--actor", actor,
       "--actor-kind", "improvementNode", "--session-store", storeRoot, "--working-dir", workingDirectory, "--output", "json"]
     let executable = try executableConfiguration(args: args, config: config)
     let result: LocalProcessResult

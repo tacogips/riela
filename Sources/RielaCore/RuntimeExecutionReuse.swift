@@ -4,6 +4,8 @@ import Foundation
 /// the persistence store share this bounded cache; unrelated stores do not.
 /// Execution values share their immutable payload storage with the live runner.
 final class RuntimeExecutionReuse: @unchecked Sendable {
+  static let shared = RuntimeExecutionReuse()
+
   struct Entry: Sendable {
     let witness: String
     let executions: [WorkflowStepExecution]

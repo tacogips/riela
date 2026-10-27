@@ -185,6 +185,29 @@ final class AgentToolPolicyResolutionTests: XCTestCase {
     let consumed = await adapter.consumeArguments
     XCTAssertEqual(consumed, ["-c", "model_catalog_json=/catalog.json"])
   }
+
+  func testPresetProducerInheritedByReuseConsumerDoesNotUseEphemeralSession() async throws {
+    let workflow = WorkflowDefinition(workflowId: "inherited-preset-session",
+      defaults: .init(nodeTimeoutMs: 30_000, maxLoopIterations: 1), entryStepId: "producer",
+      nodeRegistry: [.init(id: "producer", nodeFile: "producer.json"), .init(id: "consumer", nodeFile: "consumer.json"),
+        .init(id: "independent", nodeFile: "independent.json")],
+      steps: [.init(id: "producer", nodeId: "producer", transitions: [.init(toStepId: "consumer", label: "always")]),
+        .init(id: "consumer", nodeId: "consumer", sessionPolicy: .init(mode: .reuse, inheritFromStepId: "producer"),
+          transitions: [.init(toStepId: "independent", label: "always")]),
+        .init(id: "independent", nodeId: "independent")],
+      nodes: [.init(id: "producer", nodeFile: "producer.json"), .init(id: "consumer", nodeFile: "consumer.json"),
+        .init(id: "independent", nodeFile: "independent.json")])
+    let payloads: [String: AgentNodePayload] = ["producer", "consumer", "independent"].reduce(into: [:]) {
+      $0[$1] = .init(id: $1, executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly,
+        agentToolPolicy: .init(preset: .noTools))
+    }
+    let adapter = PresetSessionCapturingAdapter()
+    let result = try await DeterministicWorkflowRunner(adapter: adapter).run(.init(workflow: workflow, nodePayloads: payloads))
+    XCTAssertEqual(result.session.status, .completed)
+    let arguments = await adapter.argumentsByNode
+    XCTAssertFalse(try XCTUnwrap(arguments["producer"]).contains("--ephemeral"))
+    XCTAssertTrue(try XCTUnwrap(arguments["independent"]).contains("--ephemeral"))
+  }
 }
 
 private actor ToolPolicyRecordingAdapter: NodeAdapter {
@@ -195,5 +218,15 @@ private actor ToolPolicyRecordingAdapter: NodeAdapter {
     if input.node.id == "consume" { consumeArguments = input.node.agentToolPolicy?.codexArguments }
     return .init(provider: "fixture", model: "fixture", promptText: "", completionPassed: true,
       payload: input.node.id == "produce" ? upstream : ["done": .bool(true)])
+  }
+}
+
+private actor PresetSessionCapturingAdapter: NodeAdapter {
+  private(set) var argumentsByNode: [String: [String]] = [:]
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    argumentsByNode[input.node.id] = input.node.agentToolPolicy?.codexArguments ?? []
+    return .init(provider: "fixture", model: "fixture", promptText: "", completionPassed: true,
+      payload: ["done": .bool(true)])
   }
 }

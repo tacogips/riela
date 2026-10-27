@@ -67,6 +67,15 @@ enum TerminalRetentionSecondary {
           if let id = row["id"], rows[id] != nil { rows[id]?.protection = "journalHasEditedHistory" }
         }
       }
+      if try db.tableExists("memory_history_heads") {
+        for row in try db.query("""
+          SELECT json_extract(e.payload_json,'$.sessionId') AS id FROM memory_entries e
+          JOIN memory_history_heads h ON h.key=CAST(e.record_id AS TEXT) AND h.revision>1
+          WHERE json_extract(e.payload_json,'$.source')='riela-node-manager'
+          """) {
+          if let id = row["id"], rows[id] != nil { rows[id]?.protection = "journalHasEditedHistory" }
+        }
+      }
       for row in try db.query("""
         SELECT json_extract(payload_json,'$.sessionId') AS id, workflow_id,
           sum(length(CAST(payload_json AS BLOB))) AS bytes FROM memory_entries
@@ -110,12 +119,21 @@ enum TerminalRetentionSecondary {
           if try db.tableExists("memory_evolution") {
             protections.append("EXISTS(SELECT 1 FROM memory_evolution v WHERE v.record_id=memory_entries.record_id AND v.version>1)")
           }
+          if try db.tableExists("memory_history_heads") {
+            protections.append("EXISTS(SELECT 1 FROM memory_history_heads h WHERE h.key=CAST(memory_entries.record_id AS TEXT) AND h.revision>1)")
+          }
           let protection = protections.joined(separator: " OR ")
           guard try db.query("SELECT record_id FROM memory_entries WHERE \(predicate) AND (\(protection)) LIMIT 1",
             bindings: bindings).isEmpty else { throw TerminalRetentionError.secondaryProtected(id) }
           let selection = "SELECT record_id FROM memory_entries WHERE \(predicate)"
           if try db.tableExists("memory_evolution") {
             try db.execute("DELETE FROM memory_evolution WHERE record_id IN (\(selection))", bindings: bindings)
+          }
+          for table in ["memory_history_versions", "memory_history_heads"] where try db.tableExists(table) {
+            try db.execute(
+              "DELETE FROM \(table) WHERE key IN (SELECT CAST(record_id AS TEXT) FROM memory_entries WHERE \(predicate))",
+              bindings: bindings
+            )
           }
           removed += try db.executeAndReturnChangedRowCount("DELETE FROM memory_entries WHERE record_id IN (\(selection))", bindings: bindings)
         }

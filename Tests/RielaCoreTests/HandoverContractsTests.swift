@@ -136,6 +136,26 @@ final class HandoverContractsTests: XCTestCase {
         $0.severity == .warning && $0.message.contains("memory/KV state is cwd-local")
       }, "explicit kvRoot should suppress the implicit-root warning: \(explicitRoot)")
     }
+    for (addonName, key) in [("riela/kv-get", "kvRoot"), ("riela/memory-read", "memoryRoot")] {
+      let configured = validationWorkflow(registry: [
+        WorkflowNodeRegistryRef(id: "addon", addon: WorkflowNodeAddonRef(
+          name: addonName, inputs: [key: .string("{{workflowInput.stateRoot}}")]
+        ))
+      ])
+      XCTAssertFalse(DefaultWorkflowValidator().validate(configured).contains {
+        $0.severity == .warning && $0.message.contains("memory/KV state is cwd-local")
+      }, "explicit addon input \(key) should suppress the implicit-root warning")
+    }
+    for (addonName, key) in [("riela/kv-get", "kvRoot"), ("riela/memory-read", "memoryRoot")] {
+      let configured = validationWorkflow(registry: [
+        WorkflowNodeRegistryRef(id: "addon", addon: WorkflowNodeAddonRef(
+          name: addonName, config: [key: .string("/absolute/state")]
+        ))
+      ])
+      XCTAssertFalse(DefaultWorkflowValidator().validate(configured).contains {
+        $0.severity == .warning && $0.message.contains("memory/KV state is cwd-local")
+      }, "explicit config \(key) should suppress the implicit-root warning")
+    }
     XCTAssertFalse(diagnostics.contains { $0.severity == .error })
   }
 

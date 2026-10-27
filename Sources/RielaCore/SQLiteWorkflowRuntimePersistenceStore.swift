@@ -51,7 +51,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// The generation-11 stamp and 10→11 step live in the schema extension below.
   /// Search tokens: `schemaGeneration: Int64 = 11`, `fromGeneration: 10`.
   public var rootDirectory: String
-  private let executionReuse = RuntimeExecutionReuse()
+  private let executionReuse = RuntimeExecutionReuse.shared
   let persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)?
   let loadAssemblyObserver: (@Sendable () throws -> Void)?
   let measuresSQLiteStatementWork: Bool
@@ -692,7 +692,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.requireJSONBAvailable()
       try Self.requireCompatibleSchemaGeneration(in: db)
       try WorkflowDefinitionStoreSchema.create(in: db)
-      try WorkflowDefinitionHistorySchema.create(in: db)
       // The summary columns are generated from session_json so they can never
       // drift from the snapshot payload. created_at/updated_at stay explicit:
       // the JSON dates are second-granularity ISO8601 while ordering needs the

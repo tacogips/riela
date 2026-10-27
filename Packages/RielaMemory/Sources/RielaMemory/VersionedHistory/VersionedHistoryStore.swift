@@ -214,6 +214,10 @@ public struct VersionedHistoryStore {
       .map(\.version)
     let keep = Set([headVersion]).union(redoBranch).union(priorVersions).union(pins)
     let removing = all.filter { !keep.contains($0.version) }
+    // Existing version blobs already form a valid chain when retention drops
+    // nothing. Reconstructing and re-encoding every survivor would turn each
+    // ordinary append into work proportional to the full history.
+    guard !removing.isEmpty else { return ([], 0) }
     var values: [Int64: Data] = [:]
     let currentHead = try head(key: key) ?? VersionedHistoryHead(key: key, revision: headVersion, headVersion: headVersion, retainedGenerations: nil)
     for survivor in all where keep.contains(survivor.version) {
@@ -290,7 +294,13 @@ public struct VersionedHistoryStore {
   }
 
   private func insertHead(key: String, version: Int64, revision: Int64, value: Data, retention: Int?, createdAt: String) throws {
-    let (blob, codec) = try VersionedHistoryCodec.compressed(value)
+    let (blob, codec): (Data, String)
+    if headStorage == .external {
+      blob = Data()
+      codec = "none"
+    } else {
+      (blob, codec) = try VersionedHistoryCodec.compressed(value)
+    }
     let encoding = headStorage == .external ? "external" : "head"
     try sql.execute("""
       INSERT INTO \(versionsTable)(key,version,created_at,content_sha256,byte_count,encoding,anchor_version,codec,detached,blob)

@@ -275,12 +275,44 @@ extension SQLiteWorkflowRuntimePersistenceStore {
       if !readOnly && !strictReadOnly {
         // Serialize the destructive compatibility probe with first creation,
         // migration and schema setup so peers cannot unlink a partial database.
-        try prepareSchema(in: database)
+        try prepareSchemaIfNeeded(in: database, databasePath: databasePath)
         // The assembly table is transient, not another durable journal.
         // Avoid duplicating it on the guest's size-limited tmpfs volume.
         try database.execute("PRAGMA temp_store = MEMORY")
       }
       return database
     }
+  }
+
+  private func prepareSchemaIfNeeded(in database: SQLiteDatabase, databasePath: String) throws {
+    let currentSchemaVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init)
+    guard let currentSchemaVersion, RuntimeSchemaSetupCache.shared.hasPrepared(
+      databasePath: databasePath, schemaVersion: currentSchemaVersion
+    ) else {
+      try prepareSchema(in: database)
+      if let updatedVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init) {
+        RuntimeSchemaSetupCache.shared.markPrepared(databasePath: databasePath, schemaVersion: updatedVersion)
+      }
+      return
+    }
+  }
+}
+
+private final class RuntimeSchemaSetupCache: @unchecked Sendable {
+  static let shared = RuntimeSchemaSetupCache()
+
+  private let lock = NSLock()
+  private var versions: [String: Int] = [:]
+
+  func hasPrepared(databasePath: String, schemaVersion: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return versions[databasePath] == schemaVersion
+  }
+
+  func markPrepared(databasePath: String, schemaVersion: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    versions[databasePath] = schemaVersion
   }
 }

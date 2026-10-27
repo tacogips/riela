@@ -75,15 +75,25 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
         }
       }
     }
-    let hasLocalMemory = workflow.nodeRegistry.contains {
-      $0.addon?.name.hasPrefix("riela/memory-") == true
+    let hasImplicitLocalRoot = workflow.nodeRegistry.contains { node in
+      guard let addon = node.addon else { return false }
+      let rootKey: String
+      if addon.name.hasPrefix("riela/kv-") {
+        rootKey = "kvRoot"
+      } else if addon.name.hasPrefix("riela/memory-") {
+        rootKey = "memoryRoot"
+      } else {
+        return false
+      }
+      let configured = addon.config?[rootKey]
+      let input = addon.inputs?[rootKey]
+      return ![configured, input].compactMap { value -> String? in
+        guard case let .string(root)? = value else { return nil }
+        return root
+      }
+        .contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     }
-    let hasImplicitKVRoot = workflow.nodeRegistry.contains { node in
-      guard let addon = node.addon, addon.name.hasPrefix("riela/kv-") else { return false }
-      guard case let .string(root)? = addon.config?["kvRoot"] else { return true }
-      return root.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-    if (hasLocalMemory || hasImplicitKVRoot) && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
+    if hasImplicitLocalRoot && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
       diagnostics.append(WorkflowValidationDiagnostic(
         severity: .warning,
         path: "workflow.nodes",

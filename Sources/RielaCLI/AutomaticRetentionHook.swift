@@ -1,4 +1,6 @@
 import Foundation
+import RielaCore
+import RielaWorkflowRegistry
 
 enum AutomaticRetentionHook {
   private static let workflowRunArguments = ["workflow", "run"]
@@ -55,15 +57,23 @@ enum AutomaticRetentionHook {
     _ request: RielaRetentionRequest,
     service: RielaRetentionService = .init()
   ) -> [String] {
+    runAutomaticPassWithReport(request, service: service).warnings
+  }
+
+  private static func runAutomaticPassWithReport(
+    _ request: RielaRetentionRequest,
+    service: RielaRetentionService
+  ) -> (warnings: [String], completedRoots: Set<String>) {
     do {
       let report = try service.run(request)
-      return report.targets.compactMap { target in
+      let warnings: [String] = report.targets.compactMap { target in
         guard target.status == "failed" else { return nil }
         let detail = target.warnings.first ?? "retention pass failed for \(target.root)"
         return warning(detail)
       }
+      return (warnings, Set(report.targets.filter { $0.status == "completed" }.map(\.root)))
     } catch {
-      return [warning(error.localizedDescription)]
+      return ([warning(error.localizedDescription)], [])
     }
   }
 
@@ -80,12 +90,18 @@ enum AutomaticRetentionHook {
       environment: environment,
       currentDirectory: FileManager.default.currentDirectoryPath
     )
-    let retentionWarnings = runAutomaticPass(retentionRequest, service: service)
     let targets = RetentionTargetResolver.resolve(scope: retentionRequest.scope,
       homeDirectory: retentionRequest.homeDirectory, projectDirectory: retentionRequest.projectDirectory,
       explicitSessionStore: retentionRequest.explicitSessionStore, environment: retentionRequest.environment)
-    let roots = targets.compactMap(\.sessionStoreRoot)
-    return retentionWarnings + RunEndStorageMaintenance.run(sessionStoreRoots: roots)
+    let hasExplicitStore = retentionRequest.explicitSessionStore != nil
+      || retentionRequest.environment["RIELA_SESSION_STORE"] != nil
+    let selectedTarget = selectedSessionStoreRoot(arguments: arguments, targets: targets,
+      hasExplicitStore: hasExplicitStore)
+    let retention = runAutomaticPassWithReport(retentionRequest, service: service)
+    let roots = selectedTarget.flatMap { target in
+      retention.completedRoots.contains(target.root) ? target.sessionStoreRoot : nil
+    }.map { [$0] } ?? []
+    return retention.warnings + RunEndStorageMaintenance.run(sessionStoreRoots: roots)
   }
 
   private static func splitOption(_ argument: String) -> (String, String)? {
@@ -95,5 +111,41 @@ enum AutomaticRetentionHook {
 
   private static func warning(_ detail: String) -> String {
     "riela retention warning: \(detail)"
+  }
+
+  private static func optionValue(_ name: String, in arguments: [String]) -> String? {
+    for (index, argument) in arguments.enumerated() {
+      if argument == name, arguments.indices.contains(index + 1) { return arguments[index + 1] }
+      if argument.hasPrefix(name + "=") { return String(argument.dropFirst(name.count + 1)) }
+    }
+    return nil
+  }
+
+  private static func selectedSessionStoreRoot(
+    arguments: [String],
+    targets: [RetentionTarget],
+    hasExplicitStore: Bool
+  ) -> RetentionTarget? {
+    if hasExplicitStore { return targets.first(where: { $0.kind == .explicit }) }
+    guard arguments.starts(with: workflowRunArguments), arguments.count > 2 else { return nil }
+    let workingDirectory = optionValue("--working-dir", in: arguments)
+      ?? optionValue("--working-directory", in: arguments)
+      ?? FileManager.default.currentDirectoryPath
+    let requestedScope = optionValue("--scope", in: arguments).flatMap(WorkflowScope.init(rawValue:)) ?? .auto
+    let scope: WorkflowScope
+    if requestedScope == .auto {
+      let resolution = WorkflowResolutionOptions(
+        workflowName: arguments[2],
+        scope: .auto,
+        workflowDefinitionDir: optionValue("--workflow-definition-dir", in: arguments),
+        workingDirectory: workingDirectory
+      )
+      guard let bundle = try? FileSystemWorkflowBundleResolver().resolve(resolution) else { return nil }
+      scope = bundle.sourceScope
+    } else {
+      scope = requestedScope
+    }
+    let kind: RielaRetentionTargetKind = scope == .user ? .user : .project
+    return targets.first(where: { $0.kind == kind })
   }
 }

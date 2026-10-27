@@ -15,7 +15,7 @@ func nestedCalleeRevision(
     workflow: workflow,
     nodePayloads: nodePayloads
   ))) ?? Data()
-  return "sha256:" + SHA256.hash(data: material).map { String(format: "%02x", $0) }.joined()
+  return "sha256:" + JSONCanonical.sha256Hex(material)
 }
 
 struct NestedCalleeRevisionMaterial: Codable {
@@ -477,7 +477,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       let count = UInt64(bytes.count).bigEndian
       return withUnsafeBytes(of: count) { Array($0) } + bytes
     }
-    return SHA256.hash(data: Data(material)).map { String(format: "%02x", $0) }.joined()
+    return JSONCanonical.sha256Hex(Data(material))
   }
 
   private func fanoutReceiptKey(parentSessionId: String, sourceStepExecutionId: String) -> String {
@@ -486,7 +486,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       let count = UInt64(bytes.count).bigEndian
       return withUnsafeBytes(of: count) { Array($0) } + bytes
     }
-    return SHA256.hash(data: Data(material)).map { String(format: "%02x", $0) }.joined()
+    return JSONCanonical.sha256Hex(Data(material))
   }
 
   private func fanoutNestedInvocationRecords(
@@ -753,5 +753,5 @@ private func nestedDecode<T: Decodable>(_ type: T.Type, _ json: String) throws -
 }
 
 private func nestedDigest(_ value: String) -> String {
-  SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  JSONCanonical.sha256Hex(Data(value.utf8))
 }

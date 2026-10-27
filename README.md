@@ -1024,9 +1024,10 @@ Cron tick inputs include:
 - `timezone`: the source timezone identifier.
 
 `previousScheduledAt` is the latest occurrence of the same schedule strictly
-before `scheduledAt`. It is derived from the schedule and timezone, so skipped,
-coalesced, or missed ticks still count. The calculation is DST-aware: a skipped
-local time has no occurrence, and a repeated local time occurs twice.
+before `scheduledAt`. It is derived from the schedule and timezone; it does not
+identify the previous tick dispatched by the service. The calculation is
+DST-aware: a skipped local time has no occurrence, and a repeated local time
+occurs twice.
 
 For source `{"kind":"cron","schedule":"0 55 * * * *","timezone":"Asia/Tokyo"}`,
 the tick at `2026-10-27 14:55:00` (`scheduledAt`
@@ -1035,10 +1036,13 @@ the tick at `2026-10-27 14:55:00` (`scheduledAt`
 `2026-10-27 13:55:00`. A binding can map
 `"windowStart": "{{event.input.previousScheduledAt}}"` and
 `"windowEnd": "{{event.input.scheduledAt}}"`; `[windowStart, windowEnd)` is
-the run window. The window covers every hour even if the previous tick was
-skipped by the overlap policy or serve was down, and does not depend on run
-history. Receipts written before this release do not contain the new keys, and
-`events replay` reuses stored envelopes verbatim.
+the schedule interval for that dispatched tick. It does not cover intervals
+whose ticks were skipped or coalesced by the overlap policy, or ticks missed
+while serve was down. Catch-up dispatch is bounded to one hour, so longer
+downtime can leave earlier intervals unprocessed. Consumers that need complete
+coverage should track their own last successfully processed boundary and use
+that as the next window start. Receipts written before this release do not
+contain the new keys, and `events replay` reuses stored envelopes verbatim.
 
 ### Overlapping cron fires
 

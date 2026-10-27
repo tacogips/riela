@@ -4,6 +4,23 @@ import XCTest
 @testable import RielaCLI
 
 final class WorkflowValidateGatewayContextTests: XCTestCase {
+  func testValidatePrintsSharedCwdLocalWarningOnlyOnce() async {
+    let addon = WorkflowNodeAddonRef(name: "riela/kv-get")
+    let workflow = WorkflowDefinition(workflowId: "kv-warning-deduplicated",
+      defaults: .init(nodeTimeoutMs: 1_000, maxLoopIterations: 1), entryStepId: "step",
+      nodeRegistry: [.init(id: "node", addon: addon)], steps: [.init(id: "step", nodeId: "node")],
+      nodes: [.init(id: "node", addon: addon)])
+    let warning = WorkflowValidationDiagnostic(severity: .warning, path: "workflow.nodes",
+      message: "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step")
+    let bundle = ResolvedWorkflowBundle(workflow: workflow, nodePayloads: [:], sourceScope: .project,
+      workflowDirectory: "/tmp", diagnostics: [warning])
+    let command = WorkflowValidateCommand(resolver: HostValidationBundleResolver(bundle: bundle),
+      hostResolver: HostValidationCapabilityResolver(snapshot: .init(hostId: "local", backends: [], refreshedAt: Date())))
+    let result = await command.run(WorkflowValidateOptions(workflowName: workflow.workflowId,
+      resolution: WorkflowResolutionOptions(workflowName: workflow.workflowId), output: .json))
+    XCTAssertEqual(result.stdout.components(separatedBy: "cwd-local").count - 1, 1, result.stdout)
+  }
+
   func testValidateInjectsProductionPostprocessCompiler() async {
     let addon = WorkflowNodeAddonRef(
       name: "riela/gmail-gateway-reader",

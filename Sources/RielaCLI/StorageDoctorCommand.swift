@@ -134,7 +134,9 @@ struct StorageDoctorCommandRunner {
   }
 
   private func inspect(path: String, kind: String, top: Int, workingDirectory: String) throws -> StorageDoctorFile? {
-    let db = try SQLiteDatabase.open(path: path, mode: .strictReadOnlyWithImmutableFallback, options: .readOnlyDefault)
+    let mode: SQLiteOpenMode = kind == "memory" || kind == "cache" || kind == "kv"
+      ? .strictReadOnly : .strictReadOnlyWithImmutableFallback
+    let db = try SQLiteDatabase.open(path: path, mode: mode, options: .readOnlyDefault)
     let scalar: (String, String) throws -> Int64 = { sql, key in
       Int64(try db.query(sql).first?[key] ?? "0") ?? 0
     }

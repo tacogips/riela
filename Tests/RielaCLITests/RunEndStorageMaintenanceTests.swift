@@ -4,7 +4,7 @@ import RielaSQLite
 @testable import RielaCLI
 
 final class RunEndStorageMaintenanceTests: XCTestCase {
-  func testAutomaticHookVacuumRunsWithoutRetentionConfig() async throws {
+  func testAutomaticHookSkipsMaintenanceWithoutCompletedRetentionPass() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("run-end-hook-no-config")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appendingPathComponent("home", isDirectory: true)
@@ -34,7 +34,8 @@ final class RunEndStorageMaintenanceTests: XCTestCase {
     XCTAssertEqual(completion.result.stdout, commandResult.stdout)
     XCTAssertEqual(completion.result.stderr, commandResult.stderr)
     XCTAssertEqual(completion.result.exitCode, commandResult.exitCode)
-    XCTAssertLessThan(Int(try db.query("PRAGMA freelist_count").first?["freelist_count"] ?? "0") ?? before, before)
+    XCTAssertEqual(Int(try db.query("PRAGMA freelist_count").first?["freelist_count"] ?? "0") ?? 0, before,
+      "an unconfigured automatic pass must not vacuum a store")
   }
 
   func testIncrementalStoreReclaimsFreelistAndNoneStoreIsIgnored() throws {

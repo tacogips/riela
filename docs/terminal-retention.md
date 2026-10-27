@@ -53,6 +53,16 @@ artifact directory protect that family. Arbitrary artifact-reference paths,
 external files, application logs and user outputs are never recursively deleted.
 Keep those caller-owned outputs compact or give them a separate ownership policy.
 
+Runtime snapshots are canonical in `workflow_runtime_snapshots`. CLI session
+rows contain a small envelope and status stub, not a second full session JSON.
+Execution records are stored as ordered rows; their JSON payloads are
+content-addressed and deduplicated within a root/parent session family. Nested
+invocations store references to those payloads. Terminal family deletion removes
+its execution rows, nested references, and payload bytes together, while live
+references protect shared payloads until they are released. Older inline
+snapshots and full CLI rows remain readable and convert on write or through
+`riela storage compact --apply`.
+
 JSON reports include selected families, removed session count, protected reasons,
 pending cleanup, before/remaining charged payload bytes and `capAchieved`.
 A protected family can prevent the cap from being achieved; callers must inspect

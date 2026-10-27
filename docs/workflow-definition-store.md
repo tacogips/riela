@@ -125,10 +125,42 @@ GraphQL export returns the files and can write to the source when
 
 ## History retention
 
-Definition versions and audit records are append-only for every normal
-operation. Two commands remove history, and each one writes its own audit
-record with the reason, the actor and the removed version IDs (as `remove`
-diff entries under `/versions/<id>`, plus the removed audit and blob counts).
+Definition history uses `VersionedHistory`. Automatic retention keeps 10
+versions by default and runs inside every definition commit. Set
+`workflowDefinitions.historyRetention` in `~/.riela/config.json`, or pass
+`--history-retention <n>` on definition import, update, prompt update, or
+restore. Values are 0 (unlimited) or 1...10000. The compatibility key
+`retention.definitions.keepVersions` aliases the same setting; if both keys
+appear in one file, they must match.
+
+The retention window protects the current head, the last-file version, versions
+pinned by live sessions, and former heads from the previous 24 hours. A live
+session pin remains until its session row is removed; retention releases stale
+pins lazily. If migration records `pendingBackfill`, commits skip deletion until
+`riela storage compact --apply` completes the definition pin backfill.
+
+Guarded delete triggers restrict version and audit deletion to the engine's
+retention transaction. They protect against accidental and ad-hoc deletes, but
+are not a security boundary against a local database writer that deliberately
+sets the guard. An audit row is removed only when both its version and its
+`previous_version_id` were dropped. Immutable version identity rows remain even
+after document payloads are pruned, allowing the store to distinguish a known
+but unretained version from an unknown ID.
+
+`undo` and `redo` move the current head and append an audit record; they require
+`--reason` and accept `--expected-revision <n>` or `--expected-version <id>` for
+compare-and-swap. They do not move `last_file_version_id`. The CLI commands are
+`riela workflow definition undo <workflow>` and
+`riela workflow definition redo <workflow>`; GraphQL exposes
+`undoWorkflowDefinition` and `redoWorkflowDefinition`. Diffs use the shared
+structured diff format. A known version whose payload has been pruned fails
+with `definition_version_not_retained`, with the retained versions and window
+in the error details.
+
+Explicit prune and purge-history commands are still available for immediate
+cleanup. Each writes an audit record with the reason, actor and removed version
+IDs (as `remove` diff entries under `/versions/<id>`, plus removed audit and
+blob counts), subject to the protected versions above.
 
 Keep at most N versions of one workflow, or of every workflow in the selected
 stores:
@@ -140,12 +172,13 @@ riela workflow definition prune --all-workflows --keep 20 --reason "Monthly clea
 
 `--keep` counts the newest versions. These versions are always kept as well:
 the current version, the last file import (the baseline for `import`
-comparisons and `overwrittenChanges`), and any version pinned by a created,
-running or suspended session, and recent former heads within the 24 hour grace
-period. Audit records of removed
-versions are deleted. Earlier `prune` records stay. Document blobs that no
-remaining version references are deleted. A prune that would remove nothing
-writes no record.
+comparisons and `overwrittenChanges`), any version pinned by a session, and
+recent former heads within the 24 hour grace period. Pins do not depend on
+session status. An audit row is removed only when both the version named by
+that row and its previous version were dropped. Earlier prune records stay
+unless both versions they connect were removed. History rows contain the
+document payload, so dropping a version removes its payload. A prune that
+would remove nothing writes no record.
 
 Delete the whole history except the protected versions:
 
@@ -175,7 +208,8 @@ The definition API is available through these fields:
 - Queries: `workflowDefinitionHistory`, `workflowDefinition`,
   `workflowDefinitionDiff`.
 - Mutations: `updateWorkflowDefinition`, `updateWorkflowDefinitionPrompt`,
-  `restoreWorkflowDefinition`, `importWorkflowDefinition`,
+  `restoreWorkflowDefinition`, `undoWorkflowDefinition`,
+  `redoWorkflowDefinition`, `importWorkflowDefinition`,
   `exportWorkflowDefinition`.
 
 Update mutations require a reason and accept evidence, actor, expected version,
@@ -183,8 +217,7 @@ and store scope fields. GraphQL actor kinds are `api` and `user`. Import accepts
 `force`, `reason`, evidence, actor, source directory and scope. Export accepts
 `versionId` and `writeToSource`.
 
-The runtime records database is at schema generation 10. Generation 9 stores
-migrate in place to add `definition_blobs`, `definition_versions`,
-`definition_heads`, and append-only `definition_change_audit`. A store with
+The runtime records database is at schema generation 11. Generation 9 and 10
+stores migrate in place to the shared definition-history tables. A store with
 definition heads is never automatically discarded when no migration path is
 available.

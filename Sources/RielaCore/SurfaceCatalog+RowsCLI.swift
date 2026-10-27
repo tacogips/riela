@@ -254,11 +254,12 @@ extension SurfaceCatalog {
         kind: kind,
         cli: "memory \(name)",
         cliOptions: ["--workflow-id", "--payload-json", "--payload-file", "--record-id", "--all-workflows"]
+          + ((name == "save" || name == "update") ? ["--history-retention"] : [])
       )
     } + [
       ("history", SurfaceOperation.Kind.query, ["--record-id", "--before-version", "--limit"]),
-      ("show-version", .query, ["--record-id", "--version"]),
-      ("restore-version", .mutation, ["--record-id", "--version", "--expected-head-version"]),
+      ("show-version", .query, ["--record-id", "--version", "--diff-against"]),
+      ("restore-version", .mutation, ["--record-id", "--version", "--expected-head-version", "--history-retention"]),
       ("retire-history", .mutation, [
         "--memory-root", "--record-id", "--workflow-id", "--node-id", "--tag",
         "--expected-head-version", "--through-version", "--dry-run"
@@ -267,8 +268,10 @@ extension SurfaceCatalog {
       surfaceRow(memoryDefaults, id: "memory.\(name)", family: "memory", kind: kind, cli: "memory \(name)",
         cliOptions: options)
     } + [
-      surfaceRow(memoryDefaults, id: "memory.undo", family: "memory", kind: .mutation, cli: "memory undo"),
-      surfaceRow(memoryDefaults, id: "memory.redo", family: "memory", kind: .mutation, cli: "memory redo")
+      surfaceRow(memoryDefaults, id: "memory.undo", family: "memory", kind: .mutation, cli: "memory undo",
+        cliOptions: ["--memory-root", "--record-id", "--expected-head-version", "--output"]),
+      surfaceRow(memoryDefaults, id: "memory.redo", family: "memory", kind: .mutation, cli: "memory redo",
+        cliOptions: ["--memory-root", "--record-id", "--expected-head-version", "--output"])
     ]
   }
 
@@ -350,6 +353,8 @@ extension SurfaceCatalog {
     [
       surfaceRow(localToolDefaults, id: "setup.container", family: "setup", kind: .process, cli: "setup container"),
       surfaceRow(localToolDefaults, id: "doctor.report", family: "doctor", kind: .query, cli: "doctor"),
+      surfaceRow(localToolDefaults, id: "doctor.storage", family: "doctor", kind: .query,
+        cli: "doctor storage"),
       surfaceRow(localToolDefaults, id: "gc.sweep", family: "gc", kind: .process, cli: "gc"),
       surfaceRow(localToolDefaults, id: "storage.compact", family: "storage", kind: .process, cli: "storage compact"),
       surfaceRow(localToolDefaults, id: "version.print", family: "version", kind: .query, cli: "version"),

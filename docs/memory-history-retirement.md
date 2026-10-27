@@ -2,7 +2,11 @@
 
 Available in Riela 0.2.17 and later.
 
-Normal memory updates retain byte-exact reverse deltas. Replacing a payload with a cache reference does not erase prior bodies: `memory show-version` can reconstruct them. Cache TTL and terminal session prune do not retire application-owned checkpoint history.
+Normal memory updates use bounded automatic history retention (2 versions by
+default; runtime snapshot state retains 1). Manual retirement is therefore
+rarely needed for routine cleanup. Replacing a payload with a cache reference
+does not itself erase retained bodies. Cache TTL and terminal session prune do
+not retire application-owned checkpoint history.
 
 After an application's own migration verifies its cache and current checkpoint, quiesce that application's acquisition writers (ART holds its acquisition lock), inspect its exact head, then plan a single-record retirement:
 
@@ -15,7 +19,7 @@ riela memory retire-history <memory-id> \
   --dry-run --output json
 ```
 
-Remove `--dry-run` to apply. The command requires every scope/ownership argument and retires only versions before that exact head. It does not update/delete current records, metadata, related references, receipt data, or attachments. Its tag arguments are required membership checks, not replacement tags. It keeps the original head number and introduces a retained floor; future updates continue monotonically. `show-version` and `restore-version` below the floor fail with `retiredVersion`; no older-value fallback occurs. `history` lists only retained revisions.
+Remove `--dry-run` to apply. The command requires every scope/ownership argument and retires only versions before that exact head. It does not update/delete current records, metadata, related references, receipt data, or attachments. Its tag arguments are required membership checks, not replacement tags. For a new-format record, retirement drops every non-head version through the shared history engine; the current head remains. Legacy records keep the original head number and use a retained floor; future updates continue monotonically. `show-version` and `restore-version` below a legacy floor fail with `retiredVersion`; new-format history outside the retained set reports `version_not_retained`. No older-value fallback occurs. `history` lists only retained revisions.
 
 Dry-run opens the existing database read-only and does not migrate it or create missing state. Apply requires exclusive SQLite admission and rechecks ownership and head CAS. Busy readers/writers, current or historical related links, any retained attachment, unknown schemas, other records with uninspectable historical links, and chains over 1,000 revisions cause conservative blocking. A malformed chain is an error. Load/search audit rows are access logs with no version pin/release semantics; retirement preserves them and they do not block retirement.
 

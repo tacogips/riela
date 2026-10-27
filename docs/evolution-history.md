@@ -1,9 +1,11 @@
 # Evolution history
 
-Riela memory records retain their latest value plus reverse deltas. Every
-delta explicitly says `direction: next-to-previous`, identifies its newer
-`fromVersion` and older `toVersion`, and verifies both values with SHA-256.
-Binary data and Unicode round-trip without relying on text patch heuristics.
+Riela memory records keep a bounded history in the shared `VersionedHistory`
+format. Each version stores either a compressed full value or a compressed
+splice; neither encoding uses base64. Splices preserve exact bytes and verify
+their source and result with SHA-256. Binary data and Unicode round-trip without
+text patch heuristics. Legacy reverse-delta rows remain readable until their
+record is written or `riela storage compact --apply` converts them.
 
 Saving a record creates version 1. Updates to payload, tags, related record IDs
 or attachments append a version in the same SQLite transaction. Identical
@@ -27,17 +29,37 @@ creates a new version, including when restoring the current value, and preserves
 all intervening versions. It rejects a stale expected head rather than losing a
 concurrent update. Read the latest history before choosing the expected head.
 
+Memory history retention defaults to 2 versions and accepts 1...1000. The
+`riela/snapshot-store` writes used for runtime state retain 1; workflow memory
+declarations and CLI `save`, `update`, and `restore-version` can set
+`historyRetention` or `--history-retention <n>`. A revision is the compare-and-
+swap sequence number for the current head. A value version identifies a stored
+value. They advance together for ordinary writes, but undo and redo move the
+head to an existing value and advance the revision without creating a value
+version.
+
+Undo and redo require the current revision so a stale client cannot move a newer
+head:
+
+```sh
+riela memory undo chat-memory --record-id 1 --expected-head-version 7
+riela memory redo chat-memory --record-id 1 --expected-head-version 8
+```
+
+`show-version --diff-against <version|head>` and workflow-definition diffs use
+the same structured diff representation. Requests for a known version outside
+the retained window fail with `version_not_retained`; they do not silently
+return a nearby value.
+
 The Swift API exposes `RielaMemoryStore.evolutionHistory`, `recordVersion` and
 `restoreRecordVersion`. History refers to Riela short-term record changes.
 Kaiba long-term notes are owned by Kaiba; memory metadata and the separate KV
 store do not currently use this record history.
 
-Storage uses unchanged byte prefix/suffix lengths and the previous middle
-bytes. Local edits stay small; distant edits can retain a larger middle span.
-Reading the head does not replay history. Reconstructing an old value streams
-the required edges from one database read transaction. Do not delete deltas or
-retained attachments independently: older versions depend on them. Automatic
-history retention/pruning is not implemented.
+Reading the head does not replay history. Reconstructing an old value uses one
+database read transaction. Do not delete history rows or retained attachments
+independently: older versions depend on them. Retention removes old versions
+through the shared engine and reclaims database pages in bounded increments.
 
 Workflow/prompt snapshots now use `content-addressed-chunks`: each file records
 an ordered list of SHA-256 chunk references. Unchanged chunks are stored once

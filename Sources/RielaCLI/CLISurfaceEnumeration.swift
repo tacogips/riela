@@ -76,6 +76,8 @@ public enum CLISurfaceEnumerator {
       return nested(["status", "reload"])
     case "memory":
       return nested(MemoryCommandKind.allRawValues)
+    case "doctor":
+      return [CLICommandDescriptor([route]), CLICommandDescriptor([route, "storage"])]
     case "storage":
       return nested(StorageClientAction.allCases.map(\.rawValue))
     case "cache":
@@ -120,7 +122,7 @@ public enum CLISurfaceEnumerator {
 
   /// Routes that are deliberately a single command with no subcommands.
   /// Everything else must have an expansion case above.
-  static let leafRoutes: Set<String> = ["gql", "rrun", "doctor", "gc", "version", "call-step", "workflow-call"]
+  static let leafRoutes: Set<String> = ["gql", "rrun", "gc", "version", "call-step", "workflow-call"]
 
   /// Routes that are neither declared leaves nor expanded by `expand(route:)`.
   /// The CLI gate requires this to be empty: classifying a new family is what
@@ -132,7 +134,7 @@ public enum CLISurfaceEnumerator {
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = ["environment",
     "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
-    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve", "storage"
+    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve", "storage", "doctor"
   ]
 
   /// Every `--option` token any `riela` parser accepts, rendered from the
@@ -154,10 +156,14 @@ public enum CLISurfaceEnumerator {
       ParsedTaskListOptions.helpMessage(),
       ParsedTaskRunOptions.helpMessage(),
       ParsedSessionReconcileArguments.helpMessage(),
-      ParsedTaskDecideOptions.helpMessage()
+      ParsedTaskDecideOptions.helpMessage(),
+      ParsedStorageCommandArguments.helpMessage()
     ] {
       names.formUnion(longOptionTokens(in: message))
     }
+    // Workflow definition options are parsed by hand.
+    names.formUnion(ParsedWorkflowDefinitionCommand.valueOptions)
+    names.formUnion(ParsedWorkflowDefinitionCommand.flagOptions)
     // Options parsed by hand rather than by swift-argument-parser.
     names.formUnion([
       "--config",            // riela worker --config <worker.json>

@@ -90,7 +90,8 @@ final class SurfaceParityCLITests: XCTestCase {
       "specialist submit", "graphql schema", "events schedules cancel", "routine create",
       "task show", "task list", "task run", "task decide",
       "serve", "serve status", "hook codex", "kaiba instance list", "auth invite",
-      "worker", "worker status", "call-step", "workflow-call", "rrun", "gql", "version"
+      "worker", "worker status", "call-step", "workflow-call", "rrun", "gql", "version",
+      "workflow definition undo", "workflow definition redo", "doctor", "doctor storage", "storage compact"
     ] {
       XCTAssertTrue(commands.contains(expected), "CLI enumeration is missing '\(expected)'")
     }
@@ -131,5 +132,11 @@ final class SurfaceParityCLITests: XCTestCase {
     XCTAssertTrue(options.contains("--mock-scenario"))
     XCTAssertFalse(options.contains("--supervisor-workflow"))
     XCTAssertFalse(options.contains("--no-allow-targeted-rerun"))
+    for expected in [
+      "--history-retention", "--diff-against", "--abandoned-after-hours", "--max-batch",
+      "--top", "--kv-root", "--cache-root", "--expected-revision"
+    ] {
+      XCTAssertTrue(options.contains(expected), "CLI option enumeration is missing '\(expected)'")
+    }
   }
 }

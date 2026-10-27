@@ -24,6 +24,7 @@ public enum RielaMemoryError: Error, Equatable, Sendable {
   case invalidStoreId(String)
   case invalidStoreScope(String)
   case invalidStoreKey(String)
+  case invalidHistoryRetention(Int)
 }
 
 public enum MemoryValueSortOrder: String, Codable, Equatable, Sendable {

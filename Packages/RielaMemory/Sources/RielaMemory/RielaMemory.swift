@@ -30,7 +30,8 @@ public struct RielaMemoryStore: Sendable {
     tags: [String] = [],
     relatedRecordIds: [Int64] = [],
     files: [MemoryFileReference] = [],
-    payload: MemoryJSONValue
+    payload: MemoryJSONValue,
+    historyRetention: Int? = nil
   ) throws -> MemoryRecord {
     try validateMemoryId(memoryId)
     try validateWorkflowId(workflowId)
@@ -81,8 +82,10 @@ public struct RielaMemoryStore: Sendable {
     let recordId = sqlite3_last_insert_rowid(db)
     let storedFiles = try storeFiles(files, memoryId: memoryId, recordId: recordId, copiedPaths: &copiedPaths)
     _ = try replaceFiles(storedFiles, recordId: recordId, db: db)
-    try recordEvolution(previous: nil, next: record(memoryId: memoryId, recordId: recordId, db: db), db: db)
+    let historyResult = try historyWrite(previous: nil, next: record(memoryId: memoryId, recordId: recordId, db: db), db: db,
+      historyRetention: historyRetention)
     try execute(db, "COMMIT")
+    reclaimHistoryPages(db, freedBytes: historyResult.freedBytes)
     committed = true
     return MemoryRecord(
       recordId: recordId,
@@ -106,7 +109,8 @@ public struct RielaMemoryStore: Sendable {
     tags: [String] = [],
     relatedRecordIds: [Int64] = [],
     files: [MemoryFileReference]? = nil,
-    payload: MemoryJSONValue
+    payload: MemoryJSONValue,
+    historyRetention: Int? = nil
   ) throws -> MemoryRecord {
     try validateMemoryId(memoryId)
     guard recordId > 0 else {
@@ -168,8 +172,9 @@ public struct RielaMemoryStore: Sendable {
       _ = try replaceFiles(storedFiles, recordId: recordId, db: db)
     }
     let updated = try record(memoryId: memoryId, recordId: recordId, db: db)
-    try recordEvolution(previous: previous, next: updated, db: db)
+    let historyResult = try historyWrite(previous: previous, next: updated, db: db, historyRetention: historyRetention)
     try execute(db, "COMMIT")
+    reclaimHistoryPages(db, freedBytes: historyResult.freedBytes)
     committed = true
     return updated
   }
@@ -260,14 +265,14 @@ public struct RielaMemoryStore: Sendable {
   }
 
   public func load(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30,
-    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
+                   maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
   ) throws -> [MemoryRecord] {
     try search(memoryId: memoryId, options: MemorySearchOptions(workflowId: workflowId, nodeId: nodeId, limit: limit,
       maxPayloadBytes: maxPayloadBytes, payloadOverflowPolicy: .fail))
   }
 
   public func loadAllWorkflows(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30,
-    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
+                               maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
   ) throws -> [MemoryRecord] {
     try search(
       memoryId: memoryId,
@@ -363,65 +368,6 @@ public struct RielaMemoryStore: Sendable {
     return records
   }
 
-  public func uniqueTags(memoryId: String, options: MemoryValueListOptions = MemoryValueListOptions()) throws -> [String] {
-    try validateValueList(memoryId: memoryId, options: options)
-    let path = try databasePath(memoryId: memoryId)
-    guard FileManager.default.fileExists(atPath: path) else {
-      return []
-    }
-
-    let db = try openDatabase(memoryId: memoryId)
-    defer {
-      sqlite3_close(db)
-    }
-    try ensureSchema(db)
-
-    var sql = """
-      SELECT DISTINCT json_each.value AS value
-      FROM memory_entries, json_each(json(memory_entries.tags_json))
-      """
-    var bindings: [SQLiteBinding] = []
-    appendWorkflowFilter(options, sql: &sql, bindings: &bindings)
-    sql += options.sortOrder == .valueDesc ? " ORDER BY value DESC" : " ORDER BY value ASC"
-    sql += " LIMIT ? OFFSET ?"
-    bindings.append(.int(options.limit))
-    bindings.append(.int(options.offset))
-
-    return try queryRows(db, sql: sql, bindings: bindings).compactMap { $0.columns["value"] }
-  }
-
-  public func uniqueRelatedRecordIds(
-    memoryId: String,
-    options: MemoryValueListOptions = MemoryValueListOptions()
-  ) throws -> [Int64] {
-    try validateValueList(memoryId: memoryId, options: options)
-    let path = try databasePath(memoryId: memoryId)
-    guard FileManager.default.fileExists(atPath: path) else {
-      return []
-    }
-
-    let db = try openDatabase(memoryId: memoryId)
-    defer {
-      sqlite3_close(db)
-    }
-    try ensureSchema(db)
-
-    var sql = """
-      SELECT DISTINCT CAST(json_each.value AS INTEGER) AS value
-      FROM memory_entries, json_each(json(memory_entries.related_record_ids_json))
-      """
-    var bindings: [SQLiteBinding] = []
-    appendWorkflowFilter(options, sql: &sql, bindings: &bindings)
-    sql += options.sortOrder == .valueDesc ? " ORDER BY value DESC" : " ORDER BY value ASC"
-    sql += " LIMIT ? OFFSET ?"
-    bindings.append(.int(options.limit))
-    bindings.append(.int(options.offset))
-
-    return try queryRows(db, sql: sql, bindings: bindings).compactMap { row in
-      row.columns["value"].flatMap(Int64.init)
-    }
-  }
-
   public func referenceHistory(memoryId: String, recordId: Int64? = nil, limit: Int = 30) throws -> [MemoryRecordReference] {
     try validateMemoryId(memoryId)
     guard limit > 0 else {
@@ -470,6 +416,8 @@ public struct RielaMemoryStore: Sendable {
   func openDatabase(memoryId: String, readOnly: Bool = false) throws -> OpaquePointer? {
     let path = try databasePath(memoryId: memoryId)
     let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+    let fileExists = FileManager.default.fileExists(atPath: path)
+    let isNewDatabase = !fileExists || ((try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.intValue ?? 0) == 0
     if !readOnly {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
@@ -484,6 +432,12 @@ public struct RielaMemoryStore: Sendable {
     }
     sqlite3_busy_timeout(opened, 5_000)
     try execute(opened, "PRAGMA foreign_keys = ON")
+    if !readOnly && isNewDatabase {
+      let tables = try queryRows(opened, sql: "SELECT 1 FROM sqlite_master LIMIT 1", bindings: [])
+      if tables.isEmpty {
+        _ = try queryRows(opened, sql: "PRAGMA auto_vacuum = INCREMENTAL", bindings: [])
+      }
+    }
     return opened
   }
 
@@ -569,6 +523,7 @@ public struct RielaMemoryStore: Sendable {
     )
     try ensureMemoryEvolutionSchema(db)
     try ensureMemorySnapshotRetentionSchema(db)
+    try ensureMemoryHistorySchema(db)
     try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
     try execute(db, "COMMIT")
     committed = true
@@ -890,6 +845,67 @@ public struct RielaMemoryStore: Sendable {
         name: row.columns["name"],
         sizeBytes: row.columns["size_bytes"].flatMap(Int64.init)
       )
+    }
+  }
+}
+
+extension RielaMemoryStore {
+  public func uniqueTags(memoryId: String, options: MemoryValueListOptions = MemoryValueListOptions()) throws -> [String] {
+    try validateValueList(memoryId: memoryId, options: options)
+    let path = try databasePath(memoryId: memoryId)
+    guard FileManager.default.fileExists(atPath: path) else {
+      return []
+    }
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+
+    var sql = """
+      SELECT DISTINCT json_each.value AS value
+      FROM memory_entries, json_each(json(memory_entries.tags_json))
+      """
+    var bindings: [SQLiteBinding] = []
+    appendWorkflowFilter(options, sql: &sql, bindings: &bindings)
+    sql += options.sortOrder == .valueDesc ? " ORDER BY value DESC" : " ORDER BY value ASC"
+    sql += " LIMIT ? OFFSET ?"
+    bindings.append(.int(options.limit))
+    bindings.append(.int(options.offset))
+
+    return try queryRows(db, sql: sql, bindings: bindings).compactMap { $0.columns["value"] }
+  }
+
+  public func uniqueRelatedRecordIds(
+    memoryId: String,
+    options: MemoryValueListOptions = MemoryValueListOptions()
+  ) throws -> [Int64] {
+    try validateValueList(memoryId: memoryId, options: options)
+    let path = try databasePath(memoryId: memoryId)
+    guard FileManager.default.fileExists(atPath: path) else {
+      return []
+    }
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+
+    var sql = """
+      SELECT DISTINCT CAST(json_each.value AS INTEGER) AS value
+      FROM memory_entries, json_each(json(memory_entries.related_record_ids_json))
+      """
+    var bindings: [SQLiteBinding] = []
+    appendWorkflowFilter(options, sql: &sql, bindings: &bindings)
+    sql += options.sortOrder == .valueDesc ? " ORDER BY value DESC" : " ORDER BY value ASC"
+    sql += " LIMIT ? OFFSET ?"
+    bindings.append(.int(options.limit))
+    bindings.append(.int(options.offset))
+
+    return try queryRows(db, sql: sql, bindings: bindings).compactMap { row in
+      row.columns["value"].flatMap(Int64.init)
     }
   }
 }

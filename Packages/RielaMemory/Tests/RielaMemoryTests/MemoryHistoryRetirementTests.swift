@@ -14,6 +14,18 @@ final class MemoryHistoryRetirementTests: XCTestCase {
       payload: .object(["body": .string(String(repeating: "OLD_BODY_SECRET_", count: 10000))]))
     let head = try store.update(memoryId: "m", recordId: first.recordId, workflowId: "wf", nodeId: "collect",
       tags: ["checkpoint"], payload: .object(["cursor": .string("keep-cursor")]))
+    let db = try store.openDatabase(memoryId: "m")
+    try execute(db, "DELETE FROM memory_history_versions WHERE key=?", bindings: [.text(String(first.recordId))])
+    try execute(db, "DELETE FROM memory_history_heads WHERE key=?", bindings: [.text(String(first.recordId))])
+    try execute(db, "DELETE FROM memory_evolution WHERE record_id=?", bindings: [.int64(first.recordId)])
+    let oldBytes = Data(try encodedJSONString(first).utf8)
+    let newBytes = Data(try encodedJSONString(head).utf8)
+    let delta = try EvolutionReverseDelta(previous: oldBytes, next: newBytes, nextVersion: 2)
+    try execute(db, "INSERT INTO memory_evolution(record_id,version,recorded_at,reverse_delta_json) VALUES(?,1,?,NULL)",
+      bindings: [.int64(first.recordId), .text(currentTimestamp())])
+    try execute(db, "INSERT INTO memory_evolution(record_id,version,recorded_at,reverse_delta_json) VALUES(?,2,?,?)",
+      bindings: [.int64(first.recordId), .text(currentTimestamp()), .text(try encodedJSONString(delta))])
+    sqlite3_close(db)
     return (store, head)
   }
 
@@ -30,8 +42,9 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     for version in 3...96 {
       head = try store.update(memoryId: "m", recordId: head.recordId, workflowId: "wf",
         nodeId: "collect", tags: ["checkpoint"], payload: .object(["cursor": .string("cursor-\(version)"),
-          "body": .string(String(repeating: "revision-\(version)-", count: 2048))]))
+          "body": .string(String(repeating: "revision-\(version)-", count: 2048))]), historyRetention: 100)
       snapshots.append(head)
+      try replaceWithLegacyHistory(store, recordId: head.recordId, records: snapshots)
     }
     let db = try store.openDatabase(memoryId: "m")
     defer { sqlite3_close(db) }
@@ -57,7 +70,7 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     var head = initial
     for version in 3...5 {
       head = try store.update(memoryId: "m", recordId: head.recordId, workflowId: "wf",
-        nodeId: "collect", tags: ["checkpoint"], payload: .string("cursor-\(version)"))
+        nodeId: "collect", tags: ["checkpoint"], payload: .string("cursor-\(version)"), historyRetention: 100)
     }
     XCTAssertEqual(try retire(store, head, dryRun: true, head: 5).status, "planned")
     XCTAssertEqual(try retire(store, head, head: 5).status, "retired")
@@ -88,10 +101,14 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 2), head)
     XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: other.recordId, version: 1), other)
     XCTAssertThrowsError(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 1)) {
-      XCTAssertEqual($0 as? MemoryHistoryRetirementError, .retiredVersion)
+      guard case .versionNotRetained(version: 1, retained: [2], retainedGenerations: _) = $0 as? VersionedHistoryError else {
+        return XCTFail("expected version-not-retained, got \($0)")
+      }
     }
     XCTAssertThrowsError(try store.restoreRecordVersion(memoryId: "m", recordId: head.recordId, version: 1, expectedHeadVersion: 2)) {
-      XCTAssertEqual($0 as? MemoryHistoryRetirementError, .retiredVersion)
+      guard case .versionNotRetained(version: 1, retained: [2], retainedGenerations: _) = $0 as? VersionedHistoryError else {
+        return XCTFail("expected version-not-retained, got \($0)")
+      }
     }
     XCTAssertEqual(try store.evolutionHistory(memoryId: "m", recordId: head.recordId).map(\.version), [2])
     XCTAssertNil(try store.evolutionHistory(memoryId: "m", recordId: head.recordId).first?.reverseDelta)
@@ -165,9 +182,9 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     let (store, head) = try fixture()
     let target = try store.save(memoryId: "m", workflowId: "other", payload: .string("target"))
     _ = try store.update(memoryId: "m", recordId: head.recordId, workflowId: "wf", nodeId: "collect",
-      tags: ["checkpoint"], relatedRecordIds: [target.recordId], payload: .string("linked"))
+      tags: ["checkpoint"], relatedRecordIds: [target.recordId], payload: .string("linked"), historyRetention: 10)
     _ = try store.update(memoryId: "m", recordId: head.recordId, workflowId: "wf", nodeId: "collect",
-      tags: ["checkpoint"], payload: head.payload)
+      tags: ["checkpoint"], payload: head.payload, historyRetention: 10)
     XCTAssertEqual(try retire(store, head, head: 4).status, "historical_references")
     XCTAssertNoThrow(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 1))
   }
@@ -251,5 +268,22 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     XCTAssertEqual(try retire(store, head).status, "busy")
     try execute(db, "ROLLBACK")
     XCTAssertEqual(try retire(store, head).status, "retired")
+  }
+
+  private func replaceWithLegacyHistory(_ store: RielaMemoryStore, recordId: Int64, records: [MemoryRecord]) throws {
+    let db = try store.openDatabase(memoryId: "m")
+    defer { sqlite3_close(db) }
+    try execute(db, "DELETE FROM memory_history_versions WHERE key=?", bindings: [.text(String(recordId))])
+    try execute(db, "DELETE FROM memory_history_heads WHERE key=?", bindings: [.text(String(recordId))])
+    try execute(db, "DELETE FROM memory_evolution WHERE record_id=?", bindings: [.int64(recordId)])
+    try execute(db, "INSERT INTO memory_evolution(record_id,version,recorded_at,reverse_delta_json) VALUES(?,1,?,NULL)",
+      bindings: [.int64(recordId), .text(currentTimestamp())])
+    for index in 1..<records.count {
+      let previous = Data(try encodedJSONString(records[index - 1]).utf8)
+      let next = Data(try encodedJSONString(records[index]).utf8)
+      let delta = try EvolutionReverseDelta(previous: previous, next: next, nextVersion: Int64(index + 1))
+      try execute(db, "INSERT INTO memory_evolution(record_id,version,recorded_at,reverse_delta_json) VALUES(?,?,?,?)",
+        bindings: [.int64(recordId), .int64(Int64(index + 1)), .text(currentTimestamp()), .text(try encodedJSONString(delta))])
+    }
   }
 }

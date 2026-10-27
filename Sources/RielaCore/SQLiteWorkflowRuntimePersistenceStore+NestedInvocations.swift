@@ -23,6 +23,11 @@ struct NestedCalleeRevisionMaterial: Codable {
   let nodePayloads: [String: AgentNodePayload]
 }
 
+private struct NestedCalleePayload: Codable {
+  var workflow: WorkflowDefinition?
+  var nodePayloads: [String: AgentNodePayload]?
+}
+
 /// Immutable identity and prepared child snapshot for one nested invocation.
 /// A parent retry may reuse this value, but it must never substitute another
 /// child session, branch, or prepared executable state.
@@ -118,7 +123,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
             parent_message_json, created_at, updated_at
           ) VALUES (?, jsonb(?), NULL, NULL, ?, ?)
           """,
-          bindings: [.text(key), .text(try nestedJSON(reservation)), .text(now), .text(now)]
+          bindings: [.text(key), .text(try encodedReservation(reservation, key: key, in: db)), .text(now), .text(now)]
         )
       }
       try save(reservation.childSnapshot, in: db)
@@ -153,7 +158,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
           parent_message_json, created_at, updated_at
         ) VALUES (?, jsonb(?), NULL, NULL, ?, ?)
         """,
-        bindings: [.text(key), .text(try nestedJSON(reservation)), .text(now), .text(now)]
+        bindings: [.text(key), .text(try encodedReservation(reservation, key: key, in: db)), .text(now), .text(now)]
       )
       return WorkflowNestedInvocationRecord(
         reservation: reservation, childTerminalSnapshot: nil, parentMessage: nil, recoveryReason: nil
@@ -193,7 +198,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       try save(terminalSnapshot, in: db)
       try db.execute(
         "UPDATE workflow_nested_invocations SET child_terminal_json = jsonb(?), updated_at = ? WHERE invocation_key = ?",
-        bindings: [.text(try nestedJSON(terminalSnapshot)), .text(Self.dateString(Date())), .text(key)]
+        bindings: [.text(try encodedNestedSnapshot(terminalSnapshot, key: key, role: "terminal", in: db)), .text(Self.dateString(Date())), .text(key)]
       )
       existing.childTerminalSnapshot = terminalSnapshot
       return existing
@@ -287,6 +292,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     let rows = try db.query(
       """
       SELECT json(reservation_json) AS reservation_json,
+        invocation_key,
         CASE WHEN child_terminal_json IS NULL THEN NULL ELSE json(child_terminal_json) END AS child_terminal_json,
         CASE WHEN parent_message_json IS NULL THEN NULL ELSE json(parent_message_json) END AS parent_message_json,
         recovery_reason
@@ -301,8 +307,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested invocation record is missing its reservation")
       }
       return WorkflowNestedInvocationRecord(
-        reservation: try nestedDecode(WorkflowNestedInvocationReservation.self, reservationJSON),
-        childTerminalSnapshot: try row["child_terminal_json"].map { try nestedDecode(WorkflowRuntimePersistenceSnapshot.self, $0) },
+        reservation: try decodedReservation(reservationJSON, key: row["invocation_key"] ?? "", in: db),
+        childTerminalSnapshot: try row["child_terminal_json"].map { try decodedNestedSnapshot($0, key: row["invocation_key"] ?? "", role: "terminal", in: db) },
         parentMessage: try row["parent_message_json"].map { try nestedDecode(WorkflowMessageRecord.self, $0) },
         recoveryReason: row["recovery_reason"]
       )
@@ -513,8 +519,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       return (
         key,
         WorkflowNestedInvocationRecord(
-          reservation: try nestedDecode(WorkflowNestedInvocationReservation.self, reservationJSON),
-          childTerminalSnapshot: try row["child_terminal_json"].map { try nestedDecode(WorkflowRuntimePersistenceSnapshot.self, $0) },
+          reservation: try decodedReservation(reservationJSON, key: key, in: db),
+          childTerminalSnapshot: try row["child_terminal_json"].map { try decodedNestedSnapshot($0, key: key, role: "terminal", in: db) },
           parentMessage: try row["parent_message_json"].map { try nestedDecode(WorkflowMessageRecord.self, $0) },
           recoveryReason: row["recovery_reason"]
         )
@@ -552,7 +558,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     return message
   }
 
-  private func nestedInvocationRecord(
+  func nestedInvocationRecord(
     key: String,
     in db: SQLiteDatabase
   ) throws -> WorkflowNestedInvocationRecord? {
@@ -568,8 +574,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     )
     guard let row = rows.first, let reservationJSON = row["reservation_json"] else { return nil }
     return WorkflowNestedInvocationRecord(
-      reservation: try nestedDecode(WorkflowNestedInvocationReservation.self, reservationJSON),
-      childTerminalSnapshot: try row["child_terminal_json"].map { try nestedDecode(WorkflowRuntimePersistenceSnapshot.self, $0) },
+      reservation: try decodedReservation(reservationJSON, key: key, in: db),
+      childTerminalSnapshot: try row["child_terminal_json"].map { try decodedNestedSnapshot($0, key: key, role: "terminal", in: db) },
       parentMessage: try row["parent_message_json"].map { try nestedDecode(WorkflowMessageRecord.self, $0) },
       recoveryReason: row["recovery_reason"]
     )
@@ -581,6 +587,153 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       message.deliveryKind == input.deliveryKind && message.sourceStepExecutionId == input.sourceStepExecutionId &&
       message.transitionCondition == input.transitionCondition && message.payload == input.payload &&
       message.artifactRefs == input.artifactRefs
+  }
+
+  func encodedReservation(
+    _ reservation: WorkflowNestedInvocationReservation,
+    key: String,
+    in db: SQLiteDatabase
+  ) throws -> String {
+    let references = try persistNestedReferences(reservation.childSnapshot, invocationKey: key, role: "reservation", in: db)
+    var value = try nestedJSONObject(reservation)
+    if reservation.calleeWorkflow != nil || reservation.calleeNodePayloads != nil {
+      let material = NestedCalleePayload(workflow: reservation.calleeWorkflow, nodePayloads: reservation.calleeNodePayloads)
+      let payload = try nestedJSON(material)
+      let rootId = reservation.childSnapshot.session.rootSessionId ?? reservation.childSnapshot.session.sessionId
+      let digest = try insertNestedPayload(payload, ordinal: -1, rootId: rootId, invocationKey: key, role: "callee", in: db)
+      value.removeValue(forKey: "calleeWorkflow")
+      value.removeValue(forKey: "calleeNodePayloads")
+      value["calleeDigest"] = .string(digest)
+    }
+    value["childSnapshot"] = .object(["session": .object(try nestedSessionStub(reservation.childSnapshot.session))])
+    value["childSnapshotStorage"] = .string("refs")
+    value["childSnapshotRef"] = .object(references)
+    return try nestedJSON(value)
+  }
+
+  func encodedNestedSnapshot(
+    _ snapshot: WorkflowRuntimePersistenceSnapshot,
+    key: String,
+    role: String,
+    in db: SQLiteDatabase
+  ) throws -> String {
+    let references = try persistNestedReferences(snapshot, invocationKey: key, role: role, in: db)
+    var value = try nestedJSONObject(snapshot)
+    value["session"] = .object(try nestedSessionStub(snapshot.session))
+    value["childSnapshotStorage"] = .string("refs")
+    value["childSnapshotRef"] = .object(references)
+    return try nestedJSON(value)
+  }
+
+  private func decodedReservation(_ json: String, key: String, in db: SQLiteDatabase) throws -> WorkflowNestedInvocationReservation {
+    var value = try nestedJSONObject(from: json)
+    if case let .string(digest)? = value["calleeDigest"] {
+      let rows = try db.query(
+        """
+        SELECT json(p.bytes) AS payload
+        FROM workflow_nested_invocation_refs AS r
+        JOIN workflow_runtime_payloads AS p ON p.root_session_id=r.root_session_id AND p.digest=r.digest
+        WHERE r.invocation_key=? AND r.role='callee' AND r.digest=? LIMIT 1
+        """,
+        bindings: [.text(key), .text(digest)]
+      )
+      guard let payload = rows.first?["payload"], nestedDigest(payload) == digest else {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested callee payload is missing")
+      }
+      let material = try nestedDecode(NestedCalleePayload.self, payload)
+      if let workflow = material.workflow { value["calleeWorkflow"] = try nestedJSONValue(workflow) }
+      if let nodePayloads = material.nodePayloads { value["calleeNodePayloads"] = try nestedJSONValue(nodePayloads) }
+      value.removeValue(forKey: "calleeDigest")
+    }
+    guard value["childSnapshotStorage"] == .string("refs"), let reference = value["childSnapshotRef"] else {
+      return try nestedDecode(WorkflowNestedInvocationReservation.self, json)
+    }
+    value["childSnapshot"] = try hydratedNestedSnapshot(reference, key: key, role: "reservation", in: db)
+    value.removeValue(forKey: "childSnapshotStorage")
+    value.removeValue(forKey: "childSnapshotRef")
+    return try nestedDecode(WorkflowNestedInvocationReservation.self, nestedJSON(value))
+  }
+
+  private func decodedNestedSnapshot(_ json: String, key: String, role: String, in db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
+    let value = try nestedJSONObject(from: json)
+    guard value["childSnapshotStorage"] == .string("refs"), let reference = value["childSnapshotRef"] else {
+      return try nestedDecode(WorkflowRuntimePersistenceSnapshot.self, json)
+    }
+    let hydrated = try hydratedNestedSnapshot(reference, key: key, role: role, in: db)
+    guard case let .object(object) = hydrated else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested snapshot hydration failed")
+    }
+    return try nestedDecode(WorkflowRuntimePersistenceSnapshot.self, nestedJSON(object))
+  }
+
+  private func hydratedNestedSnapshot(_ referenceValue: JSONValue, key: String, role: String, in db: SQLiteDatabase) throws -> JSONValue {
+    guard case let .object(reference) = referenceValue,
+          case let .string(headerDigest)? = reference["headerDigest"],
+          case let .array(executionDigests)? = reference["executionDigests"] else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested snapshot reference is malformed")
+    }
+    let rows = try db.query(
+      """
+      SELECT r.ordinal, json(p.bytes) AS payload
+      FROM workflow_nested_invocation_refs AS r
+      JOIN workflow_runtime_payloads AS p ON p.root_session_id=r.root_session_id AND p.digest=r.digest
+      WHERE r.invocation_key=? AND r.role=?
+      """,
+      bindings: [.text(key), .text(role)]
+    )
+    var payloads: [Int: String] = [:]
+    for row in rows {
+      if let ordinal = row["ordinal"].flatMap(Int.init), let payload = row["payload"] { payloads[ordinal] = payload }
+    }
+    guard let headerJSON = payloads[-1], nestedDigest(headerJSON) == headerDigest else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested snapshot header payload is missing")
+    }
+    var snapshot = try nestedJSONObject(from: headerJSON)
+    guard case var .object(session)? = snapshot["session"] else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested snapshot session header is malformed")
+    }
+    var executions: [JSONValue] = []
+    for (ordinal, digestValue) in executionDigests.enumerated() {
+      guard case let .string(digest) = digestValue,
+            let payload = payloads[ordinal], nestedDigest(payload) == digest,
+            let data = payload.data(using: .utf8) else {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested execution payload is missing")
+      }
+      executions.append(try JSONDecoder().decode(JSONValue.self, from: data))
+    }
+    session["executions"] = .array(executions)
+    snapshot["session"] = .object(session)
+    if reference["rootOutputDigest"] != nil, let payload = payloads[executionDigests.count], let data = payload.data(using: .utf8) {
+      snapshot["rootOutput"] = try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+    if let payload = payloads[executionDigests.count + 1], let data = payload.data(using: .utf8) {
+      snapshot["diagnostics"] = try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+    if reference["loopEvidenceDigest"] != nil, let payload = payloads[executionDigests.count + 2], let data = payload.data(using: .utf8) {
+      snapshot["loopEvidence"] = try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+    return .object(snapshot)
+  }
+
+  private func nestedSessionStub(_ session: WorkflowSession) throws -> JSONObject {
+    let value = try nestedJSONObject(session)
+    let keys = ["sessionId", "workflowId", "status", "parentSessionId", "rootSessionId"]
+    return value.filter { keys.contains($0.key) }
+  }
+
+  private func nestedJSONObject<T: Encodable>(_ value: T) throws -> JSONObject {
+    try nestedJSONObject(from: nestedJSON(value))
+  }
+
+  private func nestedJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
+    try JSONDecoder().decode(JSONValue.self, from: Data(nestedJSON(value).utf8))
+  }
+
+  private func nestedJSONObject(from json: String) throws -> JSONObject {
+    guard let data = json.data(using: .utf8) else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested snapshot JSON is malformed")
+    }
+    return try JSONDecoder().decode(JSONObject.self, from: data)
   }
 }
 
@@ -594,4 +747,8 @@ private func nestedDecode<T: Decodable>(_ type: T.Type, _ json: String) throws -
   let decoder = JSONDecoder()
   decoder.dateDecodingStrategy = .iso8601
   return try decoder.decode(T.self, from: Data(json.utf8))
+}
+
+private func nestedDigest(_ value: String) -> String {
+  SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
 }

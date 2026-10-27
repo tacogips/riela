@@ -500,10 +500,16 @@ final class PrivateWorkflowTests: XCTestCase {
     expected.session.currentStepId = "after-rollback"
     try store.save(expected)
     XCTAssertEqual(try store.load(sessionId: expected.session.sessionId).session, expected.session)
-    // A legacy writer drops unknown root metadata. An existing cache entry
-    // must not authorize retaining its unrelated replacement of an old input.
-    try db.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb_remove(jsonb_set(session_json, '$.executions[1].inputSnapshot.tag', ?), '$._rielaCanonicalWrite') WHERE workflow_execution_id=?",
-      bindings: [.text("legacy-replacement"), .text(expected.session.sessionId)])
+    // A legacy writer changes an execution reference and drops the header
+    // witness. The cold path must restore the authoritative cached execution.
+    try db.execute(
+      "UPDATE workflow_runtime_executions SET payload_digest=(SELECT payload_digest FROM workflow_runtime_executions WHERE workflow_execution_id=? AND ordinal=0) WHERE workflow_execution_id=? AND ordinal=1",
+      bindings: [.text(expected.session.sessionId), .text(expected.session.sessionId)]
+    )
+    try db.execute(
+      "UPDATE workflow_runtime_snapshots SET session_json=jsonb_remove(session_json, '$._rielaCanonicalWrite') WHERE workflow_execution_id=?",
+      bindings: [.text(expected.session.sessionId)]
+    )
     expected.session.currentStepId = "after-legacy-write"
     try store.save(expected)
     XCTAssertEqual(try store.load(sessionId: expected.session.sessionId).session, expected.session)

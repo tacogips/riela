@@ -43,9 +43,23 @@ extension RielaMemoryStore {
     try execute(db, "BEGIN IMMEDIATE")
     defer { try? execute(db, "ROLLBACK") }
     let prior = try retainedSnapshotHead(scope: scope, label: label, db: db, includeExpired: true)
+    let currentHistoryHead = try memoryHistoryExists(recordId: expectedHead.recordId, db: db)
+      ? memoryHistoryStore(db: db).head(key: String(expectedHead.recordId)) : nil
+    let expectedPinnedVersion: Int64
+    if let currentHistoryHead {
+      if currentHistoryHead.revision == expectedHead.version {
+        expectedPinnedVersion = currentHistoryHead.headVersion
+      } else if prior?.recordId == expectedHead.recordId && prior?.version == expectedHead.version {
+        expectedPinnedVersion = prior?.version ?? expectedHead.version
+      } else {
+        throw MemorySnapshotError.conflict
+      }
+    } else {
+      expectedPinnedVersion = expectedHead.version
+    }
     let selected: MemorySnapshot
-    if prior == expectedHead {
-      let record = try recordVersion(memoryId: memoryId, recordId: expectedHead.recordId, version: expectedHead.version, db: db)
+    if prior?.recordId == expectedHead.recordId && prior?.version == expectedPinnedVersion {
+      let record = try recordVersion(memoryId: memoryId, recordId: expectedHead.recordId, version: expectedPinnedVersion, db: db)
       guard record.workflowId == workflowId, nodeId == nil || record.nodeId == nodeId, record.tags.contains(tag) else { throw MemorySnapshotError.invalidScope }
       guard try encodedJSONString(record.payload).utf8.count <= maxPayloadBytes else {
         throw RielaMemoryError.payloadTooLarge(recordId: expectedHead.recordId, limit: maxPayloadBytes)
@@ -68,7 +82,9 @@ extension RielaMemoryStore {
         bindings: [.text(scope)] + labels.map(SQLiteBinding.text))
     }
     let existing = try retainedSnapshotHead(scope: scope, label: label, db: db, includeExpired: true)
-    guard existing == nil || existing == expectedHead else { throw MemorySnapshotError.conflict }
+    guard existing == nil || (existing?.recordId == expectedHead.recordId && existing?.version == expectedPinnedVersion) else {
+      throw MemorySnapshotError.conflict
+    }
     let count = try queryRows(db, sql: "SELECT COUNT(*) AS count FROM memory_snapshot_retention", bindings: [])
       .first?.columns["count"].flatMap(Int.init) ?? 256
     guard existing != nil || count < 256 else { throw MemorySnapshotError.invalidScope }
@@ -76,7 +92,7 @@ extension RielaMemoryStore {
     try execute(db, """
       INSERT INTO memory_snapshot_retention(scope,label,record_id,version,expires_at) VALUES(?,?,?,?,?)
       ON CONFLICT(scope,label) DO UPDATE SET expires_at=excluded.expires_at
-      """, bindings: [.text(scope), .text(label), .int64(expectedHead.recordId), .int64(expectedHead.version), .int64(expires)])
+      """, bindings: [.text(scope), .text(label), .int64(expectedHead.recordId), .int64(expectedPinnedVersion), .int64(expires)])
     try execute(db, "COMMIT")
     return selected
   }

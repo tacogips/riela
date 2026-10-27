@@ -185,7 +185,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         "runtime web session detail row is malformed"
       )
     }
-    let session = try decoder.decode(WorkflowSession.self, from: sessionData)
+    let assembledSessionData = try assembledSessionData(from: sessionData, db: database)
+    let session = try decoder.decode(WorkflowSession.self, from: assembledSessionData)
     let diagnostics = try decoder.decode([String].self, from: diagnosticsData)
     let loopEvidence: LoopEvidenceManifest?
     if let value = row["loop_evidence_json"], let data = value.data(using: .utf8) {
@@ -249,9 +250,18 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
           snapshots.session_status,
           json_extract(snapshots.session_json, '$.currentStepId') AS current_step_id,
           COALESCE((
-            SELECT json_group_array(json_extract(execution.value, '$.stepId'))
-            FROM json_each(snapshots.session_json, '$.executions') AS execution
-            WHERE json_extract(execution.value, '$.status') = 'running'
+            SELECT json_group_array(step_id) FROM (
+              SELECT json_extract(p.bytes, '$.stepId') AS step_id
+              FROM workflow_runtime_executions AS e
+              JOIN workflow_runtime_payloads AS p ON p.root_session_id=e.root_session_id AND p.digest=e.payload_digest
+              WHERE e.workflow_execution_id=snapshots.workflow_execution_id
+                AND json_extract(p.bytes, '$.status') = 'running'
+              UNION ALL
+              SELECT json_extract(execution.value, '$.stepId') AS step_id
+              FROM json_each(snapshots.session_json, '$.executions') AS execution
+              WHERE json_type(snapshots.session_json, '$.\(SQLiteWorkflowRuntimePersistenceStore.executionStorageMarkerKey)') IS NULL
+                AND json_extract(execution.value, '$.status') = 'running'
+            )
           ), '[]') AS active_step_ids,
           snapshots.updated_at
         FROM workflow_runtime_snapshots AS snapshots

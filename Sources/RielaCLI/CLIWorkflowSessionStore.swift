@@ -408,7 +408,7 @@ public struct CLIWorkflowSessionStore: Sendable {
       try SQLiteDatabase.open(
         path: databasePath,
         mode: mode,
-        options: readOnly ? .readOnlyDefault : .writableDefault
+        options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
       )
     }
   }

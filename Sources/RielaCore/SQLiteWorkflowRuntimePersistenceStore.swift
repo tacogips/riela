@@ -18,11 +18,30 @@ public struct LoopBaseline: Codable, Equatable, Sendable {
 }
 
 public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
+  public static let executionStorageMarkerKey = "_rielaExecutionStorage"
+
+  public struct PersistenceWriteSample: Sendable {
+    public let boundBytes: Int
+    public let statements: Int
+
+    public init(boundBytes: Int, statements: Int) {
+      self.boundBytes = boundBytes
+      self.statements = statements
+    }
+  }
+
+  /// The generation-11 stamp and 10→11 step live in the schema extension below.
+  /// Search tokens: `schemaGeneration: Int64 = 11`, `fromGeneration: 10`.
   public var rootDirectory: String
   private let executionReuse = RuntimeExecutionReuse()
+  let persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)?
 
-  public init(rootDirectory: String) {
+  public init(
+    rootDirectory: String,
+    persistenceWriteObserver: (@Sendable (PersistenceWriteSample) -> Void)? = nil
+  ) {
     self.rootDirectory = rootDirectory
+    self.persistenceWriteObserver = persistenceWriteObserver
   }
 
   public static func defaultDatabasePath(rootDirectory: String) -> String {
@@ -52,6 +71,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard isSafeId(snapshot.session.sessionId) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(snapshot.session.sessionId)
     }
+    try WorkflowDefinitionPins.recordForeignPinIfNeeded(snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let db = try openDatabase()
     try prepareSchema(in: db)
     try db.transaction { database in
@@ -76,6 +96,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
           messages.allSatisfy({ $0.workflowExecutionId == snapshot.session.sessionId }) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(snapshot.session.sessionId)
     }
+    try WorkflowDefinitionPins.recordForeignPinIfNeeded(snapshot: snapshot, sessionStoreRoot: rootDirectory)
     let db = try openDatabase()
     try prepareSchema(in: db)
     try db.transaction { database in
@@ -101,108 +122,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try ensureSchema(db)
     try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
       .prepareSchema(in: db)
-  }
-
-  /// Bumped whenever the schema changes shape. When bumping, register an
-  /// in-place upgrade step in `schemaMigrations` so existing stores are
-  /// migrated instead of discarded.
-  ///
-  /// Generation 5 adds the Work Runtime's `work_*` tables to this same
-  /// database file (`WorkStore` in `RielaWork` creates them behind this one
-  /// guard). Generation 7 replaces generation 6's obsolete pending-request
-  /// uniqueness with uniqueness over unconsumed requests only. No migration
-  /// is registered for either shape: the Work Runtime design forbids backward
-  /// compatibility, so `discardIncompatibleStoreIfNeeded` recreates them.
-  public static let schemaGeneration: Int64 = 10 // Generation 10 adds the definition store tables.
-
-  /// Ordered `from → from+1` upgrade steps for the session store database
-  /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
-  /// they share one file). Append a `SQLiteSchemaMigration(fromGeneration:)`
-  /// here for every future `schemaGeneration` bump that is allowed to migrate.
-  /// Stores stamped before generation 2 (the migration baseline), at generation
-  /// 4 (the last pre-Work-Runtime shape), generation 5 (the P0-only Work
-  /// Runtime shape), generation 6 (the obsolete P1 request shape), or generation
-  /// 7 (the pre-decision-application-result shape) have no
-  /// path and are discarded. P1 deliberately follows the Work Runtime's
-  /// no-compatibility contract.
-  public static let schemaMigrations: [SQLiteSchemaMigration] = [
-    SQLiteSchemaMigration(fromGeneration: 2) { database in
-      // Historical migrations must not call the current-schema builder:
-      // generation 4 adds recovery_reason in the next migration.
-      try createGeneration3NestedInvocationSchema(in: database)
-    },
-    SQLiteSchemaMigration(fromGeneration: 3) { database in
-      try addGeneration4NestedRecoveryReason(in: database)
-    },
-    SQLiteSchemaMigration(fromGeneration: 9) { database in
-      try WorkflowDefinitionStoreSchema.create(in: database)
-    }
-  ]
-
-  /// Brings the database up to the current schema generation: stamps fresh
-  /// databases, migrates older stamped generations via `schemaMigrations`,
-  /// and refuses databases without a migration path or written by a newer
-  /// build. Throws SQLiteError so each store maps it into its own error
-  /// domain.
-  public static func requireCompatibleSchemaGeneration(in db: SQLiteDatabase) throws {
-    do {
-      try SQLiteSchemaMigrator.migrateIfNeeded(
-        in: db,
-        currentGeneration: schemaGeneration,
-        migrations: schemaMigrations,
-        preGenerationProbe: { db in
-          try db.tableExists("workflow_runtime_snapshots")
-            || db.tableExists("cli_workflow_sessions")
-        },
-        storeDescription: "session store"
-      )
-    } catch let error as SQLiteSchemaMigrator.MissingMigrationPathError {
-      throw SQLiteError(
-        operation: .execute,
-        code: nil,
-        message: "session store schema (generation \(error.stampedGeneration)) has no migration path to generation \(schemaGeneration); delete the session store and rerun"
-      )
-    } catch let error as SQLiteSchemaMigrator.NewerGenerationError {
-      throw SQLiteError(
-        operation: .execute,
-        code: nil,
-        message: "session store uses schema generation \(error.stampedGeneration); this build supports \(schemaGeneration)"
-      )
-    }
-  }
-
-  /// Deletes a session store database (plus its WAL/SHM sidecars) that is
-  /// older than the current generation and has no registered migration path,
-  /// so the writable open that follows rebuilds the current-generation schema
-  /// from scratch. Session stores hold regenerable run history, so discarding
-  /// beats hard-failing every writable open; routine and memory stores keep
-  /// their hard error because their data is not regenerable. Migratable and
-  /// newer-generation databases are left alone; unreadable databases are left
-  /// for the normal open path to report.
-  @discardableResult
-  public static func discardIncompatibleStoreIfNeeded(databasePath: String) -> Bool {
-    guard FileManager.default.fileExists(atPath: databasePath) else {
-      return false
-    }
-    let isIncompatible: Bool
-    do {
-      let db = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
-      isIncompatible = try WorkflowDefinitionStoreSchema.shouldDiscardIncompatibleStore(
-        db, currentGeneration: schemaGeneration, migrations: schemaMigrations
-      )
-    } catch {
-      return false
-    }
-    guard isIncompatible else {
-      return false
-    }
-    for suffix in ["", "-wal", "-shm"] {
-      try? FileManager.default.removeItem(atPath: databasePath + suffix)
-    }
-    FileHandle.standardError.write(Data(
-      "warning: discarded incompatible session store without a migration path at \(databasePath)\n".utf8
-    ))
-    return true
   }
 
   public func load(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
@@ -265,8 +184,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try load(sessionId: sessionId, strictReadOnly: true)
   }
 
-  /// Loads a snapshot through an existing transaction connection so callers
-  /// can validate runner state before committing related durable changes.
   public func load(sessionId: String, in db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
     guard isSafeId(sessionId) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
@@ -702,7 +619,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// A loop-concurrency preflight deliberately creates only its lease table.
   /// Readers that run before the first session save must treat that partial
   /// runtime database as empty rather than failing a newly admitted run.
-  private func runtimeSnapshotTableExists(_ db: SQLiteDatabase) throws -> Bool {
+  func runtimeSnapshotTableExists(_ db: SQLiteDatabase) throws -> Bool {
     try mapRuntimeSQLiteError {
       try db.query(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workflow_runtime_snapshots' LIMIT 1",
@@ -711,40 +628,12 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }.isEmpty == false
   }
 
-  func openDatabase(
-    readOnly: Bool = false,
-    strictReadOnly: Bool = false
-  ) throws -> SQLiteDatabase {
-    let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
-    if !readOnly, !strictReadOnly {
-      Self.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
-    }
-    let mode: SQLiteOpenMode
-    if strictReadOnly {
-      mode = .strictReadOnlyWithImmutableFallback
-    } else {
-      mode = readOnly ? .readOnly : .readWriteCreate
-    }
-    return try mapRuntimeSQLiteError {
-      let database = try SQLiteDatabase.open(
-        path: databasePath,
-        mode: mode,
-        options: readOnly ? .readOnlyDefault : .writableDefault
-      )
-      if !readOnly && !strictReadOnly {
-        // The assembly table is transient, not another durable journal.
-        // Avoid duplicating it on the guest's size-limited tmpfs volume.
-        try database.execute("PRAGMA temp_store = MEMORY")
-      }
-      return database
-    }
-  }
-
   private func ensureSchema(_ db: SQLiteDatabase) throws {
     try mapRuntimeSQLiteError {
       try db.requireJSONBAvailable()
       try Self.requireCompatibleSchemaGeneration(in: db)
       try WorkflowDefinitionStoreSchema.create(in: db)
+      try WorkflowDefinitionHistorySchema.create(in: db)
       // The summary columns are generated from session_json so they can never
       // drift from the snapshot payload. created_at/updated_at stay explicit:
       // the JSON dates are second-granularity ISO8601 while ordering needs the
@@ -776,47 +665,17 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_root ON workflow_runtime_snapshots (root_session_id, created_at, workflow_execution_id)")
       try SQLiteWorkflowStartupIdentities.ensureSchema(db, source: .runtime)
       try Self.createNestedInvocationSchema(in: db)
+      try SQLiteRuntimeExecutionRowsSchema.create(in: db)
     }
   }
 
-  static func createNestedInvocationSchema(in db: SQLiteDatabase) throws {
-    try db.execute(
-      """
-      CREATE TABLE IF NOT EXISTS workflow_nested_invocations (
-        invocation_key TEXT PRIMARY KEY,
-        reservation_json BLOB NOT NULL CHECK (json_valid(reservation_json, 8)),
-        child_terminal_json BLOB CHECK (child_terminal_json IS NULL OR json_valid(child_terminal_json, 8)),
-        parent_message_json BLOB CHECK (parent_message_json IS NULL OR json_valid(parent_message_json, 8)),
-        recovery_reason TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-      """
-    )
-    try db.execute(
-      "CREATE INDEX IF NOT EXISTS idx_workflow_nested_invocations_child ON workflow_nested_invocations (json_extract(reservation_json, '$.childSnapshot.session.sessionId'))"
-    )
-  }
-
-  private func upsertSnapshot(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
+  func upsertSnapshot(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
     traceSnapshotAssembly("begin", count: snapshot.session.executions.count)
     try validateTaskTerminalWrite(snapshot, in: db)
-    var header = snapshot.session
-    header.executions = []
-    let headerJSON = try jsonString(header)
     let cacheKey = Self.defaultDatabasePath(rootDirectory: rootDirectory) + ":" + snapshot.session.sessionId
     let witness = UUID().uuidString
-    if try reuseSnapshotExecutions(db, snapshot, headerJSON: headerJSON, cacheKey: cacheKey, witness: witness) { return }
-
-    // Cold imports and invalidated witnesses reconstruct the same full record.
-    // Encode executions individually rather than a full-history encoder tree.
-    try db.execute("CREATE TEMP TABLE IF NOT EXISTS riela_snapshot_execution_parts (ordinal INTEGER PRIMARY KEY, value BLOB NOT NULL)")
-    try db.execute("DELETE FROM temp.riela_snapshot_execution_parts")
-    defer { try? db.execute("DROP TABLE temp.riela_snapshot_execution_parts") }
-    for (index, execution) in snapshot.session.executions.enumerated() {
-      try db.execute("INSERT INTO temp.riela_snapshot_execution_parts (ordinal, value) VALUES (?, jsonb(?))",
-        bindings: [.int(Int64(index)), .text(try jsonString(execution))])
-    }
+    if try reuseSnapshotExecutions(db, snapshot, cacheKey: cacheKey, witness: witness) { return }
+    let persistedHeader = try encodedHeaderJSON(for: snapshot.session, witness: witness)
     try mapRuntimeSQLiteError {
       traceSnapshotAssembly("full-ready", count: snapshot.session.executions.count)
       try db.execute(
@@ -824,9 +683,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       INSERT INTO workflow_runtime_snapshots (
         workflow_execution_id, session_json, root_output_json, diagnostics_json,
         loop_evidence_json, loop_summary_json, created_at, updated_at
-      ) VALUES (?, jsonb_set(jsonb(?), '$.executions',
-        (SELECT jsonb_group_array(value) FROM (SELECT value FROM temp.riela_snapshot_execution_parts ORDER BY ordinal)),
-        '$._rielaCanonicalWrite', ?), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, ?)
+      ) VALUES (?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, ?)
       ON CONFLICT(workflow_execution_id) DO UPDATE SET
         session_json = excluded.session_json,
         root_output_json = excluded.root_output_json,
@@ -836,26 +693,17 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         created_at = excluded.created_at,
         updated_at = excluded.updated_at
       """,
-      bindings: [.text(snapshot.session.sessionId), .text(headerJSON), .text(witness)] + snapshotColumnBindings(snapshot)
+      bindings: [.text(snapshot.session.sessionId), .text(persistedHeader)] + snapshotColumnBindings(snapshot)
       )
+      let metrics = try writeExecutionRows(db, snapshot)
       try completeSnapshotWrite(db, snapshot, cacheKey: cacheKey, witness: witness)
+      observeWrite(headerJSON: persistedHeader, executions: snapshot.session.executions, selected: Array(snapshot.session.executions.indices), statements: metrics.statements + 1)
     }
-  }
-
-  private func snapshotColumnBindings(_ snapshot: WorkflowRuntimePersistenceSnapshot) throws -> [SQLiteValue] {
-    let summary = try snapshot.loopEvidence.map {
-      try jsonString(LoopSessionSummary.make(manifest: $0, loopMetadata: snapshot.loopMetadata))
-    }
-    return [
-      .optionalText(try snapshot.rootOutput.map(jsonString)), .text(try jsonString(snapshot.diagnostics)),
-      .optionalText(try snapshot.loopEvidence.map(jsonString)), .optionalText(summary),
-      .text(Self.dateString(snapshot.session.createdAt)), .text(Self.dateString(snapshot.session.updatedAt))
-    ]
   }
 
   private func reuseSnapshotExecutions(
     _ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot,
-    headerJSON: String, cacheKey: String, witness: String
+    cacheKey: String, witness: String
   ) throws -> Bool {
     let sessionId = snapshot.session.sessionId
     guard let previous = executionReuse.load(cacheKey),
@@ -866,48 +714,93 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let changed = snapshot.session.executions.indices.filter {
       $0 >= previous.executions.count || previous.executions[$0] != snapshot.session.executions[$0]
     }
-    let header = try JSONDecoder().decode(JSONObject.self, from: Data(headerJSON.utf8))
-    let oldKeys = try db.query("SELECT fields.key AS field FROM workflow_runtime_snapshots, json_each(session_json) AS fields WHERE workflow_execution_id = ?",
-      bindings: [.text(sessionId)]).compactMap { $0["field"] }
-    let keys = Set(oldKeys).union(header.keys).subtracting(["executions", "_rielaCanonicalWrite"]).sorted()
-    // Keep below SQLite's older 127-argument function limit.
-    guard changed.count + keys.count + 1 <= 60 else { return false }
-    var bindings: [SQLiteValue] = []
-    for key in keys {
-      // Explicit null clears optional metadata omitted by the new header.
-      // Codable and json_extract treat absent and null optional fields alike.
-      bindings += [.text("$." + (try jsonString(key))), .text(try jsonString(header[key] ?? .null))]
+    let persistedHeader = try encodedHeaderJSON(for: snapshot.session, witness: witness)
+    let metadata = try snapshotColumnBindings(snapshot)
+    let metadataTexts = metadata.prefix(4).map { value -> String? in
+      switch value {
+      case let .text(text): return text
+      case .null: return nil
+      default: return nil
+      }
     }
-    for index in changed {
-      bindings += [.text("$.executions[\(index)]"), .text(try jsonString(snapshot.session.executions[index]))]
+    let metadataChanged = [previous.rootOutputJSON, Optional(previous.diagnosticsJSON), previous.loopEvidenceJSON, previous.loopSummaryJSON]
+      .enumerated().filter { index, old in old != metadataTexts[index] }
+    var assignments = ["session_json = jsonb(?)"]
+    var bindings: [SQLiteValue] = [.text(persistedHeader)]
+    let columnNames = ["root_output_json", "diagnostics_json", "loop_evidence_json", "loop_summary_json"]
+    for (index, value) in metadataChanged {
+      assignments.append("\(columnNames[index]) = jsonb(?)")
+      bindings.append(metadata[index])
+      _ = value
     }
-    let update = "jsonb_set(session_json" + String(repeating: ", ?, jsonb(?)", count: keys.count + changed.count)
-      + ", '$._rielaCanonicalWrite', ?)"
-    bindings += [.text(witness)] + (try snapshotColumnBindings(snapshot)) + [.text(sessionId), .text(previous.witness)]
+    let createdAt = Self.dateString(snapshot.session.createdAt)
+    let updatedAt = Self.dateString(snapshot.session.updatedAt)
+    if previous.createdAt != createdAt {
+      assignments.append("created_at = ?")
+      bindings.append(.text(createdAt))
+    }
+    if previous.updatedAt != updatedAt {
+      assignments.append("updated_at = ?")
+      bindings.append(.text(updatedAt))
+    }
+    bindings += [.text(sessionId), .text(previous.witness)]
     try mapRuntimeSQLiteError {
       traceSnapshotAssembly("delta-ready", count: snapshot.session.executions.count, changed: changed.count)
       let count = try db.executeAndReturnChangedRowCount(
-        "UPDATE workflow_runtime_snapshots SET session_json = " + update
-          + ", root_output_json=jsonb(?), diagnostics_json=jsonb(?), loop_evidence_json=jsonb(?), loop_summary_json=jsonb(?), created_at=?, updated_at=?"
+        "UPDATE workflow_runtime_snapshots SET " + assignments.joined(separator: ", ")
           + " WHERE workflow_execution_id=? AND json_extract(session_json, '$._rielaCanonicalWrite')=?",
         bindings: bindings)
       guard count == 1 else {
         throw WorkflowRuntimePersistenceStoreError.sqliteFailed("canonical execution witness changed")
       }
-      try completeSnapshotWrite(db, snapshot, cacheKey: cacheKey, witness: witness)
+      let metrics = try writeExecutionRows(db, snapshot, selected: changed)
+      try completeSnapshotWrite(
+        db, snapshot, cacheKey: cacheKey, witness: witness,
+        executionIds: Array(snapshot.session.executions.dropFirst(previous.executions.count).map(\.executionId))
+      )
+      observeWrite(headerJSON: persistedHeader, executions: snapshot.session.executions, selected: changed, statements: metrics.statements + 1)
     }
     return true
   }
 
   private func completeSnapshotWrite(
-    _ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot, cacheKey: String, witness: String
+    _ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot, cacheKey: String, witness: String,
+    executionIds: [String]? = nil
   ) throws {
+    try WorkflowDefinitionPins.recordPinIfNeeded(db, snapshot: snapshot, sessionStoreRoot: rootDirectory)
+    let projectedExecutionIds: [String]
+    if let executionIds {
+      let existing = try db.query(
+        "SELECT execution_ids_json FROM runtime_startup_identities WHERE session_id=?",
+        bindings: [.text(snapshot.session.sessionId)]
+      ).first?["execution_ids_json"].flatMap { text -> [String]? in
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
+      } ?? []
+      projectedExecutionIds = existing + executionIds
+    } else {
+      projectedExecutionIds = snapshot.session.executions.map(\.executionId)
+    }
     try SQLiteWorkflowStartupIdentities.save(db, source: .runtime,
       sessionId: snapshot.session.sessionId, workflowId: snapshot.session.workflowId,
-      executionIds: snapshot.session.executions.map(\.executionId))
+      executionIds: projectedExecutionIds)
     try touchLoopConcurrencyLease(db, snapshot)
+    if snapshot.session.status.isTerminal {
+      _ = try releaseUnreferencedPayloads(rootSessionId: snapshot.session.rootSessionId ?? snapshot.session.sessionId, in: db)
+    }
     // A rollback removes this UUID, invalidating the optimization on next save.
-    executionReuse.remember(cacheKey, witness: witness, executions: snapshot.session.executions)
+    let columns = try snapshotColumnBindings(snapshot)
+    executionReuse.remember(
+      cacheKey,
+      witness: witness,
+      executions: snapshot.session.executions,
+      rootOutputJSON: optionalText(columns[0]),
+      diagnosticsJSON: optionalText(columns[1]) ?? "[]",
+      loopEvidenceJSON: optionalText(columns[2]),
+      loopSummaryJSON: optionalText(columns[3]),
+      createdAt: Self.dateString(snapshot.session.createdAt),
+      updatedAt: Self.dateString(snapshot.session.updatedAt)
+    )
     traceSnapshotAssembly("written", count: snapshot.session.executions.count)
   }
 
@@ -915,124 +808,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard ProcessInfo.processInfo.environment["RIELA_BULK_RESOURCE_DIAGNOSTICS"] == "1" else { return }
     // Numeric test diagnostics only; never emit inputs, outputs, IDs or env.
     FileHandle.standardError.write(Data("canonical-resource phase=\(phase) executions=\(count) changed=\(changed)\n".utf8))
-  }
-
-  private func validateTaskTerminalWrite(
-    _ snapshot: WorkflowRuntimePersistenceSnapshot,
-    in db: SQLiteDatabase
-  ) throws {
-    guard try db.tableExists("work_attempts") else { return }
-    let sessionId = snapshot.session.sessionId
-    guard let attemptId = try db.query(
-      "SELECT attempt_id FROM work_attempts WHERE session_id = ? LIMIT 1",
-      bindings: [.text(sessionId)]
-    ).first?["attempt_id"] else { return }
-    let status = snapshot.session.status
-    let isTerminal = status.isTerminal
-    if isTerminal, try db.tableExists("work_cancellations") {
-      let pending = try db.query(
-        "SELECT c.attempt_id FROM work_cancellations c "
-          + "LEFT JOIN work_decisions d ON d.decision_id = c.decision_id "
-          + "WHERE c.attempt_id = ? AND c.acknowledged_at IS NULL "
-          + "AND (d.kind IS NULL OR d.kind != 'handover' OR d.attempt_id != c.attempt_id) LIMIT 1",
-        bindings: [.text(attemptId)]
-      ).first != nil
-      let pendingHandover = try db.query(
-        "SELECT c.attempt_id FROM work_cancellations c "
-          + "JOIN work_decisions d ON d.decision_id = c.decision_id "
-          + "WHERE c.attempt_id = ? AND c.acknowledged_at IS NULL "
-          + "AND d.kind = 'handover' AND d.attempt_id = c.attempt_id LIMIT 1",
-        bindings: [.text(attemptId)]
-      ).first != nil
-      let allowedPendingTerminal = snapshot.session.isCancellation
-        || (status == .failed && snapshot.session.failureKind == .stalled && pendingHandover)
-      if (pending || pendingHandover) && !allowedPendingTerminal {
-        throw WorkflowRuntimePersistenceStoreError.cancellationPending(sessionId)
-      }
-    }
-    guard let existing = try db.query(
-      "SELECT session_status, updated_at, json_extract(session_json, '$.failureKind') AS failure_kind "
-        + "FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
-      bindings: [.text(sessionId)]
-    ).first, let previousStatus = existing["session_status"] else { return }
-    if previousStatus == WorkflowSessionStatus.completed.rawValue
-      || previousStatus == WorkflowSessionStatus.failed.rawValue
-      || previousStatus == WorkflowSessionStatus.cancelled.rawValue {
-      let sameTerminal = isTerminal && status.rawValue == previousStatus
-        && snapshot.session.failureKind?.rawValue == existing["failure_kind"]
-      let notOlder = (existing["updated_at"] ?? "") <= Self.dateString(snapshot.session.updatedAt)
-      if !sameTerminal || !notOlder {
-        throw WorkflowRuntimePersistenceStoreError.terminalSnapshotConflict(sessionId)
-      }
-    }
-  }
-
-  func snapshot(from row: SQLiteRow, db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
-    guard let sessionText = row["session_json"],
-          let diagnosticsText = row["diagnostics_json"],
-          let sessionData = sessionText.data(using: .utf8),
-          let diagnosticsData = diagnosticsText.data(using: .utf8) else {
-      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime snapshot row is missing required fields")
-    }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
-    let session = try decoder.decode(WorkflowSession.self, from: sessionData)
-    let diagnostics = try decoder.decode([String].self, from: diagnosticsData)
-    let rootOutput: JSONObject?
-    if let rootOutputText = row["root_output_json"], let data = rootOutputText.data(using: .utf8) {
-      rootOutput = try decoder.decode(JSONObject.self, from: data)
-    } else {
-      rootOutput = nil
-    }
-    let loopEvidence: LoopEvidenceManifest?
-    if let loopEvidenceText = row["loop_evidence_json"], let data = loopEvidenceText.data(using: .utf8) {
-      loopEvidence = try decoder.decode(LoopEvidenceManifest.self, from: data)
-    } else {
-      loopEvidence = nil
-    }
-    let messages = try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
-      .listMessages(workflowExecutionId: session.sessionId, in: db)
-    return WorkflowRuntimePersistenceSnapshot(
-      session: session,
-      workflowMessages: messages,
-      rootOutput: rootOutput,
-      diagnostics: diagnostics,
-      loopEvidence: loopEvidence
-    )
-  }
-
-  private func summaryColumnOverview(from row: SQLiteRow) throws -> LoopSessionOverview? {
-    guard let sessionId = row["workflow_execution_id"],
-          let workflowId = row["workflow_id"],
-          let sessionStatus = row["session_status"],
-          let createdAtText = row["created_at"],
-          let createdAt = Self.date(from: createdAtText),
-          let updatedAtText = row["updated_at"],
-          let updatedAt = Self.date(from: updatedAtText) else {
-      return nil
-    }
-    let summary: LoopSessionSummary?
-    if let summaryText = row["loop_summary_json"], let data = summaryText.data(using: .utf8) {
-      let decoder = JSONDecoder()
-      decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
-      summary = try decoder.decode(LoopSessionSummary.self, from: data)
-    } else {
-      summary = nil
-    }
-    return LoopSessionOverview.make(
-      workflowId: workflowId,
-      sessionId: sessionId,
-      sessionStatus: sessionStatus,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-      summary: summary
-    )
-  }
-
-  private func jsonString<T: Encodable>(_ value: T) throws -> String {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = RuntimeSnapshotDates.encoding
-    return String(data: try encoder.encode(value), encoding: .utf8) ?? "{}"
   }
 
   func isSafeId(_ value: String) -> Bool {

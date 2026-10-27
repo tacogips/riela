@@ -17,7 +17,7 @@ final class MemorySnapshotTests: XCTestCase {
     XCTAssertEqual(newer.head.version, 2)
     XCTAssertThrowsError(try store.commitSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint",
       expectedHead: read.head, payload: .string("stale"))) { XCTAssertEqual($0 as? MemorySnapshotError, .conflict) }
-    XCTAssertEqual(try store.recordVersion(memoryId: "source", recordId: legacy.recordId, version: 1), legacy)
+    XCTAssertThrowsError(try store.recordVersion(memoryId: "source", recordId: legacy.recordId, version: 1))
     XCTAssertEqual(try store.loadSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint")?.head, newer.head)
   }
 
@@ -106,7 +106,7 @@ final class MemorySnapshotTests: XCTestCase {
     let updated = try store.commitSnapshot(memoryId: "source", workflowId: "poll", nodeId: "collect", tag: "checkpoint",
       expectedHead: read.head, payload: .string("new state"))
     XCTAssertEqual(updated.head.version, 2)
-    XCTAssertEqual(try store.recordVersion(memoryId: "source", recordId: legacy.recordId, version: 1), legacy)
+    XCTAssertThrowsError(try store.recordVersion(memoryId: "source", recordId: legacy.recordId, version: 1))
   }
 
   private func temporaryRoot() throws -> URL {

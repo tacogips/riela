@@ -89,9 +89,10 @@ extension RielaMemoryStore {
     }
     let updated = try record(memoryId: memoryId, recordId: id, db: db)
     guard updated.payload == payload else { throw MemorySnapshotError.readbackMismatch }
-    try recordEvolution(previous: previous?.record, next: updated, db: db)
+    let historyResult = try historyWrite(previous: previous?.record, next: updated, db: db, historyRetention: 1)
     let result = try snapshot(record: updated, scope: snapshotScope(memoryId: memoryId, workflowId: workflowId, nodeId: nodeId, tag: tag), db: db)
     try execute(db, "COMMIT")
+    reclaimHistoryPages(db, freedBytes: historyResult.freedBytes)
     return result
   }
 
@@ -146,6 +147,10 @@ extension RielaMemoryStore {
   }
 
   private func snapshot(record: MemoryRecord, scope: String, db: OpaquePointer?) throws -> MemorySnapshot {
+    if try memoryHistoryExists(recordId: record.recordId, db: db),
+      let head = try memoryHistoryStore(db: db).head(key: String(record.recordId)) {
+      return MemorySnapshot(record: record, head: .init(recordId: record.recordId, version: head.revision, scope: scope))
+    }
     let rows = try queryRows(db, sql: "SELECT MAX(version) AS version FROM memory_evolution WHERE record_id = ?",
       bindings: [.int64(record.recordId)])
     let version: Int64
@@ -155,7 +160,7 @@ extension RielaMemoryStore {
       let floor = try queryRows(db, sql: "SELECT retained_floor FROM memory_retirement WHERE record_id = ?",
         bindings: [.int64(record.recordId)]).first?.columns["retained_floor"].flatMap(Int64.init) ?? 1
       guard floor == 1 else { throw MemorySnapshotError.invalidHead }
-      try recordEvolution(previous: nil, next: record, db: db)
+      _ = try historyWrite(previous: nil, next: record, db: db, historyRetention: 1)
       version = 1
     }
     return MemorySnapshot(record: record, head: .init(recordId: record.recordId, version: version, scope: scope))

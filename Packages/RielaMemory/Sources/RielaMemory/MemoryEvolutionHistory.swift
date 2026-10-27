@@ -5,6 +5,15 @@ public struct MemoryEvolutionRevision: Codable, Equatable, Sendable {
   public let version: Int64
   public let recordedAt: String
   public let reverseDelta: EvolutionReverseDelta?
+  public let isHead: Bool?
+  public let revision: Int64?
+  public let storage: VersionedHistoryVersionInfo?
+
+  public init(version: Int64, recordedAt: String, reverseDelta: EvolutionReverseDelta?, isHead: Bool? = nil,
+              revision: Int64? = nil, storage: VersionedHistoryVersionInfo? = nil) {
+    self.version = version; self.recordedAt = recordedAt; self.reverseDelta = reverseDelta
+    self.isHead = isHead; self.revision = revision; self.storage = storage
+  }
 }
 
 public enum MemoryEvolutionError: Error, Equatable, Sendable {
@@ -42,6 +51,14 @@ extension RielaMemoryStore {
     let db = try openDatabase(memoryId: memoryId)
     defer { sqlite3_close(db) }
     try ensureSchema(db)
+    if try memoryHistoryExists(recordId: recordId, db: db) {
+      let store = try memoryHistoryStore(db: db)
+      let head = try store.head(key: String(recordId))
+      return try store.versions(key: String(recordId), limit: limit, beforeVersion: beforeVersion).map { info in
+        MemoryEvolutionRevision(version: info.version, recordedAt: info.createdAt, reverseDelta: nil,
+          isHead: info.isHead, revision: info.isHead ? head?.revision : nil, storage: info)
+      }
+    }
     let rows = try queryRows(db, sql: """
       SELECT version, recorded_at, CASE WHEN version = COALESCE((SELECT retained_floor FROM memory_retirement WHERE record_id = ?), 1) THEN NULL ELSE reverse_delta_json END AS reverse_delta_json FROM memory_evolution
       WHERE record_id = ? AND version < ? AND version >= COALESCE((SELECT retained_floor FROM memory_retirement WHERE record_id = ?), 1) ORDER BY version DESC LIMIT ?
@@ -76,7 +93,7 @@ extension RielaMemoryStore {
   /// The expected head prevents restoring over an intervening improvement.
   @discardableResult
   public func restoreRecordVersion(
-    memoryId: String, recordId: Int64, version: Int64, expectedHeadVersion: Int64
+    memoryId: String, recordId: Int64, version: Int64, expectedHeadVersion: Int64, historyRetention: Int? = nil
   ) throws -> MemoryRecord {
     let db = try openDatabase(memoryId: memoryId)
     defer { sqlite3_close(db) }
@@ -99,12 +116,15 @@ extension RielaMemoryStore {
       """, bindings: [.text(try encodedJSONString(restored.tags)), .text(try encodedJSONString(restored.relatedRecordIds)),
         .text(try encodedJSONString(restored.payload)), .int64(recordId)])
     _ = try replaceFiles(restored.files, recordId: recordId, db: db)
-    try recordEvolution(previous: previous, next: restored, db: db, forceRevision: true)
+    let historyResult = try historyWrite(previous: previous, next: restored, db: db, force: true, historyRetention: historyRetention)
     try execute(db, "COMMIT")
+    reclaimHistoryPages(db, freedBytes: historyResult.freedBytes)
     return restored
   }
 
-  private func evolutionHead(recordId: Int64, db: OpaquePointer?) throws -> Int64 {
+  func evolutionHead(recordId: Int64, db: OpaquePointer?) throws -> Int64 {
+    if try memoryHistoryExists(recordId: recordId, db: db),
+      let revision = try memoryHistoryStore(db: db).head(key: String(recordId))?.revision { return revision }
     let rows = try queryRows(db, sql: "SELECT MAX(version) AS version FROM memory_evolution WHERE record_id = ?",
       bindings: [.int64(recordId)])
     guard let head = rows.first?.columns["version"].flatMap(Int64.init) else {
@@ -115,6 +135,13 @@ extension RielaMemoryStore {
 
   func recordVersion(memoryId: String, recordId: Int64, version: Int64, db: OpaquePointer?) throws -> MemoryRecord {
     let current = try record(memoryId: memoryId, recordId: recordId, db: db)
+    if try memoryHistoryExists(recordId: recordId, db: db) {
+      let bytes = try memoryHistoryStore(db: db).value(key: String(recordId), version: version,
+        currentHeadValue: memoryHistoryHeadBytes(current))
+      let restored = try JSONDecoder().decode(MemoryRecord.self, from: bytes)
+      try verifyEvolutionAttachments(restored.files, db: db, recordMissing: false)
+      return restored
+    }
     let head = try evolutionHead(recordId: recordId, db: db)
     let hasFloor = try !queryRows(db, sql: "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_retirement'", bindings: []).isEmpty
     let floor = try hasFloor ? queryRows(db, sql: "SELECT retained_floor FROM memory_retirement WHERE record_id = ?",
@@ -145,9 +172,9 @@ extension RielaMemoryStore {
   /// `floor + 1` exactly once, in descending order, handing every reconstructed
   /// snapshot (and the version it now represents) to `visit`. A gap in the chain
   /// throws; stopping early (visit returns false) skips the final floor check.
-  private func walkReverseChain(current: MemoryRecord, head: Int64, floor: Int64, db: OpaquePointer?,
-                                onEdge: ((Int64) -> Void)? = nil,
-                                visit: (Data, Int64) throws -> Bool) throws -> (bytes: Data, completed: Bool) {
+  func walkReverseChain(current: MemoryRecord, head: Int64, floor: Int64, db: OpaquePointer?,
+                        onEdge: ((Int64) -> Void)? = nil,
+                        visit: (Data, Int64) throws -> Bool) throws -> (bytes: Data, completed: Bool) {
     var bytes = Data(try encodedJSONString(current).utf8)
     var expected = head
     var completed = true
@@ -171,27 +198,92 @@ extension RielaMemoryStore {
   }
 
   func recordEvolution(previous: MemoryRecord?, next: MemoryRecord, db: OpaquePointer?, forceRevision: Bool = false) throws {
-    if let previous { try verifyEvolutionAttachments(previous.files, db: db, recordMissing: true) }
-    try verifyEvolutionAttachments(next.files, db: db, recordMissing: true)
-    let rows = try queryRows(db, sql: "SELECT MAX(version) AS version FROM memory_evolution WHERE record_id = ?",
-      bindings: [.int64(next.recordId)])
-    var head = rows.first?.columns["version"].flatMap(Int64.init)
-    if head == nil {
-      try execute(db, """
-        INSERT INTO memory_evolution(record_id, version, recorded_at, reverse_delta_json)
-        VALUES (?, 1, ?, NULL)
-        """, bindings: [.int64(next.recordId), .text(currentTimestamp())])
-      head = 1
-    }
-    guard let previous, let head else { return }
-    let oldBytes = Data(try encodedJSONString(previous).utf8)
-    let newBytes = Data(try encodedJSONString(next).utf8)
-    guard forceRevision || oldBytes != newBytes else { return }
-    guard head < Int64.max else { throw EvolutionReverseDelta.ValidationError.invalidVersion }
-    let delta = try EvolutionReverseDelta(previous: oldBytes, next: newBytes, nextVersion: head + 1)
+    _ = try historyWrite(previous: previous, next: next, db: db, force: forceRevision)
+  }
+
+  public func undoRecord(memoryId: String, recordId: Int64, expectedHeadVersion: Int64) throws -> MemoryHeadMoveResult {
+    try moveMemoryHead(memoryId: memoryId, recordId: recordId, expectedRevision: expectedHeadVersion, redo: false)
+  }
+
+  public func redoRecord(memoryId: String, recordId: Int64, expectedHeadVersion: Int64) throws -> MemoryHeadMoveResult {
+    try moveMemoryHead(memoryId: memoryId, recordId: recordId, expectedRevision: expectedHeadVersion, redo: true)
+  }
+
+  private func moveMemoryHead(memoryId: String, recordId: Int64, expectedRevision: Int64, redo: Bool) throws -> MemoryHeadMoveResult {
+    let db = try openDatabase(memoryId: memoryId)
+    defer { sqlite3_close(db) }
+    try ensureSchema(db)
+    try execute(db, "BEGIN IMMEDIATE")
+    defer { try? execute(db, "ROLLBACK") }
+    let current = try record(memoryId: memoryId, recordId: recordId, db: db)
+    let engine = try memoryHistoryStore(db: db)
+    let moved = try (redo
+      ? engine.redo(key: String(recordId), currentHeadValue: memoryHistoryHeadBytes(current), expectedRevision: expectedRevision)
+      : engine.undo(key: String(recordId), currentHeadValue: memoryHistoryHeadBytes(current), expectedRevision: expectedRevision))
+    let restored = try JSONDecoder().decode(MemoryRecord.self, from: moved.value)
+    try verifyEvolutionAttachments(restored.files, db: db, recordMissing: false)
+    try validateRelatedRecordIdsExist(restored.relatedRecordIds, db: db)
     try execute(db, """
-      INSERT INTO memory_evolution(record_id, version, recorded_at, reverse_delta_json)
-      VALUES (?, ?, ?, ?)
-      """, bindings: [.int64(next.recordId), .int64(head + 1), .text(currentTimestamp()), .text(try encodedJSONString(delta))])
+      UPDATE memory_entries SET tags_json=jsonb(?), related_record_ids_json=jsonb(?), payload_json=jsonb(?) WHERE record_id=?
+      """, bindings: [.text(try encodedJSONString(restored.tags)), .text(try encodedJSONString(restored.relatedRecordIds)),
+        .text(try encodedJSONString(restored.payload)), .int64(recordId)])
+    _ = try replaceFiles(restored.files, recordId: recordId, db: db)
+    try execute(db, "COMMIT")
+    reclaimHistoryPages(db, freedBytes: 0)
+    return MemoryHeadMoveResult(record: restored, revision: moved.revision, headVersion: moved.toVersion, fromVersion: moved.fromVersion)
+  }
+
+  public func recordDiff(memoryId: String, recordId: Int64, fromVersion: Int64, toVersion: Int64?) throws -> [VersionedHistoryDiffEntry] {
+    let db = try openDatabase(memoryId: memoryId)
+    defer { sqlite3_close(db) }
+    try ensureSchema(db)
+    try execute(db, "BEGIN")
+    defer { try? execute(db, "ROLLBACK") }
+    let current = try record(memoryId: memoryId, recordId: recordId, db: db)
+    let headBytes = try memoryHistoryHeadBytes(current)
+    let before: Data
+    let after: Data
+    if try memoryHistoryExists(recordId: recordId, db: db) {
+      let engine = try memoryHistoryStore(db: db)
+      let head = try engine.head(key: String(recordId))
+      before = try engine.value(key: String(recordId), version: fromVersion, currentHeadValue: headBytes)
+      after = try toVersion.map { try engine.value(key: String(recordId), version: $0, currentHeadValue: headBytes) }
+        ?? engine.value(key: String(recordId), version: head?.headVersion ?? fromVersion, currentHeadValue: headBytes)
+    } else {
+      let headVersion = try evolutionHead(recordId: recordId, db: db)
+      before = try memoryHistoryHeadBytes(recordVersion(memoryId: memoryId, recordId: recordId, version: fromVersion, db: db))
+      after = try memoryHistoryHeadBytes(recordVersion(memoryId: memoryId, recordId: recordId, version: toVersion ?? headVersion, db: db))
+    }
+    return VersionedHistoryDiff.diff(before: before, after: after)
+  }
+
+  public func convertLegacyHistory(memoryId: String, maxRecords: Int) throws -> MemoryHistoryConversionReport {
+    guard maxRecords > 0, maxRecords <= 10_000 else { throw RielaMemoryError.invalidLimit(maxRecords) }
+    let db = try openDatabase(memoryId: memoryId)
+    defer { sqlite3_close(db) }
+    try ensureSchema(db)
+    try execute(db, "BEGIN IMMEDIATE")
+    defer { try? execute(db, "ROLLBACK") }
+    let rows = try queryRows(db, sql: """
+      SELECT DISTINCT e.record_id FROM memory_evolution e LEFT JOIN memory_history_heads h ON h.key=CAST(e.record_id AS TEXT)
+      WHERE h.key IS NULL ORDER BY e.record_id LIMIT ?
+      """, bindings: [.int(maxRecords)])
+    var converted = 0
+    var freedBytes: Int64 = 0
+    for row in rows {
+      guard let id = row.columns["record_id"].flatMap(Int64.init) else { continue }
+      let record = try self.record(memoryId: memoryId, recordId: id, db: db)
+      freedBytes += try queryRows(db, sql: "SELECT COALESCE(SUM(length(CAST(reverse_delta_json AS BLOB))),0) AS bytes FROM memory_evolution WHERE record_id=?",
+        bindings: [.int64(id)]).first?.columns["bytes"].flatMap(Int64.init) ?? 0
+      _ = try historyWrite(previous: record, next: record, db: db)
+      converted += 1
+    }
+    let remaining = try queryRows(db, sql: """
+      SELECT COUNT(DISTINCT e.record_id) AS count FROM memory_evolution e LEFT JOIN memory_history_heads h ON h.key=CAST(e.record_id AS TEXT)
+      WHERE h.key IS NULL
+      """, bindings: []).first?.columns["count"].flatMap(Int.init) ?? 0
+    try execute(db, "COMMIT")
+    reclaimHistoryPages(db, freedBytes: freedBytes)
+    return MemoryHistoryConversionReport(converted: converted, remaining: remaining, freedBytes: freedBytes)
   }
 }

@@ -7,6 +7,12 @@ final class RuntimeExecutionReuse: @unchecked Sendable {
   struct Entry: Sendable {
     let witness: String
     let executions: [WorkflowStepExecution]
+    let rootOutputJSON: String?
+    let diagnosticsJSON: String
+    let loopEvidenceJSON: String?
+    let loopSummaryJSON: String?
+    let createdAt: String
+    let updatedAt: String
   }
 
   private let lock = NSLock()
@@ -19,10 +25,29 @@ final class RuntimeExecutionReuse: @unchecked Sendable {
     return entries[key]
   }
 
-  func remember(_ key: String, witness: String, executions: [WorkflowStepExecution]) {
+  func remember(
+    _ key: String,
+    witness: String,
+    executions: [WorkflowStepExecution],
+    rootOutputJSON: String?,
+    diagnosticsJSON: String,
+    loopEvidenceJSON: String?,
+    loopSummaryJSON: String?,
+    createdAt: String,
+    updatedAt: String
+  ) {
     lock.lock()
     defer { lock.unlock() }
-    entries[key] = Entry(witness: witness, executions: executions)
+    entries[key] = Entry(
+      witness: witness,
+      executions: executions,
+      rootOutputJSON: rootOutputJSON,
+      diagnosticsJSON: diagnosticsJSON,
+      loopEvidenceJSON: loopEvidenceJSON,
+      loopSummaryJSON: loopSummaryJSON,
+      createdAt: createdAt,
+      updatedAt: updatedAt
+    )
     order.removeAll { $0 == key }
     order.append(key)
     while order.count > 8 {

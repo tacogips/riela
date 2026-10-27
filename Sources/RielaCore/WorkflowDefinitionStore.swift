@@ -1,5 +1,6 @@
 import Foundation
 import RielaSQLite
+import RielaMemory
 
 public enum WorkflowDefinitionOperation: String, Codable, Equatable, Sendable {
   case seed
@@ -8,6 +9,8 @@ public enum WorkflowDefinitionOperation: String, Codable, Equatable, Sendable {
   case updatePrompt
   case update
   case restore
+  case undo
+  case redo
 }
 
 public enum WorkflowDefinitionActorKind: String, Codable, Equatable, Sendable {
@@ -184,6 +187,7 @@ public struct WorkflowDefinitionAuditRecord: Codable, Equatable, Sendable {
   public var approvalState: WorkflowDefinitionApprovalState
   public var overwrittenChanges: WorkflowDefinitionOverwrittenChanges?
   public var createdAt: Date
+  public var retained: Bool
 
   public init(
     auditId: String,
@@ -202,7 +206,8 @@ public struct WorkflowDefinitionAuditRecord: Codable, Equatable, Sendable {
     actor: WorkflowDefinitionActor,
     approvalState: WorkflowDefinitionApprovalState,
     overwrittenChanges: WorkflowDefinitionOverwrittenChanges?,
-    createdAt: Date
+    createdAt: Date,
+    retained: Bool = true
   ) {
     self.auditId = auditId
     self.createdOrder = createdOrder
@@ -221,6 +226,7 @@ public struct WorkflowDefinitionAuditRecord: Codable, Equatable, Sendable {
     self.approvalState = approvalState
     self.overwrittenChanges = overwrittenChanges
     self.createdAt = createdAt
+    self.retained = retained
   }
 }
 
@@ -273,6 +279,7 @@ public struct WorkflowDefinitionWrite: Sendable {
   public var diff: [WorkflowDefinitionDiffEntry]
   public var overwrittenChanges: WorkflowDefinitionOverwrittenChanges?
   public var expectedCurrentVersionId: String?
+  public var historyRetention: Int?
 
   public init(
     workflowName: String,
@@ -289,7 +296,8 @@ public struct WorkflowDefinitionWrite: Sendable {
     targetField: String? = nil,
     diff: [WorkflowDefinitionDiffEntry] = [],
     overwrittenChanges: WorkflowDefinitionOverwrittenChanges? = nil,
-    expectedCurrentVersionId: String? = nil
+    expectedCurrentVersionId: String? = nil,
+    historyRetention: Int? = nil
   ) {
     self.workflowName = workflowName
     self.operation = operation
@@ -306,6 +314,7 @@ public struct WorkflowDefinitionWrite: Sendable {
     self.diff = diff
     self.overwrittenChanges = overwrittenChanges
     self.expectedCurrentVersionId = expectedCurrentVersionId
+    self.historyRetention = historyRetention
   }
 }
 
@@ -321,6 +330,7 @@ public struct WorkflowDefinitionStoreError: Error, Equatable, CustomStringConver
     case headMissing
     case staleHead
     case versionNotFound
+    case versionNotRetained
     case invalidEvidence
     case storeUnavailable
   }
@@ -337,10 +347,13 @@ public struct WorkflowDefinitionStoreError: Error, Equatable, CustomStringConver
 }
 
 public struct WorkflowDefinitionStore: Sendable {
+  public static let defaultHistoryRetention = 10
   public var rootDirectory: String
+  private let now: @Sendable () -> Date
 
-  public init(rootDirectory: String) {
+  public init(rootDirectory: String, now: @escaping @Sendable () -> Date = Date.init) {
     self.rootDirectory = rootDirectory
+    self.now = now
   }
 
   public func head(workflowName: String) throws -> WorkflowDefinitionHead? {
@@ -356,8 +369,20 @@ public struct WorkflowDefinitionStore: Sendable {
 
   public func blob(digest: String) throws -> Data? {
     let database = try openDatabase()
-    let rows = try database.query("SELECT CAST(bytes AS TEXT) AS document FROM definition_blobs WHERE digest = ?", bindings: [.text(digest)])
-    return rows.first?["document"].flatMap { String(bytes: $0.utf8, encoding: .utf8) }.map { Data($0.utf8) }
+    guard let versionId = try database.query("SELECT version_id FROM definition_versions WHERE document_digest = ? LIMIT 1", bindings: [.text(digest)]).first?["version_id"] else { return nil }
+    return try document(versionId: versionId)
+  }
+
+  public func document(versionId: String) throws -> Data? {
+    let database = try openDatabase()
+    guard let workflowName = try database.query("SELECT workflow_name FROM definition_versions WHERE version_id = ?", bindings: [.text(versionId)]).first?["workflow_name"],
+          let number = try historyVersion(versionId, in: database) else {
+      if try knownDroppedVersion(versionId, in: database) {
+        throw WorkflowDefinitionStoreError(code: .versionNotRetained, message: "definition version \(versionId) is not retained")
+      }
+      return nil
+    }
+    return try history(in: database).value(key: workflowName, version: number, currentHeadValue: nil)
   }
 
   public func current(workflowName: String) throws -> WorkflowDefinitionCurrent? {
@@ -410,8 +435,7 @@ public struct WorkflowDefinitionStore: Sendable {
     guard write.evidence.allSatisfy({ !$0.id.isEmpty }) else {
       throw WorkflowDefinitionStoreError(code: .invalidEvidence, message: "definition evidence ids must not be empty")
     }
-    guard JSONCanonical.sha256Hex(write.documentData) == write.documentDigest,
-          let documentText = String(data: write.documentData, encoding: .utf8) else {
+    guard JSONCanonical.sha256Hex(write.documentData) == write.documentDigest else {
       throw WorkflowDefinitionStoreError(code: .storeUnavailable, message: "definition document digest or UTF-8 encoding is invalid")
     }
     let database = try openDatabase()
@@ -428,26 +452,43 @@ public struct WorkflowDefinitionStore: Sendable {
         throw WorkflowDefinitionStoreError(code: .staleHead, message: "definition head changed; expected \(expected)")
       }
 
-      let now = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 * 1_000).rounded() / 1_000)
+      let now = Date(timeIntervalSince1970: (self.now().timeIntervalSince1970 * 1_000).rounded() / 1_000)
       let timestamp = try canonicalDate(now)
-      try transaction.execute(
-        "INSERT OR IGNORE INTO definition_blobs(digest, bytes, size, created_at) VALUES (?, CAST(? AS BLOB), ?, ?)",
-        bindings: [.text(write.documentDigest), .text(documentText),
-                   .int(Int64(write.documentData.count)), .text(timestamp)]
-      )
+      let engine = try history(in: transaction)
+      let previousDocument = try previousHead.flatMap { try readBlob(digest: try readVersion(versionId: $0.currentVersionId, in: transaction)!.documentDigest, in: transaction) }
+      let oldVersionRows = try transaction.query("SELECT history_version FROM definition_versions WHERE workflow_name = ? AND version_id IN (?, ?)",
+        bindings: [.text(write.workflowName), .text(previousHead?.currentVersionId ?? ""), .text(previousHead?.lastFileVersionId ?? "")])
+      var pins = Set(oldVersionRows.compactMap { $0["history_version"].flatMap(Int64.init) })
+      let pinRows = try transaction.query("SELECT history_version FROM definition_version_pins WHERE workflow_name = ?", bindings: [.text(write.workflowName)])
+      pins.formUnion(pinRows.compactMap { $0["history_version"].flatMap(Int64.init) })
+      let recent = try transaction.query("""
+        SELECT DISTINCT version.history_version FROM definition_change_audit AS audit
+        JOIN definition_versions AS version ON version.version_id = audit.previous_version_id
+        WHERE audit.workflow_name = ? AND audit.created_at > ?
+        """, bindings: [.text(write.workflowName), .text(canonicalDate(self.now().addingTimeInterval(-24 * 60 * 60)))])
+      pins.formUnion(recent.compactMap { $0["history_version"].flatMap(Int64.init) })
+      let state = try transaction.query("SELECT value FROM definition_store_state WHERE key = 'retention'").first?["value"]
+      let retention = state == "pendingBackfill" ? 0 : (write.historyRetention ?? Self.defaultHistoryRetention)
+      let engineResult = try engine.write(key: write.workflowName, value: write.documentData,
+        currentHeadValue: previousDocument, expectedRevision: Int64(previousHead?.revision ?? 0), force: false,
+        retainedGenerations: retention, defaultRetainedGenerations: Self.defaultHistoryRetention, pins: pins)
+      guard engineResult.outcome == .written else {
+        if let previousHead { return .alreadyRegistered(previousHead) }
+        throw WorkflowDefinitionStoreError(code: .storeUnavailable, message: "definition history rejected initial document")
+      }
       let versionId = "defv-\(UUID().uuidString.lowercased())"
       let auditId = "defa-\(UUID().uuidString.lowercased())"
       try transaction.execute(
         """
         INSERT INTO definition_versions(
           version_id, workflow_name, parent_version_id, document_digest, operation,
-          source_directory, source_scope, provenance, actor_kind, actor_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          source_directory, source_scope, provenance, actor_kind, actor_id, created_at, history_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         bindings: [.text(versionId), .text(write.workflowName), .optionalText(previousHead?.currentVersionId),
                    .text(write.documentDigest), .text(write.operation.rawValue), .text(write.sourceDirectory),
                    .text(write.sourceScope), .text(write.provenance), .text(write.actor.kind.rawValue),
-                   .optionalText(write.actor.id), .text(timestamp)]
+                   .optionalText(write.actor.id), .text(timestamp), .int(engineResult.version)]
       )
       let previousVersion = try previousHead.flatMap { try readVersion(versionId: $0.currentVersionId, in: transaction) }
       let diffJSON = try canonicalString(write.diff)
@@ -487,7 +528,7 @@ public struct WorkflowDefinitionStore: Sendable {
           updated_at = excluded.updated_at
         """,
         bindings: [.text(write.workflowName), .text(versionId), .text(lastFileVersionId),
-                   .int(Int64((previousHead?.revision ?? 0) + 1)), .text(write.sourceDirectory),
+                   .int(engineResult.revision), .text(write.sourceDirectory),
                    .text(write.sourceScope), .text(createdAt), .text(timestamp)]
       )
       let version = WorkflowDefinitionVersion(
@@ -508,6 +549,17 @@ public struct WorkflowDefinitionStore: Sendable {
         diff: write.diff, reason: write.reason, evidence: write.evidence, actor: write.actor,
         approvalState: .applied, overwrittenChanges: write.overwrittenChanges, createdAt: now
       )
+      try withGuardedDelete(transaction) {
+        for dropped in engineResult.droppedVersions {
+          try transaction.execute("DELETE FROM definition_versions WHERE workflow_name = ? AND history_version = ?", bindings: [.text(write.workflowName), .int(dropped)])
+        }
+        try transaction.execute("""
+          DELETE FROM definition_change_audit WHERE workflow_name = ?
+            AND version_id NOT IN (SELECT version_id FROM definition_versions)
+            AND (previous_version_id IS NULL
+              OR previous_version_id NOT IN (SELECT version_id FROM definition_versions))
+          """, bindings: [.text(write.workflowName)])
+      }
       return .created(version, audit)
     }
   }
@@ -518,6 +570,32 @@ public struct WorkflowDefinitionStore: Sendable {
     try persistence.prepareSchema(in: database)
     try WorkflowDefinitionStoreSchema.create(in: database)
     return database
+  }
+
+  private func history(in database: SQLiteDatabase) throws -> VersionedHistoryStore {
+    VersionedHistoryStore(tablePrefix: "definition", headStorage: .stored,
+      sql: SQLiteDatabaseHistoryExecutor(database: database),
+      now: now, withGuardedDelete: { body in
+        try database.execute("INSERT INTO definition_retention_guard(id) VALUES (1)")
+        defer { try? database.execute("DELETE FROM definition_retention_guard WHERE id = 1") }
+        try body()
+      })
+  }
+
+  private func withGuardedDelete(_ database: SQLiteDatabase, body: () throws -> Void) throws {
+    try database.execute("INSERT INTO definition_retention_guard(id) VALUES (1)")
+    defer { try? database.execute("DELETE FROM definition_retention_guard WHERE id = 1") }
+    try body()
+  }
+
+  private func historyVersion(_ versionId: String, in database: SQLiteDatabase) throws -> Int64? {
+    try database.query("SELECT history_version FROM definition_versions WHERE version_id = ?", bindings: [.text(versionId)])
+      .first?["history_version"].flatMap(Int64.init)
+  }
+
+  private func knownDroppedVersion(_ versionId: String, in database: SQLiteDatabase) throws -> Bool {
+    let rows = try database.query("SELECT 1 FROM definition_change_audit WHERE version_id = ? LIMIT 1", bindings: [.text(versionId)])
+    return !rows.isEmpty
   }
 
   private func readHead(workflowName: String, in database: SQLiteDatabase) throws -> WorkflowDefinitionHead? {
@@ -537,8 +615,9 @@ public struct WorkflowDefinitionStore: Sendable {
   }
 
   private func readBlob(digest: String, in database: SQLiteDatabase) throws -> Data? {
-    let rows = try database.query("SELECT CAST(bytes AS TEXT) AS document FROM definition_blobs WHERE digest = ?", bindings: [.text(digest)])
-    return rows.first?["document"].map { Data($0.utf8) }
+    guard let row = try database.query("SELECT workflow_name, history_version FROM definition_versions WHERE document_digest = ? LIMIT 1", bindings: [.text(digest)]).first,
+          let version = row["history_version"].flatMap(Int64.init) else { return nil }
+    return try history(in: database).value(key: row.string("workflow_name"), version: version, currentHeadValue: nil)
   }
 
   private func mapVersion(_ row: SQLiteRow) throws -> WorkflowDefinitionVersion {

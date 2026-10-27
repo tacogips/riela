@@ -122,11 +122,27 @@ public enum SQLiteWorkflowStartupIdentities {
     try ensureSchema(db, source: source)
     // Only legacy/invalidated rows visit JSON. Return compact ID arrays, never
     // materialize entire execution objects or unrelated outputs in Swift.
+    let executionIDsExpression: String
+    if source.projection == "runtime_startup_identities" {
+      executionIDsExpression = """
+        CASE WHEN json_type(s.session_json, '$.\(SQLiteWorkflowRuntimePersistenceStore.executionStorageMarkerKey)') = 'text' THEN
+          COALESCE((SELECT json_group_array(ordered.execution_id) FROM (
+                      SELECT e.execution_id FROM workflow_runtime_executions AS e
+                      WHERE e.workflow_execution_id = s.workflow_execution_id ORDER BY e.ordinal
+                    ) AS ordered), '[]')
+        ELSE COALESCE((SELECT json_group_array(json_extract(e.value, '$.executionId'))
+                       FROM json_each(s.session_json, '$.executions') AS e), '[]') END
+        """
+    } else {
+      executionIDsExpression = """
+        COALESCE((SELECT json_group_array(json_extract(e.value, '$.executionId'))
+                  FROM json_each(s.\(source.payload), '\(source.sessionPath).executions') AS e), '[]')
+        """
+    }
     let rows = try db.query(
       """
       SELECT s.\(source.id) AS session_id, s.workflow_id AS workflow_id,
-        (SELECT json_group_array(json_extract(e.value, '$.executionId'))
-         FROM json_each(s.\(source.payload), '\(source.sessionPath).executions') AS e) AS execution_ids
+        \(executionIDsExpression) AS execution_ids
       FROM \(source.table) AS s WHERE NOT EXISTS
         (SELECT 1 FROM \(source.projection) AS i WHERE i.session_id=s.\(source.id))
       """

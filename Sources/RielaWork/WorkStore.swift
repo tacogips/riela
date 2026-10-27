@@ -387,7 +387,7 @@ public struct WorkStore: Sendable {
     // migration path is discarded and recreated rather than hard-failing.
     SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
     let db = try mapSQLiteError {
-      try SQLiteDatabase.open(path: databasePath, mode: .readWriteCreate, options: .writableDefault)
+      try SQLiteDatabase.open(path: databasePath, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
     }
     try mapSQLiteError {
       try Self.prepareSchema(in: db)

@@ -18,6 +18,7 @@ let package = Package(
       name: "RielaMemory",
       dependencies: [
         .product(name: "Crypto", package: "swift-crypto"),
+        .target(name: "CZlib"),
         .target(name: "SQLite3", condition: .when(platforms: [.linux]))
       ]
     ),
@@ -26,6 +27,14 @@ let package = Package(
       providers: [
         .apt(["libsqlite3-dev"]),
         .brew(["sqlite"])
+      ]
+    ),
+    .systemLibrary(
+      name: "CZlib",
+      path: "Sources/CZlib",
+      providers: [
+        .apt(["zlib1g-dev"]),
+        .brew(["zlib"])
       ]
     ),
     .testTarget(name: "RielaMemoryTests", dependencies: ["RielaMemory"])

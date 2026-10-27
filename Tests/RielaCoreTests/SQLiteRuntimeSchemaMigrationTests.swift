@@ -25,6 +25,47 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     try assertUpgrade(startingAt: 3)
   }
 
+  func testGeneration10UpgradesTo11WithoutLosingSnapshot() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let original = WorkflowSession(
+      workflowId: "generation-ten", sessionId: "generation-ten-session", status: .completed,
+      entryStepId: "entry", createdAt: date, updatedAt: date
+    )
+    let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    try createHistoricalStore(path: path, session: original, generation: 9)
+    let fixture = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
+    try SQLiteWorkflowRuntimePersistenceStore.createGeneration10DefinitionSchema(in: fixture)
+    try fixture.execute("PRAGMA user_version = 10")
+
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
+    try store.prepareSchema(in: database)
+
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 11)
+    XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
+  }
+
+  func testGeneration9UpgradesThrough10To11WithoutLosingSnapshot() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let original = WorkflowSession(
+      workflowId: "generation-nine", sessionId: "generation-nine-session", status: .completed,
+      entryStepId: "entry", createdAt: date, updatedAt: date
+    )
+    let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    try createHistoricalStore(path: path, session: original, generation: 9)
+
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
+    try store.prepareSchema(in: database)
+
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 11)
+    XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
+  }
+
   func testPreviouslyInterruptedUpgradeResumesFromGeneration3WithRecoveryColumn() throws {
     try assertUpgrade(startingAt: 3, recoveryColumnAlreadyPresent: true)
   }

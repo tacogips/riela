@@ -22,6 +22,7 @@ public struct SQLiteOpenOptions: Sendable {
   public var waitForLocks: Bool
   public var requireJSONB: Bool
   public var requireFTS5: Bool
+  public var incrementalAutoVacuumForNewFile: Bool
 
   public init(
     enableWAL: Bool = true,
@@ -29,7 +30,8 @@ public struct SQLiteOpenOptions: Sendable {
     busyTimeoutMilliseconds: Int32? = 3_000,
     requireJSONB: Bool = true,
     requireFTS5: Bool = false,
-    waitForLocks: Bool = false
+    waitForLocks: Bool = false,
+    incrementalAutoVacuumForNewFile: Bool = false
   ) {
     self.enableWAL = enableWAL
     self.enableForeignKeys = enableForeignKeys
@@ -37,9 +39,14 @@ public struct SQLiteOpenOptions: Sendable {
     self.waitForLocks = waitForLocks
     self.requireJSONB = requireJSONB
     self.requireFTS5 = requireFTS5
+    self.incrementalAutoVacuumForNewFile = incrementalAutoVacuumForNewFile
   }
 
   public static let writableDefault = SQLiteOpenOptions(waitForLocks: true)
+  public static let writableRuntimeStoreDefault = SQLiteOpenOptions(
+    waitForLocks: true,
+    incrementalAutoVacuumForNewFile: true
+  )
   public static let readOnlyDefault = SQLiteOpenOptions(enableWAL: false, waitForLocks: true)
 }
 
@@ -68,6 +75,7 @@ public struct SQLiteError: Error, Equatable, Sendable {
 
 public enum SQLiteValue: Sendable {
   case text(String)
+  case blob(Data)
   case int(Int64)
   case double(Double)
   case null
@@ -87,9 +95,11 @@ public enum SQLiteValue: Sendable {
 
 public struct SQLiteRow: Equatable, Sendable {
   private var values: [String: String?]
+  private var dataValues: [String: Data]
 
-  public init(values: [String: String?]) {
+  public init(values: [String: String?], dataValues: [String: Data] = [:]) {
     self.values = values
+    self.dataValues = dataValues
   }
 
   public subscript(_ column: String) -> String? {
@@ -98,6 +108,10 @@ public struct SQLiteRow: Equatable, Sendable {
 
   public func string(_ column: String, nullValue: String = "") -> String {
     self[column] ?? nullValue
+  }
+
+  public func data(_ column: String) -> Data? {
+    dataValues[column]
   }
 }
 
@@ -164,6 +178,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
     reportedPath: String? = nil
   ) throws -> SQLiteDatabase {
     let diagnosticPath = reportedPath ?? path
+    let isNewFile = options.incrementalAutoVacuumForNewFile
+      && (!FileManager.default.fileExists(atPath: path) || fileSize(at: path) == 0)
     var db: OpaquePointer?
     guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK, let opened = db else {
       let message = db.map(errorMessage) ?? "sqlite open failed"
@@ -178,8 +194,12 @@ public final class SQLiteDatabase: @unchecked Sendable {
       )
     }
     let database = SQLiteDatabase(path: diagnosticPath, handle: opened, ownsHandle: true)
-    try database.configure(options)
+    try database.configure(options, isNewFile: isNewFile)
     return database
+  }
+
+  private static func fileSize(at path: String) -> Int64 {
+    (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0
   }
 
   private static func shouldFallbackToReadWriteOpen(path: String, error: SQLiteError) -> Bool {
@@ -319,10 +339,16 @@ public final class SQLiteDatabase: @unchecked Sendable {
     return Set(rows.compactMap { $0["name"] })
   }
 
-  private func configure(_ options: SQLiteOpenOptions) throws {
+  private func configure(_ options: SQLiteOpenOptions, isNewFile: Bool) throws {
     configureLockWaiting(options)
     if options.enableForeignKeys {
       try execute("PRAGMA foreign_keys=ON")
+    }
+    if options.incrementalAutoVacuumForNewFile, isNewFile {
+      let schemaObjectCount = try query("SELECT count(*) AS count FROM sqlite_master").first?["count"]
+      if schemaObjectCount == "0" {
+        try execute("PRAGMA auto_vacuum = INCREMENTAL")
+      }
     }
     if options.enableWAL {
       try enableWAL(options)
@@ -383,6 +409,14 @@ public final class SQLiteDatabase: @unchecked Sendable {
       switch binding {
       case let .text(value):
         result = sqlite3_bind_text(statement, index, value, -1, sqliteTransientDestructor)
+      case let .blob(value):
+        if value.isEmpty {
+          result = sqlite3_bind_zeroblob(statement, index, 0)
+        } else {
+          result = value.withUnsafeBytes { bytes in
+            sqlite3_bind_blob(statement, index, bytes.baseAddress, Int32(bytes.count), sqliteTransientDestructor)
+          }
+        }
       case let .int(value):
         result = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
       case let .double(value):
@@ -402,20 +436,30 @@ public final class SQLiteDatabase: @unchecked Sendable {
 
   private func row(from statement: OpaquePointer?) -> SQLiteRow {
     var values: [String: String?] = [:]
+    var dataValues: [String: Data] = [:]
     for index in 0..<sqlite3_column_count(statement) {
       guard let name = sqlite3_column_name(statement, index) else {
         continue
       }
       let key = String(cString: name)
-      if sqlite3_column_type(statement, index) == SQLITE_NULL {
+      let type = sqlite3_column_type(statement, index)
+      if type == SQLITE_NULL {
         values[key] = nil
       } else if let text = sqlite3_column_text(statement, index) {
         values[key] = String(cString: text)
+        if type == SQLITE_BLOB || type == SQLITE_TEXT {
+          let count = Int(sqlite3_column_bytes(statement, index))
+          if count == 0 {
+            dataValues[key] = Data()
+          } else if let bytes = sqlite3_column_blob(statement, index) {
+            dataValues[key] = Data(bytes: bytes, count: count)
+          }
+        }
       } else {
         values[key] = nil
       }
     }
-    return SQLiteRow(values: values)
+    return SQLiteRow(values: values, dataValues: dataValues)
   }
 
   private func sqliteError(operation: SQLiteErrorOperation, sql: String?) -> SQLiteError {

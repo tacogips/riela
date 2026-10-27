@@ -96,17 +96,23 @@ public struct WorkflowDefinitionService: Sendable {
     var expected: String?
     var evidence: [WorkflowDefinitionEvidenceRef]
     var actor: WorkflowDefinitionActor
+    var historyRetention: Int?
   }
 
   private let store: WorkflowDefinitionStore
   private let storeRoot: String
   private let fileResolver: any WorkflowBundleResolving
 
-  public init(storeRoot: String, fileResolver: any WorkflowBundleResolving) {
+  public init(storeRoot: String, fileResolver: any WorkflowBundleResolving,
+              defaultHistoryRetention: Int = WorkflowDefinitionStore.defaultHistoryRetention,
+              now: @escaping @Sendable () -> Date = Date.init) {
     self.storeRoot = storeRoot
-    self.store = WorkflowDefinitionStore(rootDirectory: storeRoot)
+    self.store = WorkflowDefinitionStore(rootDirectory: storeRoot, now: now)
     self.fileResolver = fileResolver
+    self.defaultHistoryRetention = defaultHistoryRetention
   }
+
+  private let defaultHistoryRetention: Int
 
   public func lookup(workflowName: String) throws -> ResolvedWorkflowBundle? {
     guard let current = try store.current(workflowName: workflowName) else { return nil }
@@ -153,7 +159,8 @@ public struct WorkflowDefinitionService: Sendable {
     force: Bool,
     reason: String?,
     evidence: [WorkflowDefinitionEvidenceRef],
-    actor: WorkflowDefinitionActor
+    actor: WorkflowDefinitionActor,
+    historyRetention: Int? = nil
   ) throws -> WorkflowDefinitionImportResult {
     if force { try requireReason(reason) }
     let bundle = try fileResolver.resolve(resolution)
@@ -172,7 +179,8 @@ public struct WorkflowDefinitionService: Sendable {
         provenance: bundle.provenance.rawValue,
         actor: actor,
         reason: reason?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "initial import from \(bundle.workflowDirectory)",
-        evidence: evidence
+        evidence: evidence,
+        historyRetention: historyRetention
       )
       do {
         guard case let .created(version, audit) = try store.commit(write) else {
@@ -210,7 +218,8 @@ public struct WorkflowDefinitionService: Sendable {
       evidence: evidence,
       diff: diff,
       overwrittenChanges: overwritten,
-      expectedCurrentVersionId: current.head.currentVersionId
+      expectedCurrentVersionId: current.head.currentVersionId,
+      historyRetention: historyRetention
     )
     do {
       guard case let .created(version, audit) = try store.commit(write) else { throw WorkflowDefinitionStoreError(code: .staleHead, message: "definition changed during force import") }
@@ -224,7 +233,8 @@ public struct WorkflowDefinitionService: Sendable {
     reason: String,
     expectedVersionId: String?,
     evidence: [WorkflowDefinitionEvidenceRef],
-    actor: WorkflowDefinitionActor
+    actor: WorkflowDefinitionActor,
+    historyRetention: Int? = nil
   ) throws -> WorkflowDefinitionUpdateResult {
     try requireReason(reason)
     guard let current = try store.current(workflowName: workflowName) else { throw notRegistered(workflowName) }
@@ -255,7 +265,8 @@ public struct WorkflowDefinitionService: Sendable {
       reason: reason,
       expected: expectedVersionId,
       evidence: evidence,
-      actor: actor
+      actor: actor,
+      historyRetention: historyRetention
     ))
   }
 
@@ -272,7 +283,8 @@ public struct WorkflowDefinitionService: Sendable {
     reason: String,
     expectedVersionId: String?,
     evidence: [WorkflowDefinitionEvidenceRef],
-    actor: WorkflowDefinitionActor
+    actor: WorkflowDefinitionActor,
+    historyRetention: Int? = nil
   ) throws -> (WorkflowDefinitionVersion, WorkflowDefinitionAuditRecord) {
     try requireReason(reason)
     guard let current = try store.current(workflowName: workflowName) else { throw notRegistered(workflowName) }
@@ -320,7 +332,8 @@ public struct WorkflowDefinitionService: Sendable {
       reason: reason,
       expected: expectedVersionId,
       evidence: evidence,
-      actor: actor
+      actor: actor,
+      historyRetention: historyRetention
     ))
     guard let version = result.version, let audit = result.audit else { throw invalidDefinition("prompt unchanged") }
     return (version, audit)
@@ -331,7 +344,8 @@ public struct WorkflowDefinitionService: Sendable {
     versionId: String,
     reason: String,
     evidence: [WorkflowDefinitionEvidenceRef],
-    actor: WorkflowDefinitionActor
+    actor: WorkflowDefinitionActor,
+    historyRetention: Int? = nil
   ) throws -> (WorkflowDefinitionVersion, WorkflowDefinitionAuditRecord) {
     try requireReason(reason)
     guard let current = try store.current(workflowName: workflowName) else { throw notRegistered(workflowName) }
@@ -353,7 +367,8 @@ public struct WorkflowDefinitionService: Sendable {
       reason: reason,
       evidence: evidence,
       diff: diff,
-      expectedCurrentVersionId: current.head.currentVersionId
+      expectedCurrentVersionId: current.head.currentVersionId,
+      historyRetention: historyRetention
     )
     do {
       guard case let .created(version, audit) = try store.commit(write) else { throw invalidDefinition("restore did not create a version") }
@@ -505,7 +520,8 @@ public struct WorkflowDefinitionService: Sendable {
       targetNodeId: targetNodeId,
       targetField: targetField,
       diff: diff,
-      expectedCurrentVersionId: current.head.currentVersionId
+      expectedCurrentVersionId: current.head.currentVersionId,
+      historyRetention: request.historyRetention
     )
     do {
       guard case let .created(version, audit) = try store.commit(write) else { throw conflict("definition head changed during update") }

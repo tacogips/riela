@@ -161,7 +161,7 @@ public struct SQLiteWorkflowMessageLog: Sendable {
       return try SQLiteDatabase.open(
         path: databasePath,
         mode: readOnly ? .readOnly : .readWriteCreate,
-        options: readOnly ? .readOnlyDefault : .writableDefault
+        options: readOnly ? .readOnlyDefault : .writableRuntimeStoreDefault
       )
     } catch let error as SQLiteError where error.operation == .open {
       throw SQLiteWorkflowMessageLogError.openFailed(error.message)

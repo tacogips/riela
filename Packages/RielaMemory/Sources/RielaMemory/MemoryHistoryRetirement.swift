@@ -82,6 +82,10 @@ extension RielaMemoryStore {
       Set(requiredTags).isSubset(of: Set(row.tags)) else {
       report.status = "ownership_mismatch"; return report
     }
+    if try memoryHistoryExists(recordId: recordId, db: db) {
+      return try retireVersionedHistory(record: row, db: db, expectedHeadVersion: expectedHeadVersion,
+        dryRun: dryRun, report: &report, committed: &committed)
+    }
     let headRow = try queryRows(db,
       sql: "SELECT version AS head,recorded_at FROM memory_evolution WHERE record_id=? ORDER BY version DESC LIMIT 1",
       bindings: [.int64(recordId)]).first?.columns ?? [:]
@@ -152,12 +156,9 @@ extension RielaMemoryStore {
     _ = try queryRows(db, sql: "PRAGMA journal_size_limit = 0", bindings: [])
     // Keep the monotonic head marker. Its identity edge contains no old payload
     // bytes and cannot be followed below the retained floor.
-    let bytes = Data(try encodedJSONString(row).utf8)
-    let marker = try EvolutionReverseDelta(previous: bytes, next: bytes, nextVersion: head)
+    let bytes = try memoryHistoryHeadBytes(row)
+    try memoryHistoryStore(db: db).importChain(key: String(recordId), revision: head, headVersion: head, headValue: bytes, previous: [])
     try execute(db, "DELETE FROM memory_evolution WHERE record_id=?", bindings: [.int64(recordId)])
-    try execute(db, """
-      INSERT INTO memory_evolution(record_id,version,recorded_at,reverse_delta_json) VALUES(?,?,?,?)
-      """, bindings: [.int64(recordId), .int64(head), .text(headRow["recorded_at"] ?? ""), .text(try encodedJSONString(marker))])
     try execute(db, """
       INSERT INTO memory_retirement(record_id,retained_floor) VALUES(?,?)
       ON CONFLICT(record_id) DO UPDATE SET retained_floor=excluded.retained_floor
@@ -170,6 +171,49 @@ extension RielaMemoryStore {
       guard checkpoint.first?.columns["busy"] != "1" else {
         report.status = "pending_reclaim"; return report
       }
+      report.reclaimed = true; report.status = "retired"
+    } catch { report.status = "pending_reclaim" }
+    return report
+  }
+
+  private func retireVersionedHistory(record: MemoryRecord, db: OpaquePointer?, expectedHeadVersion: Int64,
+                                      dryRun: Bool, report: inout MemoryHistoryRetirementReport,
+                                      committed: inout Bool) throws -> MemoryHistoryRetirementReport {
+    let recordId = record.recordId
+    let engine = try memoryHistoryStore(db: db)
+    guard let historyHead = try engine.head(key: String(recordId)) else {
+      report.status = "invalid_chain"; return report
+    }
+    report.headVersion = historyHead.headVersion
+    guard historyHead.revision == expectedHeadVersion else { report.status = "stale_head"; return report }
+    let pins = try memoryHistoryPins(recordId: recordId, db: db).subtracting([historyHead.headVersion])
+    guard pins.isEmpty else { report.status = "retained_snapshot"; return report }
+    let referenced = try queryRows(db, sql: """
+      SELECT 1 FROM memory_entries e, json_each(e.related_record_ids_json) r WHERE r.value=? LIMIT 1
+      """, bindings: [.int64(recordId)])
+    guard referenced.isEmpty, record.relatedRecordIds.isEmpty else { report.status = "referenced"; return report }
+    let attachments = try queryRows(db, sql: "SELECT 1 FROM memory_evolution_attachments LIMIT 1", bindings: [])
+    guard record.files.isEmpty, attachments.isEmpty else { report.status = "attachments"; return report }
+    let versions = try engine.versions(key: String(recordId), limit: 1_000, beforeVersion: nil)
+    for version in versions where !version.isHead {
+      let bytes = try engine.value(key: String(recordId), version: version.version,
+        currentHeadValue: memoryHistoryHeadBytes(record))
+      let historical = try JSONDecoder().decode(MemoryRecord.self, from: bytes)
+      guard historical.relatedRecordIds.isEmpty, historical.files.isEmpty else {
+        report.status = "historical_references"; return report
+      }
+    }
+    report.retiredRevisionCount = max(versions.count - 1, 0)
+    report.retiredDeltaBytes = versions.filter { !$0.isHead }.reduce(0) { $0 + $1.storedBytes }
+    report.retainedFloor = historyHead.headVersion
+    guard !dryRun else { report.status = "planned"; return report }
+    _ = try engine.applyRetention(key: String(recordId), currentHeadValue: memoryHistoryHeadBytes(record),
+      retainedGenerations: 1, pins: [])
+    try execute(db, "COMMIT"); committed = true
+    do {
+      try execute(db, "VACUUM")
+      let checkpoint = try queryRows(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)", bindings: [])
+      guard checkpoint.first?.columns["busy"] != "1" else { report.status = "pending_reclaim"; return report }
       report.reclaimed = true; report.status = "retired"
     } catch { report.status = "pending_reclaim" }
     return report

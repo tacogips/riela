@@ -78,6 +78,8 @@ updates a prompt field and appends a version and audit entry. Fields are
 `promptVariants.<key>.<field>` using one of those three field names. If several
 runtime fields refer to the same authored prompt file, changing that file
 updates all of them in the derived runtime.
+When a `--text` or `--reason` value begins with `-`, use the equals form,
+for example `--text=--- yaml` and `--reason=--- x`.
 
 Use `riela workflow definition history <workflow> [--node <node-id>] [--limit <n>]`
 for audit entries, `riela workflow definition show <workflow> [--version <id>]`

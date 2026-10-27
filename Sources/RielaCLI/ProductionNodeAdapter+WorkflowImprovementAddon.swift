@@ -24,8 +24,10 @@ struct WorkflowImprovementApplyOutcome: Equatable, Sendable {
   var digest: String?
 
   static func classify(updateStdout: String, historyStdout: String?, expectedActorId: String) -> Self? {
-    guard let update = parse(updateStdout), let object = update.objectValue,
-          let accepted = object["accepted"]?.boolValue else { return nil }
+    guard let update = parse(updateStdout), let object = update.objectValue else { return nil }
+    guard let accepted = object["accepted"]?.boolValue else {
+      return Self(status: .rejected, reason: "cliUsage", versionId: nil, auditId: nil, digest: nil)
+    }
     if accepted {
       let status: Status = object["outcome"]?.stringValue == "unchanged" ? .unchanged : .applied
       return Self(status: status, reason: nil, versionId: object["versionId"]?.stringValue,

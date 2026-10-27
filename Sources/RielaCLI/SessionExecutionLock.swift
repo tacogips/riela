@@ -61,7 +61,12 @@ final class SessionExecutionLockRegistry: @unchecked Sendable {
       beforeVerify: beforeLockVerify
     )
     if !allowRetired, FileManager.default.fileExists(atPath: databasePath) {
-      let db = try SQLiteDatabase.open(path: databasePath, mode: .strictReadOnly, options: .readOnlyDefault)
+      let runtimeRoot = lockRoot.deletingLastPathComponent().path
+      let db = try RuntimeDatabaseAccess.withSchemaLockIfUninitialized(
+        rootDirectory: runtimeRoot, databasePath: databasePath
+      ) {
+        try SQLiteDatabase.open(path: databasePath, mode: .strictReadOnly, options: .readOnlyDefault)
+      }
       if try db.tableExists("session_retention_tombstones"),
          try !db.query("SELECT 1 FROM session_retention_tombstones WHERE session_id=? LIMIT 1",
           bindings: [.text(sessionId)]).isEmpty {

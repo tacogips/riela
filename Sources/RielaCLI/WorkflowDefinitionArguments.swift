@@ -67,7 +67,7 @@ struct ParsedWorkflowDefinitionCommand {
         index += 1
       } else if Self.valueOptions.contains(token) {
         guard index + 1 < arguments.count,
-              !Self.flagOptions.contains(arguments[index + 1]),
+              !arguments[index + 1].hasPrefix("--"),
               !Self.valueOptions.contains(arguments[index + 1]) else {
           throw WorkflowDefinitionCLIError.usage("\(token) requires a value")
         }

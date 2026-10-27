@@ -53,6 +53,13 @@ final class WorkflowSessionPolicyTests: XCTestCase {
     XCTAssertFalse(overridingDiagnostics.contains {
       $0.path == "workflow.steps.second.sessionPolicy.inheritFromStepId"
     })
+
+    let inheritedNode = AgentNodePayload(
+      id: "node", model: "model",
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "first")
+    )
+    let inheritedDiagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: ["node": inheritedNode])
+    XCTAssertFalse(inheritedDiagnostics.contains { $0.path.hasSuffix("sessionPolicy.inheritFromStepId") })
   }
 
   func testBundleValidationAcceptsSameWorkflowReuseTargetEvenIfNotPreceding() {

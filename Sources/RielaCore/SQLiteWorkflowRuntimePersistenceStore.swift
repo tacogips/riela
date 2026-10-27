@@ -116,9 +116,16 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard isSafeId(snapshot.session.sessionId) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(snapshot.session.sessionId)
     }
-    try upsertSnapshot(db, snapshot)
-    try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
-      .replaceMessages(for: snapshot.session.sessionId, with: snapshot.workflowMessages, in: db)
+    do {
+      try upsertSnapshot(db, snapshot)
+      try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
+        .replaceMessages(for: snapshot.session.sessionId, with: snapshot.workflowMessages, in: db)
+    } catch {
+      if String(describing: error).contains("no such table") {
+        Self.invalidatePreparedSchemaCache(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
+      }
+      throw error
+    }
   }
 
   public func save(
@@ -865,6 +872,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try touchLoopConcurrencyLease(db, snapshot)
     if releaseAtRunEnd {
       _ = try releaseUnreferencedPayloads(rootSessionId: snapshot.session.rootSessionId ?? snapshot.session.sessionId, in: db)
+      executionReuse.remove(cacheKey)
+      traceSnapshotAssembly("released", count: snapshot.session.executions.count)
+      return 1
     }
     // A rollback removes this UUID, invalidating the optimization on next save.
     let columns = try snapshotColumnBindings(snapshot)
@@ -881,12 +891,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     )
     traceSnapshotAssembly("written", count: snapshot.session.executions.count)
     return releaseAtRunEnd ? 1 : 0
-  }
-
-  private func traceSnapshotAssembly(_ phase: String, count: Int, changed: Int = 0) {
-    guard ProcessInfo.processInfo.environment["RIELA_BULK_RESOURCE_DIAGNOSTICS"] == "1" else { return }
-    // Numeric test diagnostics only; never emit inputs, outputs, IDs or env.
-    FileHandle.standardError.write(Data("canonical-resource phase=\(phase) executions=\(count) changed=\(changed)\n".utf8))
   }
 
   func isSafeId(_ value: String) -> Bool {

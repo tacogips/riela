@@ -10,7 +10,7 @@ final class WorkflowValidateGatewayContextTests: XCTestCase {
       defaults: .init(nodeTimeoutMs: 1_000, maxLoopIterations: 1), entryStepId: "step",
       nodeRegistry: [.init(id: "node", addon: addon)], steps: [.init(id: "step", nodeId: "node")],
       nodes: [.init(id: "node", addon: addon)])
-    let warning = WorkflowValidationDiagnostic(severity: .warning, path: "workflow.nodes",
+    let warning = WorkflowValidationDiagnostic(severity: .warning, path: "workflow.nodes[0]",
       message: "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step")
     let bundle = ResolvedWorkflowBundle(workflow: workflow, nodePayloads: [:], sourceScope: .project,
       workflowDirectory: "/tmp", diagnostics: [warning])

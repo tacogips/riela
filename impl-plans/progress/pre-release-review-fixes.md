@@ -29,9 +29,9 @@ Branch: `fix/pre-release`, based on `431fd816`. No commit, push, rebase, or rese
 
 ### A5 — avoid repeated schema setup on saves
 
-- Root cause: every writable open reran the full schema builder, including definition-history setup that was invoked twice from runtime schema preparation; definition-store open repeated it again.
-- Fix: runtime schema setup is cached per database path and `PRAGMA schema_version`; external schema changes invalidate the cache. Removed the duplicate definition-history create and the redundant definition-store preparation after `SQLiteWorkflowRuntimePersistenceStore.openDatabase()` already prepared the shared schema.
-- Evidence: `SQLiteRuntimeExecutionRowsTests`, `RuntimePersistenceBoundedWriteTests`, and definition-store tests exercise repeated saves/opens on prepared stores. Build and focused persistence suites passed. (The persistence observer counts row-write statements, not setup statements.)
+- Root cause (re-review): the old cache trusted only path and `schema_version`, and cache hits bypassed schema-generation and JSONB compatibility checks. A replaced database at the same path could inherit a stale cache entry.
+- Fix: runtime and CLI schema setup caches now include canonical database path, device, inode, `schema_version`, and `user_version`. Cache hits still validate JSONB and compatible generation; a `no such table` write invalidates the runtime cache. CLI schema preparation is deduplicated across `openDatabase` and its callers. Runtime and CLI read-only opens bypass the initialization lock for established databases; only missing or empty databases take it to wait for first creation.
+- Regressions: `SQLiteRuntimeExecutionRowsTests.testCachedSchemaRejectsDatabaseMigratedByNewerBuild` changes the stamped generation after a cached save and confirms the old process rejects the next write; `testSchemaCacheDetectsRecreatedDatabaseAtSamePath` recreates the same path with the same schema counter and confirms setup restores missing runtime tables. Existing repeated-save suites cover prepared-store reuse.
 
 ### A6 — use lock-respecting reads for DELETE-journal stores
 
@@ -80,9 +80,23 @@ Branch: `fix/pre-release`, based on `431fd816`. No commit, push, rebase, or rese
 
 ### B5 — accept leading-dash option values
 
-- Root cause: the definition parser rejected every next token beginning with `--`, including free-form values such as reasons; improvement-addon argv used a separate reason token.
-- Fix: consume unknown `--...` tokens as values when a value option is active, support `--option=value`, and pass improvement reasons with `--reason=<text>`.
-- Regression: the same `WorkflowDefinitionCommandTests` case parses both `--reason --x` and `--reason=--x`.
+- Root cause (re-review): consuming every unknown `--...` token as a space-separated value let a missing reason swallow safety flags such as `--dryrun`, `--dry_run`, or `--help`. Swift Argument Parser also rejects leading-dash passthrough tokens in separate-token form.
+- Fix: restored the strict space-separated value rule; tokens beginning with `--` are accepted only with `--option=<value>`. Help and docs describe equals syntax for values beginning with `-`.
+- Regressions: the existing leading-dash parser case now requires `--reason --x` to throw and retains `--reason=--x`; new tests reject prune/purge missing reasons before flags and run `update-prompt` end to end with `--text=--- yaml --reason=--- x` through `RielaCLIApplication`.
+
+## Opus re-review repairs
+
+- **A1 execution reuse lifetime:** the process-wide cache now holds up to 64 sessions instead of 8 and evicts a session at terminal run-end after payload release. Added `SQLiteRuntimeExecutionRowsTests.testTerminalSnapshotEvictsExecutionReuseEntry`; store-copy incremental-write coverage remains in `testStoreCopiesShareIncrementalExecutionReuse`.
+- **A2 compact orphan history:** storage compact counts and removes memory history head/version rows whose `memory_entries` row is absent. `StorageCompactCommandTests.testApplySweepsOrphanMemoryHistoryAndReportsCount` inserts a two-row orphan and checks the reported count and deletion.
+- **A3 opener barrier:** the generation-nine opener test now waits all openers at a barrier before opening SQLite, so contention begins at the real first-open/migration boundary rather than inside a generation-zero-only probe.
+- **Lock reentrancy and first-open admission:** `DistributedStoreLock` instances for a path now share a refcounted descriptor and recursive process lock; a depth counter protected by that lock keeps same-thread nested acquisitions from relocking or unlocking the outer flock. `DistributedStoreLockTests.testNestedAcquisitionOnSamePathIsReentrant` guards against the prior hang. Empty-database read-only admission waits behind first-open setup while established read-only stores avoid the exclusive lock. The concurrent fresh-run regression passed ten consecutive focused runs and passed in the final full suite.
+- **B1 node-payload policy:** `WorkflowSessionPolicyTests.testBundleValidationUsesNodePolicyAndStepPolicyPrecedence` now includes a valid `inheritFromStepId` declared on the node payload with no step-level policy and confirms it validates.
+- **B2 local roots and diagnostics:** collector local-only deliverables now respect explicit addon roots, while validation warnings identify `workflow.nodes[index]`. The configured-root collector expectation intentionally changed to empty because configured stores are not cwd-local; the unconfigured deterministic ordering case still checks local-only output. The warning deduplication fixture changed its supplied path from `workflow.nodes` to `workflow.nodes[0]` to match the node-specific diagnostic. `AgentNodeOutputContractValidationTests` asserts the node-specific warning path.
+- **B3 cron documentation:** the design spec now matches README: skipped/coalesced/downtime ticks can be missed, and coalescing dispatches only the latest pending tick with its own preceding scheduled occurrence.
+- **B5 usage envelope:** `WorkflowImprovementApplyOutcome.classify` maps parsed family-level CLI usage output without an `accepted` key to `rejected("cliUsage")`; `WorkflowImprovementNodeTests.testApplyOutcomeClassifiesIdempotentConflictByActor` covers it.
+- **Verification (focused):** the final focused suites covered 91 tests with 0 failures. `WorkflowCommandTests.testConcurrentFreshRunsReceiveDistinctSessionIds` passed ten consecutive standalone invocations.
+- **Verification (lint):** strict SwiftLint on all touched Swift source and test files — 0 violations across 23 files.
+- **Verification (build/full suite/diff):** final `swift build --scratch-path tmp/prerelease/build` passed. Final `swift test --scratch-path tmp/prerelease/build -j 4` passed 4,381 XCTest cases, with 39 skipped and 0 failures, plus 30 Swift Testing cases. `git diff --check` passed.
 
 ## Verification
 
@@ -91,4 +105,12 @@ Branch: `fix/pre-release`, based on `431fd816`. No commit, push, rebase, or rese
 - Focused memory package suite: `swift test --package-path Packages/RielaMemory --scratch-path tmp/prerelease/memory-build --filter 'VersionedHistoryTests|MemoryHistoryRetentionTests'` — 17 tests, 0 failures.
 - Full suite: `swift test --scratch-path tmp/prerelease/build` — passed, 4,223 XCTest cases across 507 suites plus 30 Swift Testing cases, 0 failures (exit status 0).
 - Strict SwiftLint: `/usr/bin/xcrun swiftlint lint --strict` on all 29 changed Swift files — 0 violations, 0 serious violations.
+- `git diff --check` — passed.
+
+### Final re-review repair run
+
+- `swift build --scratch-path tmp/prerelease/build` — passed after all source changes.
+- Focused touched-area suites — 91 tests, 0 failures; the concurrent fresh-run suite passed ten repeated invocations, each covering 20 rounds of three simultaneous runs.
+- `swift test --scratch-path tmp/prerelease/build -j 4` — 4,381 XCTest cases, 39 skipped, 0 failures; 30 Swift Testing cases also passed.
+- Strict SwiftLint on 23 changed Swift files — 0 violations, 0 serious violations.
 - `git diff --check` — passed.

@@ -6,6 +6,7 @@ import RielaWorkflowRegistry
 
 private struct StorageCompactCounts: Codable {
   var memoryRecords = 0
+  var orphanMemoryHistoryRows = 0
   var sessions = 0
   var cliRecords = 0
   var nestedInvocations = 0
@@ -135,6 +136,7 @@ struct StorageCompactCommandRunner {
           do {
             let conversion = try RielaMemoryStore(rootDirectory: memoryRoot).convertLegacyHistory(memoryId: id, maxRecords: options.maxBatch)
             counts.memoryRecords = conversion.converted
+            counts.orphanMemoryHistoryRows = try sweepOrphanMemoryHistory(path: path)
             remaining = remaining || conversion.remaining > 0
           } catch {
             remaining = true
@@ -329,10 +331,47 @@ struct StorageCompactCommandRunner {
         result.counts.memoryRecords = Int(try database.query(sql).first?["count"] ?? "0") ?? 0
         result.bytes = Int64(try database.query("SELECT coalesce(sum(length(CAST(reverse_delta_json AS BLOB))),0) AS bytes FROM memory_evolution").first?["bytes"] ?? "0") ?? 0
       }
+      if kind == "memory", try database.tableExists("memory_history_versions"),
+         try database.tableExists("memory_entries") {
+        result.counts.orphanMemoryHistoryRows = try countOrphanMemoryHistory(database)
+      }
       result.bytes += try freePageBytes(database)
-      result.hasWork = result.counts.memoryRecords > 0
+      result.hasWork = result.counts.memoryRecords > 0 || result.counts.orphanMemoryHistoryRows > 0
     }
     return result
+  }
+
+  private func countOrphanMemoryHistory(_ database: SQLiteDatabase) throws -> Int {
+    let versions = try database.query("""
+      SELECT count(*) AS count FROM memory_history_versions v
+      WHERE NOT EXISTS (SELECT 1 FROM memory_entries e WHERE CAST(e.record_id AS TEXT)=v.key)
+      """).first?["count"]
+    let heads = try database.tableExists("memory_history_heads")
+      ? database.query("""
+        SELECT count(*) AS count FROM memory_history_heads h
+        WHERE NOT EXISTS (SELECT 1 FROM memory_entries e WHERE CAST(e.record_id AS TEXT)=h.key)
+        """).first?["count"] : "0"
+    return (Int(versions ?? "0") ?? 0) + (Int(heads ?? "0") ?? 0)
+  }
+
+  private func sweepOrphanMemoryHistory(path: String) throws -> Int {
+    let database = try SQLiteDatabase.open(path: path)
+    guard try database.tableExists("memory_history_versions"), try database.tableExists("memory_entries") else { return 0 }
+    let count = try countOrphanMemoryHistory(database)
+    guard count > 0 else { return 0 }
+    try database.transaction { db in
+      try db.execute("""
+        DELETE FROM memory_history_versions
+        WHERE NOT EXISTS (SELECT 1 FROM memory_entries e WHERE CAST(e.record_id AS TEXT)=memory_history_versions.key)
+        """)
+      if try db.tableExists("memory_history_heads") {
+        try db.execute("""
+          DELETE FROM memory_history_heads
+          WHERE NOT EXISTS (SELECT 1 FROM memory_entries e WHERE CAST(e.record_id AS TEXT)=memory_history_heads.key)
+          """)
+      }
+    }
+    return count
   }
 
   private func fileBytes(_ path: String) -> Int64 {

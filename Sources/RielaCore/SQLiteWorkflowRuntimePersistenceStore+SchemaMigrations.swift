@@ -2,6 +2,9 @@ import Foundation
 import RielaSQLite
 
 extension SQLiteWorkflowRuntimePersistenceStore {
+  static func invalidatePreparedSchemaCache(databasePath: String) {
+    RuntimeSchemaSetupCache.shared.invalidate(databasePath: databasePath)
+  }
   /// Frozen generation-10 definition-store schema. eh-02 preserves this shape
   /// so a 9 → 10 → 11 migration stays independent of future schema builders.
   static func createGeneration10DefinitionSchema(in database: SQLiteDatabase) throws {
@@ -236,12 +239,9 @@ extension SQLiteWorkflowRuntimePersistenceStore {
     readOnly: Bool = false,
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
-    // Keep readers behind first-use compatibility checks too, so no process
-    // can observe a database while another process replaces an incompatible
-    // store or initializes its schema.
     let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
     let schemaLock: DistributedStoreLock?
-    if !strictReadOnly {
+    if !strictReadOnly, !readOnly || needsInitializationLock(databasePath: databasePath) {
       let lock: DistributedStoreLock
       do {
         lock = try DistributedStoreLock(url: URL(fileURLWithPath: rootDirectory, isDirectory: true)
@@ -284,17 +284,33 @@ extension SQLiteWorkflowRuntimePersistenceStore {
     }
   }
 
+  private func needsInitializationLock(databasePath: String) -> Bool {
+    let size = (try? FileManager.default.attributesOfItem(atPath: databasePath)[.size] as? NSNumber)?.int64Value
+    return size == nil || size == 0
+  }
+
   private func prepareSchemaIfNeeded(in database: SQLiteDatabase, databasePath: String) throws {
     let currentSchemaVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init)
+    // A compatible prepared store is always stamped at this generation. Use
+    // the expected stamp in the cache key, then let the compatibility check
+    // perform the single authoritative user_version read on a hit.
+    let userVersion = Int(Self.schemaGeneration)
     guard let currentSchemaVersion, RuntimeSchemaSetupCache.shared.hasPrepared(
-      databasePath: databasePath, schemaVersion: currentSchemaVersion
+      databasePath: databasePath, schemaVersion: currentSchemaVersion, userVersion: userVersion
     ) else {
       try prepareSchema(in: database)
       if let updatedVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init) {
-        RuntimeSchemaSetupCache.shared.markPrepared(databasePath: databasePath, schemaVersion: updatedVersion)
+        RuntimeSchemaSetupCache.shared.markPrepared(
+          databasePath: databasePath, schemaVersion: updatedVersion, userVersion: userVersion
+        )
       }
       return
     }
+    // These checks are part of the compatibility contract even when expensive
+    // DDL is cached. In particular, a different build may have migrated the
+    // store since this process last opened it.
+    try database.requireJSONBAvailable()
+    try Self.requireCompatibleSchemaGeneration(in: database)
   }
 }
 
@@ -302,17 +318,37 @@ private final class RuntimeSchemaSetupCache: @unchecked Sendable {
   static let shared = RuntimeSchemaSetupCache()
 
   private let lock = NSLock()
-  private var versions: [String: Int] = [:]
+  private struct Entry: Equatable {
+    let device: UInt64
+    let inode: UInt64
+    let schemaVersion: Int
+    let userVersion: Int
+  }
+  private var versions: [String: Entry] = [:]
 
-  func hasPrepared(databasePath: String, schemaVersion: Int) -> Bool {
+  func hasPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    return versions[databasePath] == schemaVersion
+    guard let expected = entry(databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion) else { return false }
+    return versions[databasePath] == expected
   }
 
-  func markPrepared(databasePath: String, schemaVersion: Int) {
+  func markPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) {
     lock.lock()
     defer { lock.unlock() }
-    versions[databasePath] = schemaVersion
+    versions[databasePath] = entry(databasePath: databasePath, schemaVersion: schemaVersion, userVersion: userVersion)
+  }
+
+  func invalidate(databasePath: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    versions.removeValue(forKey: databasePath)
+  }
+
+  private func entry(databasePath: String, schemaVersion: Int, userVersion: Int) -> Entry? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: databasePath),
+          let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
+          let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value else { return nil }
+    return Entry(device: device, inode: inode, schemaVersion: schemaVersion, userVersion: userVersion)
   }
 }

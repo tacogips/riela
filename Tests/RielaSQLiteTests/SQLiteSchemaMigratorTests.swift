@@ -184,9 +184,10 @@ final class SQLiteSchemaMigratorTests: XCTestCase {
     let errors = MigrationOpenErrors()
     DispatchQueue.concurrentPerform(iterations: 8) { _ in
       do {
+        gate.waitUntilAllArrive()
         let db = try SQLiteDatabase.open(path: path, options: .init(enableWAL: false, requireJSONB: false))
         try SQLiteSchemaMigrator.migrateIfNeeded(in: db, currentGeneration: 11, migrations: migrations,
-          preGenerationProbe: { _ in gate.waitUntilAllArrive(); return true }, storeDescription: "test store")
+          preGenerationProbe: { _ in true }, storeDescription: "test store")
       } catch {
         errors.append(error)
       }

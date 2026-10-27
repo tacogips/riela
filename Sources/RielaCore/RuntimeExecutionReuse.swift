@@ -27,6 +27,13 @@ final class RuntimeExecutionReuse: @unchecked Sendable {
     return entries[key]
   }
 
+  func remove(_ key: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeValue(forKey: key)
+    order.removeAll { $0 == key }
+  }
+
   func remember(
     _ key: String,
     witness: String,
@@ -52,7 +59,7 @@ final class RuntimeExecutionReuse: @unchecked Sendable {
     )
     order.removeAll { $0 == key }
     order.append(key)
-    while order.count > 8 {
+    while order.count > 64 {
       entries.removeValue(forKey: order.removeFirst())
     }
   }

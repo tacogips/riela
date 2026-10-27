@@ -706,6 +706,9 @@ Import file changes explicitly with `riela workflow definition import <workflow>
 use `--force --reason <reason>` to replace a registered head. See the
 [workflow definition store guide](docs/workflow-definition-store.md) for
 prompt updates, restore, export, GraphQL fields and the improvement addons.
+For `update-prompt` and other definition value options, values beginning with
+`-` must use the `--option=<value>` form, such as `--text=--- yaml` or
+`--reason=--- x`.
 
 ## Runtime Data Retention
 

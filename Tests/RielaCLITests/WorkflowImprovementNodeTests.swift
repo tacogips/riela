@@ -138,6 +138,8 @@ final class WorkflowImprovementNodeTests: XCTestCase {
     let differentActor = #"[{"versionId":"v2","auditId":"a2","actor":{"id":"other"}}]"#
     XCTAssertEqual(WorkflowImprovementApplyOutcome.classify(updateStdout: conflict, historyStdout: sameActor, expectedActorId: "actor")?.status, .applied)
     XCTAssertEqual(WorkflowImprovementApplyOutcome.classify(updateStdout: conflict, historyStdout: differentActor, expectedActorId: "actor")?.reason, "definition_conflict")
+    XCTAssertEqual(WorkflowImprovementApplyOutcome.classify(updateStdout: #"{"error":{"code":"usage_error"}}"#, historyStdout: nil,
+      expectedActorId: "actor")?.reason, "cliUsage")
   }
 
   func testApplyConflictKeepsManualHeadAndRunPin() async throws {

@@ -361,6 +361,25 @@ final class StorageCompactCommandTests: XCTestCase {
     XCTAssertEqual(try memory.recordVersion(memoryId: "legacy", recordId: first.recordId, version: 2), firstHead)
   }
 
+  func testApplySweepsOrphanMemoryHistoryAndReportsCount() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let memory = RielaMemoryStore(rootDirectory: root.path)
+    _ = try memory.save(memoryId: "orphan", workflowId: "flow", payload: .string("live"))
+    let path = try memory.databasePath(memoryId: "orphan")
+    let database = try SQLiteDatabase.open(path: path)
+    try database.execute("INSERT INTO memory_history_heads(key,revision,head_version,updated_at) VALUES ('999',1,1,'now')")
+    try database.execute("INSERT INTO memory_history_versions(key,version,created_at,content_sha256,byte_count,encoding,codec,blob) VALUES ('999',1,'now','orphan',1,'full','none',x'01')")
+
+    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--memory-root", root.path, "--output", "json"])
+    let store = try XCTUnwrap((report["stores"] as? [[String: Any]])?.first)
+    let converted = try XCTUnwrap(store["converted"] as? [String: Any])
+    XCTAssertEqual(converted["orphanMemoryHistoryRows"] as? Int, 2)
+    XCTAssertEqual(try database.query("SELECT key FROM memory_history_heads WHERE key='999'").count, 0)
+    XCTAssertEqual(try database.query("SELECT key FROM memory_history_versions WHERE key='999'").count, 0)
+  }
+
   func testApplyConvertsLegacyRuntimeAndCLISessionRows() throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       .appendingPathComponent("tmp/storage-compact-sessions-\(UUID().uuidString)", isDirectory: true)

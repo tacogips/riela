@@ -12,10 +12,27 @@ final class WorkflowDefinitionCommandTests: XCTestCase {
     for selector in ["--from", "--to"] {
       XCTAssertThrowsError(try ParsedWorkflowDefinitionCommand(["diff", "w", "--file", selector, "v1"]))
     }
-    let parsed = try ParsedWorkflowDefinitionCommand(["update", "w", "--patch", "patch.json", "--reason", "--x"])
-    XCTAssertEqual(parsed.value("--reason"), "--x")
+    XCTAssertThrowsError(try ParsedWorkflowDefinitionCommand(["update", "w", "--patch", "patch.json", "--reason", "--x"]))
     let equalsParsed = try ParsedWorkflowDefinitionCommand(["update", "w", "--patch", "patch.json", "--reason=--x"])
     XCTAssertEqual(equalsParsed.value("--reason"), "--x")
+  }
+
+  func testRetentionCommandsRejectMissingReasonBeforeFlag() throws {
+    XCTAssertThrowsError(try ParsedWorkflowDefinitionCommand(["prune", "w", "--keep", "1", "--reason", "--dryrun"]))
+    XCTAssertThrowsError(try ParsedWorkflowDefinitionCommand(["purge-history", "w", "--reason", "--dry_run", "--yes"]))
+  }
+
+  func testUpdatePromptAcceptsLeadingDashValuesThroughApplicationParser() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = RielaCLIApplication()
+    let seeded = await app.run(fixture.command("import", "w", "--output", "json"))
+    XCTAssertEqual(seeded.exitCode, .success, seeded.stdout + seeded.stderr)
+    let updated = await app.run(fixture.command(
+      "update-prompt", "w", "--node", "worker", "--field", "promptTemplate",
+      "--text=--- yaml", "--reason=--- x", "--output", "json"
+    ))
+    XCTAssertEqual(updated.exitCode, .success, updated.stdout + updated.stderr)
   }
 
   func testDefinitionImportPromptAuditForceRestoreAndExport() async throws {

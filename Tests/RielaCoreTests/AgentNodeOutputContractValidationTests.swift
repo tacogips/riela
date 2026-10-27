@@ -140,6 +140,7 @@ final class AgentNodeOutputContractValidationTests: XCTestCase {
     XCTAssertFalse(addonDiagnostics.contains { $0.severity == .error })
     XCTAssertTrue(addonDiagnostics.contains {
       $0.severity == .warning
+        && $0.path == "workflow.nodes[0]"
         && $0.message == "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
     })
 

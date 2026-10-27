@@ -40,9 +40,11 @@ public struct DeliverableCollector: Sendable {
       }
 
       if let addon, addon.name.hasPrefix("riela/memory-") {
+        guard !hasExplicitRoot(addon, key: "memoryRoot") else { continue }
         let path = localPath(payload: payload, config: addon.config, configKey: "memoryRoot")
         localOnly.insert(LocalOnlyKey(kind: "memory", path: path))
       } else if let addon, addon.name.hasPrefix("riela/kv-") {
+        guard !hasExplicitRoot(addon, key: "kvRoot") else { continue }
         let path = localPath(payload: payload, config: addon.config, configKey: "kvRoot")
         localOnly.insert(LocalOnlyKey(kind: "kv", path: path))
       }
@@ -61,6 +63,13 @@ public struct DeliverableCollector: Sendable {
       DeliverableRef.localOnly(LocalOnlyDeliverable(kind: key.kind, path: key.path))
     }
     return documentRefs + localRefs
+  }
+
+  private func hasExplicitRoot(_ addon: WorkflowNodeAddonRef, key: String) -> Bool {
+    [addon.config?[key], addon.inputs?[key]].compactMap { value -> String? in
+      guard case let .string(root)? = value else { return nil }
+      return root
+    }.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   }
 
   private func identifiers(in payload: JSONObject, fields: [String]) -> Set<String> {

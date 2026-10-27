@@ -8,31 +8,43 @@ import Darwin
 /// Serializes local controller and workflow processes. This is not a network
 /// filesystem lock: workers never open the controller store.
 final class DistributedStoreLock {
-  private let descriptor: Int32
-  private let processLock: NSRecursiveLock
+  private let path: String
+  private let shared: DistributedStoreSharedLock
+  private var acquiredDepth = 0
 
   init(url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    descriptor = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
-    guard descriptor >= 0 else { throw DistributedWorkerError.storeUnavailable }
-    processLock = DistributedStoreProcessLockRegistry.shared.lock(for: url.standardizedFileURL.path)
+    path = url.standardizedFileURL.path
+    shared = try DistributedStoreProcessLockRegistry.shared.acquire(path: path, lockPath: url.path)
   }
 
-  deinit { close(descriptor) }
+  deinit { DistributedStoreProcessLockRegistry.shared.release(path: path, shared: shared) }
 
   func acquire() throws {
-    processLock.lock()
-    while flock(descriptor, LOCK_EX) != 0 {
+    shared.processLock.lock()
+    if shared.flockDepth > 0 {
+      shared.flockDepth += 1
+      acquiredDepth += 1
+      return
+    }
+    while flock(shared.descriptor, LOCK_EX) != 0 {
       guard errno == EINTR else {
-        processLock.unlock()
+        shared.processLock.unlock()
         throw DistributedWorkerError.storeUnavailable
       }
     }
+    shared.flockDepth = 1
+    acquiredDepth += 1
   }
 
   func release() {
-    _ = flock(descriptor, LOCK_UN)
-    processLock.unlock()
+    guard acquiredDepth > 0 else { return }
+    acquiredDepth -= 1
+    shared.flockDepth -= 1
+    if shared.flockDepth == 0 {
+      _ = flock(shared.descriptor, LOCK_UN)
+    }
+    shared.processLock.unlock()
   }
 }
 
@@ -47,20 +59,57 @@ public enum RuntimeDatabaseAccess {
     defer { lock.release() }
     return try body()
   }
+
+  /// Avoids the initialization lock for established read-only databases while
+  /// keeping readers behind an in-progress first creation.
+  public static func withSchemaLockIfUninitialized<T>(
+    rootDirectory: String,
+    databasePath: String,
+    _ body: () throws -> T
+  ) throws -> T {
+    let size = (try? FileManager.default.attributesOfItem(atPath: databasePath)[.size] as? NSNumber)?.int64Value
+    guard size == nil || size == 0 else { return try body() }
+    return try withSchemaLock(rootDirectory: rootDirectory, body)
+  }
+}
+
+private final class DistributedStoreSharedLock {
+  let descriptor: Int32
+  let processLock = NSRecursiveLock()
+  var users = 0
+  var flockDepth = 0
+
+  init(lockPath: String) throws {
+    descriptor = open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+    guard descriptor >= 0 else { throw DistributedWorkerError.storeUnavailable }
+  }
+
+  deinit { close(descriptor) }
 }
 
 private final class DistributedStoreProcessLockRegistry: @unchecked Sendable {
   static let shared = DistributedStoreProcessLockRegistry()
 
   private let registryLock = NSLock()
-  private var locks: [String: NSRecursiveLock] = [:]
+  private var locks: [String: DistributedStoreSharedLock] = [:]
 
-  func lock(for path: String) -> NSRecursiveLock {
+  func acquire(path: String, lockPath: String) throws -> DistributedStoreSharedLock {
     registryLock.lock()
     defer { registryLock.unlock() }
-    if let lock = locks[path] { return lock }
-    let lock = NSRecursiveLock()
+    if let lock = locks[path] {
+      lock.users += 1
+      return lock
+    }
+    let lock = try DistributedStoreSharedLock(lockPath: lockPath)
+    lock.users = 1
     locks[path] = lock
     return lock
+  }
+
+  func release(path: String, shared: DistributedStoreSharedLock) {
+    registryLock.lock()
+    defer { registryLock.unlock() }
+    shared.users -= 1
+    if shared.users == 0 { locks.removeValue(forKey: path) }
   }
 }

@@ -407,6 +407,9 @@ to send a Yui time-signal reply only when the scheduled Asia/Tokyo local time
 is on a five-minute boundary. Set
 `RIELA_TELEGRAM_CHAT_ID` to the target Telegram chat id for live runs; the
 checked-in placeholder remains deterministic for local validation.
+Cron tick envelopes also include `previousScheduledAt` and
+`previousScheduledLocalTime`; see [Cron tick input](../../README.md#cron-tick-input)
+for formats and the run-window example.
 
 ```bash
 riela events serve --workflow-definition-dir ./examples --event-root ./examples/event-sources/.riela-events

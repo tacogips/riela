@@ -82,21 +82,88 @@ public struct CronSchedule: Equatable, Sendable {
           let weekday = components.weekday else {
       return false
     }
-    guard seconds.contains(second), minutes.contains(minute), hours.contains(hour), months.contains(month) else {
+    guard secondMatches(second), minuteMatches(minute), hourMatches(hour), monthMatches(month) else {
       return false
     }
-    let cronWeekday = weekday - 1
+    return dayMatches(day: day, cronWeekday: weekday - 1)
+  }
+
+  /// Returns the latest matching whole second strictly before `date`, or nil when none is found
+  /// at or after the calendar-relative nine-year search horizon.
+  public func previousOccurrence(before date: Date, calendar: Calendar) -> Date? {
+    guard let horizon = calendar.date(byAdding: .year, value: -9, to: date) else {
+      return nil
+    }
+    var candidate = Date(timeIntervalSince1970: ceil(date.timeIntervalSince1970) - 1)
+
+    while candidate >= horizon {
+      let components = calendar.dateComponents([.second, .minute, .hour, .day, .month, .weekday], from: candidate)
+      guard let second = components.second,
+            let minute = components.minute,
+            let hour = components.hour,
+            let day = components.day,
+            let month = components.month,
+            let weekday = components.weekday else {
+        return nil
+      }
+
+      if !monthMatches(month) {
+        guard let start = calendar.dateInterval(of: .month, for: candidate)?.start else {
+          return nil
+        }
+        candidate = start.addingTimeInterval(-1)
+      } else if !dayMatches(day: day, cronWeekday: weekday - 1) {
+        guard let start = calendar.dateInterval(of: .day, for: candidate)?.start else {
+          return nil
+        }
+        candidate = start.addingTimeInterval(-1)
+      } else if !hourMatches(hour) {
+        guard let start = calendar.dateInterval(of: .hour, for: candidate)?.start else {
+          return nil
+        }
+        candidate = start.addingTimeInterval(-1)
+      } else if !minuteMatches(minute) {
+        guard let start = calendar.dateInterval(of: .minute, for: candidate)?.start else {
+          return nil
+        }
+        candidate = start.addingTimeInterval(-1)
+      } else if !secondMatches(second) {
+        candidate = candidate.addingTimeInterval(-1)
+      } else {
+        return candidate
+      }
+    }
+    return nil
+  }
+
+  private func secondMatches(_ value: Int) -> Bool {
+    seconds.contains(value)
+  }
+
+  private func minuteMatches(_ value: Int) -> Bool {
+    minutes.contains(value)
+  }
+
+  private func hourMatches(_ value: Int) -> Bool {
+    hours.contains(value)
+  }
+
+  private func monthMatches(_ value: Int) -> Bool {
+    months.contains(value)
+  }
+
+  private func dayMatches(day: Int, cronWeekday: Int) -> Bool {
     let dayOfMonthMatches = daysOfMonth.contains(day)
     let dayOfWeekMatches = daysOfWeek.contains(cronWeekday)
-    switch (dayOfMonthRestricted, dayOfWeekRestricted) {
+    return switch (dayOfMonthRestricted, dayOfWeekRestricted) {
     case (true, true):
-      return dayOfMonthMatches || dayOfWeekMatches
+      dayOfMonthMatches || dayOfWeekMatches
     case (true, false):
-      return dayOfMonthMatches
+      dayOfMonthMatches
     case (false, true):
-      return dayOfWeekMatches
+      dayOfWeekMatches
     case (false, false):
-      return true
+      true
     }
   }
 

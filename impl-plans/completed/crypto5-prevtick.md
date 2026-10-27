@@ -13,8 +13,11 @@ Sources of truth:
   `design-docs/specs/event-listener-workflow-trigger/provider-source-types.md`
   §Cron.
 
-Base `main` is `0b25d5b2`. The implementation branch is `main`
-(`gitPush=true`), and serial finalization commits and pushes. Do not revert or
+Continuation (opus-luna session 519): base `main` is `c14c3b30`. Plan
+c5pt-01-deps is **completed**: it landed as `35a910d5`, with progress in
+`impl-plans/progress/c5pt-01-deps.md`. It is an accepted dependency and is not
+dispatched again. The implementation branch is `main` (`gitPush=true`), and
+serial finalization commits and pushes. Do not revert or
 rework the definition store (#179/#180) or the agent tool-policy presets
 (`0b25d5b2`). Do not bump `VERSION` and do not release.
 
@@ -24,17 +27,23 @@ No worker edits this file. Serial finalization updates it.
 
 | Wave | planId | Plan | dependsOn |
 |---|---|---|---|
-| 1 | c5pt-01-deps | `crypto5-prevtick-01-deps.md` | — |
+| done | c5pt-01-deps | `crypto5-prevtick-01-deps.md` | — (completed, `35a910d5`) |
+| 1 | c5pt-02-cron-core | `crypto5-prevtick-02-cron-core.md` | — |
+| 1 | c5pt-03-routine-template | `crypto5-prevtick-03-routine-template.md` | — |
+| 1 | c5pt-04-notion-catalog-test | `crypto5-prevtick-04-notion-catalog-test.md` | — |
 | 1 | c5pt-05-docs-fixtures | `crypto5-prevtick-05-docs-fixtures.md` | — |
-| 2 | c5pt-02-cron-core | `crypto5-prevtick-02-cron-core.md` | c5pt-01 |
-| 2 | c5pt-03-routine-template | `crypto5-prevtick-03-routine-template.md` | c5pt-01 |
-| 2 | c5pt-04-notion-catalog-test | `crypto5-prevtick-04-notion-catalog-test.md` | c5pt-01 |
-| 3 | c5pt-06-cron-envelope | `crypto5-prevtick-06-cron-envelope.md` | c5pt-02, c5pt-05 |
+| 2 | c5pt-06-cron-envelope | `crypto5-prevtick-06-cron-envelope.md` | c5pt-02, c5pt-05 |
 
-Why wave 2 waits for c5pt-01: every Swift plan verifies with `swift build` or
-`swift test`, which compile the whole package. Until c5pt-01 has finished the
-bump and its adaptations, the package graph is in flux. c5pt-05 edits only
-Markdown and JSON fixtures and runs no SwiftPM command, so it shares wave 1.
+Why it is now two waves: the earlier wave-2 plans waited only for c5pt-01,
+which has landed. c5pt-06 still needs two things:
+
+- the `previousOccurrence` contract from c5pt-02;
+- the fixture values from c5pt-05, which re-applies
+  `tmp/crypto5-prevtick/held/cron-docs.patch`. The c5pt-06
+  fixture-agreement test reads them.
+
+Three wave-1 plans run `swift test` concurrently, so `.build` lock contention
+is expected. Handle it with the peer-breakage retry rule below.
 
 The `writePaths` of all plans are disjoint. No plan has `sharedPaths`.
 `Package.resolved` and `Packages/RielaMemory/Package.resolved` belong to
@@ -122,7 +131,19 @@ arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache <every touc
 ```
 
 Full `swift test` failures are compared against the baseline that c5pt-01
-captured before any edit:
-`tmp/crypto5-prevtick/c5pt-01/baseline-full-test.log`. Only a failure that
-also appears in that baseline counts as pre-existing. Every other failure is a
-regression to fix.
+captured before any edit. The assertion lines are in
+`tmp/crypto5-prevtick/c5pt-01/baseline-failures.txt` (the full log was not
+kept), and the continuation workflow input confirms the same failures:
+
+- `DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession`
+- `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`
+- `ServeWebHostTests.testBrowserExecutionUsesProfileStoreAndGatesSummaryReads`
+- `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`
+- `WorkflowCommandTests.testCancellationWithoutAutoImprovePersistsTerminalFailure`
+- `WorkflowHostCapabilityTests.testIssue116BuiltinsResolveWithoutExternalExecutable`
+- `WorkflowCommandTests.testConcurrentFreshRunsReceiveDistinctSessionIds` (flaky)
+
+Only a failure in that list counts as pre-existing. Every other failure is a
+regression to fix. Do not fix the baseline failures here.
+
+Write the final gate logs under `tmp/crypto5-prevtick/reconcile-final/`.

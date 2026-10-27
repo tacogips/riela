@@ -144,6 +144,8 @@ must carry the `eventType` the binding matches on, or the tick is reported as
   "input": {
     "scheduledAt": "2026-08-09T18:00:00.000Z",
     "scheduledLocalTime": "2026-08-10 03:00:00",
+    "previousScheduledAt": "2026-08-08T18:00:00.000Z",
+    "previousScheduledLocalTime": "2026-08-09 03:00:00",
     "firedAt": "2026-08-09T18:00:00.500Z",
     "timezone": "Asia/Tokyo"
   }

@@ -3,12 +3,74 @@ import RielaCore
 import XCTest
 @testable import RielaCLI
 
+private struct NotionJSONOperationCase {
+  var name: String
+  var operation: String
+  var arguments: JSONObject
+  var tier: String
+}
+
 final class NotionGatewayAddonTests: XCTestCase {
   private func input(_ name: String, query: String, env: JSONObject? = nil) -> WorkflowAddonExecutionInput {
     WorkflowAddonExecutionInput(workflowId: "notion-test", stepId: "notion-step", nodeId: "notion-node",
       addon: WorkflowNodeAddonRef(name: name, version: "1", config: ["queryTemplate": .string(query),
         "variablesTemplate": .object(["id": .string("{{pageId}}")])], env: env),
       variables: ["pageId": .string("synthetic-page")], resolvedInputPayload: [:])
+  }
+
+  private func jsonInput(_ name: String, operation: String, arguments: JSONObject,
+                         env: JSONObject? = nil) -> WorkflowAddonExecutionInput {
+    WorkflowAddonExecutionInput(workflowId: "notion-test", stepId: "notion-step", nodeId: "notion-node",
+      addon: WorkflowNodeAddonRef(name: name, version: "1", config: [
+        "operation": .string(operation), "arguments": .object(arguments)
+      ], env: env), resolvedInputPayload: [:])
+  }
+
+  func testJSONModeSupportsCatalogNotionOperations() async throws {
+    let environment = ["BOUND_NOTION": "synthetic-token"]
+    let credentialBinding: JSONObject = ["NOTION_API_KEY": .object(["fromEnv": .string("BOUND_NOTION")])]
+    let cases = [
+      NotionJSONOperationCase(name: "riela/notion-gateway-write", operation: "ensurePagePath", arguments: [
+        "parentId": .string("00000000-0000-0000-0000-000000000001"),
+        "titles": .array([.string("Inbox"), .string("2026")]),
+        "children": .array([]), "markdown": .string("synthetic")
+      ], tier: "writer"),
+      NotionJSONOperationCase(name: "riela/notion-gateway-read", operation: "findChildPage", arguments: [
+        "parentId": .string("00000000-0000-0000-0000-000000000001"), "title": .string("Inbox")
+      ], tier: "reader"),
+      NotionJSONOperationCase(name: "riela/notion-gateway-write", operation: "findChildPage", arguments: [
+        "parentId": .string("00000000-0000-0000-0000-000000000001"), "title": .string("Inbox")
+      ], tier: "writer")
+    ]
+
+    for testCase in cases {
+      let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"result":{"id":"synthetic-page"}}}"#)
+      let output = try await BuiltinWorkflowAddonResolver(
+        environment: environment, localGatewayGraphQLRunner: recorder.runner
+      ).execute(jsonInput(testCase.name, operation: testCase.operation,
+                          arguments: testCase.arguments, env: credentialBinding), context: .init())
+      let call = try XCTUnwrap(recorder.lastCall(), testCase.operation)
+      XCTAssertEqual(recorder.allCalls().count, 1, testCase.operation)
+      XCTAssertEqual(call.tier, testCase.tier, testCase.operation)
+      XCTAssertTrue(call.document.contains("\(testCase.operation)("), testCase.operation)
+      XCTAssertEqual(call.environment["NOTION_API_KEY"], "synthetic-token", testCase.operation)
+      XCTAssertTrue(output.completionPassed, testCase.operation)
+    }
+  }
+
+  func testReaderJSONModeRejectsEnsurePagePathBeforeDispatch() async throws {
+    let recorder = RecordingGatewayGraphQLRunner()
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+        jsonInput("riela/notion-gateway-read", operation: "ensurePagePath", arguments: [
+          "parentId": .string("00000000-0000-0000-0000-000000000001"),
+          "titles": .array([.string("Inbox")])
+        ]), context: .init())
+      XCTFail("reader catalog accepted writer-only ensurePagePath")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+    }
+    XCTAssertTrue(recorder.allCalls().isEmpty)
   }
 
   func testPinnedRoleVariablesAndOnlyExplicitCredentialBinding() async throws {
@@ -75,7 +137,10 @@ final class NotionGatewayAddonTests: XCTestCase {
     let schema = try await runNativeGatewayCLI(.init(gateway: .notion, role: "reader", arguments: ["schema"]), environment: [:])
     XCTAssertEqual(schema.exitCode, 0)
     XCTAssertFalse(schema.stdout.contains("createPage"))
+    XCTAssertTrue(schema.stdout.contains("findChildPage(parentId: ID!, title: String!)"))
     let writerSchema = try await runNativeGatewayCLI(.init(gateway: .notion, role: "writer", arguments: ["schema"]), environment: [:])
+    XCTAssertTrue(writerSchema.stdout.contains("findChildPage(parentId: ID!, title: String!)"))
+    XCTAssertTrue(writerSchema.stdout.contains("ensurePagePath(parentId: ID!, titles: [String!]!, children: JSON, markdown: String)"))
     let createPage = try XCTUnwrap(writerSchema.stdout.split(separator: "\n").first { $0.contains("createPage(") })
     XCTAssertTrue(createPage.contains("position: JSON"))
     XCTAssertTrue(writerSchema.stdout.contains("createFileUpload"))

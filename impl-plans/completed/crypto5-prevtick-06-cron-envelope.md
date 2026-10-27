@@ -5,7 +5,7 @@
   "planId": "c5pt-06-cron-envelope",
   "planPath": "impl-plans/active/crypto5-prevtick-06-cron-envelope.md",
   "dependsOn": ["c5pt-02-cron-core", "c5pt-05-docs-fixtures"],
-  "wave": 3,
+  "wave": 2,
   "writePaths": [
     "Sources/RielaCLI/EventLiveServe+Cron.swift",
     "Tests/RielaCLITests/EventLiveServeCronTests.swift",
@@ -118,8 +118,15 @@ pattern of `testReadOnlyCronRetainsFixedClockEnvelopeWithoutDispatchOrRoutineCom
    | `examples/wrike-project-kanban-agent/payloads/wrike-kanban-cron-tick.json` | `examples/wrike-project-kanban-agent/.riela-events/sources/wrike-kanban-30s-cron.json` |
 
    Resolve the repository root the way existing CLI tests that read
-   `examples/` do (`git grep -n '"examples"' Tests/RielaCLITests` for the
-   helper). Do not hard-code `/Users/...`.
+   `examples/` do:
+   `URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()`
+   (`Tests/RielaCLITests/CollectionGatewayWorkflowTests.swift:26`). Do not
+   hard-code `/Users/...`.
+
+   The fixture values come from c5pt-05 (wave 1, re-applied held patch). If
+   a fixture lacks `previousScheduledAt` when this plan runs, c5pt-05 has not
+   finished or failed. Do not edit the fixture, which c5pt-05 owns. Log it as
+   peer drift and mark the plan `blocked`.
 
 ## Verification (commands → required evidence)
 

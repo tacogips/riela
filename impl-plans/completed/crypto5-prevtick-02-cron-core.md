@@ -4,8 +4,8 @@
 {
   "planId": "c5pt-02-cron-core",
   "planPath": "impl-plans/active/crypto5-prevtick-02-cron-core.md",
-  "dependsOn": ["c5pt-01-deps"],
-  "wave": 2,
+  "dependsOn": [],
+  "wave": 1,
   "writePaths": [
     "Sources/RielaCore/CronSchedule.swift",
     "Tests/RielaCoreTests/CronSchedulePreviousOccurrenceTests.swift",
@@ -32,6 +32,16 @@ Existing code (`Sources/RielaCore/CronSchedule.swift`):
   when neither is (lines 75-98). The cron weekday is
   `Calendar.weekday - 1`.
 - `maximumCatchUpSeconds = 3_600` stays unchanged.
+
+Continuation note (session 519): c5pt-01 has already landed (`35a910d5`), so
+this plan has no in-run dependency and runs in wave 1. The plans running
+alongside it are c5pt-03, c5pt-04 and c5pt-05. Their `writePaths` do not
+overlap with this plan's. Concurrent `swift test` runs can contend for the
+`.build` lock; follow the peer-breakage retry rule in
+`impl-plans/active/crypto5-prevtick.md`.
+
+Non-goals: no change to `dueTicks`, `maximumCatchUpSeconds`,
+`EventLiveServe+Cron.swift` (owned by c5pt-06) or any other file.
 
 ## Contract (pinned; c5pt-06 depends on it)
 

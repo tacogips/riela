@@ -15,6 +15,16 @@ extension DefaultEventLiveServer {
     coalescedTickCount: Int = 0
   ) async throws -> Int {
     let timeZone = source.resolvedTimeZone
+    var input: JSONObject = [
+      "scheduledAt": .string(cronISOTimestamp(scheduledAt)),
+      "scheduledLocalTime": .string(cronLocalTimestamp(scheduledAt, timeZone: timeZone)),
+      "firedAt": .string(cronISOTimestamp(firedAt)),
+      "timezone": .string(source.timezone ?? "UTC")
+    ]
+    if let previous = source.previousTick(before: scheduledAt) {
+      input["previousScheduledAt"] = .string(cronISOTimestamp(previous))
+      input["previousScheduledLocalTime"] = .string(cronLocalTimestamp(previous, timeZone: timeZone))
+    }
     let envelope = ExternalEventEnvelope(
       sourceId: source.id,
       eventId: "\(source.id)-\(Int(scheduledAt.timeIntervalSince1970))",
@@ -22,12 +32,7 @@ extension DefaultEventLiveServer {
       eventType: "cron.tick",
       receivedAt: firedAt,
       dedupeKey: "\(source.id):\(Int(scheduledAt.timeIntervalSince1970))",
-      input: [
-        "scheduledAt": .string(cronISOTimestamp(scheduledAt)),
-        "scheduledLocalTime": .string(cronLocalTimestamp(scheduledAt, timeZone: timeZone)),
-        "firedAt": .string(cronISOTimestamp(firedAt)),
-        "timezone": .string(source.timezone ?? "UTC")
-      ]
+      input: input
     )
     let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
       sources: config.sources,
@@ -186,6 +191,15 @@ struct CronScheduleSource: Decodable, Equatable, Sendable {
       second += 1
     }
     return ticks
+  }
+
+  func previousTick(before scheduledAt: Date) -> Date? {
+    guard let parsed = try? CronSchedule.parse(schedule) else {
+      return nil
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = resolvedTimeZone
+    return parsed.previousOccurrence(before: scheduledAt, calendar: calendar)
   }
 }
 

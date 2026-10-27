@@ -6,6 +6,19 @@ instructions in the opus-luna session-515 intake are authoritative. Base:
 (#179/#180) or the agent tool-policy presets (`0b25d5b2`).
 Do not bump `VERSION` and do not release.
 
+Continuation (opus-luna session 519, base `main` at `c14c3b30`): Part 1
+§1.1-1.3 landed as `35a910d5` (plan `crypto5-prevtick-01-deps`, completed;
+not redone). That commit also carried the `docs/builtin-gateway-json.md`
+Notion row from §1.4. What remains is the §1.4 test and README text, all of
+Part 2, and the rollout rules in "Continuation rollout" below.
+
+Implemented (2026-10-27, session 519): plans `crypto5-prevtick-02` … `06`
+were accepted by the test-integrity, adversarial and combined-tree integration
+reviews. The umbrella plan and all child plans are archived as
+[`impl-plans/completed/crypto5-prevtick*.md`](../../impl-plans/completed/crypto5-prevtick.md).
+User docs: README [Cron tick input](../../README.md#cron-tick-input) and the
+Notion add-on paragraph.
+
 The change has two independent parts. Part 1 updates dependency pins. Part 2
 adds the previous scheduled occurrence to the cron tick envelope. Neither part
 adds a new module, abstraction layer, or configuration key.
@@ -123,6 +136,12 @@ Rules:
   start is inclusive and the end is exclusive.
 - The same `ISO8601DateFormatter` and `DateFormatter` used for the existing
   fields are reused, so the old and new values use identical formats.
+- In a fall-back overlap, two different instants can produce the same
+  `previousScheduledLocalTime` string. For example, `0 30 1 * * *` in
+  America/New_York on 2026-11-01 renders both 01:30 EDT and 01:30 EST as
+  `2026-11-01 01:30:00`. The local string is for display only. Windows must
+  use the UTC `previousScheduledAt`/`scheduledAt` pair, which is always
+  unambiguous.
 - If no occurrence exists within the search horizon (§2.2), both keys are
   omitted rather than given a sentinel. The serve loop never produces this
   case, because `scheduledAt` itself matched the schedule.
@@ -144,7 +163,9 @@ wall-clock DST behavior:
   occurrence.
 - In a fall-back overlap, a repeated local time occurs twice.
 
-**Search (bounded skip-scan):** start at `t = floor(before) - 1s` and loop.
+**Search (bounded skip-scan):** start at `t = ceil(before) - 1s`, the largest
+whole second strictly before `before`, and loop. For the integral `scheduledAt`
+values the serve loop produces, this equals `floor(before) - 1s`.
 Decompose `t` in the calendar, then check the fields from coarsest to finest:
 
 1. month not in `months`: set `t` to the start of the month containing `t`
@@ -281,12 +302,49 @@ Logs go to `tmp/crypto5-prevtick/`.
    - Binding template (§2.4) and routine default template contain the keys.
    - Fixture agreement: each updated cron fixture's previous values equal
      `previousTick(before:)` for its source file's schedule and timezone.
-5. Full `swift test`. Pre-existing failures are reported separately, with
-   evidence that they also fail on `0b25d5b2`. The known interleaved-submit
-   timing flake is one example.
+5. Full `swift test`. Pass means no NEW failures compared with the baseline
+   recorded in `tmp/crypto5-prevtick/c5pt-01/baseline-failures.txt` (the
+   failing assertion lines; the full baseline log was not kept) and confirmed
+   by the continuation workflow input. The baseline failures are:
+   - `DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession`
+   - `HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip`
+   - `ServeWebHostTests.testBrowserExecutionUsesProfileStoreAndGatesSummaryReads`
+   - `SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal`
+   - `WorkflowCommandTests.testCancellationWithoutAutoImprovePersistsTerminalFailure`
+   - `WorkflowHostCapabilityTests.testIssue116BuiltinsResolveWithoutExternalExecutable`
+   - `WorkflowCommandTests.testConcurrentFreshRunsReceiveDistinctSessionIds`
+     (flaky)
+
+   These are reported separately and are not fixed in this change.
 6. `swiftlint --strict` on the touched Swift files.
 7. Push the implementation branch (`gitPush=true`). No VERSION bump, no
    release.
+
+## Continuation rollout
+
+- Plan `crypto5-prevtick-01-deps` is marked completed (evidence:
+  `35a910d5`, `impl-plans/progress/c5pt-01-deps.md`). No Part 1 file is edited
+  again.
+- The plan 05 docs and fixtures are not re-authored. They come from
+  re-applying `tmp/crypto5-prevtick/held/cron-docs.patch`. On `c14c3b30` the
+  patch's context lines match the current files unchanged:
+  - `README.md` around lines 533-538 and 994-997;
+  - `examples/event-sources/README.md` around lines 407-412;
+  - the three cron fixtures and the memory-consolidation sample.
+
+  The patch's field names and values equal §2.1, §2.3 and §2.5. It contains
+  no `docs/builtin-gateway-json.md` hunk, because that row already landed. If
+  the patch does not apply cleanly, the same hunks are applied by hand. They
+  are never rewritten with different values.
+- Order: the plan 06 fixture-agreement test (§Verification 4) reads the
+  fixtures. So the held patch must be applied before that test runs, and it
+  keeps the `c5pt-06 dependsOn c5pt-05` edge in
+  `impl-plans/active/crypto5-prevtick-dispatch.json`. Docs and code are
+  committed together in serial finalization and pushed to `origin/main` in one
+  push. So no pushed revision documents keys that the code does not produce.
+- The plan set's stale base reference (`0b25d5b2`) is refreshed to
+  `c14c3b30` when the plans are re-dispatched. Plan contents, tasks and
+  `writePaths` otherwise stay as accepted.
 
 ## Out of scope
 

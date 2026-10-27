@@ -184,6 +184,33 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+swift-crypto 5.x refresh and cron previous tick (workflow-input issue, no
+GitHub number; design
+[crypto5 dependency refresh and cron previous tick](../design-docs/specs/design-crypto5-dependency-refresh-and-cron-previous-tick.md),
+umbrella [`crypto5-prevtick`](completed/crypto5-prevtick.md)):
+[`crypto5-prevtick-01-deps`](completed/crypto5-prevtick-01-deps.md) (landed
+earlier as `35a910d5`),
+[`crypto5-prevtick-02-cron-core`](completed/crypto5-prevtick-02-cron-core.md),
+[`crypto5-prevtick-03-routine-template`](completed/crypto5-prevtick-03-routine-template.md),
+[`crypto5-prevtick-04-notion-catalog-test`](completed/crypto5-prevtick-04-notion-catalog-test.md),
+[`crypto5-prevtick-05-docs-fixtures`](completed/crypto5-prevtick-05-docs-fixtures.md)
+and [`crypto5-prevtick-06-cron-envelope`](completed/crypto5-prevtick-06-cron-envelope.md)
+were archived on 2026-10-27 after the test-integrity, adversarial and
+combined-tree integration reviews (session-519) accepted them. The work adds
+`CronSchedule.previousOccurrence(before:calendar:)` (a DST-aware bounded
+skip-scan), `previousScheduledAt` / `previousScheduledLocalTime` in the
+`cron.tick` envelope, both keys in the `RoutineService` default binding
+template, schedule-derived previous values in the cron fixtures, and a focused
+Notion catalog test for `findChildPage` / `ensurePagePath`. The combined-tree
+run `tmp/crypto5-prevtick/reconcile-session-519-wave-002/combined-focused-test.log`
+passed 87 tests with 0 failures, and strict lint exited 0. The chunked
+full-suite logs in `tmp/integration-review-session-519/` show only baseline
+failures. Browser E2E was skipped because no browser-facing file changed. User
+docs: README [Cron tick input](../README.md#cron-tick-input). The dispatch
+manifest stays at
+[`active/crypto5-prevtick-dispatch.json`](active/crypto5-prevtick-dispatch.json);
+it records the original plan paths. Progress logs: `progress/c5pt-0*.md`.
+
 Agent tool-policy presets (workflow-input issue, no GitHub number; design
 [agent tool-policy presets](../design-docs/specs/design-agent-tool-policy-presets.md),
 QA [qa-agent-tool-policy-presets](../design-docs/user-qa/qa-agent-tool-policy-presets.md),

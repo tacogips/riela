@@ -28,7 +28,7 @@ let rielaInfoPlistLinkerSettings: [LinkerSetting] = [
 // Keep the private, macOS-only Notion package out of Linux dependency resolution.
 #if os(macOS)
 let notionPackageDependencies: [Package.Dependency] = [
-  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "15e7cbf714ad4e667d9319ad80a1be3fbdb9579b")
+  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "0f16afb306f28506ec50c78483e101694315facc")
 ]
 let notionTargetDependencies: [Target.Dependency] = [
   .product(name: "NotionGatewayCore", package: "notion-gateway", condition: .when(platforms: [.macOS]))
@@ -63,26 +63,26 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
-    .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.26"),
+    .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.27"),
     .package(url: "https://github.com/tacogips/gateway-sdk-kit.git", exact: "0.1.1"),
     .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "fbb7d8519683d838d1f603480d5ec7a52700fe0e"
+      revision: "8282152f29679625fee58729543094961adca633"
     ),
-    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
-    .package(url: "https://github.com/swift-server/swift-webauthn.git", exact: "1.0.0-beta.1"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.3"),
+    .package(url: "https://github.com/swift-server/swift-webauthn.git", revision: "030acd1eedaa835958ae3fcc0e491bec03b2abf1"),
     .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.6.0"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "24fc356a3073821c31866279c419abb707077a8d"
+      revision: "41cbf6bf06e6ab18e7b8e72007e96230e0ea8ad5"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
-      revision: "4cfef44b245893e6de4f30780c70fb0314da70eb"
+      revision: "ed020e4a8f45a0acedaf46334e2a67677e3c3e63"
     ),
     .package(
       url: "https://github.com/tacogips/wrike-gateway.git",
@@ -90,7 +90,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "bb9ddfb3dbab970fd60e41468a4ecfc8347a6da0" // v0.1.28; process-lifetime transport with corelibs callback forwarding.
+      revision: "ca29da81d8cdb7da40cb6ef6739cd824376bfcdd" // v0.1.29; process-lifetime transport with corelibs callback forwarding.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
@@ -98,7 +98,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/apple-gateway.git",
-      revision: "98229ed22f995e589ed6c42da553377615f11339" // v0.1.18; scoped Notes folder deletion and bounded native operations.
+      revision: "a57de9d6ea2658dce731067e837b0987ceb1e962" // v0.1.19; scoped Notes folder deletion and bounded native operations.
     ),
     .package(
       url: "https://github.com/tacogips/anydoc-swift.git",

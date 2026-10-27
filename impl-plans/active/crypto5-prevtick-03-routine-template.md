@@ -4,8 +4,8 @@
 {
   "planId": "c5pt-03-routine-template",
   "planPath": "impl-plans/active/crypto5-prevtick-03-routine-template.md",
-  "dependsOn": ["c5pt-01-deps"],
-  "wave": 2,
+  "dependsOn": [],
+  "wave": 1,
   "writePaths": [
     "Sources/RielaWorkflowRegistry/RoutineService.swift",
     "Tests/RielaCLITests/RoutineCommandTests.swift",
@@ -22,9 +22,14 @@ into the workflow input. Design §2.3 requires that this default template also
 expose `previousScheduledAt` and `previousScheduledLocalTime`.
 
 The template is built in `RoutineService.eventBinding(for:storeRoot:)`, at
-`Sources/RielaWorkflowRegistry/RoutineService.swift:390-397`. It is a
-`JSONObject` with `"scheduledAt": .string("{{event.input.scheduledAt}}")` and
-similar entries.
+`Sources/RielaWorkflowRegistry/RoutineService.swift:389-397` on `c14c3b30`.
+It is a `JSONObject` with
+`"scheduledAt": .string("{{event.input.scheduledAt}}")` and similar entries.
+
+Continuation note (session 519): this plan only adds template strings. It
+needs neither the cron core (c5pt-02) nor the envelope (c5pt-06), and
+c5pt-01 has already landed. So it runs in wave 1. The template placeholders
+resolve once c5pt-06 adds the envelope keys in the same final commit.
 
 ## File-level changes
 
@@ -50,9 +55,13 @@ Nothing else changes.
 ## Test cases (`Tests/RielaCLITests/RoutineCommandTests.swift`)
 
 Add one test, for example
-`testRoutineBindingTemplateExposesPreviousScheduledTick`. Follow the existing
-pattern at lines 73-83: create a routine through the CLI runner or
-`RoutineService`, then decode the binding file as `EventBindingContract`.
+`testRoutineBindingTemplateExposesPreviousScheduledTick`. Follow
+`testRoutineCreateListCompleteLifecycleThroughRunner`
+(`Tests/RielaCLITests/RoutineCommandTests.swift:45`). It creates a routine
+through the CLI runner, then decodes the binding file as
+`EventBindingContract` (the decode is at line 113 on `c14c3b30`).
+Alternatively, call `RoutineService.eventBinding(for:storeRoot:)` directly if
+it is visible from the test target.
 
 - The created routine's binding `inputMapping.template` object has
   `previousScheduledAt == "{{event.input.previousScheduledAt}}"` and

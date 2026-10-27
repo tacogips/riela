@@ -4,8 +4,8 @@
 {
   "planId": "c5pt-04-notion-catalog-test",
   "planPath": "impl-plans/active/crypto5-prevtick-04-notion-catalog-test.md",
-  "dependsOn": ["c5pt-01-deps"],
-  "wave": 2,
+  "dependsOn": [],
+  "wave": 1,
   "writePaths": [
     "Tests/RielaCLITests/NotionGatewayAddonTests.swift",
     "impl-plans/progress/c5pt-04-notion-catalog-test.md"
@@ -49,6 +49,22 @@ If the binary is stale, run `swift build` first. Save the output to
 `tmp/crypto5-prevtick/c5pt-04-notion-catalog-test/schema-*.log`. Use only
 argument names that the schema shows, and record them in the progress log.
 
+Expected catalog, read from
+`.build/checkouts/notion-gateway/Sources/NotionGatewayCore/NotionCatalog.swift:29-43`
+at the pinned `0f16afb3`. The schema logs are authoritative if they differ.
+
+- `findChildPage(parentId: ID!, title: String!)` is a query, so it is in
+  the `reader` tier. The writer catalog is `reads + writes`, so it is in
+  both roles.
+- `ensurePagePath(parentId: ID!, titles: [String!]!, children: JSON, markdown: String)`
+  is a mutation, so it is writer only.
+- Both return the `JSON` scalar, so leave `selection` unset (the default).
+- Pitfall: `titles` is a list. Pass it as a JSON array of strings, for
+  example `["Inbox", "2026"]`, not as a single string.
+
+Continuation note (session 519): c5pt-01 has already landed, so this plan
+runs in wave 1. Its only Swift write is this test file.
+
 ## Test cases (add to `Tests/RielaCLITests/NotionGatewayAddonTests.swift`)
 
 Patterns to imitate:
@@ -77,10 +93,16 @@ Cases:
    `tier == "writer"`.
 4. Reader JSON mode, `operation: "ensurePagePath"`. Expected: it throws
    `AdapterExecutionError` before dispatch, and the recorder has 0 calls.
-   This holds only if the reader catalog excludes `ensurePagePath`. Assert
-   whatever the reader schema output shows. If the reader schema *does*
-   include it, record that in the progress log and drop this case instead of
-   inventing behavior.
+   The reader catalog contains only reads. If the reader schema log
+   unexpectedly lists `ensurePagePath`, record that in the progress log and
+   drop this case instead of inventing behavior.
+
+If case 1 fails with "JSON operation does not match its gateway tier
+catalog" even though the arguments are schema-valid, list arguments are being
+rejected inside Riela's JSON-mode path
+(`Sources/RielaCLI/BuiltinGatewayJSONRequest.swift`). Do not edit that file.
+Log `outOfScope: Sources/RielaCLI/BuiltinGatewayJSONRequest.swift — list
+argument rejected` and mark the plan `blocked`.
 5. macOS schema checks:
    - the writer `schema` stdout contains `ensurePagePath` and
      `findChildPage`;

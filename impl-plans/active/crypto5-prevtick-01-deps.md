@@ -1,5 +1,10 @@
 # c5pt-01-deps: swift-crypto 5.x, swift-webauthn revision, gateway/kaiba pins
 
+Status: **completed** (2026-10-27). Landed on `main` as `35a910d5`, with
+progress in `impl-plans/progress/c5pt-01-deps.md` (`c14c3b30`). Opus-luna
+session 519 does not dispatch this plan again. It is an accepted dependency
+of the remaining crypto5-prevtick plans.
+
 ```json
 {
   "planId": "c5pt-01-deps",

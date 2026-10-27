@@ -9,6 +9,7 @@ import RielaCore
 import RielaKaibaAddons
 import RielaObservability
 import RielaWork
+import RielaWorkflowRegistry
 
 public struct WorkflowRunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
@@ -23,6 +24,7 @@ public struct WorkflowRunCommand: Sendable {
   var sessionStartedObserver: (@Sendable (String) -> Void)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
+  var improvementCLIProcessRunnerOverride: (any LocalProcessRunning)?
   /// An embedded caller can return a bounded result without serializing the
   /// complete execution transcript. Canonical persistence is unchanged.
   var outputProjection: (@Sendable (WorkflowRunResult) throws -> JSONObject)?
@@ -45,7 +47,7 @@ public struct WorkflowRunCommand: Sendable {
     self.jsonLoader = jsonLoader
     self.graphQLTransport = graphQLTransport
     self.jsonlRecordWriter = jsonlRecordWriter
-    (beforeTerminalPersistence, afterTerminalPersistence, taskNodeAdapterOverride) = (nil, nil, nil)
+    (beforeTerminalPersistence, afterTerminalPersistence, taskNodeAdapterOverride, improvementCLIProcessRunnerOverride) = (nil, nil, nil, nil)
     deferTerminalPersistence = nil
   }
 
@@ -62,21 +64,11 @@ public struct WorkflowRunCommand: Sendable {
       if let result = try await remoteRunResult(options) { return result }
       let resolution = options.resolution
         ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
-      var bundle = try resolveRunBundle(options: options, resolution: resolution, taskContext: taskContext)
-      if let entryStepId = options.entryStepId {
-        guard bundle.workflow.steps.contains(where: { $0.id == entryStepId }) else {
-          throw AdapterExecutionError(.invalidInput, "workflow entry step does not exist")
-        }
-        bundle.workflow.entryStepId = entryStepId
-      }
-      let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
-      let prepared = try await prepareRunExecution(
-        options: options,
-        resolution: resolution,
-        bundle: &bundle,
-        variables: variables,
-        taskContext: taskContext
-      )
+      let preparedRun = try await prepareResolvedRun(options: options, resolution: resolution, taskContext: taskContext)
+      let bundle = preparedRun.bundle
+      let variables = preparedRun.variables
+      let prepared = preparedRun.execution
+      let definitionSource = preparedRun.definitionSource
       gatewayValidationWarnings = prepared.gatewayValidationWarnings
       let effectiveInstance = prepared.instance
       let effectiveVariables = effectiveInstance.configuration.defaultVariables
@@ -95,12 +87,17 @@ public struct WorkflowRunCommand: Sendable {
         workingDirectory: runWorkingDirectory,
         environment: runEnvironment
       )
+      let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
-        environment: runEnvironment
+        environment: runEnvironment,
+        definitionRunContext: .init(
+          definitionSource: definitionSource,
+          sessionStoreRoot: storeRoot,
+          cliProcessRunner: improvementCLIProcessRunnerOverride
+        )
       )
-      let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       switch try runConcurrencyPreflight(bundle: bundle, storeRoot: storeRoot, options: options) {
       case let .finish(result):
         return CLICommandResult(
@@ -223,7 +220,8 @@ public struct WorkflowRunCommand: Sendable {
         eventHandler: runEventHandler,
         sessionExecutionAdmission: taskAdmission ?? processAdmission,
         boundaryHandover: taskContext?.boundaryHandover,
-        cancellationCause: taskContext?.cancellationCause
+        cancellationCause: taskContext?.cancellationCause,
+        definitionSource: definitionSource
       )
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
         kaibaSnapshot,
@@ -659,27 +657,7 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  private func resolveRunBundle(
-    options: WorkflowRunOptions,
-    resolution: WorkflowResolutionOptions,
-    taskContext: TaskPlacementExecutionContext?
-  ) throws -> ResolvedWorkflowBundle {
-    if let taskContext {
-      guard let bundle = taskContext.bundles[options.target] else {
-        throw WorkStoreError("reserved task root is absent from admitted bundles")
-      }
-      return bundle
-    }
-    let bundle: ResolvedWorkflowBundle
-    if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
-      bundle = temporary
-    } else if options.fromRegistry { bundle = try resolveRegistryRunBundle(options: options) } else {
-      bundle = try resolver.resolve(resolution)
-    }
-    return bundle
-  }
-
-  private func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {
+  func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {
     guard WorkflowPackageManifestValidator.isSafePackageName(options.target) else {
       throw CLIUsageError("invalid package name '\(options.target)'")
     }
@@ -731,7 +709,7 @@ public struct WorkflowRunCommand: Sendable {
     throw WorkflowResolutionError.notFound(options.target, errors)
   }
 
-  private func loadTemporaryWorkflowIfPresent(_ target: String, workingDirectory: String) throws -> ResolvedWorkflowBundle? {
+  func loadTemporaryWorkflowIfPresent(_ target: String, workingDirectory: String) throws -> ResolvedWorkflowBundle? {
     let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
     let data: Data
     let directory: URL

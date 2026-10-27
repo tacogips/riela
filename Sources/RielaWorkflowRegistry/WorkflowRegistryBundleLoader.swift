@@ -15,6 +15,7 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var originId: String?
   public var mutable: Bool { provenance == .mutable }
   public var mutableRegistryDigest: String?
+  public var definitionSource: WorkflowDefinitionSource?
 
   public init(
     workflow: WorkflowDefinition,
@@ -24,7 +25,8 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     diagnostics: [WorkflowValidationDiagnostic] = [],
     packageManifest: WorkflowPackageManifest? = nil,
     packageDirectory: String? = nil,
-    provenance: WorkflowProvenance = .immutable
+    provenance: WorkflowProvenance = .immutable,
+    definitionSource: WorkflowDefinitionSource? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -37,6 +39,7 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     activationState = .active
     originId = nil
     mutableRegistryDigest = nil
+    self.definitionSource = definitionSource
   }
 }
 
@@ -50,19 +53,22 @@ public struct WorkflowResolutionOptions: Codable, Equatable, Sendable {
   public var workflowDefinitionDir: String?
   public var workingDirectory: String
   public var includeDeactivated: Bool
+  public var authoredOverlay: WorkflowAuthoredFileOverlay?
 
   public init(
     workflowName: String,
     scope: WorkflowScope = .auto,
     workflowDefinitionDir: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
-    includeDeactivated: Bool = false
+    includeDeactivated: Bool = false,
+    authoredOverlay: WorkflowAuthoredFileOverlay? = nil
   ) {
     self.workflowName = workflowName
     self.scope = workflowDefinitionDir == nil ? scope : .direct
     self.workflowDefinitionDir = workflowDefinitionDir
     self.workingDirectory = workingDirectory
     self.includeDeactivated = includeDeactivated
+    self.authoredOverlay = authoredOverlay
   }
 }
 
@@ -86,7 +92,8 @@ public struct WorkflowRegistryBundleLoader: Sendable {
     sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated,
     sharedNodeActivationRootDirectory: URL? = nil,
     inheritanceAncestry: [String] = [],
-    inheritanceBaseResolver: WorkflowInheritanceBaseResolver? = nil
+    inheritanceBaseResolver: WorkflowInheritanceBaseResolver? = nil,
+    authoredOverlay: WorkflowAuthoredFileOverlay? = nil
   ) throws -> ResolvedWorkflowBundle {
     let workflowURL = try containedFile(
       directory.appendingPathComponent("workflow.json"),
@@ -94,7 +101,19 @@ public struct WorkflowRegistryBundleLoader: Sendable {
       scope: scope,
       label: "workflow.json"
     )
-    let workflowData = try Data(contentsOf: workflowURL)
+    let workflowData: Data
+    if let authoredOverlay {
+      guard let text = authoredOverlay.text(at: workflowURL, workflowDirectory: directory) else {
+        throw WorkflowResolutionError.invalidWorkflow([.init(
+          severity: .error,
+          path: "workflow.json",
+          message: "authored overlay is missing workflow.json"
+        )])
+      }
+      workflowData = Data(text.utf8)
+    } else {
+      workflowData = try Data(contentsOf: workflowURL)
+    }
     do {
       if let declaration = try WorkflowInheritanceDeclaration.parse(data: workflowData) {
         guard let inheritanceBaseResolver else {
@@ -143,10 +162,23 @@ public struct WorkflowRegistryBundleLoader: Sendable {
         scope: scope,
         label: "nodeFile \(nodeFile)"
       )
-      let payload = try JSONDecoder().decode(AgentNodePayload.self, from: Data(contentsOf: payloadURL))
+      let payloadData: Data
+      if let authoredOverlay {
+        guard let text = authoredOverlay.text(at: payloadURL, workflowDirectory: directory) else {
+          throw WorkflowResolutionError.invalidWorkflow([.init(
+            severity: .error,
+            path: "nodeFile \(nodeFile)",
+            message: "authored overlay is missing node file \(nodeFile)"
+          )])
+        }
+        payloadData = Data(text.utf8)
+      } else {
+        payloadData = try Data(contentsOf: payloadURL)
+      }
+      let payload = try JSONDecoder().decode(AgentNodePayload.self, from: payloadData)
       let hydratedPayload: AgentNodePayload
       do {
-        hydratedPayload = try promptTemplateLoader.hydrate(payload, workflowDirectory: directory)
+        hydratedPayload = try promptTemplateLoader.hydrate(payload, workflowDirectory: directory, overlay: authoredOverlay)
       } catch let error as PromptTemplateAssetLoadingError {
         throw WorkflowResolutionError.invalidWorkflow([error.diagnostic])
       }

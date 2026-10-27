@@ -574,10 +574,14 @@ extension GraphQLContractProjector {
   \(configurationGraphQLSchemaTypes)
   \(routineGraphQLSchemaTypes)
   \(taskHandoverGraphQLSchemaTypes)
+  \(workflowDefinitionGraphQLSchemaTypes)
   type Query {
     workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
     workflowExecution(workflowExecutionId: String!): WorkflowExecutionSummary
     workflows(filter: WorkflowFilter): WorkflowListPayload!
+    workflowDefinitionHistory(workflowName: String!, nodeId: String, limit: Int, storeScope: String): [WorkflowDefinitionAuditRecord!]!
+    workflowDefinition(workflowName: String!, versionId: String, storeScope: String): WorkflowDefinitionVersion
+    workflowDefinitionDiff(workflowName: String!, fromVersionId: String, toVersionId: String, againstFile: Boolean, storeScope: String): [WorkflowDefinitionDiffEntry!]!
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
     sessionProgress(sessionId: String!, includeChildren: Boolean = false): SessionObservabilityPayload!
@@ -606,6 +610,11 @@ extension GraphQLContractProjector {
     activateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
     deactivateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
     consolidateWorkflows(input: ConsolidateWorkflowsInput!): WorkflowMutationPayload!
+    updateWorkflowDefinition(input: UpdateWorkflowDefinitionInput!): WorkflowDefinitionUpdatePayload!
+    updateWorkflowDefinitionPrompt(input: UpdateWorkflowDefinitionPromptInput!): WorkflowDefinitionMutationPayload!
+    restoreWorkflowDefinition(input: RestoreWorkflowDefinitionInput!): WorkflowDefinitionMutationPayload!
+    importWorkflowDefinition(input: ImportWorkflowDefinitionInput!): WorkflowDefinitionImportPayload!
+    exportWorkflowDefinition(input: ExportWorkflowDefinitionInput!): WorkflowDefinitionExportPayload!
     rerunSession(input: RerunSessionInput!): SessionMutationPayload!
     resumeSession(input: ResumeSessionInput!): SessionMutationPayload!
     stopSession(input: StopSessionInput!): SessionMutationPayload!

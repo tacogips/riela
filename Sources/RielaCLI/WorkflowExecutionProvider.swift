@@ -25,7 +25,7 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
   }
 
   public func executeWorkflow(_ input: GraphQLExecuteWorkflowInput) async throws -> GraphQLExecuteWorkflowPayload {
-    let options = WorkflowRunOptions(
+    var options = WorkflowRunOptions(
       target: input.workflowName,
       resolution: WorkflowResolutionOptions(
         workflowName: input.workflowName,
@@ -43,6 +43,7 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
       sessionStore: sessionStoreRoot,
       workingDirectory: workingDirectory
     )
+    options.executionMode = .service(.init(kind: .api))
     var nodeEnvironment = environment
     nodeEnvironment["RIELA_API_KEY"] = ""
     let commandResult = await CLIRuntimeEnvironment.$overrides.withValue(nodeEnvironment) {

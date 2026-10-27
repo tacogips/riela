@@ -21,6 +21,7 @@ public struct RielaCLIApplication: Sendable {
   public var sessionInspectionCommand: SessionInspectionCommand
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
   public var workflowVersionCommand: WorkflowVersionCommand
+  public var workflowDefinitionCommand: WorkflowDefinitionCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
   public var nodeCommandRunner: NodeCommandRunner
   public var setupContainerCommand: SetupContainerCommand
@@ -49,6 +50,7 @@ public struct RielaCLIApplication: Sendable {
     sessionInspectionCommand: SessionInspectionCommand = SessionInspectionCommand(),
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
     workflowVersionCommand: WorkflowVersionCommand = WorkflowVersionCommand(),
+    workflowDefinitionCommand: WorkflowDefinitionCommand = WorkflowDefinitionCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
     nodeCommandRunner: NodeCommandRunner = NodeCommandRunner(),
     setupContainerCommand: SetupContainerCommand = SetupContainerCommand(),
@@ -76,6 +78,7 @@ public struct RielaCLIApplication: Sendable {
     self.sessionInspectionCommand = sessionInspectionCommand
     self.workflowScaffoldCommand = workflowScaffoldCommand
     self.workflowVersionCommand = workflowVersionCommand
+    self.workflowDefinitionCommand = workflowDefinitionCommand
     self.packageCommandRunner = packageCommandRunner
     self.nodeCommandRunner = nodeCommandRunner
     self.setupContainerCommand = setupContainerCommand
@@ -194,6 +197,8 @@ public struct RielaCLIApplication: Sendable {
       return workflowScaffoldCommand.selfImprove(options)
     case let .version(options):
       return workflowVersionCommand.run(options)
+    case let .workflowDefinition(options):
+      return workflowDefinitionCommand.run(options)
     case let .package(command):
       return await packageCommandRunner.run(command)
     }
@@ -319,6 +324,14 @@ Usage:
   riela workflow version show <workflow> <snapshot-id> [--output json|text]
   riela workflow version diff <workflow> <from> <to> [--output json|text]
   riela workflow restore <workflow> <snapshot-id> [--yes] [--output json|text]
+  riela workflow definition history <workflow> [options]
+  riela workflow definition show <workflow> [options]
+  riela workflow definition diff <workflow> [options]
+  riela workflow definition update <workflow> [options]
+  riela workflow definition update-prompt <workflow> [options]
+  riela workflow definition restore <workflow> [options]
+  riela workflow definition import <workflow> [options]
+  riela workflow definition export <workflow> [options]
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]

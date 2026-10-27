@@ -1,0 +1,20 @@
+{
+  "workflowId": "definition-store-self-improvement",
+  "description": "Use a bounded previous service-run digest to propose and audit a workflow prompt improvement.",
+  "defaults": { "maxLoopIterations": 2, "nodeTimeoutMs": 120000 },
+  "entryStepId": "summarize",
+  "nodes": [
+    { "id": "summarize", "nodeFile": "nodes/node-summarize.json" },
+    { "id": "improve-context", "addon": { "name": "riela/improve-workflow-context", "version": "1", "config": { "guideline": "Improve clarity while preserving workflow behavior.", "excludeNodeIds": ["improve-propose"], "maxStepExecutions": 20 } } },
+    { "id": "improve-propose", "nodeFile": "nodes/node-improve-propose.json" },
+    { "id": "improve-apply", "addon": { "name": "riela/improve-workflow-apply", "version": "1", "config": { "contextStepId": "improve-context", "proposerStepId": "improve-propose", "excludeNodeIds": ["improve-propose"] } } },
+    { "id": "workflow-output", "kind": "output", "nodeFile": "nodes/node-workflow-output.json" }
+  ],
+  "steps": [
+    { "id": "summarize", "nodeId": "summarize", "role": "worker", "transitions": [{ "toStepId": "improve-context" }] },
+    { "id": "improve-context", "nodeId": "improve-context", "role": "worker", "transitions": [{ "toStepId": "improve-propose", "label": "improvable" }, { "toStepId": "workflow-output", "label": "!(improvable)" }] },
+    { "id": "improve-propose", "nodeId": "improve-propose", "role": "worker", "transitions": [{ "toStepId": "improve-apply" }] },
+    { "id": "improve-apply", "nodeId": "improve-apply", "role": "worker", "transitions": [{ "toStepId": "workflow-output" }] },
+    { "id": "workflow-output", "nodeId": "workflow-output", "role": "worker" }
+  ]
+}

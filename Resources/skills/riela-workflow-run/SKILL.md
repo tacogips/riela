@@ -28,6 +28,14 @@ riela workflow consolidate
 riela workflow versions
 riela workflow version
 riela workflow restore
+riela workflow definition history
+riela workflow definition show
+riela workflow definition diff
+riela workflow definition update
+riela workflow definition update-prompt
+riela workflow definition restore
+riela workflow definition import
+riela workflow definition export
 riela workflow checkout
 riela workflow create
 riela workflow self-improve
@@ -59,6 +67,7 @@ the run continuing; retrying can start another run. Remote runs reject
 
 <!-- surface-catalog:begin session -->
 ```
+riela session reconcile
 riela session handover
 riela session rerun
 riela session resume

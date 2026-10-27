@@ -1,0 +1,11 @@
+{
+  "id": "workflow-output",
+  "description": "Return the latest workflow result.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Return the latest result.",
+  "variables": {},
+  "output": { "description": "Latest step payload.", "projection": { "kind": "latest-input-payload" } }
+}

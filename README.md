@@ -673,6 +673,27 @@ Fanout `changeEvidence` keeps a bounded inline `observations` list and reports
 `observationCountsByBranch`. The complete aggregated list is stored at
 `observationsPath`; `hasDrift` is derived from the total `observationCount`.
 
+## Workflow Definition Store (service vs one-time runs)
+
+Long-running service workflows use the SQLite definition store in the runtime
+records database. The workflow files seed the store on first use; later file
+edits do not replace a registered definition automatically. One-time
+`riela workflow run` continues to read workflow files only and never reads or
+writes definition rows.
+
+| Execution | Definition source |
+| --- | --- |
+| GraphQL, RielaApp configured runs, events serve, cron, routines and daemon workflows | SQLite store, pinned per session |
+| One-time `riela workflow run` | Workflow files only |
+
+Inspect changes with `riela workflow definition history <workflow>` and
+`riela workflow definition show <workflow>`. Apply an audited whole-workflow
+change with `riela workflow definition update <workflow> --patch <file> --reason <reason>`.
+Import file changes explicitly with `riela workflow definition import <workflow>`;
+use `--force --reason <reason>` to replace a registered head. See the
+[workflow definition store guide](docs/workflow-definition-store.md) for
+prompt updates, restore, export, GraphQL fields and the improvement addons.
+
 ## Runtime Data Retention
 
 Retention is off when no `retention` policy is configured. Configure results,

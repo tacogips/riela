@@ -170,6 +170,46 @@ extension SurfaceCatalog {
     surfaceRow(workflowDefaults, id: "workflow.versions", family: "workflow", kind: .query, cli: "workflow versions"),
     surfaceRow(workflowDefaults, id: "workflow.version", family: "workflow", kind: .query, cli: "workflow version"),
     surfaceRow(workflowDefaults, id: "workflow.restore", family: "workflow", kind: .mutation, cli: "workflow restore"),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.history", family: "workflow", kind: .query,
+      cli: "workflow definition history",
+      graphql: graphQLQuery("workflowDefinitionHistory")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.show", family: "workflow", kind: .query,
+      cli: "workflow definition show",
+      graphql: graphQLQuery("workflowDefinition")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.diff", family: "workflow", kind: .query,
+      cli: "workflow definition diff",
+      graphql: graphQLQuery("workflowDefinitionDiff")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.update", family: "workflow", kind: .mutation,
+      cli: "workflow definition update",
+      graphql: graphQLMutation("updateWorkflowDefinition")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.update-prompt", family: "workflow", kind: .mutation,
+      cli: "workflow definition update-prompt",
+      graphql: graphQLMutation("updateWorkflowDefinitionPrompt")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.restore", family: "workflow", kind: .mutation,
+      cli: "workflow definition restore",
+      graphql: graphQLMutation("restoreWorkflowDefinition")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.import", family: "workflow", kind: .mutation,
+      cli: "workflow definition import",
+      graphql: graphQLMutation("importWorkflowDefinition")
+    ),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.export", family: "workflow", kind: .mutation,
+      cli: "workflow definition export",
+      graphql: graphQLMutation("exportWorkflowDefinition")
+    ),
     surfaceRow(workflowDefaults, id: "workflow.checkout", family: "workflow", kind: .process, cli: "workflow checkout"),
     surfaceRow(workflowDefaults, id: "workflow.create", family: "workflow", kind: .process, cli: "workflow create"),
     surfaceRow(

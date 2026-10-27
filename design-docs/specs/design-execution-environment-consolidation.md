@@ -291,6 +291,20 @@ prompt edit stores one new blob and one new version row. A session pins
 `definitionVersionId` for the workflow it ran and for every workspace,
 policy, and model it resolved; the run trace shows them.
 
+**Implemented slice (issue #179 §2, 2026-10-25).**
+`design-workflow-definition-store.md` implements the workflow kind of this
+store first. It adds `definition_heads`, `definition_versions`,
+`definition_blobs` and an append-only `definition_change_audit` in the
+runtime records database, at schema generation 10 with an in-place
+migration from 9. Each version is one document blob made of the executable
+form plus the verbatim own authored files. Long-running services resolve
+from the store and seed it on first use. One-time CLI runs read files only.
+Whole-workflow edits go through `riela workflow definition update` with a
+mandatory reason, and the builtin `riela/improve-workflow-*` add-ons apply
+improvements only through that command. That document is authoritative
+where it differs from this section. The differences are listed in its §10,
+and the rest of E0 stays planned here.
+
 ### 4.2 Scopes
 
 Today's two scopes are directories: *project* (`<cwd>/.riela/...`) and
@@ -357,7 +371,10 @@ public enum DefinitionScope: Codable, Sendable {
   `riela apply -f` create a version (`origin: imported`) and, unless
   `--no-activate`, move the head. `riela workflow run <dir>` on a directory
   imports an `ephemeral` version (not a head) and runs it, replacing
-  `--workflow-definition-dir` and `--workflow-json`. Package install
+  `--workflow-definition-dir` and `--workflow-json`. *(Superseded by the
+  issue #179 execution-mode policy: one-time CLI runs read workflow files
+  only, never read or write definition rows, and record only the file
+  origin and digest. See `design-workflow-definition-store.md` §1 and §10.)* Package install
   imports each packaged workflow as an immutable head (`origin: package`,
   `mutable: false`); "edit a package workflow" is `fork`, which creates a
   mutable head with `parent` set.

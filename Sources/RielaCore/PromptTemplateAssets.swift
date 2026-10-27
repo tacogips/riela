@@ -23,27 +23,34 @@ public struct PromptTemplateAssetLoader: Sendable {
     self.readText = readText
   }
 
-  public func hydrate(_ payload: AgentNodePayload, workflowDirectory: URL) throws -> AgentNodePayload {
+  public func hydrate(
+    _ payload: AgentNodePayload,
+    workflowDirectory: URL,
+    overlay: WorkflowAuthoredFileOverlay? = nil
+  ) throws -> AgentNodePayload {
     var hydrated = payload
     if let path = payload.systemPromptTemplateFile {
       hydrated.systemPromptTemplate = try loadTemplate(
         path,
         fieldName: "systemPromptTemplateFile",
-        workflowDirectory: workflowDirectory
+        workflowDirectory: workflowDirectory,
+        overlay: overlay
       )
     }
     if let path = payload.promptTemplateFile {
       hydrated.promptTemplate = try loadTemplate(
         path,
         fieldName: "promptTemplateFile",
-        workflowDirectory: workflowDirectory
+        workflowDirectory: workflowDirectory,
+        overlay: overlay
       )
     }
     if let path = payload.sessionStartPromptTemplateFile {
       hydrated.sessionStartPromptTemplate = try loadTemplate(
         path,
         fieldName: "sessionStartPromptTemplateFile",
-        workflowDirectory: workflowDirectory
+        workflowDirectory: workflowDirectory,
+        overlay: overlay
       )
     }
 
@@ -57,21 +64,24 @@ public struct PromptTemplateAssetLoader: Sendable {
           variant.systemPromptTemplate = try loadTemplate(
             path,
             fieldName: "promptVariants.\(key).systemPromptTemplateFile",
-            workflowDirectory: workflowDirectory
+            workflowDirectory: workflowDirectory,
+            overlay: overlay
           )
         }
         if let path = variant.promptTemplateFile {
           variant.promptTemplate = try loadTemplate(
             path,
             fieldName: "promptVariants.\(key).promptTemplateFile",
-            workflowDirectory: workflowDirectory
+            workflowDirectory: workflowDirectory,
+            overlay: overlay
           )
         }
         if let path = variant.sessionStartPromptTemplateFile {
           variant.sessionStartPromptTemplate = try loadTemplate(
             path,
             fieldName: "promptVariants.\(key).sessionStartPromptTemplateFile",
-            workflowDirectory: workflowDirectory
+            workflowDirectory: workflowDirectory,
+            overlay: overlay
           )
         }
         hydratedVariants[key] = variant
@@ -82,9 +92,20 @@ public struct PromptTemplateAssetLoader: Sendable {
     return hydrated
   }
 
-  private func loadTemplate(_ relativePath: String, fieldName: String, workflowDirectory: URL) throws -> String {
+  private func loadTemplate(
+    _ relativePath: String,
+    fieldName: String,
+    workflowDirectory: URL,
+    overlay: WorkflowAuthoredFileOverlay?
+  ) throws -> String {
     let resolvedPath = try resolvePromptTemplatePath(relativePath, fieldName: fieldName, workflowDirectory: workflowDirectory)
     do {
+      if let overlay {
+        guard let text = overlay.text(at: resolvedPath, workflowDirectory: workflowDirectory) else {
+          throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: resolvedPath.path])
+        }
+        return text
+      }
       return try readText(resolvedPath)
     } catch {
       throw PromptTemplateAssetLoadingError.unreadable(

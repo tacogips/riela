@@ -3,6 +3,10 @@ import RielaAddons
 import RielaMemory
 
 extension RielaArgumentParser {
+  func parseWorkflowDefinitionCommand(_ arguments: [String]) throws -> WorkflowDefinitionCommandOptions {
+    WorkflowDefinitionCommandOptions(arguments: arguments)
+  }
+
   func parseWorkflowVersionCommand(
     subcommand: WorkflowClientSubcommand,
     arguments: [String]
@@ -44,7 +48,7 @@ extension RielaArgumentParser {
         firstReference: parsed.snapshotId,
         arguments: parsed.options
       )
-    case .package, .manifest, .list, .status, .register, .update, .delete, .activate, .deactivate,
+    case .package, .manifest, .list, .status, .register, .update, .delete, .activate, .deactivate, .definition,
          .consolidate, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
       throw CLIUsageError("unsupported workflow version route '\(subcommand.rawValue)'")
     }

@@ -34,7 +34,8 @@ extension DeterministicWorkflowRunner {
         effectiveInstance: request.effectiveInstance,
         parentSessionId: request.parentSessionId,
         rootSessionId: request.rootSessionId,
-        effectiveStepBudget: request.effectiveStepBudget
+        effectiveStepBudget: request.effectiveStepBudget,
+        definitionSource: request.definitionSource
       )
     )
     return .proceed(SessionEntryContext(
@@ -145,7 +146,8 @@ extension DeterministicWorkflowRunner {
         effectiveInstance: request.effectiveInstance,
         parentSessionId: parentSessionId,
         rootSessionId: rootSessionId,
-        effectiveStepBudget: request.effectiveStepBudget
+        effectiveStepBudget: request.effectiveStepBudget,
+        definitionSource: request.definitionSource
       )
     )
     if var importInput {

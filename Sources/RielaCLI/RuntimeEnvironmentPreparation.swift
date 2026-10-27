@@ -1,6 +1,7 @@
 import Foundation
 import RielaAppSupport
 import RielaCore
+import RielaWorkflowRegistry
 
 enum CLIRuntimeEnvironmentPreparation {
   static func prepare(path: String?, required: [String], base: [String: String],
@@ -45,7 +46,13 @@ func eventRequiredEnvironment(eventRoot: URL, target: String?, parsed: ParsedPar
   let config = try EventLiveConfig.load(eventRoot: eventRoot)
   let enabled = Set(config.enabledSources(target: target).map(\.id))
   let names = Set(config.bindings.filter { $0.enabled && enabled.contains($0.sourceId) }.compactMap(\.workflowName))
-  let resolver = FileSystemWorkflowBundleResolver()
+  let fileResolver = FileSystemWorkflowBundleResolver()
+  let resolver = DefinitionStoreWorkflowBundleResolver(
+    inner: fileResolver,
+    sessionStore: parsed.sessionStore,
+    actor: .init(kind: .cli, id: "events-serve"),
+    mode: .lookupOnly
+  )
   var required: [String] = []
   for name in names.sorted() {
     let resolution = WorkflowResolutionOptions(workflowName: name, scope: parsed.scope,

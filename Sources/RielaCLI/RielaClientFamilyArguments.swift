@@ -26,6 +26,7 @@ enum WorkflowClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case consolidate
   case versions
   case version
+  case definition
   case restore
   case validate
   case inspect
@@ -65,6 +66,17 @@ enum SetupClientSubcommand: String, CaseIterable, ExpressibleByArgument {
 
 enum WorkflowManifestClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case validate
+}
+
+enum WorkflowDefinitionClientSubcommand: String, CaseIterable, ExpressibleByArgument {
+  case history
+  case show
+  case diff
+  case update
+  case updatePrompt = "update-prompt"
+  case restore
+  case `import`
+  case export
 }
 
 enum WorkflowVersionClientOperation: String, CaseIterable, ExpressibleByArgument {

@@ -112,7 +112,8 @@ extension DeterministicWorkflowRunner {
       parentStepId: parentStepId,
       resumeStepId: directive.resumeStepId,
       sourceExecutionId: directive.sourceStepExecutionId,
-      branchId: "cross-workflow"
+      branchId: "cross-workflow",
+      definitionSource: callee.definitionSource
     )
 
     // Never treat an interrupted running child as a safe retry. A created

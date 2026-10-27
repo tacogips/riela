@@ -617,6 +617,19 @@ public enum GraphQLSchemaGenerator {
   /// this table supplies each one's arguments and return type.
   public static let rootFields: [String: FieldDescriptor] = [
     "Mutation.executeWorkflow": .init(name: "executeWorkflow", arguments: "input: ExecuteWorkflowInput!", type: "ExecuteWorkflowPayload!"),
+    "Query.workflowDefinitionHistory": .init(name: "workflowDefinitionHistory", arguments: "workflowName: String!, nodeId: String, limit: Int, storeScope: String", type: "[WorkflowDefinitionAuditRecord!]!"),
+    "Query.workflowDefinition": .init(name: "workflowDefinition", arguments: "workflowName: String!, versionId: String, storeScope: String", type: "WorkflowDefinitionVersion"),
+    "Query.workflowDefinitionDiff": .init(
+      name: "workflowDefinitionDiff",
+      arguments: "workflowName: String!, fromVersionId: String, " +
+        "toVersionId: String, againstFile: Boolean, storeScope: String",
+      type: "[WorkflowDefinitionDiffEntry!]!"
+    ),
+    "Mutation.updateWorkflowDefinition": .init(name: "updateWorkflowDefinition", arguments: "input: UpdateWorkflowDefinitionInput!", type: "WorkflowDefinitionUpdatePayload!"),
+    "Mutation.updateWorkflowDefinitionPrompt": .init(name: "updateWorkflowDefinitionPrompt", arguments: "input: UpdateWorkflowDefinitionPromptInput!", type: "WorkflowDefinitionMutationPayload!"),
+    "Mutation.restoreWorkflowDefinition": .init(name: "restoreWorkflowDefinition", arguments: "input: RestoreWorkflowDefinitionInput!", type: "WorkflowDefinitionMutationPayload!"),
+    "Mutation.importWorkflowDefinition": .init(name: "importWorkflowDefinition", arguments: "input: ImportWorkflowDefinitionInput!", type: "WorkflowDefinitionImportPayload!"),
+    "Mutation.exportWorkflowDefinition": .init(name: "exportWorkflowDefinition", arguments: "input: ExportWorkflowDefinitionInput!", type: "WorkflowDefinitionExportPayload!"),
     "Query.workflowExecution": .init(name: "workflowExecution", arguments: "workflowExecutionId: String!", type: "WorkflowExecutionSummary"),
     "Mutation.activateWorkflow": .init(name: "activateWorkflow", arguments: "input: SetWorkflowActivationInput!", type: "WorkflowMutationPayload!"),
     "Mutation.addWorkflowDirectoryConfiguration": .init(name: "addWorkflowDirectoryConfiguration", arguments: "input: WorkflowDirectoryConfigurationInput!", type: "ConfigurationRevision!"),
@@ -680,14 +693,15 @@ public enum GraphQLSchemaGenerator {
   /// SDL blocks that stay hand-written (delta D2). They are interpolated by
   /// both the generator and the checked-in literal, so both see one source.
   static var handWrittenSchemaBlocks: [String] {
-    [workflowRegistryGraphQLSchemaTypes, configurationGraphQLSchemaTypes, routineGraphQLSchemaTypes, taskHandoverGraphQLSchemaTypes]
+    [workflowRegistryGraphQLSchemaTypes, configurationGraphQLSchemaTypes, routineGraphQLSchemaTypes, taskHandoverGraphQLSchemaTypes, workflowDefinitionGraphQLSchemaTypes]
   }
 
   static let handWrittenSchemaBlockNames: [String] = [
     "workflowRegistryGraphQLSchemaTypes",
     "configurationGraphQLSchemaTypes",
     "routineGraphQLSchemaTypes",
-    "taskHandoverGraphQLSchemaTypes"
+    "taskHandoverGraphQLSchemaTypes",
+    "workflowDefinitionGraphQLSchemaTypes"
   ]
 
   /// Catalog-ordered root fields for one root.

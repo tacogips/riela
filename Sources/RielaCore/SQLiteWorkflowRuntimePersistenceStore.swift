@@ -113,7 +113,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// uniqueness with uniqueness over unconsumed requests only. No migration
   /// is registered for either shape: the Work Runtime design forbids backward
   /// compatibility, so `discardIncompatibleStoreIfNeeded` recreates them.
-  public static let schemaGeneration: Int64 = 9 // Generation 9 adds the suspended status, the handover tables and lease fencing.
+  public static let schemaGeneration: Int64 = 10 // Generation 10 adds the definition store tables.
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
@@ -133,6 +133,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     },
     SQLiteSchemaMigration(fromGeneration: 3) { database in
       try addGeneration4NestedRecoveryReason(in: database)
+    },
+    SQLiteSchemaMigration(fromGeneration: 9) { database in
+      try WorkflowDefinitionStoreSchema.create(in: database)
     }
   ]
 
@@ -184,15 +187,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let isIncompatible: Bool
     do {
       let db = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
-      let version = try SQLiteSchemaMigrator.stampedGeneration(in: db)
-      if version >= schemaGeneration
-        || SQLiteSchemaMigrator.hasCompletePath(from: version, to: schemaGeneration, migrations: schemaMigrations) {
-        isIncompatible = false
-      } else {
-        isIncompatible = try db.tableExists("workflow_runtime_snapshots")
-          || db.tableExists("cli_workflow_sessions")
-          || db.tableExists("workflow_messages")
-      }
+      isIncompatible = try WorkflowDefinitionStoreSchema.shouldDiscardIncompatibleStore(
+        db, currentGeneration: schemaGeneration, migrations: schemaMigrations
+      )
     } catch {
       return false
     }
@@ -747,6 +744,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try mapRuntimeSQLiteError {
       try db.requireJSONBAvailable()
       try Self.requireCompatibleSchemaGeneration(in: db)
+      try WorkflowDefinitionStoreSchema.create(in: db)
       // The summary columns are generated from session_json so they can never
       // drift from the snapshot payload. created_at/updated_at stay explicit:
       // the JSON dates are second-granularity ISO8601 while ordering needs the

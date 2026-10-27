@@ -254,7 +254,8 @@ extension DeterministicWorkflowRunner {
     resumeStepId: String,
     sourceExecutionId: String,
     branchId: String,
-    generatedWorkflow: WorkflowGeneratedWorkflowOrigin? = nil
+    generatedWorkflow: WorkflowGeneratedWorkflowOrigin? = nil,
+    definitionSource: WorkflowDefinitionSource? = nil
   ) async throws -> String {
     if let nestedInvocationPersistenceStore,
        let existing = try nestedInvocationPersistenceStore.nestedInvocationRecord(
@@ -291,7 +292,8 @@ extension DeterministicWorkflowRunner {
       entryStepId: entryStepId,
       parentSessionId: parentSessionId,
       rootSessionId: rootSessionId,
-      generatedWorkflow: generatedWorkflow
+      generatedWorkflow: generatedWorkflow,
+      definitionSource: definitionSource
     ))
     if let nestedInvocationPersistenceStore {
       try nestedInvocationPersistenceStore.reserveNestedInvocation(WorkflowNestedInvocationReservation(

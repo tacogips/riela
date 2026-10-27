@@ -80,6 +80,11 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/chat-reply-worker", version: "1")
   ]
 
+  public static let workflowImprovementAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/improve-workflow-context", version: "1"),
+    .init(name: "riela/improve-workflow-apply", version: "1")
+  ]
+
   public static let handoverAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/handover-request", version: "1")
   ]
@@ -237,6 +242,7 @@ public enum RielaBuiltinAddonCatalog {
     + appleGatewayAdminAddons
     + noteAddons
     + workflowAddons
+    + workflowImprovementAddons
     + handoverAddons
     + chatPersonaAddons
     + memoryAddons

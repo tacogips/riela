@@ -39,3 +39,4 @@ This document was split into topic files so each tracked text file stays below 1
 - [Digest, Gateway, and Reply Examples](catalog/digest-gateway-and-reply.md)
 - [Workflow Composition and Coding Examples](catalog/workflow-composition-and-coding.md)
 - [Showcase and Utility Examples](catalog/showcase-and-utility-examples.md)
+- `definition-store-self-improvement` demonstrates a bounded previous-run digest and audited prompt update through the builtin improvement node.

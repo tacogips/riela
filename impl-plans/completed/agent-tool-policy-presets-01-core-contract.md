@@ -31,7 +31,7 @@ This plan pins the shared contract that atp-03 (resolution), atp-04
   checked against the installed CLIs (codex-cli 0.164.0, Claude Code 2.1.306).
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 ## Non-goals
 
@@ -130,9 +130,9 @@ Neither list contains `multi_agent`. The adapter already appends
 
 ## Tasks
 
-- [ ] T1: Record the CLI versions in your progress log: `codex --version`,
+- [x] T1: Record the CLI versions in your progress log: `codex --version`,
   `claude --version`.
-- [ ] T2: Build the Codex feature list. Run `codex features list` and save the
+- [x] T2: Build the Codex feature list. Run `codex features list` and save the
   full output to `tmp/agent-tool-policy-preset/atp-01-core-contract/codex-features.log`.
   - Start from the issue's names: `shell_tool`, `unified_exec`, `view_image`,
     `apps`, `plugins`, `goals`.
@@ -144,18 +144,18 @@ Neither list contains `multi_agent`. The adapter already appends
   - Drop any issue name that the list does not contain.
   - Write the kept and dropped decision for each name in the progress log,
     citing the features-list line.
-- [ ] T2b: Probe acceptance offline. Run
+- [x] T2b: Probe acceptance offline. Run
   `codex <each -c pair> <each --disable pair> features list` and confirm it
   exits 0 and shows every kept feature as disabled. If `--disable` or `-c` is
   not accepted before `features list`, record that. The live run in atp-07 is
   then the acceptance check. Never keep a name the CLI rejects.
-- [ ] T2c: Check the flags against the help output. Run `codex exec --help` and
+- [x] T2c: Check the flags against the help output. Run `codex exec --help` and
   `codex exec resume --help` and save both logs.
   - If `codex exec --help` does not show one of the fixed flags (items 1-3, 8
     and 9), drop that flag and log it.
   - Set `codexSupportsSessionReuse = false` only if `codex exec resume --help`
     lacks a kept flag other than `--ephemeral`. Log which flag.
-- [ ] T3: Probe Claude `--setting-sources ""` once:
+- [x] T3: Probe Claude `--setting-sources ""` once:
 
   ```
   env -u ANTHROPIC_API_KEY claude -p --output-format json --tools "" --strict-mcp-config \
@@ -168,8 +168,8 @@ Neither list contains `multi_agent`. The adapter already appends
   - If the probe rejects the option value, or is blocked by network, auth or
     the sandbox, omit it and log the reason. Leaving it out cannot abort runs;
     an unproven option could.
-- [ ] T4: Implement the enum, the field, and the new file.
-- [ ] T5: Add the tests. Run the verification commands and record the results.
+- [x] T4: Implement the enum, the field, and the new file.
+- [x] T5: Add the tests. Run the verification commands and record the results.
 
 ## Tests (`Tests/RielaCoreTests/AgentToolPolicyPresetContractTests.swift`, XCTest class `AgentToolPolicyPresetContractTests`)
 

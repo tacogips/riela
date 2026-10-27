@@ -14,6 +14,14 @@ Sources of truth:
 No worker edits this file. Serial finalization updates it together with
 `impl-plans/README.md` and `impl-plans/PROGRESS.json`.
 
+Status: complete 2026-10-27. All seven plans passed test-integrity and
+adversarial review, and the combined-tree integration review accepted them
+(comm-009488). `tmp/agent-tool-policy-preset/reconcile-wave-005/test-combined.log`
+shows 211 XCTest with 0 failures and 30 swift-testing passes. The Codex and
+Claude Code `none` live smokes returned `{"ok":true}`. Gemini live check not
+run: GEMINI_API_KEY unset. Archived to `impl-plans/completed/` with its seven
+child plans. Progress logs: `impl-plans/progress/atp-0*.md`.
+
 ## Waves
 
 | Wave | planId | Plan | dependsOn |

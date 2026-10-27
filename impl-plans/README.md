@@ -184,6 +184,33 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+Agent tool-policy presets (workflow-input issue, no GitHub number; design
+[agent tool-policy presets](../design-docs/specs/design-agent-tool-policy-presets.md),
+QA [qa-agent-tool-policy-presets](../design-docs/user-qa/qa-agent-tool-policy-presets.md),
+umbrella [`agent-tool-policy-presets`](completed/agent-tool-policy-presets.md)):
+[`agent-tool-policy-presets-01-core-contract`](completed/agent-tool-policy-presets-01-core-contract.md),
+[`agent-tool-policy-presets-02-agent-gateway-pin`](completed/agent-tool-policy-presets-02-agent-gateway-pin.md),
+[`agent-tool-policy-presets-03-core-resolution`](completed/agent-tool-policy-presets-03-core-resolution.md),
+[`agent-tool-policy-presets-04-core-validation`](completed/agent-tool-policy-presets-04-core-validation.md),
+[`agent-tool-policy-presets-05-adapter-websearch`](completed/agent-tool-policy-presets-05-adapter-websearch.md),
+[`agent-tool-policy-presets-06-docs`](completed/agent-tool-policy-presets-06-docs.md)
+and [`agent-tool-policy-presets-07-live-smoke`](completed/agent-tool-policy-presets-07-live-smoke.md)
+were archived on 2026-10-27 after the test-integrity, adversarial and
+combined-tree integration reviews (session-503, comm-009488) accepted them.
+The work adds `agentToolPolicy.preset` (`none` / `web-search`). The host expands
+it into explicit Codex and Claude Code argv, and SDK backends get
+`webSearch: true` through agent-gateway v0.1.5 (`fbb7d851`). Unsupported
+combinations fail validation. The combined-tree run
+`tmp/agent-tool-policy-preset/reconcile-wave-005/test-combined.log` passed
+211 XCTest with 0 failures and 30 swift-testing passes. The Codex and Claude
+Code `none` live smokes returned `{"ok":true}` with argv-logged wrappers.
+Gemini live check not run: GEMINI_API_KEY unset. Browser E2E was skipped
+because no browser-facing file changed. User docs:
+[tool-policy presets](../docs/workflows/declarative-data-and-private-agents.md#tool-policy-presets).
+The dispatch manifest stays at
+[`active/agent-tool-policy-preset-dispatch.json`](active/agent-tool-policy-preset-dispatch.json);
+it records the original plan paths. Progress logs: `progress/atp-0*.md`.
+
 Issue [#176](https://github.com/tacogips/riela/issues/176) remainder (design
 [gateway SDK add-ons](../design-docs/specs/design-gateway-sdk-addons.md), QA
 [qa-issue-176-gateway-json-remainder](../design-docs/user-qa/qa-issue-176-gateway-json-remainder.md),

@@ -369,6 +369,16 @@ Codex `multi_agent` feature for ordinary local workflow runs, regardless of the
 user's global Codex configuration. Pass `--supervisor-mode` to
 `riela workflow run` to enable it for that run. This option is currently local-only.
 
+Agent nodes can set `agentToolPolicy.preset` to `"none"` (no tools) or
+`"web-search"` (vendor-hosted web search only) instead of listing
+backend-specific arguments. The host expands the preset for `codex-agent` and
+`claude-code-agent` into explicit arguments before dispatch, and SDK backends
+(OpenAI, Anthropic, Gemini, OpenRouter) turn on hosted search for
+`web-search`. `cursor-cli-agent`, `official/cursor-sdk` with `web-search`, and
+a preset combined with `mode: "backend-default"` fail validation. A preset does
+not override `--supervisor-mode`. See
+[tool-policy presets](docs/workflows/declarative-data-and-private-agents.md#tool-policy-presets).
+
 CLI commands default to JSONL so automation can read one complete JSON record
 per line. Most commands emit a single JSONL record. `riela workflow run` emits
 progress records such as `session_started`, `step_started`, and
@@ -652,8 +662,8 @@ are written losslessly under
 `<working-directory>/tmp/riela-prompt-spill/<sessionId>/<stepId>/` as
 content-addressed `<sha256>.json` files. The prompt receives a stub containing
 `$rielaSpilled`, `pointer`, `path`, `bytes`, `sha256`, and a `preview` of up to
-256 characters. The agent can read the referenced file. Spilling is limited to local CLI agent nodes with default tool arguments and
-no OS sandbox or distributed placement. SDK, isolated and custom-tool nodes
+256 characters. The agent can read the referenced file. Spilling is limited to local CLI agent nodes with default tool arguments (no
+`agentToolPolicy` arguments or `preset`) and no OS sandbox or distributed placement. SDK, isolated and custom-tool nodes
 retain inline data and fail with `promptTooLarge` when over budget, since access
 to a host spill file is not guaranteed. If compaction cannot fit the budget,
 the step fails before the backend is called.

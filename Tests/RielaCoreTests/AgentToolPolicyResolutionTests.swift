@@ -58,6 +58,95 @@ final class AgentToolPolicyResolutionTests: XCTestCase {
     XCTAssertEqual(accepted?.codexArguments, ["--profile=-leading-dash-is-data", "key=-leading-dash-is-data"])
   }
 
+  func testPresetCodexNoToolsExpandsAndPreservesMode() throws {
+    for mode: AgentToolPolicyMode? in [nil, .backendArguments] {
+      let result = try XCTUnwrap(resolveAgentToolPolicy(
+        AgentToolPolicy(mode: mode, preset: .noTools), executionBackend: .codexAgent, variables: [:]
+      ))
+      XCTAssertEqual(result.codexArguments,
+        AgentToolPolicyPresetArguments.cliArguments(.noTools, backend: .codexAgent, sessionReuse: false))
+      XCTAssertNil(result.preset)
+      XCTAssertEqual(result.additionalArguments, [])
+      XCTAssertEqual(result.mode, mode)
+    }
+  }
+
+  func testPresetCodexWebSearchAppendsAuthoredArgumentsInOrder() throws {
+    let policy = AgentToolPolicy(additionalArguments: ["--a"], codexArguments: ["--b"], preset: .webSearch)
+    let result = try XCTUnwrap(resolveAgentToolPolicy(policy, executionBackend: .codexAgent, variables: [:]))
+    let presetArguments = try XCTUnwrap(AgentToolPolicyPresetArguments.cliArguments(
+      .webSearch, backend: .codexAgent, sessionReuse: false
+    ))
+    XCTAssertEqual(result.codexArguments, presetArguments + ["--a", "--b"])
+    XCTAssertTrue(result.additionalArguments.isEmpty)
+    XCTAssertNil(result.preset)
+  }
+
+  func testPresetClaudeWebSearchAppendsAuthoredArgumentsAndLeavesCodexArgumentsAlone() throws {
+    let policy = AgentToolPolicy(additionalArguments: ["--a"], codexArguments: ["--b"],
+      claudeArguments: ["--c"], preset: .webSearch)
+    let result = try XCTUnwrap(resolveAgentToolPolicy(policy, executionBackend: .claudeCodeAgent, variables: [:]))
+    let presetArguments = try XCTUnwrap(AgentToolPolicyPresetArguments.cliArguments(
+      .webSearch, backend: .claudeCodeAgent, sessionReuse: false
+    ))
+    XCTAssertEqual(result.claudeArguments, presetArguments + ["--a", "--c"])
+    XCTAssertEqual(result.codexArguments, ["--b"])
+    XCTAssertTrue(result.additionalArguments.isEmpty)
+    XCTAssertNil(result.preset)
+  }
+
+  func testPresetCodexSessionReuseOmitsEphemeralArgument() throws {
+    let result = try XCTUnwrap(resolveAgentToolPolicy(
+      AgentToolPolicy(preset: .noTools), executionBackend: .codexAgent, sessionReuse: true, variables: [:]
+    ))
+    XCTAssertFalse(result.codexArguments.contains("--ephemeral"))
+  }
+
+  func testPresetTemplatesRenderAfterLiteralPresetArguments() throws {
+    let policy = AgentToolPolicy(codexArguments: ["-c", "key={{x}}"], preset: .noTools)
+    let trusted: JSONObject = ["x": .string("value")]
+    let result = try XCTUnwrap(resolveAgentToolPolicy(policy, executionBackend: .codexAgent, variables: trusted,
+      trustedVariables: trusted))
+    let presetArguments = try XCTUnwrap(AgentToolPolicyPresetArguments.cliArguments(
+      .noTools, backend: .codexAgent, sessionReuse: false
+    ))
+    XCTAssertEqual(result.codexArguments, presetArguments + ["-c", "key=value"])
+    XCTAssertTrue(result.codexArguments.contains("mcp_servers={}"))
+
+    let claude = try XCTUnwrap(resolveAgentToolPolicy(AgentToolPolicy(preset: .noTools),
+      executionBackend: .claudeCodeAgent, variables: [:]))
+    XCTAssertTrue(claude.claudeArguments.contains(#"{"mcpServers":{}}"#))
+  }
+
+  func testPresetSDKsKeepPolicyAndCursorNoneIsSupported() throws {
+    for backend: NodeExecutionBackend in [.officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK] {
+      let policy = AgentToolPolicy(additionalArguments: ["--a"], codexArguments: ["--b"], preset: .webSearch)
+      XCTAssertEqual(try resolveAgentToolPolicy(policy, executionBackend: backend, variables: [:]), policy)
+    }
+    let cursorPolicy = AgentToolPolicy(preset: .noTools)
+    XCTAssertEqual(try resolveAgentToolPolicy(cursorPolicy, executionBackend: .officialCursorSDK, variables: [:]),
+      cursorPolicy)
+  }
+
+  func testPresetWithoutPresetKeepsAdditionalArgumentsSeparate() throws {
+    let policy = AgentToolPolicy(additionalArguments: ["--a"], codexArguments: ["--b"])
+    XCTAssertEqual(try resolveAgentToolPolicy(policy, executionBackend: .codexAgent, variables: [:]), policy)
+  }
+
+  func testPresetUnsupportedBackendsAndMissingBackendFailClosed() {
+    for (policy, backend) in [
+      (AgentToolPolicy(preset: .webSearch), NodeExecutionBackend.officialCursorSDK),
+      (AgentToolPolicy(preset: .noTools), .cursorCliAgent)
+    ] {
+      XCTAssertThrowsError(try resolveAgentToolPolicy(policy, executionBackend: backend, variables: [:])) { error in
+        XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput)
+      }
+    }
+    XCTAssertThrowsError(try resolveAgentToolPolicy(AgentToolPolicy(preset: .noTools), variables: [:])) { error in
+      XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput)
+    }
+  }
+
   func testRunnerNeverBindsToolPolicyFromUpstreamAgentOutput() async throws {
     let workflow = WorkflowDefinition(workflowId: "tool-policy-trust", defaults: .init(nodeTimeoutMs: 30_000, maxLoopIterations: 1),
       entryStepId: "produce", nodeRegistry: [.init(id: "produce", nodeFile: "produce.json"), .init(id: "consume", nodeFile: "consume.json")],

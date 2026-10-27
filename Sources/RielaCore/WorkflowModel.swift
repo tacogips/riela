@@ -74,7 +74,13 @@ public enum AgentToolPolicyMode: String, Codable, CaseIterable, Hashable, Sendab
   case backendArguments = "backend-arguments"
 }
 
+public enum AgentToolPolicyPreset: String, Codable, CaseIterable, Hashable, Sendable {
+  case noTools = "none"
+  case webSearch = "web-search"
+}
+
 public struct AgentToolPolicy: Codable, Equatable, Sendable {
+  public var preset: AgentToolPolicyPreset?
   public var mode: AgentToolPolicyMode?
   public var additionalArguments: [String]
   public var codexArguments: [String]
@@ -86,8 +92,10 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
     additionalArguments: [String] = [],
     codexArguments: [String] = [],
     claudeArguments: [String] = [],
-    cursorArguments: [String] = []
+    cursorArguments: [String] = [],
+    preset: AgentToolPolicyPreset? = nil
   ) {
+    self.preset = preset
     self.mode = mode
     self.additionalArguments = additionalArguments
     self.codexArguments = codexArguments
@@ -96,6 +104,7 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey {
+    case preset
     case mode
     case additionalArguments
     case codexArguments
@@ -110,12 +119,14 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
       additionalArguments: try container.decodeIfPresent([String].self, forKey: .additionalArguments) ?? [],
       codexArguments: try container.decodeIfPresent([String].self, forKey: .codexArguments) ?? [],
       claudeArguments: try container.decodeIfPresent([String].self, forKey: .claudeArguments) ?? [],
-      cursorArguments: try container.decodeIfPresent([String].self, forKey: .cursorArguments) ?? []
+      cursorArguments: try container.decodeIfPresent([String].self, forKey: .cursorArguments) ?? [],
+      preset: try container.decodeIfPresent(AgentToolPolicyPreset.self, forKey: .preset)
     )
   }
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(preset, forKey: .preset)
     try container.encodeIfPresent(mode, forKey: .mode)
     try container.encode(additionalArguments, forKey: .additionalArguments)
     try container.encode(codexArguments, forKey: .codexArguments)

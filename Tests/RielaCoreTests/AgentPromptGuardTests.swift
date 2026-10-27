@@ -199,10 +199,12 @@ final class AgentPromptGuardTests: XCTestCase {
     isolated.sandbox = WorkflowExecutionSandbox(backend: .seatbelt)
     var restricted = local
     restricted.agentToolPolicy = AgentToolPolicy(mode: .backendArguments, codexArguments: ["-c", "tools=[]"])
+    var presetOnly = local
+    presetOnly.agentToolPolicy = AgentToolPolicy(preset: .noTools)
     var sdk = local
     sdk.executionBackend = .officialOpenAISDK
     local.executionBackend = nil
-    for payload in [isolated, restricted, sdk, local] {
+    for payload in [isolated, restricted, presetOnly, sdk, local] {
       let request = DeterministicWorkflowRunRequest(workflow: workflow, nodePayloads: ["worker": payload], variables: values)
       let variables = runner.promptVariables(workflow: workflow, step: step, payload: payload,
         requestVariables: values, resolvedInputPayload: [:])

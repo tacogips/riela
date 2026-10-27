@@ -29,7 +29,7 @@ Imitate `Tests/RielaCLITests/WorkflowCommandScenarioTests.swift:558-564`
 `--workflow-json-file` flag.
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 ## Non-goals
 
@@ -42,10 +42,10 @@ Follow the shared worker protocol in
 
 ## Tasks
 
-- [ ] T1: Build with `arch -arm64 /bin/zsh -lc 'swift build > tmp/agent-tool-policy-preset/atp-07-live-smoke/build.log 2>&1'`
+- [x] T1: Build with `arch -arm64 /bin/zsh -lc 'swift build > tmp/agent-tool-policy-preset/atp-07-live-smoke/build.log 2>&1'`
   (exit 0). Use the binary at `.build/debug/riela`, and record
   `.build/debug/riela --version`.
-- [ ] T2: Write `tmp/agent-tool-policy-preset/codex-none.json`:
+- [x] T2: Write `tmp/agent-tool-policy-preset/codex-none.json`:
   - one step, `smoke`, on node `smoke-node`, in workflow
     `agent-tool-policy-preset-codex-smoke`;
   - `defaults` of `{"nodeTimeoutMs": 300000, "maxLoopIterations": 1}`;
@@ -56,7 +56,7 @@ Follow the shared worker protocol in
     - `"agentToolPolicy": {"preset": "none"}`;
     - `"promptTemplate": "Return exactly the JSON object {\"ok\": true} and nothing else."`;
     - `"output": {"jsonSchema": {"type": "object", "properties": {"ok": {"const": true}}, "required": ["ok"], "additionalProperties": false}}`.
-- [ ] T2b: Write two argv-logging wrapper scripts. They are scratch files and
+- [x] T2b: Write two argv-logging wrapper scripts. They are scratch files and
   are never committed.
   1. Record `command -v codex` and `command -v claude`. Expected paths:
      `/opt/homebrew/bin/codex` and `/opt/homebrew/bin/claude`.
@@ -69,7 +69,7 @@ Follow the shared worker protocol in
   4. Always use the absolute path in the `exec` line. Calling `codex` or
      `claude` by name could make the wrapper invoke itself.
   5. Run `chmod +x` on both scripts and record their absolute paths.
-- [ ] T3: Run the Codex workflow through the wrapper. Remove any old
+- [x] T3: Run the Codex workflow through the wrapper. Remove any old
   `argv-codex.log` first.
 
   ```
@@ -99,7 +99,7 @@ Follow the shared worker protocol in
 
   If atp-01 dropped any fixed flag, check against its recorded list instead.
   Record the excerpt as line numbers plus content.
-- [ ] T4: Repeat with `claude-none.json`: `"executionBackend":
+- [x] T4: Repeat with `claude-none.json`: `"executionBackend":
   "claude-code-agent"`, `"model": "sonnet"`, and the same policy, prompt and
   schema.
 
@@ -117,13 +117,13 @@ Follow the shared worker protocol in
     3. `--strict-mcp-config`, `--mcp-config`, `{"mcpServers":{}}`;
     4. `--disable-slash-commands`;
     5. `--setting-sources` and an empty line, if atp-01 kept that option.
-- [ ] T5: Do not use the session's step-execution records as expansion
+- [x] T5: Do not use the session's step-execution records as expansion
   evidence. The published step record holds the raw base payload
   (`DeterministicWorkflowRunner.swift:697-704` publishes `basePayload`). The
   invocation snapshot (`Sources/RielaCore/WorkflowInvocationSnapshot.swift`)
   has no node policy. A raw `preset` key in those records is expected and is
   not a defect. The argv logs are the only expansion evidence.
-- [ ] T6: Pass and blocked rules.
+- [x] T6: Pass and blocked rules.
   - A run passes only when **both** of these hold: exit 0 with `{"ok": true}`,
     and the argv-log assertions.
   - Exit 0 alone is never a pass.
@@ -134,7 +134,7 @@ Follow the shared worker protocol in
   - If the CLI rejects a preset argv element, record the CLI error and the
     element. Serial repair changes
     `Sources/RielaCore/AgentToolPolicyPresetArguments.swift`.
-- [ ] T7: Record `Gemini live check not run: GEMINI_API_KEY unset` in the
+- [x] T7: Record `Gemini live check not run: GEMINI_API_KEY unset` in the
   progress log.
 
 ## Verification evidence

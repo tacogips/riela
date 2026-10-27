@@ -77,6 +77,13 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
       throw AdapterExecutionError(.policyBlocked, "OS-sandboxed nodes must use the isolated Riela worker adapter")
     }
     let vendor = try gatewayVendor(input.node)
+    if vendor.isCLI, input.node.agentToolPolicy?.preset != nil {
+      throw AdapterExecutionError(
+        .invalidInput,
+        "agent tool policy preset must be expanded by the host runtime before CLI dispatch"
+      )
+    }
+    let webSearch = !vendor.isCLI && input.node.agentToolPolicy?.preset == .webSearch
     let outputSessionKey = gatewayOutputSessionKey(input)
     let inputSessionKey = gatewayInputSessionKey(input)
     let providerName = input.node.provider?.name
@@ -118,7 +125,8 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
         workingDirectory: input.node.workingDirectory ?? defaultWorkingDirectory,
         promptBlocks: try gatewayPromptBlocks(input),
         vendorSessionId: reusedSessionId,
-        deadline: context.deadline
+        deadline: context.deadline,
+        webSearch: webSearch
       ),
       executorFactory: executorFactory,
       backendEventHandler: context.backendEventHandler
@@ -228,6 +236,7 @@ struct GatewayTurnRequest: Sendable {
   var promptBlocks: [ACPContentBlock]
   var vendorSessionId: String?
   var deadline: Date?
+  var webSearch: Bool = false
 }
 
 /// Hosts `GatewayACPAgent` on an in-memory ACP transport and drives exactly
@@ -246,7 +255,7 @@ func runGatewayTurn(
   if vendor.isCLI {
     defaults.systemPrompt = [defaults.systemPrompt, gatewayForegroundExecutionInstructions].compactMap { $0 }.joined(separator: "\n\n")
   }
-  let executor = GatewayTurnExecutor(base: executorFactory(request.environment))
+  let executor = GatewayTurnExecutor(base: executorFactory(request.environment), webSearch: request.webSearch)
   let agent = GatewayACPAgent(defaults: defaults, executor: executor)
   let (client, server) = await ACPClientConnection.inProcess(agent: agent)
   let collector = GatewayACPUpdateCollector(vendor: vendor.rawValue)

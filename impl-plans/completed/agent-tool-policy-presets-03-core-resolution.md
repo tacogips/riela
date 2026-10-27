@@ -41,7 +41,7 @@ This plan uses only the atp-01 contract: `AgentToolPolicyPreset`,
 and `.isSupported`.
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 ## Non-goals
 

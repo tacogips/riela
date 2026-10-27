@@ -645,6 +645,8 @@ extension DeterministicWorkflowRunner {
     executionPayload.output = try resolveNodeOutputContract(executionPayload.output, variables: mergedVariables)
     executionPayload.agentToolPolicy = try resolveAgentToolPolicy(
       executionPayload.agentToolPolicy,
+      executionBackend: executionPayload.executionBackend,
+      sessionReuse: (step.sessionPolicy ?? executionPayload.sessionPolicy)?.mode == .reuse,
       variables: mergedVariables,
       trustedVariables: agentToolPolicyTrustedVariables(
         nodeVariables: executionPayload.variables, workflowInput: request.variables

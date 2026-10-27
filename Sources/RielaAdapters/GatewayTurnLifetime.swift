@@ -6,16 +6,20 @@ import AgentGatewayAppCore
 /// client cannot leave an executor running after Riela has returned the node.
 actor GatewayTurnExecutor: GatewayExecuting {
   private let base: any GatewayExecuting
+  private let webSearch: Bool
   private var task: Task<GatewayExecuteResult, Error>?
   private var isClosed = false
 
-  init(base: any GatewayExecuting) {
+  init(base: any GatewayExecuting, webSearch: Bool = false) {
     self.base = base
+    self.webSearch = webSearch
   }
 
   func execute(_ params: GatewayExecuteParams, emit: @escaping GatewayEventEmitter) async throws -> GatewayExecuteResult {
     guard !isClosed, task == nil else { throw CancellationError() }
     let base = base
+    var params = params
+    params.webSearch = webSearch
     let execution = Task { try await base.execute(params, emit: emit) }
     task = execution
     return try await withTaskCancellationHandler {

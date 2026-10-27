@@ -29,7 +29,7 @@ only in `Sources/RielaCore/AgentToolPolicyPresetArguments.swift` (atp-01), and
 copying it here would drift. This is why the plan can run in wave 1.
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 ## Non-goals
 

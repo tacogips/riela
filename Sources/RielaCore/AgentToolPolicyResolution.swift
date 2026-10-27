@@ -24,6 +24,8 @@ public func agentToolPolicyTrustedVariables(nodeVariables: JSONObject, workflowI
 /// that starts with a template may not render to an option (`-...`).
 public func resolveAgentToolPolicy(
   _ policy: AgentToolPolicy?,
+  executionBackend: NodeExecutionBackend? = nil,
+  sessionReuse: Bool = false,
   variables: JSONObject,
   trustedVariables: JSONObject? = nil
 ) throws -> AgentToolPolicy? {
@@ -65,5 +67,25 @@ public func resolveAgentToolPolicy(
   policy.codexArguments = try arguments(policy.codexArguments)
   policy.claudeArguments = try arguments(policy.claudeArguments)
   policy.cursorArguments = try arguments(policy.cursorArguments)
+  guard let preset = policy.preset else { return policy }
+  guard let executionBackend,
+        AgentToolPolicyPresetArguments.isSupported(preset, backend: executionBackend) else {
+    let backendName = executionBackend?.rawValue ?? "none"
+    throw AdapterExecutionError(.invalidInput,
+      "agent tool policy preset '\(preset.rawValue)' is not supported with executionBackend '\(backendName)'")
+  }
+  guard let presetArguments = AgentToolPolicyPresetArguments.cliArguments(
+    preset, backend: executionBackend, sessionReuse: sessionReuse
+  ) else { return policy }
+  switch executionBackend {
+  case .codexAgent:
+    policy.codexArguments = presetArguments + policy.additionalArguments + policy.codexArguments
+  case .claudeCodeAgent:
+    policy.claudeArguments = presetArguments + policy.additionalArguments + policy.claudeArguments
+  case .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
+    return policy
+  }
+  policy.additionalArguments = []
+  policy.preset = nil
   return policy
 }

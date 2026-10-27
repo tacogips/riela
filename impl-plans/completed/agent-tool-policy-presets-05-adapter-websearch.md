@@ -31,7 +31,7 @@ CLI vendors always get `webSearch == false`. Their behavior comes only from
 the argv expanded by atp-03.
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 ## Non-goals
 

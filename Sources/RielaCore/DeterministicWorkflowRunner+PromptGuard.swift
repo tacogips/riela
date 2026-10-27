@@ -150,7 +150,7 @@ private func promptSpillFilesAreAccessible(payload: AgentNodePayload, step: Work
   guard step.placement == nil, payload.sandbox == nil,
         payload.executionBackend?.cliAgentBackend != nil else { return false }
   guard let policy = payload.agentToolPolicy else { return true }
-  return policy.additionalArguments.isEmpty && policy.codexArguments.isEmpty
+  return policy.preset == nil && policy.additionalArguments.isEmpty && policy.codexArguments.isEmpty
     && policy.claudeArguments.isEmpty && policy.cursorArguments.isEmpty
 }
 

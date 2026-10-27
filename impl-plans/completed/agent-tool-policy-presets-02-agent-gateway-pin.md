@@ -27,7 +27,7 @@ matching `agent-gateway` entry. A repository-wide search confirms no other file
 pins it.
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 This plan is the only owner of `Package.resolved`.
 
@@ -56,10 +56,10 @@ This plan is the only owner of `Package.resolved`.
 
 ## Tasks
 
-- [ ] T1: Read both files fresh and record their pre-hashes.
-- [ ] T2: Edit `Package.swift`, then run `swift package resolve` and save the
+- [x] T1: Read both files fresh and record their pre-hashes.
+- [x] T2: Edit `Package.swift`, then run `swift package resolve` and save the
   log to `tmp/agent-tool-policy-preset/atp-02-agent-gateway-pin/resolve.log`.
-- [ ] T3: Confirm the resolved checkout and record the facts with line
+- [x] T3: Confirm the resolved checkout and record the facts with line
   numbers.
   - `.build/checkouts/agent-gateway` is at `fbb7d851`. Check with
     `git -C .build/checkouts/agent-gateway rev-parse HEAD`.
@@ -70,7 +70,7 @@ This plan is the only owner of `Package.resolved`.
     3. a webSearch rejection for cursorAPI in
        `Sources/AgentGatewayAppCore/GatewayAPIRequest.swift`.
   - Atp-05 relies on these facts. If any of them differs, log it and stop.
-- [ ] T4: Run `swift build` and record the result. List any compile errors by
+- [x] T4: Run `swift build` and record the result. List any compile errors by
   file.
 
 ## Verification

@@ -1,6 +1,8 @@
 # Agent tool-policy presets (`none` / `web-search`)
 
-Status: accepted for implementation 2026-10-27 (issue-resolution run
+Status: implemented 2026-10-27 (plans archived under
+`impl-plans/completed/agent-tool-policy-presets*.md`); accepted for
+implementation 2026-10-27 (issue-resolution run
 `opus-luna-design-and-implement-review-loop-session-503`; the issue was
 supplied through `workflowInput`, with no GitHub number). Revised after the
 Step 3 review: DR-1 (the SDK `webSearch` seam, §5) and DR-2 (the nil-backend

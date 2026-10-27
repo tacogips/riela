@@ -72,6 +72,67 @@ value itself may start with `-`. Values a fanout copies into a branch's
 workflow input count as workflow input, so do not fan out model output into a
 tool-policy binding.
 
+### Tool-policy presets
+
+Set `agentToolPolicy.preset` to `"none"` to give an agent no tools, or to
+`"web-search"` to allow only the vendor's hosted web search. Unknown values
+fail when the workflow loads. `mode` may be omitted; a preset cannot be combined
+with `mode: "backend-default"`.
+
+| Backend | `none` | `web-search` |
+|---|---:|---:|
+| `codex-agent` | yes | yes |
+| `claude-code-agent` | yes | yes |
+| `official/openai-sdk`, `official/anthropic-sdk`, `official/gemini-sdk`, OpenRouter via the `openai-sdk` provider | yes | yes |
+| `official/cursor-sdk` | yes | no |
+| `cursor-cli-agent` | no | no |
+
+The host runtime expands CLI presets to explicit arguments before dispatch, so
+sandbox and container guests receive the resolved policy. Authored
+`additionalArguments` follow the preset arguments, then the backend-specific
+arguments. Codex ignores user config and rules, clears MCP servers, disables
+tool features, selects web search `disabled` or `live`, and uses an ephemeral
+session unless the node reuses its session. Claude Code limits tools to `""`
+or `WebSearch` (with `--allowedTools WebSearch` for web search), uses a strict
+empty MCP config, and disables slash commands. The exact argument lists are in
+[`Sources/RielaCore/AgentToolPolicyPresetArguments.swift`](../../Sources/RielaCore/AgentToolPolicyPresetArguments.swift).
+
+SDK backends send no tools for `none`. For `web-search`, the adapter enables
+the vendor's hosted search: OpenAI `web_search`, Anthropic `web_search`, Gemini
+`google_search`, or the OpenRouter `web` plugin. Running
+`riela workflow run --supervisor-mode` re-enables Codex `multi_agent` on top of
+a preset. Older Riela builds ignore the `preset` key; CLI nodes on those builds
+use their default tools, so use a build that includes preset support.
+
+```json
+{
+  "executionBackend": "codex-agent",
+  "model": "gpt-5-codex",
+  "promptTemplate": "Summarize the supplied text.",
+  "agentToolPolicy": {"preset": "none"}
+}
+```
+
+```json
+{
+  "executionBackend": "claude-code-agent",
+  "model": "claude-sonnet-4-5",
+  "promptTemplate": "Search the web for the latest release.",
+  "agentToolPolicy": {"preset": "web-search"}
+}
+```
+
+```json
+{
+  "executionBackend": "official/gemini-sdk",
+  "model": "gemini-2.5-flash",
+  "promptTemplate": "Search the web for the latest release.",
+  "agentToolPolicy": {"preset": "web-search"}
+}
+```
+
+The Gemini SDK example requires `GEMINI_API_KEY` to be set.
+
 ## Container-private HOME and credential projection
 
 ```json

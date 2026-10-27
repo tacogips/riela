@@ -596,6 +596,111 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   }
 }
 
+@Test func agentToolPolicyPresetEnablesSDKWebSearchForSupportedVendors() async throws {
+  let openRouter = try AgentProviderConfiguration(
+    name: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKeyEnv: "OPENROUTER_API_KEY"
+  )
+  let cases: [(NodeExecutionBackend, AgentProviderConfiguration?)] = [
+    (.officialOpenAISDK, nil),
+    (.officialAnthropicSDK, nil),
+    (.officialGeminiSDK, nil),
+    (.officialOpenAISDK, openRouter)
+  ]
+  for (backend, provider) in cases {
+    let executor = GatewayStubExecutor()
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(
+          id: "worker", executionBackend: backend, model: "fixture",
+          agentToolPolicy: AgentToolPolicy(preset: .webSearch), provider: provider
+        ),
+        promptText: "prompt"
+      ),
+      context: AdapterExecutionContext()
+    )
+    let params = try #require(executor.params())
+    #expect(params.webSearch)
+    if provider != nil { #expect(params.vendor == .openRouter) }
+  }
+}
+
+@Test func agentToolPolicyPresetDisablesSDKWebSearchForNoneAndMissingPolicy() async throws {
+  let openRouter = try AgentProviderConfiguration(
+    name: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKeyEnv: "OPENROUTER_API_KEY"
+  )
+  let cases: [(NodeExecutionBackend, AgentProviderConfiguration?)] = [
+    (.officialOpenAISDK, nil),
+    (.officialAnthropicSDK, nil),
+    (.officialGeminiSDK, nil),
+    (.officialOpenAISDK, openRouter)
+  ]
+  for policy in [AgentToolPolicy(preset: .noTools), AgentToolPolicy? .none] {
+    for (backend, provider) in cases {
+      let executor = GatewayStubExecutor()
+      _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+        AdapterExecutionInput(
+          node: AgentNodePayload(
+            id: "worker", executionBackend: backend, model: "fixture",
+            agentToolPolicy: policy, provider: provider
+          ),
+          promptText: "prompt"
+        ),
+        context: AdapterExecutionContext()
+      )
+      #expect(try #require(executor.params()).webSearch == false)
+    }
+  }
+}
+
+@Test func agentToolPolicyPresetKeepsExpandedCLIArgumentsAndRejectsRawPreset() async throws {
+  let cliCases: [(NodeExecutionBackend, [String])] = [
+    (.codexAgent, ["--disable", "shell_tool"]),
+    (.claudeCodeAgent, ["--tools", ""])
+  ]
+  for (backend, expectedArguments) in cliCases {
+    let policy = backend == .codexAgent
+      ? AgentToolPolicy(codexArguments: expectedArguments)
+      : AgentToolPolicy(claudeArguments: expectedArguments)
+    let executor = GatewayStubExecutor()
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(
+          id: "worker", executionBackend: backend, model: "fixture", agentToolPolicy: policy
+        ),
+        promptText: "prompt"
+      ),
+      context: AdapterExecutionContext()
+    )
+    let params = try #require(executor.params())
+    #expect(!params.webSearch)
+    let args = vendorArguments(params)
+    let index = try #require(args.firstIndex(of: expectedArguments[0]))
+    #expect(Array(args[index..<(index + expectedArguments.count)]) == expectedArguments)
+  }
+
+  let executor = GatewayStubExecutor()
+  do {
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(
+          id: "worker", executionBackend: .codexAgent, model: "fixture",
+          agentToolPolicy: AgentToolPolicy(preset: .webSearch)
+        ),
+        promptText: "prompt"
+      ),
+      context: AdapterExecutionContext()
+    )
+    Issue.record("unexpanded CLI tool-policy preset reached vendor")
+  } catch let error as AdapterExecutionError {
+    #expect(error.code == .invalidInput)
+  }
+  #expect(executor.params() == nil)
+}
+
 private actor GatewayEventStore {
   var values: [AdapterBackendEvent] = []
   func append(_ event: AdapterBackendEvent) { values.append(event) }

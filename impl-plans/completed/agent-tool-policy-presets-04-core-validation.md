@@ -28,7 +28,7 @@ The atp-01 contract supplies `AgentToolPolicyPresetArguments.isSupported` and
 `.codexSupportsSessionReuse`.
 
 Follow the shared worker protocol in
-`impl-plans/active/agent-tool-policy-presets.md`.
+`impl-plans/completed/agent-tool-policy-presets.md`.
 
 ## Non-goals
 

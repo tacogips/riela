@@ -69,6 +69,41 @@ public func validateAgentNodePayload(
   if payload.provider == nil, payload.providerProxy != nil {
     diagnostics.append(error("\(path).providerProxy", "requires provider"))
   }
+  if let policy = payload.agentToolPolicy, let preset = policy.preset {
+    if policy.mode == .backendDefault {
+      diagnostics.append(error(
+        "\(path).agentToolPolicy.mode",
+        "cannot be combined with agentToolPolicy.preset"
+      ))
+    }
+    if let backend = payload.executionBackend, !AgentToolPolicyPresetArguments.isSupported(preset, backend: backend) {
+      diagnostics.append(error(
+        "\(path).agentToolPolicy.preset",
+        "preset '\(preset.rawValue)' is not supported with executionBackend '\(backend.rawValue)'"
+      ))
+    } else if payload.executionBackend == nil, let backendPolicy = payload.backendPolicy,
+      let unsupportedBackend = backendPolicy.allowed.first(where: {
+        !AgentToolPolicyPresetArguments.isSupported(preset, backend: $0)
+      }) {
+      diagnostics.append(error(
+        "\(path).backendPolicy.allowed",
+        "backend '\(unsupportedBackend.rawValue)' does not support agentToolPolicy preset '\(preset.rawValue)'"
+      ))
+    } else if payload.executionBackend == nil, payload.backendPolicy == nil {
+      diagnostics.append(error(
+        "\(path).agentToolPolicy.preset",
+        "requires an explicit executionBackend"
+      ))
+    }
+    if payload.executionBackend == .codexAgent,
+      payload.sessionPolicy?.mode == .reuse,
+      !AgentToolPolicyPresetArguments.codexSupportsSessionReuse {
+      diagnostics.append(error(
+        "\(path).agentToolPolicy.preset",
+        "cannot be combined with sessionPolicy mode 'reuse' on codex-agent"
+      ))
+    }
+  }
   guard payload.provider != nil else {
     return diagnostics
   }

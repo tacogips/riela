@@ -30,19 +30,41 @@ enum WorkflowDefinitionHistoryConfiguration {
     guard let root = object as? [String: Any] else {
       throw ConfigurationError(description: "configuration at \(url.path) must be a JSON object")
     }
-    guard let definitions = root["workflowDefinitions"] else { return nil }
-    guard let values = definitions as? [String: Any] else {
-      throw ConfigurationError(description: "workflowDefinitions in \(url.path) must be an object")
+    let workflowDefinitions: [String: Any]
+    if let raw = root["workflowDefinitions"] {
+      guard let values = raw as? [String: Any] else {
+        throw ConfigurationError(description: "workflowDefinitions in \(url.path) must be an object")
+      }
+      let unknown = Set(values.keys).subtracting(["historyRetention"])
+      guard unknown.isEmpty else {
+        throw ConfigurationError(description: "unknown workflowDefinitions configuration key: \(unknown.sorted().joined(separator: ", "))")
+      }
+      workflowDefinitions = values
+    } else {
+      workflowDefinitions = [:]
     }
-    let unknown = Set(values.keys).subtracting(["historyRetention"])
-    guard unknown.isEmpty else {
-      throw ConfigurationError(description: "unknown workflowDefinitions configuration key: \(unknown.sorted().joined(separator: ", "))")
+    let retention = root["retention"] as? [String: Any]
+    let definitionRetention = retention?["definitions"] as? [String: Any]
+    if let definitionRetention {
+      let unknown = Set(definitionRetention.keys).subtracting(["keepVersions"])
+      guard unknown.isEmpty else {
+        throw ConfigurationError(description: "unknown retention.definitions configuration key: \(unknown.sorted().joined(separator: ", "))")
+      }
     }
-    guard let raw = values["historyRetention"] else { return nil }
+    let historyValue = try integer(workflowDefinitions["historyRetention"], key: "workflowDefinitions.historyRetention", minimum: 0, url: url)
+    let aliasValue = try integer(definitionRetention?["keepVersions"], key: "retention.definitions.keepVersions", minimum: 1, url: url)
+    if let historyValue, let aliasValue, historyValue != aliasValue {
+      throw ConfigurationError(description: "workflowDefinitions.historyRetention and retention.definitions.keepVersions in \(url.path) must match")
+    }
+    return historyValue ?? aliasValue
+  }
+
+  private static func integer(_ raw: Any?, key: String, minimum: Int, url: URL) throws -> Int? {
+    guard let raw else { return nil }
     guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
           number.doubleValue.rounded(.towardZero) == number.doubleValue,
-          (0...10_000).contains(number.intValue) else {
-      throw ConfigurationError(description: "workflowDefinitions.historyRetention in \(url.path) must be an integer between 0 and 10000")
+          (minimum...10_000).contains(number.intValue) else {
+      throw ConfigurationError(description: "\(key) in \(url.path) must be an integer between \(minimum) and 10000")
     }
     return number.intValue
   }

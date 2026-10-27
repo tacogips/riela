@@ -34,8 +34,12 @@ riela workflow definition diff
 riela workflow definition update
 riela workflow definition update-prompt
 riela workflow definition restore
+riela workflow definition undo
+riela workflow definition redo
 riela workflow definition import
 riela workflow definition export
+riela workflow definition prune
+riela workflow definition purge-history
 riela workflow checkout
 riela workflow create
 riela workflow self-improve

@@ -123,6 +123,50 @@ To overwrite the original source directory, use
 GraphQL export returns the files and can write to the source when
 `writeToSource` is true.
 
+## History retention
+
+Definition versions and audit records are append-only for every normal
+operation. Two commands remove history, and each one writes its own audit
+record with the reason, the actor and the removed version IDs (as `remove`
+diff entries under `/versions/<id>`, plus the removed audit and blob counts).
+
+Keep at most N versions of one workflow, or of every workflow in the selected
+stores:
+
+```sh
+riela workflow definition prune <workflow> --keep 20 --reason "Trim old prompt versions"
+riela workflow definition prune --all-workflows --keep 20 --reason "Monthly cleanup" --dry-run
+```
+
+`--keep` counts the newest versions. These versions are always kept as well:
+the current version, the last file import (the baseline for `import`
+comparisons and `overwrittenChanges`), and any version pinned by a created,
+running or suspended session, and recent former heads within the 24 hour grace
+period. Audit records of removed
+versions are deleted. Earlier `prune` records stay. Document blobs that no
+remaining version references are deleted. A prune that would remove nothing
+writes no record.
+
+Delete the whole history except the protected versions:
+
+```sh
+riela workflow definition purge-history <workflow> --reason "Start a clean history" --yes
+```
+
+Purge deletes every audit record of the workflow, including earlier `prune`
+records, and writes one `purgeHistory` record in their place. It requires
+`--yes`. Both commands accept `--dry-run`, which reports the same result
+without changing rows and without requiring a reason.
+
+Retention never moves the head or its revision. Restoring, diffing or
+exporting a removed version fails with `definition_version_not_retained`. Resuming or
+rerunning a completed, failed or cancelled session whose pinned version was
+removed fails the same way. Sessions recorded in a different store are
+protected through persisted pins. Automatic retention and `riela gc` use the
+shared engine with a default window of 10. `retention.definitions.keepVersions`
+aliases `workflowDefinitions.historyRetention`; if both keys are present in
+one config file, they must match. They use the actor `cli:riela-retention`.
+
 ## GraphQL surface and schema
 
 The definition API is available through these fields:

@@ -322,6 +322,43 @@ final class WorkflowDefinitionRetentionTests: XCTestCase {
     XCTAssertNotNil(try WorkflowDefinitionStore(rootDirectory: root.path).document(versionId: "defv-2"))
   }
 
+  func testExplicitPruneAndPurgeUseSharedEngineAndProtectedVersionRules() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let store = WorkflowDefinitionStore(rootDirectory: root.path, now: { clock.now })
+    var ids: [String] = []
+    for number in 1...5 {
+      let version = try commit(store, version: number, previous: ids.last,
+        operation: number == 1 ? .import : .update)
+      ids.append(version.versionId)
+      clock.advance()
+    }
+    try savePin(sessionId: "active-version-two", versionId: ids[2], root: root)
+
+    let preview = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "", actor: .init(kind: .user), dryRun: true)
+    XCTAssertEqual(Set(preview.removedVersionIds), Set([ids[1]]))
+    XCTAssertNil(preview.audit)
+    let pruned = try store.prune(workflowName: "retention-flow", keepVersions: 2, reason: "trim old edits", actor: .init(kind: .user))
+    XCTAssertEqual(Set(pruned.removedVersionIds), Set([ids[1]]))
+    XCTAssertEqual(Set(pruned.keptVersionIds), Set([ids[0], ids[2], ids[3], ids[4]]))
+    XCTAssertEqual(Set(pruned.protectedVersions.map(\.reason)), Set(["current", "lastFileImport", "activeSession"]))
+    XCTAssertEqual(pruned.audit?.operation, .prune)
+    XCTAssertEqual(try count("definition_history_versions", db: database(root)), 4)
+    XCTAssertNotNil(try store.document(versionId: ids[2]))
+
+    _ = try store.moveHead(workflowName: "retention-flow", direction: .undo, reason: "open redo branch",
+      expectedRevision: 5, expectedVersionId: ids[4], evidence: [], actorKind: "user", actorId: nil)
+    clock.advance()
+    let purged = try store.purgeHistory(workflowName: "retention-flow", reason: "reset audit", actor: .init(kind: .user))
+    XCTAssertEqual(Set(purged.keptVersionIds), Set([ids[0], ids[2], ids[3]]))
+    XCTAssertEqual(purged.audit?.operation, .purgeHistory)
+    XCTAssertEqual(try store.history(workflowName: "retention-flow").map(\.operation), [.purgeHistory])
+    XCTAssertEqual(try store.head(workflowName: "retention-flow")?.currentVersionId, ids[3])
+    XCTAssertThrowsError(try store.document(versionId: ids[4]))
+    XCTAssertEqual(try count("definition_history_versions", db: database(root)), 3)
+  }
+
   private func commit(_ store: WorkflowDefinitionStore, version: Int, previous: String?, operation: WorkflowDefinitionOperation = .update,
                       retention: Int? = nil, defaultRetention: Int = WorkflowDefinitionStore.defaultHistoryRetention) throws -> WorkflowDefinitionVersion {
     let data = Data("{\"version\":\(version)}".utf8)

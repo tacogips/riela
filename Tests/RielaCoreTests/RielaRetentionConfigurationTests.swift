@@ -26,6 +26,15 @@ final class RielaRetentionConfigurationTests: XCTestCase {
     XCTAssertEqual(policy.logs.state, .notConfigured)
   }
 
+  func testDefinitionRetentionAliasRejectsConflictingValues() throws {
+    let home = try makeRoot(configuration: #"{"workflowDefinitions":{"historyRetention":3},"retention":{"definitions":{"keepVersions":4}}}"#)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    XCTAssertThrowsError(try load(home: home)) { error in
+      XCTAssertTrue(error.localizedDescription.contains("workflowDefinitions.historyRetention and retention.definitions.keepVersions must match"))
+    }
+  }
+
   func testKeepForeverExampleAndDecimalByteLimit() throws {
     let home = try makeRoot(configuration: #"{"retention":{"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"maxAgeDays":14,"maxTotalBytes":"1GB"}}}"#)
     defer { try? FileManager.default.removeItem(at: home) }

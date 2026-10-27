@@ -61,6 +61,15 @@ public struct RielaRetentionGeneratedReport: Codable, Equatable, Sendable {
   public var removedBytes: Int64
 }
 
+public struct RielaRetentionDefinitionReport: Codable, Equatable, Sendable {
+  public var keepVersions: Int
+  public var workflowCount: Int
+  public var removedVersionCount: Int
+  public var removedAuditCount: Int
+  public var removedBlobCount: Int
+  public var removedBlobBytes: Int64
+}
+
 public struct RielaRetentionOrphanLockReport: Codable, Equatable, Sendable {
   public var selectedCount: Int
   public var removedCount: Int
@@ -76,6 +85,7 @@ public struct RielaRetentionTargetReport: Codable, Equatable, Sendable {
   public var logs: RetentionCategoryReport
   public var generated: RielaRetentionGeneratedReport
   public var orphanLocks: RielaRetentionOrphanLockReport?
+  public var definitions: RielaRetentionDefinitionReport?
   public var reclamation: [RielaRetentionReclamationReport]
   public var warnings: [String]
 }
@@ -276,6 +286,18 @@ public struct RielaRetentionService: Sendable {
       report.warnings.append(contentsOf: diagnostics)
       if !diagnostics.isEmpty { report.status = "failed" }
     }
+    if let sessionRoot = target.sessionStoreRoot {
+      do {
+        report.definitions = try pruneDefinitions(
+          sessionRoot: sessionRoot,
+          keepVersions: policy.definitions.keepVersions ?? WorkflowDefinitionStore.defaultHistoryRetention,
+          request: request
+        )
+      } catch {
+        report.warnings.append(error.localizedDescription)
+        report.status = "failed"
+      }
+    }
     if sessionStoreActive, let sessionRoot = target.sessionStoreRoot {
       do {
         let paths = try TerminalRetentionPaths(sessionRoot: sessionRoot, artifactRoot: nil, memoryRoot: target.memoryRoot)
@@ -296,6 +318,31 @@ public struct RielaRetentionService: Sendable {
         report.status = "failed"
       }
     }
+  }
+
+  /// Prunes every workflow in an existing store; a missing database is never created.
+  private func pruneDefinitions(
+    sessionRoot: String,
+    keepVersions: Int,
+    request: RielaRetentionRequest
+  ) throws -> RielaRetentionDefinitionReport {
+    var report = RielaRetentionDefinitionReport(keepVersions: keepVersions, workflowCount: 0, removedVersionCount: 0,
+      removedAuditCount: 0, removedBlobCount: 0, removedBlobBytes: 0)
+    guard FileManager.default.fileExists(atPath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: sessionRoot)) else {
+      return report
+    }
+    let store = WorkflowDefinitionStore(rootDirectory: sessionRoot)
+    let reason = "\(request.trigger.rawValue) retention policy: keep newest \(keepVersions) definition versions"
+    for workflowName in try store.workflowNames() {
+      let result = try store.prune(workflowName: workflowName, keepVersions: keepVersions, reason: reason,
+        actor: WorkflowDefinitionActor(kind: .cli, id: "riela-retention"), dryRun: request.dryRun)
+      report.workflowCount += 1
+      report.removedVersionCount += result.removedVersionIds.count
+      report.removedAuditCount += result.removedAuditCount
+      report.removedBlobCount += result.removedBlobCount
+      report.removedBlobBytes += result.removedBlobBytes
+    }
+    return report
   }
 
   private func apply(_ overrides: RielaRetentionOverrides, to policy: inout RielaRetentionPolicy) throws {
@@ -325,6 +372,6 @@ public struct RielaRetentionService: Sendable {
     RielaRetentionTargetReport(kind: target.kind, root: target.root, status: status,
       results: .inactive(.notConfigured), messages: .inactive(.notConfigured), logs: .inactive(.notConfigured),
       generated: RielaRetentionGeneratedReport(removedEntryCount: 0, removedBytes: 0), orphanLocks: nil,
-      reclamation: [], warnings: warning.map { [$0] } ?? [])
+      definitions: nil, reclamation: [], warnings: warning.map { [$0] } ?? [])
   }
 }

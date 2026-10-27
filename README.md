@@ -706,8 +706,9 @@ prompt updates, restore, export, GraphQL fields and the improvement addons.
 
 ## Runtime Data Retention
 
-Retention is off when no `retention` policy is configured. Configure results,
-workflow messages and logs independently in `~/.riela/config.json` (project
+Retention for results, workflow messages and logs is off when no `retention`
+policy is configured. Configure those categories
+independently in `~/.riela/config.json` (project
 `.riela/config.json` can override the user policy for project data):
 
 ```json
@@ -734,6 +735,19 @@ To keep all results and messages forever while limiting logs to 14 days and
   }
 }
 ```
+
+Workflow definition history uses the shared version history engine and keeps
+10 generations by default. `workflowDefinitions.historyRetention` controls
+automatic per-write retention. `retention.definitions.keepVersions` is an
+alias for that setting and also controls `riela gc`; if both keys appear in
+one config file, their values must match. With
+`"definitions": { "keepVersions": 20 }`, a GC pass keeps the newest 20
+versions of every registered workflow plus the current version, the last file
+import, recent former heads and versions pinned by created, running or
+suspended sessions. It writes one `prune` audit record per workflow that lost
+history. See
+[`docs/workflow-definition-store.md`](docs/workflow-definition-store.md#history-retention)
+for the manual `prune` and `purge-history` commands.
 
 `RIELA_RETENTION` supplies the complete policy as inline JSON and takes
 precedence over both files. Project policy takes precedence over user policy

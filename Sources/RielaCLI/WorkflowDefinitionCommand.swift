@@ -92,6 +92,9 @@ public struct WorkflowDefinitionCommand: Sendable {
   }
 
   private func execute(_ parsed: ParsedWorkflowDefinitionCommand) throws -> CLICommandResult {
+    if parsed.operation == .prune, parsed.has("--all-workflows") {
+      return try pruneAllWorkflows(parsed)
+    }
     let root: String
     if parsed.operation == .import {
       let existing = try selectedRoot(for: parsed)
@@ -270,7 +273,48 @@ public struct WorkflowDefinitionCommand: Sendable {
         : .directory(absoluteURL(parsed.value("--to") ?? "", workingDirectory: parsed.workingDirectory).path)
       let files = try service.export(workflowName: parsed.workflowName, versionId: parsed.value("--version"), target: target)
       return try success(WorkflowDefinitionExportJSON(paths: files.map(\.path)), text: files.map(\.path).joined(separator: "\n") + (files.isEmpty ? "" : "\n"), output: parsed.output)
+    case .prune:
+      let result = try service.prune(
+        workflowName: parsed.workflowName,
+        keepVersions: parsed.value("--keep").flatMap(Int.init) ?? 0,
+        reason: parsed.value("--reason") ?? "",
+        actor: actor,
+        dryRun: parsed.has("--dry-run")
+      )
+      return try success(result, text: retentionLine(result) + "\n", output: parsed.output)
+    case .purgeHistory:
+      let result = try service.purgeHistory(
+        workflowName: parsed.workflowName,
+        reason: parsed.value("--reason") ?? "",
+        actor: actor,
+        dryRun: parsed.has("--dry-run")
+      )
+      return try success(result, text: retentionLine(result) + "\n", output: parsed.output)
     }
+  }
+
+  /// Prunes every registered workflow in each candidate store that exists.
+  private func pruneAllWorkflows(_ parsed: ParsedWorkflowDefinitionCommand) throws -> CLICommandResult {
+    let actor = WorkflowDefinitionActor(kind: .cli, id: parsed.value("--actor") ?? NSUserName())
+    var results: [WorkflowDefinitionRetentionResult] = []
+    for root in WorkflowDefinitionStoreSelection.candidateRoots(
+      sessionStore: parsed.value("--session-store"),
+      scope: parsed.scope,
+      workingDirectory: parsed.workingDirectory
+    ) where FileManager.default.fileExists(atPath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)) {
+      let store = WorkflowDefinitionStore(rootDirectory: root)
+      for workflowName in try store.workflowNames() {
+        results.append(try store.prune(
+          workflowName: workflowName,
+          keepVersions: parsed.value("--keep").flatMap(Int.init) ?? 0,
+          reason: parsed.value("--reason") ?? "",
+          actor: actor,
+          dryRun: parsed.has("--dry-run")
+        ))
+      }
+    }
+    let text = results.map(retentionLine).joined(separator: "\n") + (results.isEmpty ? "" : "\n")
+    return try success(results, text: text, output: parsed.output)
   }
 
   private func selectedRoot(for parsed: ParsedWorkflowDefinitionCommand) throws -> String? {
@@ -354,6 +398,13 @@ public struct WorkflowDefinitionCommand: Sendable {
   private func auditLine(_ record: WorkflowDefinitionAuditRecord) -> String {
     "\(record.createdAt) \(record.operation.rawValue) \(record.versionId) \(record.actor.kind.rawValue):\(record.actor.id ?? "") " +
       "node=\(record.targetNodeId ?? "") field=\(record.targetField ?? "") retained=\(record.retained) reason=\(record.reason)"
+  }
+
+  private func retentionLine(_ result: WorkflowDefinitionRetentionResult) -> String {
+    let verb = result.dryRun ? "would remove" : "removed"
+    return "\(result.mode.rawValue) \(result.workflowName): \(verb) versions=\(result.removedVersionIds.count) "
+      + "audits=\(result.removedAuditCount) blobs=\(result.removedBlobCount) bytes=\(result.removedBlobBytes) "
+      + "kept=\(result.keptVersionIds.count) protected=\(result.protectedVersions.map { "\($0.versionId):\($0.reason)" }.joined(separator: ","))"
   }
 
   private func diffText(_ diff: [WorkflowDefinitionDiffEntry]) -> String {

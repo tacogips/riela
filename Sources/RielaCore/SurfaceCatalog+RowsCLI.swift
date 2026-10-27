@@ -266,7 +266,10 @@ extension SurfaceCatalog {
     ].map { name, kind, options in
       surfaceRow(memoryDefaults, id: "memory.\(name)", family: "memory", kind: kind, cli: "memory \(name)",
         cliOptions: options)
-    }
+    } + [
+      surfaceRow(memoryDefaults, id: "memory.undo", family: "memory", kind: .mutation, cli: "memory undo"),
+      surfaceRow(memoryDefaults, id: "memory.redo", family: "memory", kind: .mutation, cli: "memory redo")
+    ]
   }
 
   private static var cacheRows: [SurfaceOperation] {
@@ -348,6 +351,7 @@ extension SurfaceCatalog {
       surfaceRow(localToolDefaults, id: "setup.container", family: "setup", kind: .process, cli: "setup container"),
       surfaceRow(localToolDefaults, id: "doctor.report", family: "doctor", kind: .query, cli: "doctor"),
       surfaceRow(localToolDefaults, id: "gc.sweep", family: "gc", kind: .process, cli: "gc"),
+      surfaceRow(localToolDefaults, id: "storage.compact", family: "storage", kind: .process, cli: "storage compact"),
       surfaceRow(localToolDefaults, id: "version.print", family: "version", kind: .query, cli: "version"),
       surfaceRow(
         localToolDefaults,

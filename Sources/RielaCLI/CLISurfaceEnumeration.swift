@@ -76,6 +76,8 @@ public enum CLISurfaceEnumerator {
       return nested(["status", "reload"])
     case "memory":
       return nested(MemoryCommandKind.allRawValues)
+    case "storage":
+      return nested(StorageClientAction.allCases.map(\.rawValue))
     case "cache":
       return nested(CacheCommandRunner.operations)
     case "instance":
@@ -130,7 +132,7 @@ public enum CLISurfaceEnumerator {
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = ["environment",
     "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
-    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve"
+    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve", "storage"
   ]
 
   /// Every `--option` token any `riela` parser accepts, rendered from the

@@ -38,25 +38,38 @@ public struct RielaRetentionCategory: Codable, Equatable, Sendable {
   }
 }
 
+/// Workflow definition history retention. An unset value selects the shared
+/// engine's default window of ten generations.
+public struct RielaDefinitionRetention: Codable, Equatable, Sendable {
+  public var keepVersions: Int?
+
+  public init(keepVersions: Int? = nil) {
+    self.keepVersions = keepVersions
+  }
+}
+
 public struct RielaRetentionPolicy: Codable, Equatable, Sendable {
   public var automatic: Bool
   public var minIntervalMinutes: Int
   public var results: RielaRetentionCategory
   public var messages: RielaRetentionCategory
   public var logs: RielaRetentionCategory
+  public var definitions: RielaDefinitionRetention
 
   public init(
     automatic: Bool = true,
     minIntervalMinutes: Int = 60,
     results: RielaRetentionCategory = RielaRetentionCategory(),
     messages: RielaRetentionCategory = RielaRetentionCategory(),
-    logs: RielaRetentionCategory = RielaRetentionCategory()
+    logs: RielaRetentionCategory = RielaRetentionCategory(),
+    definitions: RielaDefinitionRetention = RielaDefinitionRetention()
   ) {
     self.automatic = automatic
     self.minIntervalMinutes = minIntervalMinutes
     self.results = results
     self.messages = messages
     self.logs = logs
+    self.definitions = definitions
   }
 }
 
@@ -84,6 +97,7 @@ public struct RielaRetentionConfiguration: Equatable, Sendable {
   ) throws -> RielaRetentionConfiguration {
     let userURL = configurationURL(for: homeDirectory)
     let userObject = try loadConfigurationObject(at: userURL, fileManager: fileManager)
+    try validateDefinitionRetentionAlias(in: userObject, source: userURL.path)
     let projectIsHome = projectDirectory?.standardizedFileURL.path == homeDirectory.standardizedFileURL.path
     let projectURL = projectDirectory.map(configurationURL(for:))
     let projectObject: [String: Any]?
@@ -94,6 +108,7 @@ public struct RielaRetentionConfiguration: Equatable, Sendable {
     } else {
       projectObject = nil
     }
+    if let projectURL, !projectIsHome { try validateDefinitionRetentionAlias(in: projectObject, source: projectURL.path) }
 
     if let oldValue = environment["RIELA_GC_RETENTION_DAYS"], !oldValue.isEmpty {
       throw RielaRetentionConfigurationError.removedKey("RIELA_GC_RETENTION_DAYS")
@@ -213,8 +228,23 @@ private func parsePolicyIfPresent(_ object: [String: Any]?, path: String) throws
   return try parsePolicy(retention, path: path)
 }
 
+private func validateDefinitionRetentionAlias(in root: [String: Any]?, source: String) throws {
+  guard let root else { return }
+  let history = (root["workflowDefinitions"] as? [String: Any])?["historyRetention"]
+  let definitions = ((root["retention"] as? [String: Any])?["definitions"] as? [String: Any])?["keepVersions"]
+  let historyValue = try history.map { try integer($0, path: "workflowDefinitions.historyRetention") } ?? nil
+  let definitionsValue = try definitions.map { try integer($0, path: "retention.definitions.keepVersions") } ?? nil
+  guard let historyValue, let definitionsValue else { return }
+  if historyValue != definitionsValue {
+    throw RielaRetentionConfigurationError.invalid(
+      path: source,
+      reason: "workflowDefinitions.historyRetention and retention.definitions.keepVersions must match"
+    )
+  }
+}
+
 private func parsePolicy(_ object: [String: Any], path: String) throws -> RielaRetentionPolicy {
-  try validateKeys(object, allowed: ["automatic", "minIntervalMinutes", "results", "messages", "logs"], path: path)
+  try validateKeys(object, allowed: ["automatic", "minIntervalMinutes", "results", "messages", "logs", "definitions"], path: path)
   let automatic = try boolean(object["automatic"], path: "\(path).automatic") ?? true
   let interval = try integer(object["minIntervalMinutes"], path: "\(path).minIntervalMinutes") ?? 60
   guard (1...10_080).contains(interval) else {
@@ -225,8 +255,22 @@ private func parsePolicy(_ object: [String: Any], path: String) throws -> RielaR
     minIntervalMinutes: interval,
     results: try parseCategory(object["results"], name: "results", path: path),
     messages: try parseCategory(object["messages"], name: "messages", path: path),
-    logs: try parseCategory(object["logs"], name: "logs", path: path)
+    logs: try parseCategory(object["logs"], name: "logs", path: path),
+    definitions: try parseDefinitions(object["definitions"], path: "\(path).definitions")
   )
+}
+
+private func parseDefinitions(_ raw: Any?, path: String) throws -> RielaDefinitionRetention {
+  guard let raw else { return RielaDefinitionRetention() }
+  guard let object = raw as? [String: Any] else {
+    throw RielaRetentionConfigurationError.invalid(path: path, reason: "expected an object")
+  }
+  try validateKeys(object, allowed: ["keepVersions"], path: path)
+  let keepVersions = try integer(object["keepVersions"], path: "\(path).keepVersions")
+  guard keepVersions.map({ (1...10_000).contains($0) }) ?? true else {
+    throw RielaRetentionConfigurationError.invalid(path: "\(path).keepVersions", reason: "must be between 1 and 10000")
+  }
+  return RielaDefinitionRetention(keepVersions: keepVersions)
 }
 
 private func parseCategory(_ raw: Any?, name: String, path: String) throws -> RielaRetentionCategory {

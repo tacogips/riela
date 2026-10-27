@@ -275,6 +275,61 @@ final class RielaRetentionServiceTests: XCTestCase {
     XCTAssertEqual(target.messages.state, .keepForever)
   }
 
+  func testDefinitionKeepVersionsPrunesDefinitionHistoryAndHonorsDryRun() throws {
+    let home = try makeRoot()
+    let sessionRoot = home.appendingPathComponent(".riela/sessions", isDirectory: true).path
+    let store = WorkflowDefinitionStore(rootDirectory: sessionRoot, now: { Date(timeIntervalSince1970: 2_000_000) })
+    var previous: String?
+    for index in 0..<3 {
+      let document = Data(#"{"runtime":{"revision":\#(index)}}"#.utf8)
+      guard case let .created(version, _) = try store.commit(WorkflowDefinitionWrite(
+        workflowName: "demo", operation: index == 0 ? .seed : .update, documentData: document,
+        documentDigest: JSONCanonical.sha256Hex(document), sourceDirectory: "/demo", sourceScope: "user",
+        provenance: "test", actor: WorkflowDefinitionActor(kind: .user), reason: "change \(index)",
+        expectedCurrentVersionId: previous
+      )) else { return XCTFail("expected a new version") }
+      previous = version.versionId
+    }
+    try writeConfig(home: home, json: #"{"retention":{"definitions":{"keepVersions":1}}}"#)
+
+    let preview = try untouchedStoreService().run(request(home: home, trigger: .manual, dryRun: true))
+    XCTAssertEqual(preview.targets.first?.definitions?.removedVersionCount, 1)
+    XCTAssertEqual(try store.history(workflowName: "demo").count, 3)
+
+    let report = try untouchedStoreService().run(request(home: home, trigger: .manual))
+    let definitions = try XCTUnwrap(report.targets.first?.definitions)
+    XCTAssertEqual(definitions.keepVersions, 1)
+    XCTAssertEqual(definitions.workflowCount, 1)
+    XCTAssertEqual(definitions.removedVersionCount, 1)
+    XCTAssertEqual(report.targets.first?.status, "completed")
+    let newest = try XCTUnwrap(store.history(workflowName: "demo").first)
+    XCTAssertEqual(newest.operation, .prune)
+    XCTAssertEqual(newest.actor.id, "riela-retention")
+  }
+
+  func testManualGCUsesDefaultTenGenerationDefinitionRetention() throws {
+    let home = try makeRoot()
+    let sessionRoot = home.appendingPathComponent(".riela/sessions", isDirectory: true).path
+    let oldDate = Date(timeIntervalSince1970: 2_000_000)
+    let store = WorkflowDefinitionStore(rootDirectory: sessionRoot, now: { oldDate })
+    var previous: String?
+    for index in 0..<12 {
+      let document = Data(#"{"runtime":{"revision":\#(index)}}"#.utf8)
+      guard case let .created(version, _) = try store.commit(WorkflowDefinitionWrite(
+        workflowName: "default-window", operation: index == 0 ? .seed : .update, documentData: document,
+        documentDigest: JSONCanonical.sha256Hex(document), sourceDirectory: "/default-window", sourceScope: "user",
+        provenance: "test", actor: WorkflowDefinitionActor(kind: .user), reason: "change \(index)",
+        expectedCurrentVersionId: previous, historyRetention: 100
+      )) else { return XCTFail("expected a new version") }
+      previous = version.versionId
+    }
+
+    let report = try untouchedStoreService().run(request(home: home, trigger: .manual))
+    XCTAssertEqual(report.targets.first?.definitions?.keepVersions, 10)
+    XCTAssertEqual(report.targets.first?.definitions?.removedVersionCount, 1)
+    XCTAssertEqual(try store.history(workflowName: "default-window").first?.operation, .prune)
+  }
+
   private func untouchedStoreService() -> RielaRetentionService {
     // Ample free space: a full VACUUM conversion would happen if reclamation ran.
     RielaRetentionService(clock: { Date(timeIntervalSince1970: 2_000_000) }, freeSpace: { _ in Int64.max / 4 })

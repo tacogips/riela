@@ -139,6 +139,17 @@ public struct VersionedHistoryStore {
     return result
   }
 
+  /// Retains exactly the requested generations, plus the current head. This
+  /// supports explicit history purge while preserving the engine's guarded
+  /// deletion and survivor re-encoding behavior.
+  public func retainVersions(key: String, currentHeadValue: Data?, versions: Set<Int64>) throws -> (dropped: [Int64], freedBytes: Int64) {
+    guard let head = try head(key: key) else { return ([], 0) }
+    let bytes = try headValue(key: key, head: head, supplied: currentHeadValue)
+    let result = try applyRetentionInternal(key: key, headVersion: head.headVersion, headValue: bytes,
+      retainedGenerations: nil, pins: versions.union([head.headVersion]), preserveRedoBranch: false)
+    return result
+  }
+
   public func importChain(key: String, revision: Int64, headVersion: Int64, headValue: Data,
     // swiftlint:disable:next large_tuple
                           previous: [(version: Int64, createdAt: String, value: Data)]) throws {
@@ -180,15 +191,22 @@ public struct VersionedHistoryStore {
     return VersionedHistoryHeadMove(fromVersion: current.headVersion, toVersion: target.version, revision: newRevision, value: targetValue)
   }
 
-  private func applyRetentionInternal(key: String, headVersion: Int64, headValue: Data, retainedGenerations: Int, pins: Set<Int64>) throws -> (dropped: [Int64], freedBytes: Int64) {
-    guard retainedGenerations >= 0 else { throw VersionedHistoryError.invalidRetention(retainedGenerations) }
+  private func applyRetentionInternal(
+    key: String,
+    headVersion: Int64,
+    headValue: Data,
+    retainedGenerations: Int?,
+    pins: Set<Int64>,
+    preserveRedoBranch: Bool = true
+  ) throws -> (dropped: [Int64], freedBytes: Int64) {
+    if let retainedGenerations, retainedGenerations < 0 { throw VersionedHistoryError.invalidRetention(retainedGenerations) }
     if retainedGenerations == 0 { return ([], 0) }
     let all = try rows(key: key)
     let nonDetached = all.filter { !$0.detached }
-    let redoBranch = nonDetached.filter { $0.version > headVersion }.map(\.version)
+    let redoBranch = preserveRedoBranch ? nonDetached.filter { $0.version > headVersion }.map(\.version) : []
     let priorVersions = nonDetached.filter { $0.version < headVersion }
       .sorted { $0.version > $1.version }
-      .prefix(max(retainedGenerations - 1, 0))
+      .prefix(max((retainedGenerations ?? 1) - 1, 0))
       .map(\.version)
     let keep = Set([headVersion]).union(redoBranch).union(priorVersions).union(pins)
     let removing = all.filter { !keep.contains($0.version) }

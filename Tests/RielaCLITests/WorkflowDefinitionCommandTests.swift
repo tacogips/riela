@@ -276,6 +276,11 @@ final class WorkflowDefinitionCommandTests: XCTestCase {
     try #"{"workflowDefinitions":{"historyRetention":4}}"#.write(to: userConfig, atomically: true, encoding: .utf8)
     try #"{"workflowDefinitions":{"historyRetention":3}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
     XCTAssertEqual(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]), 3)
+    try #"{"workflowDefinitions":{"historyRetention":3},"retention":{"definitions":{"keepVersions":4}}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
+    XCTAssertThrowsError(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]))
+    try #"{"retention":{"definitions":{"keepVersions":3}}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
+    XCTAssertEqual(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]), 3)
+    try #"{"workflowDefinitions":{"historyRetention":3}}"#.write(to: projectConfig, atomically: true, encoding: .utf8)
     try #"{"workflowDefinitions":{"unexpected":1}}"#.write(to: userConfig, atomically: true, encoding: .utf8)
     XCTAssertThrowsError(try WorkflowDefinitionHistoryConfiguration.resolve(homeDirectory: home.path, projectDirectory: fixture.root.path, environment: [:]))
     try #"{"workflowDefinitions":{"historyRetention":4}}"#.write(to: userConfig, atomically: true, encoding: .utf8)
@@ -332,13 +337,47 @@ final class WorkflowDefinitionCommandTests: XCTestCase {
     XCTAssertTrue(textHistory.stdout.contains("older versions dropped by retention"), textHistory.stdout)
   }
 
-  func testDefinitionCLIEnumeratesAllEightOperationsAndRejectsBadGrammar() async throws {
-    let expected = ["history", "show", "diff", "update", "update-prompt", "restore", "import", "export"]
+  func testDefinitionPruneAndPurgeCommandsRespectRecentHeadProtection() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = RielaCLIApplication()
+    let imported = await app.run(fixture.command("import", "w", "--output", "json"))
+    XCTAssertEqual(imported.exitCode, .success, imported.stdout + imported.stderr)
+    for value in ["two", "three", "four"] {
+      let update = await app.run(fixture.command("update-prompt", "w", "--node", "worker", "--field", "promptTemplate",
+        "--text", value, "--reason", "edit", "--output", "json"))
+      XCTAssertEqual(update.exitCode, .success, update.stdout + update.stderr)
+    }
+
+    let preview = await app.run(fixture.command("prune", "w", "--keep", "1", "--dry-run", "--output", "json"))
+    XCTAssertEqual(preview.exitCode, .success, preview.stdout + preview.stderr)
+    XCTAssertEqual(try jsonObject(preview.stdout)["removedVersionIds"] as? [String], [],
+      "the current head, last import, and former heads from the last 24 hours remain protected")
+    let pruned = await app.run(fixture.command("prune", "w", "--keep", "1", "--reason", "trim", "--output", "json"))
+    XCTAssertEqual(pruned.exitCode, .success, pruned.stdout + pruned.stderr)
+    XCTAssertNil(try jsonObject(pruned.stdout)["audit"], "no removal means no prune audit")
+
+    let unconfirmed = await app.run(fixture.command("purge-history", "w", "--reason", "reset", "--output", "json"))
+    XCTAssertEqual(unconfirmed.exitCode, .usage)
+    let purged = await app.run(fixture.command("purge-history", "w", "--reason", "reset", "--yes", "--output", "json"))
+    XCTAssertEqual(purged.exitCode, .success, purged.stdout + purged.stderr)
+    let history = try jsonObjectArray(await app.run(fixture.command("history", "w", "--output", "json")).stdout)
+    XCTAssertEqual(history.map { $0["operation"] as? String }, ["purgeHistory"])
+    let shown = await app.run(fixture.command("show", "w", "--output", "json"))
+    XCTAssertEqual(shown.exitCode, .success, shown.stderr)
+
+    let all = await app.run(fixture.command("prune", "--all-workflows", "--keep", "1", "--reason", "sweep", "--output", "json"))
+    XCTAssertEqual(all.exitCode, .success, all.stdout + all.stderr)
+    XCTAssertEqual(try jsonObjectArray(all.stdout).map { $0["workflowName"] as? String }, ["w"])
+  }
+
+  func testDefinitionCLIEnumeratesAllOperationsAndRejectsBadGrammar() async throws {
+    let expected = ["history", "show", "diff", "update", "update-prompt", "restore", "undo", "redo", "import", "export", "prune", "purge-history"]
     let commands = CLISurfaceEnumerator.commands().map(\.command)
     for operation in expected {
       XCTAssertTrue(commands.contains("workflow definition \(operation)"), operation)
     }
-    XCTAssertEqual(commands.filter { $0.hasPrefix("workflow definition ") }.count, 8)
+    XCTAssertEqual(commands.filter { $0.hasPrefix("workflow definition ") }.count, expected.count)
 
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

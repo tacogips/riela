@@ -262,7 +262,7 @@ enum WorkflowDefinitionHistorySchema {
   private static func backfillCLIPins(in db: SQLiteDatabase) throws {
     guard try db.tableExists("cli_workflow_sessions") else { return }
     let records = try db.query("SELECT session_id, json(record_json) AS record_json, " +
-      "coalesce(json_extract(record_json, '$.session.createdAt'), updated_at) AS created_at FROM cli_workflow_sessions")
+      "coalesce(json_extract(record_json, '$.session.createdAt'), '') AS created_at FROM cli_workflow_sessions")
     for record in records {
       guard let data = record.data("record_json"),
             let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }

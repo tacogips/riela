@@ -26,6 +26,14 @@ Normalized input should include:
 - timezone
 - missed run count when known
 
+The `cron.tick` envelope built by `riela events serve` carries `scheduledAt`,
+`scheduledLocalTime`, `previousScheduledAt`, `previousScheduledLocalTime`,
+`firedAt` and `timezone`. The previous pair is the latest occurrence of the
+same schedule strictly before `scheduledAt`. It is computed from the schedule
+and timezone only, never from run history, so `[previousScheduledAt,
+scheduledAt)` is a deterministic run window. See
+`design-docs/specs/design-crypto5-dependency-refresh-and-cron-previous-tick.md`.
+
 First iteration may use a single-process scheduler. Distributed locking should
 be an explicit later milestone because the current runtime is local-first.
 

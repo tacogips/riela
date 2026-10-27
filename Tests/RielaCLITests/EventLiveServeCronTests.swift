@@ -86,6 +86,85 @@ final class EventLiveServeCronTests: XCTestCase {
     XCTAssertEqual(receipt.envelope.input["firedAt"], .string("2025-08-06T00:00:01.000Z"))
   }
 
+  func testReadOnlyCronEnvelopeIncludesPreviousTickInTokyo() async throws {
+    let scheduledAt = try isoDate("2026-10-27T05:55:00.000Z")
+    let receipt = try await readOnlyCronReceipt(
+      source: CronScheduleSource(id: "cron-live", schedule: "0 55 * * * *", timezone: "Asia/Tokyo"),
+      scheduledAt: scheduledAt
+    )
+    XCTAssertEqual(receipt.envelope.input["previousScheduledAt"], .string("2026-10-27T04:55:00.000Z"))
+    XCTAssertEqual(receipt.envelope.input["previousScheduledLocalTime"], .string("2026-10-27 13:55:00"))
+    XCTAssertEqual(receipt.envelope.input["scheduledLocalTime"], .string("2026-10-27 14:55:00"))
+  }
+
+  func testReadOnlyCronEnvelopeIncludesPreviousTickAcrossNewYorkSpringForward() async throws {
+    let scheduledAt = try isoDate("2026-03-08T07:00:00.000Z")
+    let receipt = try await readOnlyCronReceipt(
+      source: CronScheduleSource(id: "cron-live", schedule: "0 0 * * * *", timezone: "America/New_York"),
+      scheduledAt: scheduledAt
+    )
+    XCTAssertEqual(receipt.envelope.input["previousScheduledAt"], .string("2026-03-08T06:00:00.000Z"))
+    XCTAssertEqual(receipt.envelope.input["previousScheduledLocalTime"], .string("2026-03-08 01:00:00"))
+  }
+
+  func testPreviousTickUsesScheduleAndReturnsNilForInvalidSchedule() throws {
+    let scheduledAt = try isoDate("2026-10-27T00:01:00.000Z")
+    let source = CronScheduleSource(id: "x", schedule: "*/30 * * * * *", timezone: "UTC")
+    XCTAssertEqual(source.previousTick(before: scheduledAt), scheduledAt.addingTimeInterval(-30))
+    XCTAssertNil(CronScheduleSource(id: "x", schedule: "invalid", timezone: "UTC").previousTick(before: scheduledAt))
+  }
+
+  func testDryRunRendersPreviousTickBindingTemplateWindow() async throws {
+    let receipt = try await readOnlyCronReceipt(
+      source: CronScheduleSource(id: "cron-live", schedule: "0 55 * * * *", timezone: "Asia/Tokyo"),
+      scheduledAt: try isoDate("2026-10-27T05:55:00.000Z")
+    )
+    let binding = EventBindingContract(
+      id: "cron-window", sourceId: "cron-live", eventType: "cron.tick", workflowName: "cron-flow",
+      inputMapping: EventInputMapping(mode: .template, template: .object([
+        "windowStart": .string("{{event.input.previousScheduledAt}}"),
+        "windowStartLocal": .string("{{event.input.previousScheduledLocalTime}}"),
+        "windowEnd": .string("{{event.input.scheduledAt}}")
+      ]))
+    )
+    let result = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
+      sources: [EventSourceContract(id: "cron-live", kind: .cron)], bindings: [binding], envelope: receipt.envelope
+    ))
+    XCTAssertTrue(result.accepted, "\(result.diagnostics)")
+    let trigger = try XCTUnwrap(result.triggers.first)
+    guard case let .object(input)? = trigger.runtimeVariables["workflowInput"] else {
+      return XCTFail("expected rendered workflowInput object")
+    }
+    XCTAssertEqual(input["windowStart"], .string("2026-10-27T04:55:00.000Z"))
+    XCTAssertEqual(input["windowStartLocal"], .string("2026-10-27 13:55:00"))
+    XCTAssertEqual(input["windowEnd"], .string("2026-10-27T05:55:00.000Z"))
+  }
+
+  func testCronFixturesAgreeWithTheirSourceSchedules() throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let pairs = [
+      ("examples/event-sources/payloads/gmail-latest-mail-hourly-cron.json",
+       "examples/event-sources/.riela-events/sources/gmail-latest-mail-hourly-cron.json"),
+      ("examples/event-sources/payloads/x-follower-ai-business-hourly-cron.json",
+       "examples/event-sources/.riela-events/sources/x-follower-ai-business-hourly-cron.json"),
+      ("examples/wrike-project-kanban-agent/payloads/wrike-kanban-cron-tick.json",
+       "examples/wrike-project-kanban-agent/.riela-events/sources/wrike-kanban-30s-cron.json")
+    ]
+    for (payloadPath, sourcePath) in pairs {
+      let payload = try JSONDecoder().decode(JSONObject.self, from: Data(contentsOf: repository.appendingPathComponent(payloadPath)))
+      let source = try JSONDecoder().decode(CronScheduleSource.self, from: Data(contentsOf: repository.appendingPathComponent(sourcePath)))
+      guard case let .object(input)? = payload["input"],
+            case let .string(scheduledAtString)? = input["scheduledAt"] else {
+        return XCTFail("missing cron input in \(payloadPath)")
+      }
+      let scheduledAt = try isoDate(scheduledAtString)
+      let previous = try XCTUnwrap(source.previousTick(before: scheduledAt), "no previous tick for \(sourcePath)")
+      XCTAssertEqual(input["previousScheduledAt"], .string(cronISO(previous)), payloadPath)
+      XCTAssertEqual(input["previousScheduledLocalTime"], .string(cronLocal(previous, timezone: source.resolvedTimeZone)), payloadPath)
+    }
+  }
+
   func testCronServeFiresTickAndRunsBoundWorkflow() async throws {
     let eventRoot = try temporaryDirectory()
     try writeCronEventConfig(eventRoot: eventRoot)
@@ -244,6 +323,44 @@ final class EventLiveServeCronTests: XCTestCase {
       }
     }
     """.write(to: bindings.appendingPathComponent("cron-to-workflow.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func readOnlyCronReceipt(source: CronScheduleSource, scheduledAt: Date) async throws -> PersistedEventReceipt {
+    let eventRoot = try temporaryDirectory()
+    try writeCronEventConfig(eventRoot: eventRoot)
+    let server = DefaultEventLiveServer(workflowRunner: FakeEventWorkflowRunner(replyText: "", replyAs: ""))
+    let parsed = try ParsedParityOptions(["--read-only"])
+    let dispatcher = CronOverlapDispatcher(
+      server: server, eventRoot: eventRoot, parsed: parsed, policies: [:], clock: SystemEventServeClock(),
+      cancelSettleTimeout: .seconds(30)
+    )
+    let count = try await server.dispatchCronTick(
+      source: source, scheduledAt: scheduledAt, firedAt: scheduledAt.addingTimeInterval(1),
+      config: try EventLiveConfig.load(eventRoot: eventRoot), eventRoot: eventRoot,
+      parsed: parsed, dispatcher: dispatcher
+    )
+    XCTAssertEqual(count, 1)
+    return try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+
+  private func isoDate(_ value: String) throws -> Date {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return try XCTUnwrap(formatter.date(from: value), "invalid ISO timestamp: \(value)")
+  }
+
+  private func cronISO(_ date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
+  }
+
+  private func cronLocal(_ date: Date, timezone: TimeZone) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = timezone
+    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    return formatter.string(from: date)
   }
 
   private func temporaryDirectory() throws -> URL {

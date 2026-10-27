@@ -7,6 +7,8 @@
   "input": {
     "scheduledAt": "2026-08-06T00:00:00.000Z",
     "scheduledLocalTime": "2026-08-06 09:00:00",
+    "previousScheduledAt": "2026-08-05T23:59:30.000Z",
+    "previousScheduledLocalTime": "2026-08-06 08:59:30",
     "firedAt": "2026-08-06T00:00:00.400Z",
     "timezone": "Asia/Tokyo"
   }

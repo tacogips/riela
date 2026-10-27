@@ -533,6 +533,9 @@ Notion SDK with fixed reader/writer roles. Use `config.queryTemplate` and
 remain in `payload.data`. Bind the credential explicitly with
 `addon.env: {"NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY"}}`; ambient unrelated credentials
 are excluded. Reader mutations are rejected before credentials or transport.
+The catalog-provided JSON-mode operations include `findChildPage` for reader
+and writer, and `ensurePagePath` for writer. See
+`riela gateway notion --role writer schema` for the writer schema.
 
 `riela gateway notion --role reader|writer ...` delegates the gateway's native
 CLI commands, including `schema`, `graphql`, `page` and `block`; reader is the
@@ -993,6 +996,34 @@ the workflow registry. Reference bundles: `examples/routine-task-runner` (the
 generic per-tick executor) and `examples/routine-chat-manager` (create a
 routine from a chat instruction like "check the release status every 30
 minutes and stop once v2.0 ships" and confirm in the conversation).
+
+### Cron tick input
+
+Cron tick inputs include:
+
+- `scheduledAt` and `previousScheduledAt`: ISO-8601 UTC timestamps with
+  fractional seconds.
+- `scheduledLocalTime` and `previousScheduledLocalTime`:
+  `yyyy-MM-dd HH:mm:ss` in the source timezone.
+- `firedAt`: ISO-8601 UTC timestamp with fractional seconds.
+- `timezone`: the source timezone identifier.
+
+`previousScheduledAt` is the latest occurrence of the same schedule strictly
+before `scheduledAt`. It is derived from the schedule and timezone, so skipped,
+coalesced, or missed ticks still count. The calculation is DST-aware: a skipped
+local time has no occurrence, and a repeated local time occurs twice.
+
+For source `{"kind":"cron","schedule":"0 55 * * * *","timezone":"Asia/Tokyo"}`,
+the tick at `2026-10-27 14:55:00` (`scheduledAt`
+`2026-10-27T05:55:00.000Z`) carries `previousScheduledAt`
+`2026-10-27T04:55:00.000Z` / `previousScheduledLocalTime`
+`2026-10-27 13:55:00`. A binding can map
+`"windowStart": "{{event.input.previousScheduledAt}}"` and
+`"windowEnd": "{{event.input.scheduledAt}}"`; `[windowStart, windowEnd)` is
+the run window. The window covers every hour even if the previous tick was
+skipped by the overlap policy or serve was down, and does not depend on run
+history. Receipts written before this release do not contain the new keys, and
+`events replay` reuses stored envelopes verbatim.
 
 ### Overlapping cron fires
 

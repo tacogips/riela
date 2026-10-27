@@ -393,6 +393,8 @@ public struct RoutineService: Sendable {
       "task": .string(record.task),
       "scheduledAt": .string("{{event.input.scheduledAt}}"),
       "scheduledLocalTime": .string("{{event.input.scheduledLocalTime}}"),
+      "previousScheduledAt": .string("{{event.input.previousScheduledAt}}"),
+      "previousScheduledLocalTime": .string("{{event.input.previousScheduledLocalTime}}"),
       "firedAt": .string("{{event.input.firedAt}}"),
       "timezone": .string("{{event.input.timezone}}")
     ]

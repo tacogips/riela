@@ -12,6 +12,13 @@ not redone). That commit also carried the `docs/builtin-gateway-json.md`
 Notion row from §1.4. What remains is the §1.4 test and README text, all of
 Part 2, and the rollout rules in "Continuation rollout" below.
 
+Implemented (2026-10-27, session 519): plans `crypto5-prevtick-02` … `06`
+were accepted by the test-integrity, adversarial and combined-tree integration
+reviews. The umbrella plan and all child plans are archived as
+[`impl-plans/completed/crypto5-prevtick*.md`](../../impl-plans/completed/crypto5-prevtick.md).
+User docs: README [Cron tick input](../../README.md#cron-tick-input) and the
+Notion add-on paragraph.
+
 The change has two independent parts. Part 1 updates dependency pins. Part 2
 adds the previous scheduled occurrence to the cron tick envelope. Neither part
 adds a new module, abstraction layer, or configuration key.

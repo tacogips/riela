@@ -42,6 +42,49 @@ final class RoutineCommandTests: XCTestCase {
     )
   }
 
+  func testRoutineBindingTemplateExposesPreviousScheduledTick() async throws {
+    let workingDirectory = temporaryDirectory()
+    try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+    let result = await ScopedParityCommandRunner().run(ScopedCommand(
+      kind: .routine,
+      options: CLICommandOptions(
+        scope: "routine",
+        command: "create",
+        arguments: [
+          "--name", "window routine", "--task", "summarize inbox", "--every", "30m",
+          "--workflow", "routine-task-runner", "--working-dir", workingDirectory.path
+        ],
+        output: .text
+      )
+    ))
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let routineId = try XCTUnwrap(
+      result.stdout.split(separator: " ")
+        .first(where: { $0.hasPrefix("routine=") })?
+        .dropFirst("routine=".count)
+    )
+
+    let service = RoutineService(workingDirectory: workingDirectory.path, environment: [:])
+    let record = try service.get(routineId: String(routineId))
+    let binding = try JSONDecoder().decode(
+      EventBindingContract.self,
+      from: Data(contentsOf: service.bindingFileURL(for: record))
+    )
+    guard case let .object(template)? = binding.inputMapping.template else {
+      return XCTFail("routine binding template is missing or is not an object")
+    }
+
+    XCTAssertEqual(template["previousScheduledAt"], .string("{{event.input.previousScheduledAt}}"))
+    XCTAssertEqual(
+      template["previousScheduledLocalTime"],
+      .string("{{event.input.previousScheduledLocalTime}}")
+    )
+    XCTAssertEqual(template["scheduledAt"], .string("{{event.input.scheduledAt}}"))
+    XCTAssertEqual(template["scheduledLocalTime"], .string("{{event.input.scheduledLocalTime}}"))
+    XCTAssertEqual(template["firedAt"], .string("{{event.input.firedAt}}"))
+    XCTAssertEqual(template["timezone"], .string("{{event.input.timezone}}"))
+  }
+
   func testRoutineCreateListCompleteLifecycleThroughRunner() async throws {
     let workingDirectory = temporaryDirectory()
     try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)

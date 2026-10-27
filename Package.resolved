@@ -1,12 +1,12 @@
 {
-  "originHash" : "9fc427301d89a95f32cd3e9c7cdfffd24b809a3d6c0c8e216eeb9a0ce7af0ba2",
+  "originHash" : "d64b95799afb601fa5f31cbfaa352cb0d941887680bfc3c33ddf894eb0351a02",
   "pins" : [
     {
       "identity" : "agent-gateway",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/agent-gateway.git",
       "state" : {
-        "revision" : "fbb7d8519683d838d1f603480d5ec7a52700fe0e"
+        "revision" : "8282152f29679625fee58729543094961adca633"
       }
     },
     {
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "98229ed22f995e589ed6c42da553377615f11339"
+        "revision" : "a57de9d6ea2658dce731067e837b0987ceb1e962"
       }
     },
     {
@@ -39,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "bb9ddfb3dbab970fd60e41468a4ecfc8347a6da0"
+        "revision" : "ca29da81d8cdb7da40cb6ef6739cd824376bfcdd"
       }
     },
     {
@@ -71,7 +71,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-service-gateway.git",
       "state" : {
-        "revision" : "4cfef44b245893e6de4f30780c70fb0314da70eb"
+        "revision" : "ed020e4a8f45a0acedaf46334e2a67677e3c3e63"
       }
     },
     {
@@ -79,7 +79,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "24fc356a3073821c31866279c419abb707077a8d"
+        "revision" : "41cbf6bf06e6ab18e7b8e72007e96230e0ea8ad5"
       }
     },
     {
@@ -87,7 +87,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/notion-gateway.git",
       "state" : {
-        "revision" : "15e7cbf714ad4e667d9319ad80a1be3fbdb9579b"
+        "revision" : "0f16afb306f28506ec50c78483e101694315facc"
       }
     },
     {
@@ -113,8 +113,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
-        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
-        "version" : "4.5.2"
+        "revision" : "c2cbadd7263439d8015189668f96ff5b5be565ce",
+        "version" : "5.0.3"
       }
     },
     {
@@ -131,8 +131,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swift-server/swift-webauthn.git",
       "state" : {
-        "revision" : "909cf4193cde7d64196553c4245ab647a68aaaca",
-        "version" : "1.0.0-beta.1"
+        "revision" : "030acd1eedaa835958ae3fcc0e491bec03b2abf1"
       }
     },
     {
@@ -166,8 +165,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/x-gateway.git",
       "state" : {
-        "revision" : "7586732c011e23f0acb259cc5d548f18bb2dd109",
-        "version" : "0.1.26"
+        "revision" : "3609db11a39831a5737f5b0ce1a2eb931609db36",
+        "version" : "0.1.27"
       }
     }
   ],

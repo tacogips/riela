@@ -11,7 +11,7 @@ let package = Package(
     .library(name: "RielaMemory", targets: ["RielaMemory"])
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2")
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.3")
   ],
   targets: [
     .target(

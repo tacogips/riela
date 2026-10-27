@@ -16,7 +16,7 @@ final class AppleGatewayLinkedDeadlineTests: XCTestCase {
   }
 
   func testLinkedSDKStopsTimedOutChildWithoutReadReplay() throws {
-    XCTAssertEqual(AppleGatewayCore.Version.current, "0.1.18")
+    XCTAssertEqual(AppleGatewayCore.Version.current, "0.1.19")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("riela-apple-deadline-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }

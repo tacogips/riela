@@ -40,6 +40,38 @@ final class RetentionReclamationTests: XCTestCase {
     XCTAssertTrue(recorder.statements.contains("PRAGMA incremental_vacuum(17)"))
   }
 
+  func testManualIncrementalVacuumReclaimsMoreThanOneChunkInOneRun() throws {
+    let fixture = try makeDatabase(incremental: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let database = try SQLiteDatabase.open(path: fixture.databasePath)
+    try database.execute("""
+      WITH RECURSIVE sequence(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 20)
+      INSERT INTO payloads SELECT zeroblob(2097152) FROM sequence
+      """)
+    try database.execute("DELETE FROM payloads")
+    XCTAssertGreaterThan(Int(try database.query("PRAGMA freelist_count").first?["freelist_count"] ?? "0") ?? 0, 4_096)
+
+    let result = RetentionSQLiteReclaimer(freeSpace: { _ in Int64.max }).reclaim(
+      databasePath: fixture.databasePath, mode: .manual)
+    let after = try SQLiteDatabase.open(path: fixture.databasePath, mode: .strictReadOnly, options: .readOnlyDefault)
+
+    XCTAssertEqual(result.action, .incrementalVacuum)
+    XCTAssertEqual(try after.query("PRAGMA freelist_count").first?["freelist_count"], "0")
+  }
+
+  func testManualFullVacuumDefersWhenAnySessionLockIsHeld() throws {
+    let fixture = try makeDatabase(incremental: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lock = SessionExecutionLockRegistry(sessionStoreRoot: fixture.root.path)
+    try lock.acquire(sessionId: "live-session")
+    defer { lock.release(sessionId: "live-session") }
+
+    let result = RetentionSQLiteReclaimer(freeSpace: { _ in Int64.max }).reclaim(
+      databasePath: fixture.databasePath, mode: .manual)
+
+    XCTAssertEqual(result.action, .deferredLiveSessions)
+  }
+
   func testAutomaticModeDefersConversionAboveConfiguredSizeLimit() throws {
     let fixture = try makeDatabase(incremental: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -165,11 +197,11 @@ final class RetentionReclamationTests: XCTestCase {
     try database.execute("CREATE TABLE payloads(value BLOB NOT NULL)")
     try database.execute("""
       WITH RECURSIVE sequence(value) AS (
-        SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 16
+        SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 32
       )
       INSERT INTO payloads SELECT zeroblob(2097152) FROM sequence
       """)
-    try database.execute("DELETE FROM payloads WHERE rowid <= 12")
+    try database.execute("DELETE FROM payloads WHERE rowid <= 24")
     if enableWAL { _ = try database.query("PRAGMA wal_checkpoint(FULL)") }
     return (root, databasePath)
   }

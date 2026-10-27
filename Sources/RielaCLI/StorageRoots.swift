@@ -33,8 +33,8 @@ struct ParsedStorageCommandArguments: ParsableArguments {
     }
     guard ["project", "user", "auto"].contains(scope) else { throw CLIUsageError("--scope must be project, user, or auto") }
     guard ["text", "json"].contains(output) else { throw CLIUsageError("--output must be text or json") }
-    guard (1...1000).contains(top), (1...100_000).contains(maxBatch) else {
-      throw CLIUsageError("--top must be 1...1000 and --max-batch must be 1...100000")
+    guard (1...1000).contains(top), (1...10_000).contains(maxBatch) else {
+      throw CLIUsageError("--top must be 1...1000 and --max-batch must be 1...10000")
     }
     guard (1...8760).contains(abandonedAfterHours) else { throw CLIUsageError("--abandoned-after-hours must be 1...8760") }
   }

@@ -390,12 +390,14 @@ public struct WorkflowDefinitionStore: Sendable {
   public var rootDirectory: String
   let now: @Sendable () -> Date
   let defaultHistoryRetention: Int
+  var pinBackfillStatementObserver: (@Sendable (String) -> Void)?
 
   public init(rootDirectory: String, defaultHistoryRetention: Int = WorkflowDefinitionStore.defaultHistoryRetention,
               now: @escaping @Sendable () -> Date = Date.init) {
     self.rootDirectory = rootDirectory
     self.defaultHistoryRetention = defaultHistoryRetention
     self.now = now
+    self.pinBackfillStatementObserver = nil
   }
 
   public func head(workflowName: String) throws -> WorkflowDefinitionHead? {
@@ -616,18 +618,22 @@ public struct WorkflowDefinitionStore: Sendable {
 
   public func backfillPinsAndApplyRetention(
     foreignSessionStoreRoots: [String],
-    defaultHistoryRetention: Int
+    defaultHistoryRetention: Int,
+    batchSize: Int = 250
   ) throws -> WorkflowDefinitionRetentionReport {
     guard (0...10_000).contains(defaultHistoryRetention) else {
       throw WorkflowDefinitionStoreError(code: .storeUnavailable, message: "definition history retention must be between 0 and 10000")
     }
+    guard (1...10_000).contains(batchSize) else {
+      throw WorkflowDefinitionStoreError(code: .storeUnavailable, message: "definition pin batch size must be between 1 and 10000")
+    }
     let database = try openDatabase()
+    let insertedBefore = try count("definition_version_pins", in: database)
+    for root in foreignSessionStoreRoots {
+      try backfillPins(from: root, into: database, batchSize: batchSize)
+    }
+    try WorkflowDefinitionHistorySchema.backfillSameStorePinsForMaintenance(in: database, batchSize: batchSize)
     return try database.transaction { transaction in
-      let insertedBefore = try count("definition_version_pins", in: transaction)
-      for root in foreignSessionStoreRoots {
-        try backfillPins(from: root, into: transaction)
-      }
-      try WorkflowDefinitionHistorySchema.backfillSameStorePinsForMaintenance(in: transaction)
       let insertedAfter = try count("definition_version_pins", in: transaction)
       let beforeVersions = try count("definition_versions", in: transaction)
       let beforeAudit = try count("definition_change_audit", in: transaction)
@@ -789,32 +795,44 @@ public struct WorkflowDefinitionStore: Sendable {
     }
   }
 
-  private func backfillPins(from root: String, into database: SQLiteDatabase) throws {
+  private func backfillPins(from root: String, into database: SQLiteDatabase, batchSize: Int) throws {
     let path = WorkflowDefinitionPins.normalizedDatabasePath(rootDirectory: root)
     guard FileManager.default.fileExists(atPath: path) else { return }
     let foreign = try SQLiteDatabase.open(path: path, mode: .strictReadOnly, options: .readOnlyDefault)
     let localPath = WorkflowDefinitionPins.normalizedDatabasePath(rootDirectory: rootDirectory)
-    var rows: [(String, Data)] = []
-    if try foreign.tableExists("workflow_runtime_snapshots") {
-      rows += try foreign.query("SELECT workflow_execution_id AS session_id, json(session_json) AS payload FROM workflow_runtime_snapshots")
-        .compactMap { row in row.data("payload").map { (row.string("session_id"), $0) } }
-    }
-    if try foreign.tableExists("cli_workflow_sessions") {
-      rows += try foreign.query("SELECT session_id, json(record_json) AS payload FROM cli_workflow_sessions")
-        .compactMap { row in row.data("payload").map { (row.string("session_id"), $0) } }
-    }
-    for (sessionId, data) in rows {
-      guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-      let sessionObject = object["session"] as? [String: Any] ?? object
-      guard let source = sessionObject["definitionSource"] as? [String: Any], source["kind"] as? String == "store",
-            let workflowName = source["workflowName"] as? String,
-            let versionId = source["versionId"] as? String,
-            source["storeRoot"] == nil || source["storeRoot"] is NSNull ||
-              WorkflowDefinitionPins.normalizedDatabasePath(rootDirectory: source["storeRoot"] as? String ?? "") == localPath,
-            let number = try historyVersion(versionId, in: database) else { continue }
-      try database.execute("INSERT OR IGNORE INTO definition_version_pins(workflow_name,history_version,session_store_root,session_id,created_at) VALUES(?,?,?,?,?)",
-        bindings: [.text(workflowName), .int(number), .text(WorkflowDefinitionPins.normalizedStoreRoot(rootDirectory: root)),
-          .text(sessionId), .text(canonicalDate(now()))])
+    let sources = [
+      ("workflow_runtime_snapshots", "workflow_execution_id", "session_json", "$.definitionSource"),
+      ("cli_workflow_sessions", "session_id", "record_json", "$.session.definitionSource")
+    ]
+    for (table, idColumn, jsonColumn, sourcePath) in sources where try foreign.tableExists(table) {
+      var cursor: Int64 = 0
+      while true {
+        let createdAt = table == "workflow_runtime_snapshots" ? "created_at" : "coalesce(json_extract(record_json,'$.session.createdAt'),updated_at)"
+        let sql = """
+          SELECT rowid, \(idColumn) AS session_id, \(createdAt) AS created_at,
+            json_extract(\(jsonColumn), '\(sourcePath).kind') AS kind,
+            json_extract(\(jsonColumn), '\(sourcePath).workflowName') AS workflow_name,
+            json_extract(\(jsonColumn), '\(sourcePath).versionId') AS version_id,
+            json_extract(\(jsonColumn), '\(sourcePath).storeRoot') AS store_root
+          FROM \(table) WHERE rowid>? AND json_extract(\(jsonColumn), '\(sourcePath).kind')='store'
+          ORDER BY rowid LIMIT \(batchSize)
+          """
+        pinBackfillStatementObserver?(sql)
+        let rows = try foreign.query(sql, bindings: [.int(cursor)])
+        guard let last = rows.last else { break }
+        cursor = Int64(last["rowid"] ?? "0") ?? cursor
+        try database.transaction { transaction in
+          for row in rows {
+            guard let workflowName = row["workflow_name"], let versionId = row["version_id"],
+                  row["store_root"] == nil || WorkflowDefinitionPins.normalizedDatabasePath(rootDirectory: row["store_root"] ?? "") == localPath,
+                  let number = try historyVersion(versionId, in: transaction) else { continue }
+            try transaction.execute("INSERT OR IGNORE INTO definition_version_pins(workflow_name,history_version,session_store_root,session_id,created_at) VALUES(?,?,?,?,?)",
+              bindings: [.text(workflowName), .int(number), .text(WorkflowDefinitionPins.normalizedStoreRoot(rootDirectory: root)),
+                .text(row.string("session_id")), .text(row.string("created_at"))])
+          }
+        }
+        if rows.count < batchSize { break }
+      }
     }
   }
 

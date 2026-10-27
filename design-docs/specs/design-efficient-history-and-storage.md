@@ -690,7 +690,7 @@ riela doctor storage [--scope project|user|auto] [--working-dir <dir>]
 The per-file report:
 
 ```
-{ path, kind: session|memory|cache|kv, fileBytes, walBytes, pageSize, pageCount, freePages, freeBytes,
+{ path, kind: session|definitions|memory|cache|kv, fileBytes, walBytes, pageSize, pageCount, freePages, freeBytes,
   autoVacuum, schemaGeneration, tables: [{name, bytes, rows, estimated}],
   memory?: { records, historyBytes, currentBytes, amplification, maxVersionsPerRecord,
              legacyRecords, unreferencedAttachmentBytes, largestRecords: [{recordId, historyBytes, versions}] },
@@ -699,6 +699,10 @@ The per-file report:
   definitions?: { workflows, versions, versionsOverWindow, pins, retentionState },
   reclaimable: { freePagesBytes, compactEstimateBytes, pruneEstimateBytes } }
 ```
+
+Definition history is reported as a separate `definitions` store at
+`<sessionRoot>/runtime-message-log.sqlite`. Runtime session rows live at
+`<sessionRoot>/runtime-records/runtime-message-log.sqlite`.
 
 - **Table bytes** come from `dbstat` when available. Otherwise the report
   uses `SUM(length(col))` over the known columns with `estimated: true`.
@@ -743,6 +747,13 @@ The work is resumable:
 
 - A partial run leaves mixed old and new rows, and both stay readable.
 - `workRemaining: true` means "run again".
+
+When full conversion is deferred for insufficient space, an operator may use
+`VACUUM INTO` to create and validate a copy on the destination filesystem,
+stop writers, checkpoint and close the source, then replace the database and
+remove stale `-wal`/`-shm` files before reopening it. A cross-volume rename is
+not atomic, and this CLI does not expose a store-wide lock; the command must
+not describe that sequence as an atomic replacement under a lock.
 
 The report is `{dryRun, stores: [{path, converted: {...counts, bytes},
 reconciled, prune: <gc target report>, reclamation: [...]}], workRemaining,

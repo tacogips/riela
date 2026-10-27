@@ -63,9 +63,15 @@ struct StorageDoctorCommandRunner {
     do {
       let parsed = try ParsedStorageCommandArguments.parse(arguments)
       try parsed.validate(doctor: true, tokens: arguments)
-      let files = try paths(parsed).compactMap { path, kind in
-        try inspect(path: path, kind: kind, top: parsed.top,
-          workingDirectory: parsed.workingDir ?? FileManager.default.currentDirectoryPath)
+      var warnings: [String] = []
+      let files = try paths(parsed).compactMap { path, kind -> StorageDoctorFile? in
+        do {
+          return try inspect(path: path, kind: kind, top: parsed.top,
+            workingDirectory: parsed.workingDir ?? FileManager.default.currentDirectoryPath)
+        } catch {
+          warnings.append("\(path): \(error)")
+          return nil
+        }
       }
       guard !files.isEmpty else { throw StorageCommandError.noStores }
       if parsed.output == "json" {
@@ -73,9 +79,9 @@ struct StorageDoctorCommandRunner {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let encoded = try encoder.encode(files)
         let output = String(data: encoded, encoding: .utf8) ?? "[]"
-        return CLICommandResult(exitCode: .success, stdout: output + "\n")
+        return CLICommandResult(exitCode: .success, stdout: output + "\n", stderr: warnings.joined(separator: "\n"))
       }
-      return CLICommandResult(exitCode: .success, stdout: files.map(text).joined(separator: "\n"))
+      return CLICommandResult(exitCode: .success, stdout: files.map(text).joined(separator: "\n"), stderr: warnings.joined(separator: "\n"))
     } catch {
       return StorageCommandFailure.result(error)
     }
@@ -100,6 +106,8 @@ struct StorageDoctorCommandRunner {
     for root in sessionRoots {
       let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root)
       if fm.fileExists(atPath: path) { values.append((path, "session")) }
+      let definitions = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)
+      if definitions != path, fm.fileExists(atPath: definitions) { values.append((definitions, "definitions")) }
     }
     let memoryRoots: [String]
     if let explicit = options.memoryRoot {
@@ -164,7 +172,7 @@ struct StorageDoctorCommandRunner {
     let retention = kind == "session" ? try retentionReport(path: path) : nil
     let session = kind == "session" ? try sessionReport(db, path: path, top: top,
       pruneBlocked: retention?.results.protected ?? [:]) : nil
-    let definitions = kind == "session" ? try definitionReport(db, workingDirectory: workingDirectory) : nil
+    let definitions = kind == "definitions" ? try definitionReport(db, workingDirectory: workingDirectory) : nil
     let file = fileSize(path), wal = fileSize(path + "-wal")
     let generation = kind == "session" ? try? scalar("PRAGMA user_version", "user_version") : nil
     let compactEstimate = freePages * pageSize + (kind == "session"
@@ -229,21 +237,10 @@ struct StorageDoctorCommandRunner {
       ? value(db, "SELECT coalesce(sum(length(record_json)),0) AS value FROM cli_workflow_sessions WHERE coalesce(json_extract(record_json,'$.sessionStorage'),'')!='canonical'") : 0
     let nested = try db.tableExists("workflow_nested_invocations")
       ? value(db, "SELECT coalesce(sum(length(reservation_json)),0) AS value FROM workflow_nested_invocations WHERE coalesce(json_extract(reservation_json,'$.childSnapshotStorage'),'')!='refs'") : 0
-    let nestedUnsettled: Int64
-    if try db.tableExists("workflow_nested_invocations"), try db.tableExists("workflow_runtime_snapshots"),
-       try db.tableColumnNames("workflow_nested_invocations").contains("abandoned_at") {
-      let threshold = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-24 * 3600))
-      nestedUnsettled = try value(db, """
-        SELECT count(*) AS value FROM workflow_nested_invocations n
-        JOIN workflow_runtime_snapshots p
-          ON p.workflow_execution_id=json_extract(n.reservation_json,'$.parentSessionId')
-        WHERE n.abandoned_at IS NULL AND n.updated_at<=?
-          AND p.session_status IN ('completed','failed','cancelled') AND p.updated_at<=?
-          AND coalesce((SELECT child.session_status FROM workflow_runtime_snapshots child
-            WHERE child.workflow_execution_id=json_extract(n.reservation_json,'$.childSnapshot.session.sessionId')),'created')
-            IN ('created','completed','failed','cancelled')
-        """, bindings: [.text(threshold), .text(threshold)])
-    } else { nestedUnsettled = 0 }
+    let nestedUnsettled = try SessionAbandonedInvocationReconciler(
+      registry: SessionExecutionLockRegistry(sessionStoreRoot: pathRoot(path)))
+      .run(sessionStoreRoot: pathRoot(path), abandonedAfter: 24 * 3600, apply: false)
+      .filter { $0.verdict == "abandoned" }.count
     let largest: [[String: String]]
     if try db.tableExists("workflow_runtime_snapshots") {
       largest = try db.query("SELECT workflow_execution_id AS session_id, length(CAST(session_json AS BLOB)) AS bytes FROM workflow_runtime_snapshots ORDER BY bytes DESC LIMIT \(top)")
@@ -252,7 +249,11 @@ struct StorageDoctorCommandRunner {
     return StorageDoctorSession(sessions: try db.tableExists("workflow_runtime_snapshots")
       ? value(db, "SELECT count(*) AS value FROM workflow_runtime_snapshots") : copies,
       legacyInlineSnapshots: inline, legacyCLICopies: copies, legacyCLICopyBytes: bytes,
-      legacyNestedEmbeddedBytes: nested, pruneBlocked: pruneBlocked, abandonedCandidates: Int(nestedUnsettled), largestSessions: largest)
+      legacyNestedEmbeddedBytes: nested, pruneBlocked: pruneBlocked, abandonedCandidates: nestedUnsettled, largestSessions: largest)
+  }
+
+  private func pathRoot(_ path: String) -> String {
+    URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent().path
   }
 
   private func definitionReport(_ db: SQLiteDatabase, workingDirectory: String) throws -> StorageDoctorDefinitions? {
@@ -290,30 +291,31 @@ struct StorageDoctorCommandRunner {
 
   private func unreferencedAttachmentBytes(_ db: SQLiteDatabase, databasePath: String) throws -> Int64 {
     let root = URL(fileURLWithPath: databasePath).deletingLastPathComponent()
-    let candidates = [root.appendingPathComponent("attachments", isDirectory: true),
-      root.appendingPathComponent("memory-attachments", isDirectory: true)]
+    let candidates = [root.appendingPathComponent("files", isDirectory: true)]
       .filter { FileManager.default.fileExists(atPath: $0.path) }
     guard !candidates.isEmpty else { return 0 }
-    var referenceText = ""
-    for table in ["memory_entries", "memory_history_heads", "memory_history_versions"] where try db.tableExists(table) {
-      let columns = try db.tableColumnNames(table)
-      for column in columns where ["payload_json", "blob"].contains(column) {
-        let safeTable = table.replacingOccurrences(of: "\"", with: "\"\"")
-        let safeColumn = column.replacingOccurrences(of: "\"", with: "\"\"")
-        referenceText += try db.query("SELECT CAST(\"\(safeColumn)\" AS TEXT) AS value FROM \"\(safeTable)\"")
-          .compactMap { $0["value"] }.joined(separator: "\n")
-      }
+    var references = Set(try db.tableExists("memory_evolution_attachments")
+      ? db.query("SELECT path FROM memory_evolution_attachments").compactMap { $0["path"] }.map(normalizedFilePath) : [])
+    for table in ["memory_entries", "memory_history_heads"] where try db.tableExists(table) {
+      let jsonColumn = table == "memory_entries" ? "payload_json" : "record_json"
+      guard try db.tableColumnNames(table).contains(jsonColumn) else { continue }
+      references.formUnion(try db.query("SELECT jt.value AS path FROM \(table), json_tree(\(jsonColumn)) jt WHERE jt.type='text' AND jt.key='path'")
+        .compactMap { $0["path"] }.map(normalizedFilePath))
     }
     var bytes: Int64 = 0
     for directory in candidates {
       guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) else { continue }
       for case let file as URL in enumerator {
         let values = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard values.isRegularFile == true, !referenceText.contains(file.lastPathComponent) else { continue }
+        guard values.isRegularFile == true, !references.contains(normalizedFilePath(file.path)) else { continue }
         bytes += Int64(values.fileSize ?? 0)
       }
     }
     return bytes
+  }
+
+  private func normalizedFilePath(_ path: String) -> String {
+    URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
   }
 
   private func text(_ file: StorageDoctorFile) -> String {
@@ -322,15 +324,15 @@ struct StorageDoctorCommandRunner {
       details = "  memory: records \(memory.records), history \(memory.historyBytes) bytes, " +
         "current \(memory.currentBytes) bytes, amplification \(memory.amplification), " +
         "max versions \(memory.maxVersionsPerRecord), legacy \(memory.legacyRecords), " +
-        "orphan attachments \(memory.unreferencedAttachmentBytes) bytes\n"
+        "orphan attachments \(memory.unreferencedAttachmentBytes) bytes, largest records \(memory.largestRecords)\n"
     } else if let session = file.session {
       details = "  sessions: \(session.sessions), inline legacy \(session.legacyInlineSnapshots), " +
         "CLI copies \(session.legacyCLICopies) (\(session.legacyCLICopyBytes) bytes), " +
         "nested embedded \(session.legacyNestedEmbeddedBytes) bytes, " +
-        "abandoned candidates \(session.abandonedCandidates), prune blocked \(session.pruneBlocked)\n"
+        "abandoned candidates \(session.abandonedCandidates), prune blocked \(session.pruneBlocked), largest sessions \(session.largestSessions)\n"
     } else { details = "" }
     return "\(file.kind): \(file.path)\n  bytes: \(file.fileBytes) (WAL \(file.walBytes))\n  pages: \(file.pageCount), free: \(file.freePages) (\(file.freeBytes) bytes), autoVacuum: \(file.autoVacuum)\n" + details +
-      file.tables.map { "  table \($0.name): \($0.rows) rows, \($0.bytes) bytes\($0.estimated ? " estimated" : "")" }.joined(separator: "\n") + "\n"
+      "  reclaimable: \(file.reclaimable)\n" + file.tables.map { "  table \($0.name): \($0.rows) rows, \($0.bytes) bytes\($0.estimated ? " estimated" : "")" }.joined(separator: "\n") + "\n"
   }
 
   private func value(_ db: SQLiteDatabase, _ sql: String, bindings: [SQLiteValue] = []) throws -> Int64 {

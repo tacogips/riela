@@ -43,12 +43,23 @@ private struct StorageCompactReport: Encodable {
   var stores: [StorageCompactStoreReport]
   var workRemaining: Bool
   var warnings: [String]
+  var skipped: [String] = []
 }
 
 private struct StorageCompactEstimate {
   var counts = StorageCompactCounts()
   var bytes: Int64 = 0
   var hasWork = false
+}
+
+private struct StorageCompactSessionState {
+  var counts = StorageCompactCounts()
+  var reconciled: [SessionNestedInvocationVerdict] = []
+  var prune: StorageCompactPruneReport = .notConfigured
+  var reclamation: [RetentionReclamationResult] = []
+  var workRemaining = false
+  var warnings: [String] = []
+  var skipped: [String] = []
 }
 
 struct StorageCompactCommandRunner {
@@ -64,14 +75,23 @@ struct StorageCompactCommandRunner {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
       let json = String(data: try encoder.encode(report), encoding: .utf8) ?? "{}"
-      if parsed.output == "json" { return CLICommandResult(exitCode: .success, stdout: json + "\n") }
+      if parsed.output == "json" {
+        let failed = !report.skipped.isEmpty || report.warnings.contains(where: { $0.hasPrefix("retention pass") || $0.hasPrefix("definition pins") }) || report.stores.flatMap(\.reclamation).contains {
+          [.busy, .failed, .diskFull, .checkpointPending, .deferredLiveSessions].contains($0.action)
+        }
+        return CLICommandResult(exitCode: failed ? .failure : .success, stdout: json + "\n")
+      }
       let lines = report.stores.map { store in
         let converted = store.converted.memoryRecords + store.converted.sessions + store.converted.cliRecords + store.converted.nestedInvocations
         let reclaimed = store.reclamation.reduce(0) { $0 + $1.reclaimedBytes }
         return "\(store.kind): \(store.path), converted \(converted), reclaimed \(reclaimed) bytes"
       }
-      return CLICommandResult(exitCode: .success,
-        stdout: "Storage compact (\(report.dryRun ? "dry run" : "applied"))\n" + lines.joined(separator: "\n") + "\n")
+      let failed = !report.skipped.isEmpty || report.warnings.contains(where: { $0.hasPrefix("retention pass") || $0.hasPrefix("definition pins") }) || report.stores.flatMap(\.reclamation).contains {
+        [.busy, .failed, .diskFull, .checkpointPending, .deferredLiveSessions].contains($0.action)
+      }
+      return CLICommandResult(exitCode: failed ? .failure : .success,
+        stdout: "Storage compact (\(report.dryRun ? "dry run" : "applied"))\n" + lines.joined(separator: "\n") +
+          "\nwork remaining: \(report.workRemaining)\nwarnings: \(report.warnings)\nskipped: \(report.skipped)\n")
     } catch { return StorageCommandFailure.result(error) }
   }
 
@@ -85,6 +105,7 @@ struct StorageCompactCommandRunner {
     let storePaths = storePaths(sessionDB: sessionDB, memoryRoot: memoryRoot, options: options)
     var remaining = false
     var warnings: [String] = []
+    var skipped: [String] = []
     var reports: [StorageCompactStoreReport] = []
     let otherSessionRoots = WorkflowDefinitionStoreSelection.candidateRoots(sessionStore: options.sessionStore,
       scope: scope, workingDirectory: working).filter { $0 != sessionRoot }
@@ -111,14 +132,26 @@ struct StorageCompactCommandRunner {
         if kind == "memory", URL(fileURLWithPath: path).lastPathComponent.hasSuffix(".sqlite") {
           let file = URL(fileURLWithPath: path).lastPathComponent
           let id = String(file.dropLast(".sqlite".count))
-          let conversion = try RielaMemoryStore(rootDirectory: memoryRoot).convertLegacyHistory(memoryId: id, maxRecords: options.maxBatch)
-          counts.memoryRecords = conversion.converted
-          remaining = remaining || conversion.remaining > 0
+          do {
+            let conversion = try RielaMemoryStore(rootDirectory: memoryRoot).convertLegacyHistory(memoryId: id, maxRecords: options.maxBatch)
+            counts.memoryRecords = conversion.converted
+            remaining = remaining || conversion.remaining > 0
+          } catch {
+            remaining = true
+            skipped.append("memory store \(path): \(error)")
+          }
         }
         if kind == "session" {
+          var state = StorageCompactSessionState()
           try convertSessionStores(root: sessionRoot, runtimeRoot: runtimeRoot, options: options,
-            otherSessionRoots: otherSessionRoots, working: working, counts: &counts,
-            reconciled: &reconciled, prune: &prune, reclamation: &reclamation, workRemaining: &remaining)
+            otherSessionRoots: otherSessionRoots, working: working, state: &state)
+          counts = state.counts
+          reconciled = state.reconciled
+          prune = state.prune
+          reclamation = state.reclamation
+          remaining = remaining || state.workRemaining
+          warnings.append(contentsOf: state.warnings)
+          skipped.append(contentsOf: state.skipped)
         }
       } else {
         let estimate = try dryRunEstimate(path: path, kind: kind, runtimeRoot: runtimeRoot,
@@ -128,26 +161,34 @@ struct StorageCompactCommandRunner {
         remaining = remaining || estimate.hasWork
       }
       if options.apply {
-        convertedBytes = max(0, before - fileBytes(path))
         let result = reclaimer.reclaim(databasePath: path, mode: .manual)
+        convertedBytes = max(0, before - fileBytes(path))
         reclamation.append(result)
+        if result.action == .checkpointPending { remaining = true }
         if result.action == .incrementalVacuum, result.reusableFreeBytes > 0 { remaining = true }
         if result.action == .deferredInsufficientSpace {
+          remaining = true
           let available = reclaimer.freeSpace(URL(fileURLWithPath: path).deletingLastPathComponent().path) ?? 0
           let required = result.fileBytesBefore * 2 + (256 << 20)
           warnings.append("\(path): full VACUUM requires \(required) free bytes; \(available) available. " +
-            "Alternative: run `VACUUM INTO '/path/on/another-volume/compact.sqlite'` using a SQLite build that supports it, validate the copy, then atomically replace the database while holding the store lock.")
+            "Alternative: use SQLite VACUUM INTO to create and validate a destination copy, stop writers, " +
+            "checkpoint and close the source, replace the database, and remove stale -wal/-shm files before reopening. " +
+            "A cross-volume rename is not atomic.")
         }
+        if result.action == .busy || result.action == .failed { remaining = true; warnings.append("\(path): \(result.warning ?? result.action.rawValue)") }
+        if result.action == .deferredLiveSessions { remaining = true; warnings.append("\(path): live session lock prevents full VACUUM") }
       }
       reports.append(StorageCompactStoreReport(path: path, kind: kind, converted: counts, convertedBytes: convertedBytes,
         reconciled: reconciled, prune: prune, reclamation: reclamation))
     }
-    return StorageCompactReport(dryRun: !options.apply, stores: reports, workRemaining: remaining, warnings: warnings)
+    return StorageCompactReport(dryRun: !options.apply, stores: reports, workRemaining: remaining, warnings: warnings, skipped: skipped)
   }
 
   private func storePaths(sessionDB: String, memoryRoot: String,
                           options: ParsedStorageCommandArguments) -> [(String, String)] {
     var storePaths = [(sessionDB, "session")]
+    let definitionsPath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: sessionRoot(options: options))
+    if FileManager.default.fileExists(atPath: definitionsPath) { storePaths.append((definitionsPath, "definitions")) }
     if let items = try? FileManager.default.contentsOfDirectory(atPath: memoryRoot) {
       storePaths += items.filter { $0.hasSuffix(".sqlite") }.map { (memoryRoot + "/" + $0, "memory") }
     }
@@ -158,56 +199,79 @@ struct StorageCompactCommandRunner {
     return storePaths
   }
 
+  private func sessionRoot(options: ParsedStorageCommandArguments) -> String {
+    CLIWorkflowSessionStore.resolveRootDirectory(sessionStore: options.sessionStore,
+      scope: WorkflowScope(rawValue: options.scope) ?? .project,
+      workingDirectory: options.workingDir ?? FileManager.default.currentDirectoryPath)
+  }
+
   private func convertSessionStores(root: String, runtimeRoot: String, options: ParsedStorageCommandArguments,
                                     otherSessionRoots: [String], working: String,
-                                    counts: inout StorageCompactCounts,
-                                    reconciled: inout [SessionNestedInvocationVerdict],
-                                    prune: inout StorageCompactPruneReport,
-                                    reclamation: inout [RetentionReclamationResult],
-                                    workRemaining: inout Bool) throws {
+                                    state: inout StorageCompactSessionState) throws {
     let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
     let cli = CLIWorkflowSessionStore(rootDirectory: root)
     let lock = SessionExecutionLockRegistry(sessionStoreRoot: root)
-    let legacy = try runtime.legacyInlineSessionIds(limit: options.maxBatch)
-    if legacy.count == options.maxBatch { workRemaining = true }
+    let legacy = try runtime.legacyInlineSessionIds(limit: 10_000)
+    if legacy.count >= options.maxBatch { state.workRemaining = true }
+    var handled = 0
     for id in legacy {
-      do { try lock.acquire(sessionId: id) } catch SessionExecutionLockError.alreadyRunning {
-        workRemaining = true
+      guard handled < options.maxBatch else { state.workRemaining = true; break }
+      do {
+        try lock.acquire(sessionId: id, allowMessagesRetired: true)
+      } catch {
+        state.workRemaining = true
+        state.skipped.append("session \(id): \(error)")
         continue
       }
+      handled += 1
       do {
-        if try runtime.convertLegacySession(sessionId: id) { counts.sessions += 1 }
+        if try runtime.convertLegacySession(sessionId: id) { state.counts.sessions += 1 }
         lock.release(sessionId: id)
-      } catch { lock.release(sessionId: id); throw error }
+      } catch { lock.release(sessionId: id); state.workRemaining = true; state.skipped.append("session \(id): \(error)") }
     }
-    let cliIds = try cli.legacyFullRecordIds(limit: options.maxBatch)
-    if cliIds.count == options.maxBatch { workRemaining = true }
+    let cliIds = try cli.legacyFullRecordIds(limit: 10_000)
+    if cliIds.count >= options.maxBatch { state.workRemaining = true }
+    handled = 0
     for id in cliIds {
-      do { try lock.acquire(sessionId: id) } catch SessionExecutionLockError.alreadyRunning {
-        workRemaining = true
+      guard handled < options.maxBatch else { state.workRemaining = true; break }
+      do {
+        try lock.acquire(sessionId: id, allowMessagesRetired: true)
+      } catch {
+        state.workRemaining = true
+        state.skipped.append("session \(id): \(error)")
         continue
       }
+      handled += 1
       do {
-        if try cli.convertLegacyRecord(sessionId: id) { counts.cliRecords += 1 }
+        if try cli.convertLegacyRecord(sessionId: id) { state.counts.cliRecords += 1 }
         lock.release(sessionId: id)
-      } catch { lock.release(sessionId: id); throw error }
+      } catch { lock.release(sessionId: id); state.workRemaining = true; state.skipped.append("session \(id): \(error)") }
     }
-    let nested = try runtime.legacyEmbeddedNestedInvocationKeys(limit: options.maxBatch)
-    if nested.count == options.maxBatch { workRemaining = true }
-    for key in nested where try runtime.convertLegacyNestedInvocation(invocationKey: key) {
-      counts.nestedInvocations += 1
+    let nested = try runtime.legacyEmbeddedNestedInvocationKeys(limit: 10_000)
+    if nested.count >= options.maxBatch { state.workRemaining = true }
+    handled = 0
+    for key in nested {
+      guard handled < options.maxBatch else { state.workRemaining = true; break }
+      handled += 1
+      do {
+        if try runtime.convertLegacyNestedInvocation(invocationKey: key) { state.counts.nestedInvocations += 1 }
+      } catch { state.workRemaining = true; state.skipped.append("nested invocation \(key): \(error)") }
     }
-    reconciled = try SessionAbandonedInvocationReconciler(registry: lock).run(sessionStoreRoot: root,
+    state.reconciled = try SessionAbandonedInvocationReconciler(registry: lock).run(sessionStoreRoot: root,
       abandonedAfter: TimeInterval(options.abandonedAfterHours * 3600), apply: true)
-    if reconciled.contains(where: { $0.verdict == "live" || $0.verdict == "skipped" }) { workRemaining = true }
+    if state.reconciled.contains(where: { $0.verdict == "live" || $0.verdict == "skipped" }) { state.workRemaining = true }
     let defaultRetention = try WorkflowDefinitionHistoryConfiguration.resolve(
       homeDirectory: CLIRuntimeEnvironment.homeDirectory(), projectDirectory: working,
       environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
     let definitions = WorkflowDefinitionStore(rootDirectory: root, defaultHistoryRetention: defaultRetention)
     let foreignRuntimeRoots = ([root] + otherSessionRoots).map { canonicalRuntimeStoreRoot(sessionStoreRoot: $0) }
-    let pins = try definitions.backfillPinsAndApplyRetention(foreignSessionStoreRoots: foreignRuntimeRoots,
-      defaultHistoryRetention: defaultRetention)
-    counts.definitionPins = pins.pinsInserted
+    if FileManager.default.fileExists(atPath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)) {
+      do {
+        let pins = try definitions.backfillPinsAndApplyRetention(foreignSessionStoreRoots: foreignRuntimeRoots,
+          defaultHistoryRetention: defaultRetention, batchSize: options.maxBatch)
+        state.counts.definitionPins = pins.pinsInserted
+      } catch { state.warnings.append("definition pins: \(error)"); state.workRemaining = true }
+    }
     let request = RielaRetentionRequest(trigger: .manual,
       homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()),
       projectDirectory: URL(fileURLWithPath: working), explicitSessionStore: options.sessionStore,
@@ -219,8 +283,8 @@ struct StorageCompactCommandRunner {
     let retention = try RielaRetentionService().run(request)
     if let target = retention.targets.first,
        target.results.state != .notConfigured || target.messages.state != .notConfigured {
-      prune = .configured(target)
-      reclamation.append(contentsOf: target.reclamation.map { report in
+      state.prune = .configured(target)
+      state.reclamation.append(contentsOf: target.reclamation.map { report in
         RetentionReclamationResult(database: report.database,
           autoVacuum: report.autoVacuum,
           action: RetentionReclamationAction(rawValue: report.action) ?? .failed,
@@ -231,17 +295,29 @@ struct StorageCompactCommandRunner {
           warning: report.warning)
       })
     }
-    if retention.hasFailure { workRemaining = true }
+    if retention.hasFailure { state.workRemaining = true; state.warnings.append("retention pass reported failure") }
   }
 
   private func dryRunEstimate(path: String, kind: String, runtimeRoot: String,
                               sessionRoot: String, maxBatch: Int) throws -> StorageCompactEstimate {
     var result = StorageCompactEstimate()
     if kind == "session" {
-      let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
-      result.counts.sessions = try runtime.legacyInlineSessionIds(limit: maxBatch).count
-      result.counts.cliRecords = try CLIWorkflowSessionStore(rootDirectory: sessionRoot).legacyFullRecordIds(limit: maxBatch).count
-      result.counts.nestedInvocations = try runtime.legacyEmbeddedNestedInvocationKeys(limit: maxBatch).count
+      let database = try SQLiteDatabase.open(path: path, mode: .strictReadOnlyWithImmutableFallback, options: .readOnlyDefault)
+      if try database.tableExists("workflow_runtime_snapshots") {
+        let sql = "SELECT count(*) AS count FROM (SELECT 1 FROM workflow_runtime_snapshots " +
+          "WHERE json_type(session_json,'$.executions')='array' LIMIT \(maxBatch))"
+        result.counts.sessions = Int(try database.query(sql).first?["count"] ?? "0") ?? 0
+      }
+      if try database.tableExists("cli_workflow_sessions") {
+        let sql = "SELECT count(*) AS count FROM (SELECT 1 FROM cli_workflow_sessions " +
+          "WHERE json_extract(record_json,'$.sessionStorage') IS NOT 'canonical' LIMIT \(maxBatch))"
+        result.counts.cliRecords = Int(try database.query(sql).first?["count"] ?? "0") ?? 0
+      }
+      if try database.tableExists("workflow_nested_invocations") {
+        let sql = "SELECT count(*) AS count FROM (SELECT 1 FROM workflow_nested_invocations " +
+          "WHERE json_extract(reservation_json,'$.childSnapshotStorage') IS NOT 'refs' LIMIT \(maxBatch))"
+        result.counts.nestedInvocations = Int(try database.query(sql).first?["count"] ?? "0") ?? 0
+      }
       result.bytes = try estimateSessionBytes(path: path)
       result.hasWork = result.counts.sessions > 0 || result.counts.cliRecords > 0 || result.counts.nestedInvocations > 0
     } else {
@@ -265,9 +341,6 @@ struct StorageCompactCommandRunner {
   private func estimateSessionBytes(path: String) throws -> Int64 {
     let database = try SQLiteDatabase.open(path: path, mode: .strictReadOnlyWithImmutableFallback, options: .readOnlyDefault)
     var bytes: Int64 = 0
-    if try database.tableExists("workflow_runtime_snapshots") {
-      bytes += Int64(try database.query("SELECT coalesce(sum(length(session_json)),0) AS bytes FROM workflow_runtime_snapshots WHERE json_type(session_json,'$.executions')='array'").first?["bytes"] ?? "0") ?? 0
-    }
     if try database.tableExists("cli_workflow_sessions") {
       let sql = "SELECT coalesce(sum(length(record_json)),0) AS bytes FROM cli_workflow_sessions " +
         "WHERE json_extract(record_json,'$.sessionStorage') IS NOT 'canonical'"

@@ -61,8 +61,8 @@ enum WorkflowDefinitionHistorySchema {
     let snapshotBytes = try payloadByteCount(in: db, table: "workflow_runtime_snapshots", column: "session_json")
     let cliBytes = try payloadByteCount(in: db, table: "cli_workflow_sessions", column: "record_json")
     if snapshotBytes + cliBytes <= pinBackfillByteLimit {
-      try backfillSameStorePins(in: db)
-      try backfillCLIPins(in: db)
+      try backfillSameStorePins(in: db, batchSize: 250)
+      try backfillCLIPins(in: db, batchSize: 250)
       try applyDefaultRetention(in: db, history: history, defaultHistoryRetention: 10)
       try db.execute("INSERT OR REPLACE INTO definition_store_state(key, value) VALUES ('retention', 'active')")
     } else {
@@ -236,45 +236,63 @@ enum WorkflowDefinitionHistorySchema {
       """, bindings: [.text(versionId)]).first?.data("bytes")
   }
 
-  static func backfillSameStorePinsForMaintenance(in db: SQLiteDatabase) throws {
-    try backfillSameStorePins(in: db)
-    try backfillCLIPins(in: db)
+  static func backfillSameStorePinsForMaintenance(in db: SQLiteDatabase, batchSize: Int = 250) throws {
+    try backfillSameStorePins(in: db, batchSize: batchSize)
+    try backfillCLIPins(in: db, batchSize: batchSize)
   }
 
-  private static func backfillSameStorePins(in db: SQLiteDatabase) throws {
+  private static func backfillSameStorePins(in db: SQLiteDatabase, batchSize: Int) throws {
     guard try db.tableExists("workflow_runtime_snapshots") else { return }
-    let snapshots = try db.query("SELECT workflow_execution_id, json(session_json) AS session_json, created_at FROM workflow_runtime_snapshots")
-    for snapshot in snapshots {
-      guard let data = snapshot.data("session_json"),
-            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let source = object["definitionSource"] as? [String: Any], source["kind"] as? String == "store",
-            let versionId = source["versionId"] as? String,
-            let workflowName = source["workflowName"] as? String,
-            source["storeRoot"] == nil || source["storeRoot"] is NSNull ||
-              normalizedDatabasePath(rootDirectory: source["storeRoot"] as? String ?? db.path ?? "") == normalizedPath(db.path ?? ""),
-            let number = try versionNumber(versionId, in: db) else { continue }
-      try db.execute("INSERT OR IGNORE INTO definition_version_pins(workflow_name, history_version, session_store_root, session_id, created_at) VALUES (?, ?, ?, ?, ?)",
-        bindings: [.text(workflowName), .int(Int64(number)), .text(storeRootForDatabasePath(db.path ?? "")),
-          .text(snapshot.string("workflow_execution_id")), .text(snapshot.string("created_at"))])
+    var cursor: Int64 = 0
+    while true {
+      let rows = try db.query("""
+        SELECT rowid, workflow_execution_id AS session_id, created_at,
+          json_extract(session_json,'$.definitionSource.kind') AS kind,
+          json_extract(session_json,'$.definitionSource.workflowName') AS workflow_name,
+          json_extract(session_json,'$.definitionSource.versionId') AS version_id,
+          json_extract(session_json,'$.definitionSource.storeRoot') AS store_root
+        FROM workflow_runtime_snapshots WHERE rowid>? AND json_extract(session_json,'$.definitionSource.kind')='store'
+        ORDER BY rowid LIMIT \(batchSize)
+        """, bindings: [.int(cursor)])
+      guard let last = rows.last else { break }
+      cursor = Int64(last["rowid"] ?? "0") ?? cursor
+      for row in rows {
+        guard let versionId = row["version_id"], let workflowName = row["workflow_name"],
+              row["store_root"] == nil || normalizedDatabasePath(rootDirectory: row["store_root"] ?? db.path ?? "") == normalizedPath(db.path ?? ""),
+              let number = try versionNumber(versionId, in: db) else { continue }
+        try db.execute("INSERT OR IGNORE INTO definition_version_pins(workflow_name, history_version, session_store_root, session_id, created_at) VALUES (?, ?, ?, ?, ?)",
+          bindings: [.text(workflowName), .int(Int64(number)), .text(storeRootForDatabasePath(db.path ?? "")),
+            .text(row.string("session_id")), .text(row.string("created_at"))])
+      }
+      if rows.count < batchSize { break }
     }
   }
 
-  private static func backfillCLIPins(in db: SQLiteDatabase) throws {
+  private static func backfillCLIPins(in db: SQLiteDatabase, batchSize: Int) throws {
     guard try db.tableExists("cli_workflow_sessions") else { return }
-    let records = try db.query("SELECT session_id, json(record_json) AS record_json, " +
-      "coalesce(json_extract(record_json, '$.session.createdAt'), '') AS created_at FROM cli_workflow_sessions")
-    for record in records {
-      guard let data = record.data("record_json"),
-            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-      let session = object["session"] as? [String: Any] ?? object
-      guard let source = session["definitionSource"] as? [String: Any], source["kind"] as? String == "store",
-            let workflow = source["workflowName"] as? String, let versionId = source["versionId"] as? String,
-            source["storeRoot"] == nil || source["storeRoot"] is NSNull ||
-              normalizedDatabasePath(rootDirectory: source["storeRoot"] as? String ?? "") == normalizedPath(db.path ?? ""),
-            let number = try versionNumber(versionId, in: db) else { continue }
-      try db.execute("INSERT OR IGNORE INTO definition_version_pins(workflow_name,history_version,session_store_root,session_id,created_at) VALUES(?,?,?,?,?)",
-        bindings: [.text(workflow), .int(Int64(number)), .text(storeRootForDatabasePath(db.path ?? "")),
-                   .text(record.string("session_id")), .text(record.string("created_at"))])
+    var cursor: Int64 = 0
+    while true {
+      let records = try db.query("""
+        SELECT rowid, session_id,
+          coalesce(json_extract(record_json,'$.session.createdAt'),updated_at) AS created_at,
+          json_extract(record_json,'$.session.definitionSource.kind') AS kind,
+          json_extract(record_json,'$.session.definitionSource.workflowName') AS workflow_name,
+          json_extract(record_json,'$.session.definitionSource.versionId') AS version_id,
+          json_extract(record_json,'$.session.definitionSource.storeRoot') AS store_root
+        FROM cli_workflow_sessions WHERE rowid>? AND json_extract(record_json,'$.session.definitionSource.kind')='store'
+        ORDER BY rowid LIMIT \(batchSize)
+        """, bindings: [.int(cursor)])
+      guard let last = records.last else { break }
+      cursor = Int64(last["rowid"] ?? "0") ?? cursor
+      for record in records {
+        guard let workflow = record["workflow_name"], let versionId = record["version_id"],
+              record["store_root"] == nil || normalizedDatabasePath(rootDirectory: record["store_root"] ?? db.path ?? "") == normalizedPath(db.path ?? ""),
+              let number = try versionNumber(versionId, in: db) else { continue }
+        try db.execute("INSERT OR IGNORE INTO definition_version_pins(workflow_name,history_version,session_store_root,session_id,created_at) VALUES(?,?,?,?,?)",
+          bindings: [.text(workflow), .int(Int64(number)), .text(storeRootForDatabasePath(db.path ?? "")),
+                     .text(record.string("session_id")), .text(record.string("created_at"))])
+      }
+      if records.count < batchSize { break }
     }
   }
 

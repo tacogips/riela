@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import XCTest
+@testable import RielaCore
 import RielaSQLite
 @testable import RielaCLI
 @testable import RielaMemory
@@ -12,8 +13,11 @@ final class StorageDoctorCommandTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
     let database = try SQLiteDatabase.open(path: databasePath)
+    _ = try database.query("PRAGMA journal_mode=WAL")
     try database.execute("CREATE TABLE example(value TEXT)")
     try database.execute("INSERT INTO example VALUES ('payload')")
+    let walPath = databasePath + "-wal"
+    let beforeWAL = try Data(contentsOf: URL(fileURLWithPath: walPath))
     let beforeBytes = try Data(contentsOf: URL(fileURLWithPath: databasePath))
     let beforeDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: databasePath)[.modificationDate] as? Date)
     let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
@@ -26,6 +30,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     let afterBytes = try Data(contentsOf: URL(fileURLWithPath: databasePath))
     let afterDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: databasePath)[.modificationDate] as? Date)
     XCTAssertEqual(SHA256.hash(data: beforeBytes), SHA256.hash(data: afterBytes))
+    XCTAssertEqual(SHA256.hash(data: beforeWAL), SHA256.hash(data: try Data(contentsOf: URL(fileURLWithPath: walPath))))
     XCTAssertEqual(beforeDate, afterDate)
   }
 
@@ -39,6 +44,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     XCTAssertEqual(result.stdout.components(separatedBy: "session: ").count - 1, 1)
+    XCTAssertTrue(result.stdout.contains("reclaimable:"))
   }
 
   func testStorageParserHelpListsContractFlags() throws {
@@ -95,5 +101,107 @@ final class StorageDoctorCommandTests: XCTestCase {
     let afterDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: databasePath)[.modificationDate] as? Date)
     XCTAssertEqual(SHA256.hash(data: before), SHA256.hash(data: try Data(contentsOf: URL(fileURLWithPath: databasePath))))
     XCTAssertEqual(beforeDate, afterDate)
+  }
+
+  func testDoctorReportsSeparateDefinitionDatabase() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let document = Data(#"{"version":1}"#.utf8)
+    let digest = JSONCanonical.sha256Hex(document)
+    let definitions = WorkflowDefinitionStore(rootDirectory: root.path)
+    guard case .created = try definitions.commit(WorkflowDefinitionWrite(workflowName: "workflow",
+      operation: .`import`, documentData: document, documentDigest: digest, sourceDirectory: root.path,
+      sourceScope: "project", provenance: "test", actor: WorkflowDefinitionActor(kind: .user), reason: "seed")) else {
+      XCTFail("definition seed did not create a version")
+      return
+    }
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    let definitionFile = try XCTUnwrap(files.first { $0["kind"] as? String == "definitions" })
+    XCTAssertEqual((definitionFile["definitions"] as? [String: Any])?["workflows"] as? Int, 1)
+  }
+
+  func testDoctorCountsOnlyUnreferencedMemoryFiles() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let databasePath = root.appendingPathComponent("memory.sqlite").path
+    let database = try SQLiteDatabase.open(path: databasePath)
+    try database.execute("CREATE TABLE memory_entries(record_id INTEGER PRIMARY KEY,payload_json TEXT,tags_json TEXT,related_record_ids_json TEXT)")
+    try database.execute("CREATE TABLE memory_evolution_attachments(path TEXT PRIMARY KEY,content_sha256 TEXT NOT NULL)")
+    let referenced = root.appendingPathComponent("files/memory/1/referenced.bin")
+    let orphan = root.appendingPathComponent("files/memory/2/orphan.bin")
+    try FileManager.default.createDirectory(at: referenced.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: orphan.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(repeating: 1, count: 12).write(to: referenced)
+    try Data(repeating: 2, count: 29).write(to: orphan)
+    let payload = try JSONSerialization.data(withJSONObject: ["files": [["path": referenced.path]]])
+    try database.execute("INSERT INTO memory_entries VALUES(1,?, '[]','[]')",
+      bindings: [.text(String(data: payload, encoding: .utf8) ?? "{}")])
+    try database.execute("INSERT INTO memory_evolution_attachments(path,content_sha256) VALUES(?, 'hash')", bindings: [.text(referenced.path)])
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+      "--memory-root", root.path, "--output", "json"])
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    let memory = try XCTUnwrap(files.first { $0["kind"] as? String == "memory" }?["memory"] as? [String: Any])
+    XCTAssertEqual(memory["unreferencedAttachmentBytes"] as? Int, 29)
+  }
+
+  func testDoctorSkipsUnreadableDatabaseWhenAnotherStoreOpens() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sessionPath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    let database = try SQLiteDatabase.open(path: sessionPath)
+    try database.execute("CREATE TABLE usable(value TEXT)")
+    let memoryPath = root.appendingPathComponent("broken.sqlite")
+    try Data("not sqlite".utf8).write(to: memoryPath)
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+      "--memory-root", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.contains("broken.sqlite"))
+    let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    XCTAssertTrue(files.contains { $0["path"] as? String == sessionPath })
+  }
+
+  func testDoctorReportsLegacyInlineAndEnvelopeSessionFixture() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now = Date(timeIntervalSince1970: 1_600_000_000)
+    let legacySession = WorkflowSession(workflowId: "workflow", sessionId: "legacy-inline", status: .completed,
+      entryStepId: "start", createdAt: now, updatedAt: now)
+    let envelopeSession = WorkflowSession(workflowId: "workflow", sessionId: "envelope", status: .completed,
+      entryStepId: "start", createdAt: now, updatedAt: now)
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+    try runtime.save(WorkflowRuntimePersistenceSnapshot(session: legacySession))
+    let cli = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let record = PersistedCLIWorkflowSession(workflowName: "workflow", session: envelopeSession,
+      resolution: WorkflowResolutionOptions(workflowName: "workflow", workingDirectory: root.path))
+    try cli.save(record, runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: envelopeSession))
+    let database = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(legacySession)) as? [String: Any])
+    legacy["executions"] = []
+    let legacyJSON = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: legacy), encoding: .utf8))
+    try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
+      bindings: [.text(legacyJSON), .text(legacySession.sessionId)])
+
+    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    let session = try XCTUnwrap(files.first { $0["kind"] as? String == "session" }?["session"] as? [String: Any])
+    XCTAssertEqual(session["sessions"] as? Int, 2)
+    XCTAssertEqual(session["legacyInlineSnapshots"] as? Int, 1)
+    XCTAssertEqual(session["legacyCLICopies"] as? Int, 0)
+    let textResult = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path])
+    XCTAssertTrue(textResult.stdout.contains("largest sessions"))
   }
 }

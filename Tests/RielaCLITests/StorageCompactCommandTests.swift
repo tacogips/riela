@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
-import RielaCore
+import Darwin
+@testable import RielaCore
 import RielaSQLite
 @testable import RielaCLI
 @testable import RielaMemory
@@ -58,7 +59,12 @@ final class StorageCompactCommandTests: XCTestCase {
     XCTAssertTrue(warning.contains("\(required) free bytes"))
     XCTAssertTrue(warning.contains("123 available"))
     XCTAssertTrue(warning.contains("VACUUM INTO"))
-    XCTAssertTrue(warning.contains("store lock"))
+    XCTAssertTrue(warning.contains("stop writers"))
+    XCTAssertTrue(warning.contains("cross-volume rename"))
+    let textResult = runner.run(["compact", "--apply", "--session-store", root.path])
+    XCTAssertTrue(textResult.stdout.contains("work remaining: true"))
+    XCTAssertTrue(textResult.stdout.contains("warnings:"))
+    XCTAssertTrue(textResult.stdout.contains("VACUUM INTO"))
   }
 
   func testHeldSessionLockIsSkippedAndLeavesWorkRemaining() throws {
@@ -78,12 +84,154 @@ final class StorageCompactCommandTests: XCTestCase {
     try owner.acquire(sessionId: "locked-session")
     defer { owner.release(sessionId: "locked-session") }
 
-    let result = StorageCompactCommandRunner().run(["compact", "--apply", "--max-batch", "1",
+    let result = StorageCompactCommandRunner().run(["compact", "--apply",
       "--session-store", root.path, "--output", "json"])
 
-    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    XCTAssertEqual(result.exitCode, .failure, result.stderr)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
     XCTAssertEqual(report["workRemaining"] as? Bool, true)
+    let store = try XCTUnwrap((report["stores"] as? [[String: Any]])?.first)
+    XCTAssertEqual((store["converted"] as? [String: Int])?["sessions"], 0)
+    XCTAssertEqual(try database.query("SELECT json_type(session_json,'$.executions') AS kind FROM workflow_runtime_snapshots WHERE workflow_execution_id='locked-session'").first?["kind"], "array")
+  }
+
+  func testMessageRetiredLegacyRowDoesNotAbortOtherConversionsOrReruns() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+    for id in ["retired", "convert-me"] {
+      let session = WorkflowSession(workflowId: "workflow", sessionId: id, entryStepId: "start",
+        createdAt: Date(timeIntervalSince1970: 1_600_000_000), updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
+      try runtime.save(WorkflowRuntimePersistenceSnapshot(session: session))
+      let db = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: runtime.rootDirectory))
+      let sessionEncoder = JSONEncoder()
+      sessionEncoder.dateEncodingStrategy = .iso8601
+      var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: sessionEncoder.encode(session)) as? [String: Any])
+      legacy["executions"] = []
+      let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+      let legacyJSON = try XCTUnwrap(String(data: legacyData, encoding: .utf8))
+      try db.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
+        bindings: [.text(legacyJSON), .text(id)])
+    }
+    let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+    try db.execute("CREATE TABLE session_message_retention_tombstones(session_id TEXT PRIMARY KEY,workflow_id TEXT NOT NULL,pruned_at TEXT NOT NULL,message_bytes INTEGER NOT NULL)")
+    try db.execute("INSERT INTO session_message_retention_tombstones(session_id,workflow_id,pruned_at,message_bytes) VALUES('retired','workflow','2020-01-01T00:00:00Z',0)")
+    let arguments = ["compact", "--apply", "--session-store", root.path, "--output", "json"]
+    let first = StorageCompactCommandRunner().run(arguments)
+    XCTAssertEqual(first.exitCode, .success, first.stderr + first.stdout)
+    let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(first.stdout.utf8)) as? [String: Any])
+    let store = try XCTUnwrap((report["stores"] as? [[String: Any]])?.first)
+    XCTAssertEqual((store["converted"] as? [String: Int])?["sessions"], 2)
+    let second = StorageCompactCommandRunner().run(arguments)
+    XCTAssertEqual(second.exitCode, .success, second.stderr)
+    let rerun = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(second.stdout.utf8)) as? [String: Any])
+    XCTAssertEqual(rerun["workRemaining"] as? Bool, false)
+  }
+
+  func testDefinitionPinBackfillSelectsOnlyFieldsAndDoesNotHoldLongWriterLock() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let document = Data(#"{"version":1}"#.utf8)
+    let digest = JSONCanonical.sha256Hex(document)
+    let definitions = WorkflowDefinitionStore(rootDirectory: root.path)
+    guard case let .created(version, _) = try definitions.commit(WorkflowDefinitionWrite(workflowName: "workflow",
+      operation: .`import`, documentData: document, documentDigest: digest, sourceDirectory: root.path,
+      sourceScope: "project", provenance: "test", actor: WorkflowDefinitionActor(kind: .user), reason: "seed")) else {
+      XCTFail("definition seed did not create a version")
+      return
+    }
+    let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
+    let large = String(repeating: "x", count: 2_000_000)
+    for index in 0..<20 {
+      let session = WorkflowSession(workflowId: "workflow", sessionId: "legacy-\(index)", entryStepId: "start",
+        createdAt: Date(timeIntervalSince1970: 1_600_000_000), updatedAt: Date(timeIntervalSince1970: 1_600_000_000),
+        definitionSource: WorkflowDefinitionSource(kind: .store, workflowName: "workflow", versionId: version.versionId,
+          storeRoot: root.path, digest: digest, sourceScope: "project"))
+      try runtime.save(WorkflowRuntimePersistenceSnapshot(session: session, rootOutput: ["large": .string(large)]))
+    }
+    let recorder = DefinitionBackfillStatementRecorder()
+    var observed = definitions
+    let writer = try SQLiteDatabase.open(path: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path))
+    try writer.execute("CREATE TABLE writer_probe(value INTEGER)")
+    let peakRSSBefore = peakResidentMemoryBytes()
+    observed.pinBackfillStatementObserver = { recorder.record($0, writer: writer) }
+    _ = try observed.backfillPinsAndApplyRetention(foreignSessionStoreRoots: [root.path], defaultHistoryRetention: 10, batchSize: 1)
+
+    XCTAssertTrue(recorder.statements.contains { $0.contains("json_extract(session_json") })
+    XCTAssertFalse(recorder.statements.contains { $0.contains("json(session_json)") || $0.contains("json(record_json)") })
+    XCTAssertLessThan(recorder.maximumWriterDuration, 1)
+    XCTAssertGreaterThan(recorder.successfulWrites, 0)
+    XCTAssertLessThan(peakResidentMemoryBytes() - peakRSSBefore, 128 * 1_024 * 1_024)
+    XCTAssertEqual(try writer.query("SELECT count(*) AS count FROM definition_version_pins").first?["count"], "20")
+  }
+
+  private func peakResidentMemoryBytes() -> Int64 {
+    var usage = rusage()
+    guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
+    return Int64(usage.ru_maxrss)
+  }
+
+  func testMaxBatchAboveEffectiveLimitIsUsageError() {
+    let result = StorageCompactCommandRunner().run(["compact", "--max-batch", "10001", "--session-store", "/tmp/no-store"])
+    XCTAssertEqual(result.exitCode, .usage)
+  }
+
+  func testLegacyCLIListingCapsAtParserMaximum() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+    try database.execute("CREATE TABLE cli_workflow_sessions(session_id TEXT PRIMARY KEY,record_json TEXT NOT NULL,updated_at TEXT NOT NULL)")
+    try database.execute("""
+      WITH RECURSIVE ids(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM ids WHERE n<10001)
+      INSERT INTO cli_workflow_sessions(session_id,record_json,updated_at)
+      SELECT 'legacy-'||n, '{}', '2020-01-01T00:00:00Z' FROM ids
+      """)
+
+    let ids = try CLIWorkflowSessionStore(rootDirectory: root.path).legacyFullRecordIds(limit: 20_000)
+
+    XCTAssertEqual(ids.count, 10_000)
+  }
+
+  func testNoneAutoVacuumShrinksAfterLegacySessionConversion() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
+    let session = WorkflowSession(workflowId: "workflow", sessionId: "large-legacy", entryStepId: "start",
+      createdAt: Date(timeIntervalSince1970: 1_600_000_000), updatedAt: Date(timeIntervalSince1970: 1_600_000_000))
+    try runtime.save(WorkflowRuntimePersistenceSnapshot(session: session))
+    let databasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: runtimeRoot)
+    let database = try SQLiteDatabase.open(path: databasePath)
+    try database.execute("PRAGMA auto_vacuum=NONE")
+    try database.execute("VACUUM")
+    try database.execute("CREATE TABLE bloat(value BLOB)")
+    try database.execute("INSERT INTO bloat VALUES(zeroblob(4194304))")
+    try database.execute("DELETE FROM bloat")
+    let largeData = String(repeating: "payload", count: 500_000)
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(session)) as? [String: Any])
+    legacy["executions"] = []
+    legacy["largePayload"] = largeData
+    let json = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: legacy), encoding: .utf8))
+    try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
+      bindings: [.text(json), .text(session.sessionId)])
+    let before = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: databasePath)[.size] as? NSNumber).int64Value
+
+    let result = StorageCompactCommandRunner().run(["compact", "--apply", "--session-store", root.path, "--output", "json"])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    let reclamation = try XCTUnwrap((report["stores"] as? [[String: Any]])?.first?["reclamation"] as? [[String: Any]])
+    XCTAssertEqual(reclamation.first?["action"] as? String, "converted")
+    XCTAssertGreaterThan(reclamation.first?["reclaimedBytes"] as? Int64 ?? 0, 0)
+    XCTAssertLessThan(reclamation.first?["fileBytesAfter"] as? Int64 ?? before,
+      reclamation.first?["fileBytesBefore"] as? Int64 ?? 0)
   }
 
   func testApplyConvertsLegacyMemoryInResumableBatches() throws {
@@ -216,6 +364,7 @@ final class StorageCompactCommandTests: XCTestCase {
 
     let stores = try XCTUnwrap(report["stores"] as? [[String: Any]])
     XCTAssertEqual((stores.first?["prune"] as? [String: String])?["state"], "notConfigured")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)))
     XCTAssertEqual(try database.query("SELECT value FROM retained_fixture").first?["value"], "keep")
   }
 
@@ -255,5 +404,42 @@ final class StorageCompactCommandTests: XCTestCase {
     let result = runner.run(arguments)
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+  }
+}
+
+private final class DefinitionBackfillStatementRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var values: [String] = []
+  private var writerDurations: [TimeInterval] = []
+  private var writeCount = 0
+
+  var statements: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return values
+  }
+
+  var maximumWriterDuration: TimeInterval {
+    lock.lock()
+    defer { lock.unlock() }
+    return writerDurations.max() ?? 0
+  }
+
+  var successfulWrites: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return writeCount
+  }
+
+  func record(_ statement: String, writer: SQLiteDatabase) {
+    lock.lock()
+    values.append(statement)
+    lock.unlock()
+    let started = Date()
+    let succeeded = (try? writer.execute("INSERT INTO writer_probe VALUES (1)")) != nil
+    lock.lock()
+    writerDurations.append(Date().timeIntervalSince(started))
+    if succeeded { writeCount += 1 }
+    lock.unlock()
   }
 }

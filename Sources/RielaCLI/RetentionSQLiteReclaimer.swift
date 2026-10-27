@@ -1,5 +1,10 @@
 import Foundation
 import RielaSQLite
+#if os(Linux)
+import Glibc
+#else
+import Darwin
+#endif
 
 enum RetentionReclamationMode: String, Codable, Sendable {
   case automatic
@@ -12,6 +17,7 @@ enum RetentionReclamationAction: String, Codable, Sendable {
   case converted
   case deferredInsufficientSpace
   case deferredAutomaticSizeLimit
+  case deferredLiveSessions
   case checkpointPending
   case busy
   case diskFull
@@ -37,6 +43,7 @@ struct RetentionSQLiteReclaimer: Sendable {
   var automaticConversionLimitBytes: Int64 = 64 << 20
   var automaticPageBudget: Int = 65_536
   var manualPageBudget: Int = 4_096
+  var manualTimeBudget: TimeInterval = 30
   var statementObserver: (@Sendable (String) -> Void)?
 
   func reclaim(databasePath: String, mode: RetentionReclamationMode) -> RetentionReclamationResult {
@@ -74,11 +81,7 @@ struct RetentionSQLiteReclaimer: Sendable {
 
       switch autoVacuum {
       case 2:
-        let vacuumSQL = mode == .automatic
-          ? "PRAGMA incremental_vacuum(\(max(0, automaticPageBudget)))"
-          : "PRAGMA incremental_vacuum(\(max(0, manualPageBudget)))"
-        _ = try query(vacuumSQL, database: database)
-        result.action = try checkpoint(database) ? .checkpointPending : .incrementalVacuum
+        result.action = try incrementalVacuum(database: database, mode: mode)
       case 1:
         result.action = try checkpoint(database) ? .checkpointPending : .none
       default:
@@ -126,6 +129,7 @@ struct RetentionSQLiteReclaimer: Sendable {
       return .deferredAutomaticSizeLimit
     }
     let directory = URL(fileURLWithPath: databasePath).deletingLastPathComponent().path
+    if mode == .manual, hasLiveSessionLocks(databaseDirectory: directory) { return .deferredLiveSessions }
     guard let available = freeSpace(directory),
           let doubledSize = checkedMultiply(fileBytes, 2),
           let required = checkedAdd(doubledSize, 256 << 20),
@@ -136,6 +140,55 @@ struct RetentionSQLiteReclaimer: Sendable {
     try execute("VACUUM", database: database)
     _ = try checkpoint(database)
     return .converted
+  }
+
+  private func incrementalVacuum(database: SQLiteDatabase, mode: RetentionReclamationMode) throws -> RetentionReclamationAction {
+    if mode == .automatic {
+      _ = try query("PRAGMA incremental_vacuum(\(max(0, automaticPageBudget)))", database: database)
+      return try checkpoint(database) ? .checkpointPending : .incrementalVacuum
+    }
+    let deadline = Date().addingTimeInterval(max(0, manualTimeBudget))
+    while Date() < deadline {
+      let free = try pragmaInteger("PRAGMA freelist_count", column: "freelist_count", database: database)
+      guard free > 0 else { return try checkpoint(database) ? .checkpointPending : .incrementalVacuum }
+      try execute("BEGIN IMMEDIATE", database: database)
+      do {
+        _ = try query("PRAGMA incremental_vacuum(\(max(1, manualPageBudget)))", database: database)
+        try execute("COMMIT", database: database)
+      } catch {
+        try? execute("ROLLBACK", database: database)
+        throw error
+      }
+      if try checkpointTruncate(database) { continue }
+    }
+    return try pragmaInteger("PRAGMA freelist_count", column: "freelist_count", database: database) > 0
+      ? .incrementalVacuum : .none
+  }
+
+  private func checkpointTruncate(_ database: SQLiteDatabase) throws -> Bool {
+    let rows = try query("PRAGMA wal_checkpoint(TRUNCATE)", database: database)
+    guard let row = rows.first else { return false }
+    return (Int64(row["busy"] ?? "1") ?? 1) == 0
+  }
+
+  private func hasLiveSessionLocks(databaseDirectory: String) -> Bool {
+    let base = URL(fileURLWithPath: databaseDirectory)
+    let directories = [base.appendingPathComponent("execution-locks"),
+      base.appendingPathComponent("runtime-records/execution-locks")]
+    for directory in directories {
+      guard let entries = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { continue }
+      for entry in entries where entry.hasSuffix(".lock") {
+        let descriptor = open(directory.appendingPathComponent(entry).path, O_RDWR | O_CLOEXEC)
+        guard descriptor >= 0 else { continue }
+        if flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+          close(descriptor)
+          return true
+        }
+        _ = flock(descriptor, LOCK_UN)
+        close(descriptor)
+      }
+    }
+    return false
   }
 
   private func checkpoint(_ database: SQLiteDatabase) throws -> Bool {

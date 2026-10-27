@@ -186,13 +186,66 @@ final class WorkflowDefinitionCommandTests: XCTestCase {
     XCTAssertEqual(try errorCode(unregistered.stdout), "definition_not_registered")
   }
 
-  func testDefinitionCLIEnumeratesAllEightOperationsAndRejectsBadGrammar() async throws {
-    let expected = ["history", "show", "diff", "update", "update-prompt", "restore", "import", "export"]
+  func testPruneAndPurgeHistoryRemoveOldVersionsAndAuditTheRemoval() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = RielaCLIApplication()
+    let seeded = await app.run(fixture.command("import", "w", "--output", "json"))
+    XCTAssertEqual(seeded.exitCode, .success, seeded.stdout + seeded.stderr)
+    for index in 1...3 {
+      let update = await app.run(fixture.command(
+        "update-prompt", "w", "--node", "worker", "--field", "promptTemplate", "--text", "prompt \(index)",
+        "--reason", "tune \(index)", "--output", "json"
+      ))
+      XCTAssertEqual(update.exitCode, .success, update.stdout + update.stderr)
+    }
+    let before = try rowCounts(storeRoot: fixture.store)
+
+    let missingReason = await app.run(fixture.command("prune", "w", "--keep", "1", "--output", "json"))
+    XCTAssertEqual(missingReason.exitCode, .usage)
+    XCTAssertEqual(try errorCode(missingReason.stdout), "reason_required")
+    let badKeep = await app.run(fixture.command("prune", "w", "--keep", "0", "--reason", "r", "--output", "json"))
+    XCTAssertEqual(badKeep.exitCode, .usage)
+
+    let preview = await app.run(fixture.command("prune", "w", "--keep", "1", "--dry-run", "--output", "json"))
+    XCTAssertEqual(preview.exitCode, .success, preview.stdout + preview.stderr)
+    XCTAssertEqual((try jsonObject(preview.stdout)["removedVersionIds"] as? [String])?.count, 2)
+    XCTAssertEqual(try rowCounts(storeRoot: fixture.store), before)
+
+    let pruned = await app.run(fixture.command("prune", "w", "--keep", "1", "--reason", "keep latest", "--output", "json"))
+    XCTAssertEqual(pruned.exitCode, .success, pruned.stdout + pruned.stderr)
+    let prunedJSON = try jsonObject(pruned.stdout)
+    XCTAssertEqual((prunedJSON["removedVersionIds"] as? [String])?.count, 2)
+    XCTAssertEqual((prunedJSON["audit"] as? [String: Any])?["operation"] as? String, "prune")
+    let history = await app.run(fixture.command("history", "w", "--output", "json"))
+    let records = try jsonObjectArray(history.stdout)
+    XCTAssertEqual(records.first?["operation"] as? String, "prune")
+    XCTAssertEqual(records.first?["reason"] as? String, "keep latest")
+    XCTAssertEqual(records.count, 3, "seed + newest prompt update + prune record")
+
+    let unconfirmed = await app.run(fixture.command("purge-history", "w", "--reason", "reset", "--output", "json"))
+    XCTAssertEqual(unconfirmed.exitCode, .usage)
+    let purged = await app.run(fixture.command("purge-history", "w", "--reason", "reset", "--yes", "--output", "json"))
+    XCTAssertEqual(purged.exitCode, .success, purged.stdout + purged.stderr)
+    let purgedHistory = try jsonObjectArray(await app.run(fixture.command("history", "w", "--output", "json")).stdout)
+    XCTAssertEqual(purgedHistory.map { $0["operation"] as? String }, ["purgeHistory"])
+    let shown = await app.run(fixture.command("show", "w", "--output", "json"))
+    XCTAssertEqual(shown.exitCode, .success, shown.stderr)
+
+    let all = await app.run(fixture.command("prune", "--all-workflows", "--keep", "1", "--reason", "sweep", "--output", "json"))
+    XCTAssertEqual(all.exitCode, .success, all.stdout + all.stderr)
+    XCTAssertEqual(try jsonObjectArray(all.stdout).map { $0["workflowName"] as? String }, ["w"])
+  }
+
+  func testDefinitionCLIEnumeratesAllOperationsAndRejectsBadGrammar() async throws {
+    let expected = [
+      "history", "show", "diff", "update", "update-prompt", "restore", "import", "export", "prune", "purge-history"
+    ]
     let commands = CLISurfaceEnumerator.commands().map(\.command)
     for operation in expected {
       XCTAssertTrue(commands.contains("workflow definition \(operation)"), operation)
     }
-    XCTAssertEqual(commands.filter { $0.hasPrefix("workflow definition ") }.count, 8)
+    XCTAssertEqual(commands.filter { $0.hasPrefix("workflow definition ") }.count, expected.count)
 
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

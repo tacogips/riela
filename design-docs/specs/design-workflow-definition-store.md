@@ -181,8 +181,12 @@ Because the database now holds authored data,
 `discardIncompatibleStoreIfNeeded` must not delete a database that has a
 non-empty `definition_heads` table. In that case the open fails with the
 existing "no migration path" error instead. This is the minimal subset of
-consolidation §14's quarantine rule. Automatic retention and `riela gc` do
-not touch definition tables.
+consolidation §14's quarantine rule. Automatic retention and `riela gc` touch
+definition tables only when `retention.definitions.keepVersions` is set. They
+then run the same `prune` as `riela workflow definition prune`. Retention
+lifts the append-only delete triggers only inside its own write transaction
+and recreates them before commit. Every removal is recorded as a `prune` or
+`purgeHistory` audit record.
 
 `WorkflowSession` gains an optional `definitionSource` field: `{kind: store
 | file, workflowName, versionId?, storeRoot?, digest, sourcePath?,

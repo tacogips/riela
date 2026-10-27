@@ -18,6 +18,8 @@ enum WorkflowDefinitionCommandOperation: String, CaseIterable {
   case restore
   case `import`
   case export
+  case prune
+  case purgeHistory = "purge-history"
 }
 
 struct ParsedWorkflowDefinitionCommand {
@@ -29,22 +31,28 @@ struct ParsedWorkflowDefinitionCommand {
   static let valueOptions: Set<String> = [
     "--node", "--limit", "--version", "--from", "--to", "--patch", "--from-file", "--reason",
     "--expected-version", "--evidence", "--actor", "--actor-kind", "--field", "--text", "--text-file",
-    "--workflow-definition-dir", "--session-store", "--scope", "--working-dir", "--output"
+    "--workflow-definition-dir", "--session-store", "--scope", "--working-dir", "--output", "--keep"
   ]
-  static let flagOptions: Set<String> = ["--authored", "--file", "--force", "--to-source", "--overwrite"]
+  static let flagOptions: Set<String> = [
+    "--authored", "--file", "--force", "--to-source", "--overwrite", "--all-workflows", "--dry-run", "--yes"
+  ]
 
   init(_ arguments: [String]) throws {
     guard let first = arguments.first, let operation = WorkflowDefinitionCommandOperation(rawValue: first) else {
-      throw WorkflowDefinitionCLIError.usage("workflow definition requires history|show|diff|update|update-prompt|restore|import|export")
+      throw WorkflowDefinitionCLIError.usage(
+        "workflow definition requires history|show|diff|update|update-prompt|restore|import|export|prune|purge-history"
+      )
     }
-    guard arguments.count > 1, !arguments[1].hasPrefix("--") else {
+    // prune accepts --all-workflows in place of a workflow name
+    let allWorkflows = operation == .prune && arguments.count > 1 && arguments[1] == "--all-workflows"
+    guard allWorkflows || (arguments.count > 1 && !arguments[1].hasPrefix("--")) else {
       throw WorkflowDefinitionCLIError.usage("workflow definition \(operation.rawValue) requires a workflow name")
     }
     self.operation = operation
-    workflowName = arguments[1]
+    workflowName = allWorkflows ? "" : arguments[1]
     var values = [String: [String]]()
     var flags = Set<String>()
-    var index = 2
+    var index = allWorkflows ? 1 : 2
     while index < arguments.count {
       let token = arguments[index]
       if Self.flagOptions.contains(token) {
@@ -113,6 +121,18 @@ struct ParsedWorkflowDefinitionCommand {
       if (value("--to") != nil) == has("--to-source") { throw WorkflowDefinitionCLIError.usage("export requires exactly one of --to or --to-source") }
       if has("--to-source"), !has("--overwrite") { throw WorkflowDefinitionCLIError.usage("--to-source requires --overwrite") }
       if has("--overwrite"), !has("--to-source") { throw WorkflowDefinitionCLIError.usage("--overwrite requires --to-source") }
+    case .prune:
+      guard let keep = value("--keep"), Int(keep).map({ $0 > 0 }) == true else {
+        throw WorkflowDefinitionCLIError.usage("prune requires --keep with a positive integer")
+      }
+      if !has("--dry-run") { try requireReason() }
+    case .purgeHistory:
+      if !has("--dry-run") {
+        try requireReason()
+        guard has("--yes") else {
+          throw WorkflowDefinitionCLIError.usage("purge-history deletes every earlier version and audit record; pass --yes to confirm or --dry-run to preview")
+        }
+      }
     }
     try allowCommon()
   }
@@ -131,11 +151,14 @@ struct ParsedWorkflowDefinitionCommand {
     .updatePrompt: ["--node", "--field", "--text", "--text-file", "--reason", "--expected-version", "--evidence", "--actor", "--actor-kind"],
     .restore: ["--version", "--reason", "--evidence", "--actor"],
     .import: ["--workflow-definition-dir", "--reason", "--evidence", "--actor"],
-    .export: ["--version", "--to"]
+    .export: ["--version", "--to"],
+    .prune: ["--keep", "--reason", "--actor"],
+    .purgeHistory: ["--reason", "--actor"]
   ]
   private static let operationFlags: [WorkflowDefinitionCommandOperation: Set<String>] = [
     .show: ["--authored"], .diff: ["--file"], .update: ["--force"], .import: ["--force"],
-    .export: ["--to-source", "--overwrite"]
+    .export: ["--to-source", "--overwrite"],
+    .prune: ["--all-workflows", "--dry-run"], .purgeHistory: ["--dry-run", "--yes"]
   ]
 
   private func allow(_ names: Set<String>, flags allowedFlags: Set<String> = []) throws {

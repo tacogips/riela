@@ -210,6 +210,11 @@ extension SurfaceCatalog {
       cli: "workflow definition export",
       graphql: graphQLMutation("exportWorkflowDefinition")
     ),
+    surfaceRow(workflowDefaults, id: "workflow.definition.prune", family: "workflow", kind: .mutation, cli: "workflow definition prune"),
+    surfaceRow(
+      workflowDefaults, id: "workflow.definition.purge-history", family: "workflow", kind: .mutation,
+      cli: "workflow definition purge-history"
+    ),
     surfaceRow(workflowDefaults, id: "workflow.checkout", family: "workflow", kind: .process, cli: "workflow checkout"),
     surfaceRow(workflowDefaults, id: "workflow.create", family: "workflow", kind: .process, cli: "workflow create"),
     surfaceRow(

@@ -8,6 +8,11 @@ public enum WorkflowDefinitionOperation: String, Codable, Equatable, Sendable {
   case updatePrompt
   case update
   case restore
+  case prune
+  case purgeHistory
+
+  /// Retention operations record history removal; they never create a version.
+  public var isRetention: Bool { self == .prune || self == .purgeHistory }
 }
 
 public enum WorkflowDefinitionActorKind: String, Codable, Equatable, Sendable {
@@ -322,6 +327,7 @@ public struct WorkflowDefinitionStoreError: Error, Equatable, CustomStringConver
     case staleHead
     case versionNotFound
     case invalidEvidence
+    case invalidRetention
     case storeUnavailable
   }
 
@@ -395,10 +401,14 @@ public struct WorkflowDefinitionStore: Sendable {
       SELECT audit.* FROM definition_change_audit AS audit
       JOIN definition_change_audit AS origin
         ON origin.workflow_name = audit.workflow_name AND origin.version_id = ?
+          AND origin.operation NOT IN (?, ?)
       WHERE audit.workflow_name = ? AND audit.created_order > origin.created_order
+        AND audit.operation NOT IN (?, ?)
       ORDER BY audit.created_order ASC
       """,
-      bindings: [.text(afterVersionId), .text(workflowName)]
+      bindings: [.text(afterVersionId), .text(WorkflowDefinitionOperation.prune.rawValue),
+                 .text(WorkflowDefinitionOperation.purgeHistory.rawValue), .text(workflowName),
+                 .text(WorkflowDefinitionOperation.prune.rawValue), .text(WorkflowDefinitionOperation.purgeHistory.rawValue)]
     )
     return try rows.map(mapAudit)
   }
@@ -512,7 +522,7 @@ public struct WorkflowDefinitionStore: Sendable {
     }
   }
 
-  private func openDatabase() throws -> SQLiteDatabase {
+  func openDatabase() throws -> SQLiteDatabase {
     let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
     let database = try persistence.openDatabase()
     try persistence.prepareSchema(in: database)
@@ -520,7 +530,7 @@ public struct WorkflowDefinitionStore: Sendable {
     return database
   }
 
-  private func readHead(workflowName: String, in database: SQLiteDatabase) throws -> WorkflowDefinitionHead? {
+  func readHead(workflowName: String, in database: SQLiteDatabase) throws -> WorkflowDefinitionHead? {
     let rows = try database.query("SELECT * FROM definition_heads WHERE workflow_name = ?", bindings: [.text(workflowName)])
     guard let row = rows.first else { return nil }
     return WorkflowDefinitionHead(
@@ -531,7 +541,7 @@ public struct WorkflowDefinitionStore: Sendable {
     )
   }
 
-  private func readVersion(versionId: String, in database: SQLiteDatabase) throws -> WorkflowDefinitionVersion? {
+  func readVersion(versionId: String, in database: SQLiteDatabase) throws -> WorkflowDefinitionVersion? {
     let rows = try database.query("SELECT * FROM definition_versions WHERE version_id = ?", bindings: [.text(versionId)])
     return try rows.first.map(mapVersion)
   }
@@ -541,7 +551,7 @@ public struct WorkflowDefinitionStore: Sendable {
     return rows.first?["document"].map { Data($0.utf8) }
   }
 
-  private func mapVersion(_ row: SQLiteRow) throws -> WorkflowDefinitionVersion {
+  func mapVersion(_ row: SQLiteRow) throws -> WorkflowDefinitionVersion {
     guard let operation = WorkflowDefinitionOperation(rawValue: row.string("operation")),
           let actorKind = WorkflowDefinitionActorKind(rawValue: row.string("actor_kind")) else {
       throw WorkflowDefinitionStoreError(code: .storeUnavailable, message: "stored definition version contains an unknown enum value")
@@ -555,7 +565,7 @@ public struct WorkflowDefinitionStore: Sendable {
     )
   }
 
-  private func mapAudit(_ row: SQLiteRow) throws -> WorkflowDefinitionAuditRecord {
+  func mapAudit(_ row: SQLiteRow) throws -> WorkflowDefinitionAuditRecord {
     guard let operation = WorkflowDefinitionOperation(rawValue: row.string("operation")),
           let actorKind = WorkflowDefinitionActorKind(rawValue: row.string("actor_kind")),
           let approval = WorkflowDefinitionApprovalState(rawValue: row.string("approval_state")) else {
@@ -580,7 +590,7 @@ public struct WorkflowDefinitionStore: Sendable {
     return value
   }
 
-  private func canonicalDate(_ value: Date) throws -> String {
+  func canonicalDate(_ value: Date) throws -> String {
     let data = try JSONCanonical.encode(value)
     return try JSONDecoder().decode(String.self, from: data)
   }
@@ -589,7 +599,7 @@ public struct WorkflowDefinitionStore: Sendable {
     try JSONCanonical.decoder().decode(Date.self, from: JSONEncoder().encode(value))
   }
 
-  private func canonicalString<T: Encodable>(_ value: T) throws -> String {
+  func canonicalString<T: Encodable>(_ value: T) throws -> String {
     guard let string = String(bytes: try JSONCanonical.encode(value), encoding: .utf8) else {
       throw WorkflowDefinitionStoreError(code: .storeUnavailable, message: "canonical JSON is not valid UTF-8")
     }

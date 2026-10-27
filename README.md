@@ -725,6 +725,15 @@ To keep all results and messages forever while limiting logs to 14 days and
 }
 ```
 
+Workflow definition history (the SQLite prompt store used by service runs) is
+never pruned unless `definitions.keepVersions` is set. With
+`"definitions": { "keepVersions": 20 }`, each pass keeps the newest 20
+versions of every registered workflow plus the current version, the last file
+import and versions pinned by created, running or suspended sessions, and
+writes one `prune` audit record per workflow that lost history. See
+[`docs/workflow-definition-store.md`](docs/workflow-definition-store.md#history-retention)
+for the manual `prune` and `purge-history` commands.
+
 `RIELA_RETENTION` supplies the complete policy as inline JSON and takes
 precedence over both files. Project policy takes precedence over user policy
 for the project target. `RIELA_RETENTION_AUTOMATIC=true|false|1|0` overrides

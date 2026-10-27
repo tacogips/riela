@@ -38,25 +38,38 @@ public struct RielaRetentionCategory: Codable, Equatable, Sendable {
   }
 }
 
+/// Workflow definition history retention. Definition versions are authored
+/// data, so they are only pruned when `keepVersions` is configured.
+public struct RielaDefinitionRetention: Codable, Equatable, Sendable {
+  public var keepVersions: Int?
+
+  public init(keepVersions: Int? = nil) {
+    self.keepVersions = keepVersions
+  }
+}
+
 public struct RielaRetentionPolicy: Codable, Equatable, Sendable {
   public var automatic: Bool
   public var minIntervalMinutes: Int
   public var results: RielaRetentionCategory
   public var messages: RielaRetentionCategory
   public var logs: RielaRetentionCategory
+  public var definitions: RielaDefinitionRetention
 
   public init(
     automatic: Bool = true,
     minIntervalMinutes: Int = 60,
     results: RielaRetentionCategory = RielaRetentionCategory(),
     messages: RielaRetentionCategory = RielaRetentionCategory(),
-    logs: RielaRetentionCategory = RielaRetentionCategory()
+    logs: RielaRetentionCategory = RielaRetentionCategory(),
+    definitions: RielaDefinitionRetention = RielaDefinitionRetention()
   ) {
     self.automatic = automatic
     self.minIntervalMinutes = minIntervalMinutes
     self.results = results
     self.messages = messages
     self.logs = logs
+    self.definitions = definitions
   }
 }
 
@@ -214,7 +227,7 @@ private func parsePolicyIfPresent(_ object: [String: Any]?, path: String) throws
 }
 
 private func parsePolicy(_ object: [String: Any], path: String) throws -> RielaRetentionPolicy {
-  try validateKeys(object, allowed: ["automatic", "minIntervalMinutes", "results", "messages", "logs"], path: path)
+  try validateKeys(object, allowed: ["automatic", "minIntervalMinutes", "results", "messages", "logs", "definitions"], path: path)
   let automatic = try boolean(object["automatic"], path: "\(path).automatic") ?? true
   let interval = try integer(object["minIntervalMinutes"], path: "\(path).minIntervalMinutes") ?? 60
   guard (1...10_080).contains(interval) else {
@@ -225,8 +238,22 @@ private func parsePolicy(_ object: [String: Any], path: String) throws -> RielaR
     minIntervalMinutes: interval,
     results: try parseCategory(object["results"], name: "results", path: path),
     messages: try parseCategory(object["messages"], name: "messages", path: path),
-    logs: try parseCategory(object["logs"], name: "logs", path: path)
+    logs: try parseCategory(object["logs"], name: "logs", path: path),
+    definitions: try parseDefinitions(object["definitions"], path: "\(path).definitions")
   )
+}
+
+private func parseDefinitions(_ raw: Any?, path: String) throws -> RielaDefinitionRetention {
+  guard let raw else { return RielaDefinitionRetention() }
+  guard let object = raw as? [String: Any] else {
+    throw RielaRetentionConfigurationError.invalid(path: path, reason: "expected an object")
+  }
+  try validateKeys(object, allowed: ["keepVersions"], path: path)
+  let keepVersions = try integer(object["keepVersions"], path: "\(path).keepVersions")
+  guard keepVersions.map({ (1...100_000).contains($0) }) ?? true else {
+    throw RielaRetentionConfigurationError.invalid(path: "\(path).keepVersions", reason: "must be between 1 and 100000")
+  }
+  return RielaDefinitionRetention(keepVersions: keepVersions)
 }
 
 private func parseCategory(_ raw: Any?, name: String, path: String) throws -> RielaRetentionCategory {

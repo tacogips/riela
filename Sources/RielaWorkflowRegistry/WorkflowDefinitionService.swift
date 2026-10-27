@@ -365,6 +365,25 @@ public struct WorkflowDefinitionService: Sendable {
     try store.history(workflowName: workflowName, nodeId: nodeId, limit: limit)
   }
 
+  public func prune(
+    workflowName: String,
+    keepVersions: Int,
+    reason: String,
+    actor: WorkflowDefinitionActor,
+    dryRun: Bool
+  ) throws -> WorkflowDefinitionRetentionResult {
+    try store.prune(workflowName: workflowName, keepVersions: keepVersions, reason: reason, actor: actor, dryRun: dryRun)
+  }
+
+  public func purgeHistory(
+    workflowName: String,
+    reason: String,
+    actor: WorkflowDefinitionActor,
+    dryRun: Bool
+  ) throws -> WorkflowDefinitionRetentionResult {
+    try store.purgeHistory(workflowName: workflowName, reason: reason, actor: actor, dryRun: dryRun)
+  }
+
   // The plan-pinned API returns head, version, and document together.
   // swiftlint:disable:next large_tuple
   public func show(workflowName: String, versionId: String?) throws -> (head: WorkflowDefinitionHead, version: WorkflowDefinitionVersion, document: WorkflowDefinitionDocument) {

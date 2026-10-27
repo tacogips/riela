@@ -332,6 +332,8 @@ Usage:
   riela workflow definition restore <workflow> [options]
   riela workflow definition import <workflow> [options]
   riela workflow definition export <workflow> [options]
+  riela workflow definition prune <workflow>|--all-workflows --keep <n> --reason <text> [--dry-run]
+  riela workflow definition purge-history <workflow> --reason <text> --yes [--dry-run]
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]

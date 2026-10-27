@@ -77,6 +77,8 @@ enum WorkflowDefinitionClientSubcommand: String, CaseIterable, ExpressibleByArgu
   case restore
   case `import`
   case export
+  case prune
+  case purgeHistory = "purge-history"
 }
 
 enum WorkflowVersionClientOperation: String, CaseIterable, ExpressibleByArgument {

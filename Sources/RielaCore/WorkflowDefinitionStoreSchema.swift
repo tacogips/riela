@@ -26,6 +26,27 @@ enum WorkflowDefinitionStoreSchema {
     return hasSnapshots || hasCLISessions || hasMessages
   }
 
+  private static let versionsNoDeleteTrigger = """
+  CREATE TRIGGER IF NOT EXISTS definition_versions_no_delete BEFORE DELETE ON definition_versions \
+  BEGIN SELECT RAISE(ABORT, 'definition_versions is append-only'); END
+  """
+  private static let auditNoDeleteTrigger = """
+  CREATE TRIGGER IF NOT EXISTS definition_audit_no_delete BEFORE DELETE ON definition_change_audit \
+  BEGIN SELECT RAISE(ABORT, 'definition_change_audit is append-only'); END
+  """
+
+  /// Runs `body` with the append-only delete guards lifted. Callers must be
+  /// inside a write transaction so the guards are back before anyone else
+  /// can observe the tables; retention is the only sanctioned deleter.
+  static func withRetentionDeletes<T>(in database: SQLiteDatabase, _ body: () throws -> T) throws -> T {
+    try database.execute("DROP TRIGGER IF EXISTS definition_versions_no_delete")
+    try database.execute("DROP TRIGGER IF EXISTS definition_audit_no_delete")
+    let value = try body()
+    try database.execute(versionsNoDeleteTrigger)
+    try database.execute(auditNoDeleteTrigger)
+    return value
+  }
+
   static func create(in database: SQLiteDatabase) throws {
     try database.execute("""
     CREATE TABLE IF NOT EXISTS definition_blobs (
@@ -88,8 +109,8 @@ enum WorkflowDefinitionStoreSchema {
     try database.execute("CREATE INDEX IF NOT EXISTS definition_audit_workflow_order ON definition_change_audit(workflow_name, created_order)")
     try database.execute("CREATE TRIGGER IF NOT EXISTS definition_blobs_no_update BEFORE UPDATE ON definition_blobs BEGIN SELECT RAISE(ABORT, 'definition_blobs are immutable'); END")
     try database.execute("CREATE TRIGGER IF NOT EXISTS definition_versions_no_update BEFORE UPDATE ON definition_versions BEGIN SELECT RAISE(ABORT, 'definition_versions is append-only'); END")
-    try database.execute("CREATE TRIGGER IF NOT EXISTS definition_versions_no_delete BEFORE DELETE ON definition_versions BEGIN SELECT RAISE(ABORT, 'definition_versions is append-only'); END")
+    try database.execute(versionsNoDeleteTrigger)
     try database.execute("CREATE TRIGGER IF NOT EXISTS definition_audit_no_update BEFORE UPDATE ON definition_change_audit BEGIN SELECT RAISE(ABORT, 'definition_change_audit is append-only'); END")
-    try database.execute("CREATE TRIGGER IF NOT EXISTS definition_audit_no_delete BEFORE DELETE ON definition_change_audit BEGIN SELECT RAISE(ABORT, 'definition_change_audit is append-only'); END")
+    try database.execute(auditNoDeleteTrigger)
   }
 }

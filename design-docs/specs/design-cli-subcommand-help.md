@@ -3,6 +3,8 @@
 Issue: https://github.com/tacogips/riela/issues/184
 
 Baseline: `main` @ `a30065e7`. No earlier design covers CLI help behavior.
+Status: §1–§5 are implemented on `main` at `dd6c94c9`. §6 records the
+gap-closure audit against `main` @ `0f18d867` and the remaining work.
 `design-control-surface-parity.md` owns `CLISurfaceEnumerator`, which this
 design reuses as the list of command paths. `design-automatic-retention.md`
 already skips retention when `--help`/`-h` is present; that stays unchanged.
@@ -223,3 +225,88 @@ Commands to run:
   and keep their ArgumentParser `USAGE:` style.
 
 No user decision is blocking; nothing was added under `design-docs/user-qa/`.
+
+## 6. Gap closure (audit of `main` @ `0f18d867`)
+
+### 6.1 What the audit found already correct
+
+This was a source and test read. Building and running the binary was not
+possible from the design step.
+
+- `RielaCLIApplication.runParsed` (`RielaCLIApplication.swift:111`) calls
+  `CLIHelpRequest.detect` before the `sandbox`, `auth` and `worker`
+  pre-dispatch and before `parser.parse`, as §2.1 requires.
+- The three `CleanExit` backstops in §2.4 exist:
+  `RielaClientFamilyArguments.parseCLI` (`RielaClientFamilyArguments.swift:11`),
+  `StorageCommandFailure.result` (`StorageDoctorCommand.swift:359`), and
+  `unexpectedErrorResult` in the final catch of `runParsed`
+  (`RielaCLIApplication.swift:174`).
+- `SubcommandHelpTests.testSurfaceAudit` loops over every non-delegated
+  `CLISurfaceEnumerator.commands()` path with `--help` and `-h` (at least 50
+  paths). Every routed path with required arguments is covered by the detector
+  and the renderer.
+- `SubcommandHelpApplicationTests` runs the issue's commands end to end
+  through `RielaCLIApplication().run`: `storage compact --help`/`-h`,
+  `doctor storage`, `session status`, `workflow validate`, and others.
+  `StorageHelpBackstopTests` covers the storage backstop.
+- The only places where `-h`/`--help` is not intercepted are the ones §2.1(4)
+  intends. `kaiba …`, `routine …` and `version` print the full top-level help
+  (D2). That still exits 0, so the
+  `Run riela kaiba instance --help.` hint in `design-kaiba-api-instances.md`
+  stays valid.
+
+### 6.2 Remaining gaps (in scope)
+
+- **GC1, delegated help regression coverage.** §3 requires every delegated
+  runner path to exit 0 through `RielaCLIApplication().run`.
+  `testTopLevelAndDelegatedHelpStayUnchanged` covers only `gc --help`,
+  `session prune --help` and `cache put --help`. Extend that test to cover
+  these argument lists:
+  - `session reconcile` and `environment status|reload`, with `--help`;
+  - `gc`, `session prune`, `session reconcile`, `cache put` and
+    `environment status`, with `-h`.
+
+  Each case asserts exit `.success`, non-empty stdout, and no `helpRequested`
+  in stdout. Safety: each runner returns help before it does any work
+  (`EnvironmentCommand.swift:34`, `SessionReconcileCommand.swift:35`,
+  `SessionPruneCommand.swift:19`, `CacheCommands.swift:53`,
+  `GarbageCollectionCommand.swift:14`). This is a test-only change. Runtime
+  code does not change.
+- **GC2, user-facing mention.** Before this change only this design described
+  the help rule, and the README said nothing about it. Add one short paragraph
+  to `README.md` under `## Control Surfaces`, after the catalog paragraph. It
+  should say that:
+  - `riela <command> [<subcommand>] --help` (or `-h`) prints that command's
+    usage on stdout and exits 0, before any arguments are checked;
+  - tokens after `--` are never help requests;
+  - a literal `--help` value is passed as `--option=--help`;
+  - `riela gateway <name> --help` shows the gateway's own help.
+
+  `rielaCLIHelpText` does not change (D5).
+- **GC3, verification commands.** §3's `--filter RielaCLITests` is replaced
+  for this run by the accepted focused filter in §6.3. The full-module run
+  remains optional.
+
+No other gap was found. No `Sources/` change is required. `VERSION` and
+`Package.swift` stay unchanged.
+
+### 6.3 Verification for the gap closure
+
+Run every command from the repository root. Keep logs under
+`tmp/issue-184-gap/`.
+
+- `arch -arm64 /bin/zsh -lc 'swift build && swift test --filter "SubcommandHelp|StorageHelpBackstopTests|CommandParsingTests|WorkflowRunHelpTests|PasskeyCommandTests"'`
+  must report more than 0 tests and 0 failures.
+- `arch -arm64 /bin/zsh -lc '.build/debug/riela storage compact --help; echo $?'`
+  and the same with `storage compact -h`, `session status --help` and
+  `workflow validate --help`. Each prints usage, then `0`.
+- `StorageCompactCommandTests` (`testDryRunReportsLegacyMemoryWorkAndLeavesFileUnchanged`,
+  `testApplySweepsOrphanMemoryHistoryAndReportsCount`) also fail on `main`
+  before #184. They are excluded from the filter and are not regressions.
+
+### 6.4 Decision
+
+- **D5:** The uniform help rule is documented in `README.md` only.
+  `rielaCLIHelpText` is unchanged, because adding a line to it would change
+  the top-level output and the §2.3 usage slices without a requirement for
+  it.

@@ -1,0 +1,122 @@
+{
+  "taskId": "issue-184-gap",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "0f18d86706a2b3df7a51aa4a90fa3e31a0b4b85c",
+  "designDocPaths": [
+    "design-docs/specs/design-cli-subcommand-help.md"
+  ],
+  "evidenceRoot": "tmp/issue-184-gap",
+  "reviewContext": {
+    "issueReference": "tacogips/riela#184 (CLOSED; first fix main dd6c94c9; gap closure per design-docs/specs/design-cli-subcommand-help.md §6); workflowExecutionId opus-terra-design-and-implement-review-loop-session-543; plans accepted by step5-impl-plan-review comm-010231",
+    "userProblem": "Issue #184 asked that every routed riela subcommand print usage and exit 0 for --help/-h. The first fix landed at dd6c94c9. The audit of main @ 0f18d867 (design §6) found the runtime correct but two gaps: delegated runners (gc, session prune, session reconcile, cache, environment) have only partial end-to-end help regression coverage (GC1), and the uniform help rule is not mentioned in any user-facing doc (GC2).",
+    "requiredOutcomes": [
+      "GC1: SubcommandHelpApplicationTests.testTopLevelAndDelegatedHelpStayUnchanged covers 11 delegated argument lists (gc, session prune, session reconcile, cache put, environment status with --help and -h, plus environment reload --help), each asserting exit .success, non-empty stdout, no helpRequested, and no {\"error\" prefix.",
+      "GC2/D5: README.md gets one short paragraph under ## Control Surfaces after the SurfaceCatalog paragraph, stating the uniform --help/-h rule, the -- terminator rule, the --option=--help literal form, and that riela gateway <name> --help shows the gateway's own help.",
+      "GC3: the focused filter swift test --filter 'SubcommandHelp|StorageHelpBackstopTests|CommandParsingTests|WorkflowRunHelpTests|PasskeyCommandTests' passes with >0 tests and 0 failures, and storage compact --help/-h, session status --help, workflow validate --help print usage and exit 0 from .build/debug/riela."
+    ],
+    "nonGoals": [
+      "No change under Sources/; rielaCLIHelpText unchanged (D5).",
+      "No change to VERSION or Package.swift (already 0.2.83).",
+      "No usage lines for kaiba, routine or version (D2); they keep the full top-level help.",
+      "No fix of pre-existing StorageCompactCommandTests failures.",
+      "No new test file or test class; no edits to other README sections."
+    ],
+    "constraints": [
+      "Run swift build/test/swiftlint via arch -arm64 /bin/zsh -lc from the repository root, in the foreground, with the focused filter; the full suite is optional.",
+      "SwiftPM .build is a pre-existing gitignored cache; writing it is authorized and is not a tracked write.",
+      "Evidence and logs go only under tmp/issue-184-gap/<planId-or-chg-dir>/ and are never committed.",
+      "Workers share one working tree: no git commit/stash/checkout/branch; read files fresh and record before/after SHA-256.",
+      "Do not modify unrelated files."
+    ],
+    "designDecisionsAndRationale": [
+      "D1: one detector (CLIHelpRequest.detect) in RielaCLIApplication.runParsed; per-parser help is not added.",
+      "D3: a help token before -- always wins; literal values use --opt=--help. This is why README states the --option=--help form.",
+      "D4: delegated runners keep their own ArgumentParser USAGE help; tests therefore assert exit code and non-empty stdout, not exact text.",
+      "D5: the help rule is documented in README.md only, so top-level help output and §2.3 usage slices stay unchanged."
+    ],
+    "intentionalTradeoffs": [
+      "Delegated-runner tests do not assert exact help text or empty stderr, since ArgumentParser output is not part of the contract.",
+      "chg-01 runs a whole-package swift build while chg-02 edits only README.md in the same wave; README cannot affect the build (reviewer low finding).",
+      "If a delegated case fails end to end, chg-01 records a finding without touching Sources/; reconcile decides a serial follow-up."
+    ],
+    "supportedEdgeCases": [
+      "Both --help and -h for every delegated runner.",
+      "environment reload --help returns help before any reload or network work.",
+      "Required-argument commands (session status, workflow validate) print usage without the argument.",
+      "Tokens after -- and --option=--help are never treated as help requests."
+    ],
+    "outOfScopeEdgeCases": [
+      "Running serve or auth invite help end to end (covered by detector-only SubcommandHelpTests.testSurfaceAudit).",
+      "Command-specific usage for kaiba, routine and version.",
+      "Cross-module RielaCLITests regressions outside the focused filter (full-module run optional at integration)."
+    ],
+    "residualRisks": [
+      "StorageCompactCommandTests failures predate #184 and are excluded from the filter (not regressions).",
+      "No live build or test evidence exists at plan time; covered by chg-01 verification and the integration binary checks.",
+      "chg-01 Verification 4 git diff --stat will not list the untracked progress log; use git status for that evidence (reviewer low finding)."
+    ],
+    "codexAgentReferences": [],
+    "sourcePaths": [
+      "design-docs/specs/design-cli-subcommand-help.md",
+      "impl-plans/active/cli-subcommand-help-gap-01-delegated-help-tests.md",
+      "impl-plans/active/cli-subcommand-help-gap-02-readme-help-note.md",
+      "Sources/RielaCLI/CLISubcommandHelp.swift",
+      "Sources/RielaCLI/RielaCLIApplication.swift",
+      "Tests/RielaCLITests/SubcommandHelpApplicationTests.swift",
+      "README.md"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "chg-01-delegated-help-tests",
+      "planPath": "impl-plans/active/cli-subcommand-help-gap-01-delegated-help-tests.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Tests/RielaCLITests/SubcommandHelpApplicationTests.swift",
+        "impl-plans/progress/chg-01-delegated-help-tests.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "testTopLevelAndDelegatedHelpStayUnchanged contains all 11 delegated argument arrays, each with the exit .success, non-empty stdout, no helpRequested and no {\"error\" prefix assertions; top-level --help assertions unchanged.",
+        "swift build, the focused swift test filter (>0 tests, 0 failures, testTopLevelAndDelegatedHelpStayUnchanged passed) and swiftlint --strict on the test file each exit 0 with full log paths recorded.",
+        "git diff --name-only -- Sources VERSION Package.swift is empty.",
+        "impl-plans/progress/chg-01-delegated-help-tests.md records summary, before/after SHA-256, gate/exit/test-count/failure-count/log-path table and any finding."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-184-gap/chg-01",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/issue-184-gap/chg-01/build.log 2>&1; echo \"exit=$?\"'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"SubcommandHelp|StorageHelpBackstopTests|CommandParsingTests|WorkflowRunHelpTests|PasskeyCommandTests\" > tmp/issue-184-gap/chg-01/test.log 2>&1; echo \"exit=$?\"'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict Tests/RielaCLITests/SubcommandHelpApplicationTests.swift > tmp/issue-184-gap/chg-01/swiftlint.log 2>&1; echo \"exit=$?\"'",
+        "git diff --name-only -- Sources VERSION Package.swift"
+      ]
+    },
+    {
+      "planId": "chg-02-readme-help-note",
+      "planPath": "impl-plans/active/cli-subcommand-help-gap-02-readme-help-note.md",
+      "dependsOn": [],
+      "writePaths": [
+        "README.md",
+        "impl-plans/progress/chg-02-readme-help-note.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "README.md has exactly one new paragraph in ## Control Surfaces, after the SurfaceCatalog paragraph, stating the four facts (uniform --help/-h usage + exit 0 before argument checks, -- terminator, --option=--help, riela gateway <name> --help); no other README line changed.",
+        "git diff --numstat -- README.md shows 0 deleted and <=7 added lines; grep finds --option=--help and riela gateway <name> --help between ## Control Surfaces and ## Install.",
+        "git diff --name-only -- Sources VERSION Package.swift is empty.",
+        "impl-plans/progress/chg-02-readme-help-note.md records summary, before/after SHA-256, inserted text and gate/exit/log-path table."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-184-gap/chg-02",
+        "git diff --numstat -- README.md > tmp/issue-184-gap/chg-02/diff.log; echo \"exit=$?\"",
+        "grep -n -e \"--option=--help\" -e \"riela gateway <name> --help\" README.md > tmp/issue-184-gap/chg-02/grep.log; echo \"exit=$?\"",
+        "git diff --name-only -- Sources VERSION Package.swift"
+      ]
+    }
+  ]
+}

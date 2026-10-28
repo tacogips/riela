@@ -17,7 +17,8 @@ final class StorageCompactCommandTests: XCTestCase {
     try database.execute("CREATE TABLE memory_history_heads(key TEXT PRIMARY KEY)")
     try database.execute("INSERT INTO memory_evolution VALUES (1, 1, NULL), (1, 2, '{\"payload\":\"legacy\"}')")
     let before = try Data(contentsOf: URL(fileURLWithPath: path))
-    let result = await RielaCLIApplication().run(["storage", "compact", "--memory-root", root.path, "--output", "json"])
+    let result = await RielaCLIApplication().run(["storage", "compact", "--memory-root", root.path,
+      "--session-store", root.appendingPathComponent("sessions").path, "--output", "json"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
     XCTAssertEqual(report["dryRun"] as? Bool, true)
@@ -349,7 +350,8 @@ final class StorageCompactCommandTests: XCTestCase {
         bindings: [.int(record.recordId), .int(record.recordId), .text(deltaJSON)])
     }
     let runner = StorageCompactCommandRunner()
-    let arguments = ["compact", "--apply", "--max-batch", "1", "--memory-root", root.path, "--output", "json"]
+    let arguments = ["compact", "--apply", "--max-batch", "1", "--memory-root", root.path,
+      "--session-store", root.appendingPathComponent("sessions").path, "--output", "json"]
 
     let firstRun = try run(runner, arguments)
     XCTAssertEqual(firstRun["workRemaining"] as? Bool, true)
@@ -372,7 +374,8 @@ final class StorageCompactCommandTests: XCTestCase {
     try database.execute("INSERT INTO memory_history_heads(key,revision,head_version,updated_at) VALUES ('999',1,1,'now')")
     try database.execute("INSERT INTO memory_history_versions(key,version,created_at,content_sha256,byte_count,encoding,codec,blob) VALUES ('999',1,'now','orphan',1,'full','none',x'01')")
 
-    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--memory-root", root.path, "--output", "json"])
+    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--memory-root", root.path,
+      "--session-store", root.appendingPathComponent("sessions").path, "--output", "json"])
     let store = try XCTUnwrap((report["stores"] as? [[String: Any]])?.first)
     let converted = try XCTUnwrap(store["converted"] as? [String: Any])
     XCTAssertEqual(converted["orphanMemoryHistoryRows"] as? Int, 2)

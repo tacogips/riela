@@ -1413,6 +1413,12 @@ why the surface is not offered. Five gate tests hold CLI, skills, GraphQL, web
 API and library in agreement with the catalog, so a new command cannot ship on
 one surface and silently be missing from the others.
 
+`riela <command> [<subcommand>] --help` (or `-h`) prints usage on stdout
+and exits 0 before required arguments are checked. Tokens after `--` belong to
+the child program or workflow and are never help requests; pass a literal
+`--help` option value as `--option=--help`. `riela gateway <name> --help`
+shows the linked gateway's own help.
+
 The GraphQL schema is generated from the request/response types plus the
 catalog. Regenerate it with `scripts/surface-parity/generate-sdl.sh` after
 changing a DTO or a catalog row; a freshness test requires the checked-in SDL

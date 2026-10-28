@@ -42,9 +42,19 @@ final class SubcommandHelpApplicationTests: XCTestCase {
     let top = await RielaCLIApplication().run(["--help"])
     XCTAssertEqual(top.exitCode, .success)
     XCTAssertEqual(top.stdout, rielaCLIHelpText)
-    for arguments in [["gc", "--help"], ["session", "prune", "--help"], ["cache", "put", "--help"]] {
+    for arguments in [
+      ["gc", "--help"], ["gc", "-h"],
+      ["session", "prune", "--help"], ["session", "prune", "-h"],
+      ["session", "reconcile", "--help"], ["session", "reconcile", "-h"],
+      ["cache", "put", "--help"], ["cache", "put", "-h"],
+      ["environment", "status", "--help"], ["environment", "status", "-h"],
+      ["environment", "reload", "--help"]
+    ] {
       let result = await RielaCLIApplication().run(arguments)
       XCTAssertEqual(result.exitCode, .success, "\(arguments): \(result.stderr)")
+      XCTAssertFalse(result.stdout.isEmpty, "\(arguments)")
+      XCTAssertFalse(result.stdout.contains("helpRequested"), "\(arguments)")
+      XCTAssertFalse(result.stdout.hasPrefix("{\"error\""), "\(arguments)")
     }
   }
 

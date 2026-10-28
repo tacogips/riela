@@ -3,9 +3,10 @@ import RielaCore
 import RielaAddonSupport
 
 extension GmailMailboxCollector {
-  /// One bounded scan per run. Frozen scans rotate separately from fresh
-  /// discovery, so an unreadable message or cursor cannot block new arrivals.
-  func collect(fetch: (String, JSONObject, [String]) async throws -> JSONObject) async throws -> JSONObject {
+  // One bounded scan per run. Frozen scans rotate separately from fresh discovery.
+  // This state machine predates gcc-02; only its fetch seam changed.
+  // swiftlint:disable:next cyclomatic_complexity
+  func collect(fetch: @escaping @Sendable (String, JSONObject, [String]) async throws -> JSONObject) async throws -> JSONObject {
     try Task.checkCancellation()
     if let deadline, clock() >= deadline { throw AdapterExecutionError(.timeout, "Gmail collection execution budget exhausted") }
     var checkpoint = options.previous
@@ -85,11 +86,7 @@ extension GmailMailboxCollector {
     let scan = GmailMailboxCollector(options: scanOptions, deadline: deadline,
       outputByteBudget: outputByteBudget - archiveBytes - queueBytes - 65_536,
       scanReceivedAfter: lower, foundBodyIDs: priorFound, clock: clock, wait: wait)
-    var usedProfile = false
-    var result = try await scan.collectScan { operation, arguments, selection in
-      if operation == "profile", !usedProfile { usedProfile = true; return profile }
-      return try await fetch(operation, arguments, selection)
-    }
+    var result = try await scan.collectScan(prefetchedProfile: profile, fetch: fetch)
     guard case var .object(next)? = result["checkpoint"] else { throw gmailCollectionInvalid() }
     for key in ["fresh_profile_version", "prefer_fresh", "discovery_covered_until"] {
       if let value = checkpoint[key] { next[key] = value }

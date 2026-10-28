@@ -17,7 +17,7 @@ extension BuiltinWorkflowAddonResolver {
     guard try JSONEncoder().encode(values["previous"] ?? .object([:])).count + 131_072 < budget else {
       throw gmailCollectionInvalid()
     }
-    func fetch(_ operation: String, _ arguments: JSONObject, _ selection: [String]) async throws -> JSONObject {
+    @Sendable func fetch(_ operation: String, _ arguments: JSONObject, _ selection: [String]) async throws -> JSONObject {
       let child = WorkflowAddonExecutionInput(workflowId: input.workflowId, stepId: input.stepId, nodeId: input.nodeId,
         addon: .init(name: "riela/gmail-gateway-reader", version: "1", config: ["operation": .string(operation),
           "arguments": .string("{{collectorArguments}}"), "selection": .array(selection.map(JSONValue.string)),

@@ -176,6 +176,12 @@ existing 10,000-item hard limit is within one page); the size never depends on
 `maxThreads`. The listing stays sequential because each page needs the previous
 cursor. The pending `listing.maximum` stays 10,000, and the `pending_collection`
 key set is unchanged, so saved production checkpoints resume as before.
+Each page is accepted atomically: IDs and the cursor advance together only
+after cursor, page-count, item-count and encoded-state limits pass. A rejected or
+oversize page leaves the previous cursor and item prefix intact, so a later run
+can resume from that checkpoint. A nil cursor is omitted from persisted
+page-state JSON to preserve the previous wire format. The encoded listing state
+is capped at 7,000,000 bytes.
 
 Only the per-thread phase is concurrent. One thread read is the sequence of
 requests for one queued ID: the optional version check, the full thread read
@@ -219,8 +225,8 @@ Early stops are the only way a run ends with `complete: false` and a resumable
 
 | Stop | Stage | Effect |
 | --- | --- | --- |
-| Limiter refuses a slot during listing or a thread read | `deadline` (recorded once) | No new reads start. Started requests finish within their child deadline. A thread read refused before its first request stays pending, not deferred. A read refused after at least one of its requests started is deferred and becomes `retry_after`, as the sequential collector does today, so a slow item cannot monopolize runs. |
-| Fetched thread fails the output reservation | `output-budget` (with `threadId`) | That ID is deferred, as oversized items are today. No new reads start. Completed look-ahead outcomes are still evaluated in order. |
+| Limiter refuses a slot during listing or a thread read | `deadline` (recorded once) | The limiter declines slots with less than four seconds before the collector deadline, covering the adapter's three-second child-deadline buffer. No new reads start. Started requests finish within their child deadline. A thread read refused before its first request stays pending, not deferred. A read refused after at least one of its requests started is deferred and becomes `retry_after`, as the sequential collector does today, so a slow item cannot monopolize runs. |
+| An outcome cannot fit the conservative output reservation | `output-budget` (with `threadId`) | The ID is deferred, including unchanged and failed outcomes whose checkpoint IDs would exceed the budget. Fetched thread bytes are encoded once and reserved with a conservative allowance for checkpoint metadata. No new reads start. Completed look-ahead outcomes are still evaluated in order. |
 | Listing reaches 10,000 items with more pages | `listing-limit` | Listed IDs are still processed. Recorded even if every listed ID is accepted, because the listing is incomplete. |
 | Listing provider failure | `listing` (unchanged) | Listed prefix is still processed. |
 | Thread provider/validation failure | `thread` (unchanged) | Other threads continue. |

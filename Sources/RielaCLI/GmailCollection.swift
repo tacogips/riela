@@ -84,20 +84,18 @@ struct GmailMailboxCollector {
   var outputByteBudget = 8_000_000
   var scanReceivedAfter: String?
   var foundBodyIDs = Set<String>()
-  var clock: () -> Date = { Date() }
-  var wait: (Double) async throws -> Void = { if $0 > 0 { try await Task.sleep(for: .seconds($0)) } }
+  var clock: @Sendable () -> Date = { Date() }
+  var wait: @Sendable (Double) async throws -> Void = { if $0 > 0 { try await Task.sleep(for: .seconds($0)) } }
 
-  func collectScan(fetch: (String, JSONObject, [String]) async throws -> JSONObject) async throws -> JSONObject {
+  func collectScan(
+    prefetchedProfile: JSONObject? = nil,
+    fetch: @escaping @Sendable (String, JSONObject, [String]) async throws -> JSONObject
+  ) async throws -> JSONObject {
     let startedAt = clock()
-    var requests = 0
-    func read(_ operation: String, _ arguments: JSONObject, _ selection: [String]) async throws -> JSONObject {
-      try Task.checkCancellation()
-      if let deadline, deadline.timeIntervalSince(clock()) <= (requests > 0 ? options.interval : 0) {
-        throw AdapterExecutionError(.timeout, "Gmail collection execution budget exhausted")
-      }
-      if requests > 0 { try await wait(options.interval) }
-      requests += 1
-      return try await fetch(operation, arguments, selection)
+    let limiter = GmailCollectionRequestLimiter(interval: options.interval, deadline: deadline, clock: clock, wait: wait)
+    var deadlineRecorded = false
+    func recordDeadline() {
+      if !deadlineRecorded { recordFailure(failure("deadline")); deadlineRecorded = true }
     }
     var checkpoint = options.previous
     if checkpoint["native_query_scope"] != .string(options.scope) {
@@ -105,7 +103,7 @@ struct GmailMailboxCollector {
       checkpoint.removeValue(forKey: "pending_collection")
     }
     checkpoint["native_query_scope"] = .string(options.scope)
-    let profile = try await read("profile", ["accountId": .string(options.account)], ["emailAddress", "historyId"])
+    let profile = try await loadProfile(prefetchedProfile, limiter: limiter, fetch: fetch)
     if let email = nonEmptyString(profile["emailAddress"]) {
       let hash = String(JSONCanonical.sha256Hex(Data(email.utf8)).prefix(24))
       if let old = checkpoint["mailbox_hash"], old != .string(hash) {
@@ -153,20 +151,10 @@ struct GmailMailboxCollector {
         default: throw gmailCollectionInvalid()
         }
       }
-      let beforeCount = try gmailIDSet(page["items"]).count
-      while page["complete"] != .bool(true) {
-        let selected = try gmailIDSet(page["items"]).count
-        let remaining = min(options.maximum - (selected - beforeCount), 10_000 - selected)
-        if remaining <= 0 { break }
-        do {
-          guard case let .object(request)? = page["request"], let query = request["query"] else { throw gmailCollectionInvalid() }
-          var input: JSONObject = ["accountId": .string(options.account), "query": query, "first": .integer(Int64(min(50, remaining)))]
-          if let after = frozenAfter { input["receivedAfter"] = .string(after) }
-          if let cursor = request["cursor"], cursor != .null { input["after"] = cursor }
-          let response = try await read("threads", ["input": .object(input)], ["edges.node.id", "pageInfo.hasNextPage", "pageInfo.endCursor"])
-          page = try advancePage(page["state"], response: response)
-        } catch is CancellationError { throw CancellationError() }
-        catch { recordFailure(failure("listing")); break }
+      let listingResult = try await listPages(startingAt: page, receivedAfter: frozenAfter, limiter: limiter, fetch: fetch)
+      page = listingResult.page
+      if listingResult.failureStage == "deadline" { recordDeadline() } else if let failureStage = listingResult.failureStage {
+        recordFailure(failure(failureStage))
       }
       guard case let .array(ids)? = page["items"] else { throw gmailCollectionInvalid() }
       let listing = ids.compactMap { nonEmptyString($0) }
@@ -177,59 +165,47 @@ struct GmailMailboxCollector {
       let retryIDs = listing.filter { !completed.contains($0) && deferred.contains($0) }.sorted()
       let rotated = retryAfter.map { last in retryIDs.filter { $0 > last } + retryIDs.filter { $0 <= last } } ?? retryIDs
       let queue = listing.filter { !completed.contains($0) && !deferred.contains($0) } + rotated
-      for id in queue.prefix(options.maximum) {
-        if let deadline, deadline.timeIntervalSince(clock()) <= options.interval { break }
-        retryAfter = id
-        do {
-          let arguments: JSONObject = ["accountId": .string(options.account), "threadId": .string(id)]
-          if let previous = try gmailVersion(versions[id]), options.bodyIDs.isEmpty {
-            let metadata = try await read("thread", arguments, ["id", "providerMetadata.gmail.historyId"])
-            guard metadata["id"] == .string(id) else { throw gmailCollectionInvalid() }
-            if try threadVersion(metadata) == previous { completed.insert(id); deferred.remove(id); continue }
-          }
-          var thread = try await read("thread", arguments, Self.threadSelection)
-          guard thread["id"] == .string(id), case let .array(rawMessages)? = thread["messages"] else { throw gmailCollectionInvalid() }
-          let stamp = try threadVersion(thread)
-          var messages: [JSONValue] = [], threadBodies = Set<String>()
-          for value in rawMessages {
-            guard case var .object(message) = value, let messageID = nonEmptyString(message["id"]), gmailIdentifier(messageID),
-              message["accountId"] == .string(options.account), message["threadId"] == .string(id) else { throw gmailCollectionInvalid() }
-            if options.bodyIDs.contains(messageID) {
-              let body = try await read("messageBodyBytes", ["accountId": .string(options.account), "messageId": .string(messageID), "maxBytes": .integer(2_097_152)], bodySelection)
-              guard body["accountId"] == .string(options.account), body["messageId"] == .string(messageID),
-                body["complete"] == .bool(true) else { throw gmailCollectionInvalid() }
-              message["_body_bytes"] = .object(body); threadBodies.insert(messageID)
+      let concurrency = min(options.maximum, 16)
+      let versionsSnapshot = versions
+      var launched = 0, acceptCursor = 0, stopScheduling = false
+      var buffered: [Int: GmailThreadReadOutcome] = [:]
+      var processing = GmailThreadProcessingState(checkpoint: checkpoint, page: page, listing: listing,
+        frozenMailbox: frozenMailbox, frozenAfter: frozenAfter, outputByteBudget: outputByteBudget,
+        completed: completed, deferred: deferred, found: found, retryAfter: retryAfter, versions: versions)
+      processing.prepareOutputBudget(options: options)
+      try await withThrowingTaskGroup(of: (Int, GmailThreadReadOutcome).self) { group in
+        func launchAvailable() {
+          while launched < queue.count, launched - acceptCursor < concurrency, !stopScheduling {
+            let index = launched
+            let id = queue[index]
+            let previous = versionsSnapshot[id]
+            launched += 1
+            group.addTask {
+              (index, try await readThread(id: id, previousVersion: previous, limiter: limiter, fetch: fetch))
             }
-            messages.append(.object(message))
           }
-          thread["messages"] = .array(messages); thread["_fetched_at"] = .string(ISO8601DateFormatter().string(from: clock()))
-          // Reserve the complete continuation metadata before accepting a body.
-          // A large item must not discard the prefix already acquired this run.
-          var proposed = checkpoint
-          var nextVersions = versions
-          if let stamp { nextVersions[id] = .string(stamp) } else { nextVersions.removeValue(forKey: id) }
-          proposed["thread_versions"] = .object(nextVersions)
-          proposed["active_threads"] = .array(Set((try? gmailIDSet(checkpoint["active_threads"])) ?? []).union(listing).sorted().map(JSONValue.string))
-          proposed["pending_collection"] = .object(["listing": page["state"] ?? .null,
-            "completed": .array(completed.union([id]).sorted().map(JSONValue.string)),
-            "deferred": .array(deferred.sorted().map(JSONValue.string)),
-            "found_bodies": .array(found.union(threadBodies).sorted().map(JSONValue.string)),
-            "body_ids": .array(options.bodyIDs.sorted().map(JSONValue.string)),
-            "mailbox_version": frozenMailbox.map(JSONValue.string) ?? .null,
-            "received_after": frozenAfter.map(JSONValue.string) ?? .null,
-            "retry_after": retryAfter.map(JSONValue.string) ?? .null])
-          let projected: JSONObject = ["threads": .array((threads + [thread]).map(JSONValue.object)),
-            "checkpoint": .object(proposed), "invalidated": .array((invalidated + [id]).map(JSONValue.string))]
-          guard try JSONEncoder().encode(projected).count + 65_536 <= outputByteBudget else { throw gmailCollectionInvalid() }
-          threads.append(thread); invalidated.append(id); found.formUnion(threadBodies)
-          completed.insert(id); deferred.remove(id)
-          if let stamp { versions[id] = .string(stamp) } else { versions.removeValue(forKey: id) }
-        } catch is CancellationError { throw CancellationError() }
-        catch {
-          recordFailure(failure("thread", id: id)); deferred.insert(id)
-          if let deadline, deadline.timeIntervalSince(clock()) <= options.interval { break }
+        }
+        launchAvailable()
+        while let (index, outcome) = try await group.next() {
+          buffered[index] = outcome
+          if outcome.isDeadlineRefusal { stopScheduling = true }
+          while let next = buffered.removeValue(forKey: acceptCursor) {
+            let id = queue[acceptCursor]
+            _ = acceptThreadOutcome(next, id: id, state: &processing)
+            if processing.stopScheduling { stopScheduling = true }
+            if processing.deadlineRefused { recordDeadline() }
+            acceptCursor += 1
+          }
+          launchAvailable()
         }
       }
+      try Task.checkCancellation()
+      threads = processing.threads; invalidated = processing.invalidated
+      completed = processing.completed; deferred = processing.deferred; found = processing.found
+      retryAfter = processing.retryAfter; versions = processing.versions
+      failureCount += processing.failureCount
+      failures.append(contentsOf: processing.failures)
+      if failures.count > 128 { failures = Array(failures.prefix(128)) }
       complete = page["complete"] == .bool(true) && Set(listing).isSubset(of: completed) && options.bodyIDs.isSubset(of: found)
       if complete {
         versions = versions.filter { listing.contains($0.key) }
@@ -245,7 +221,6 @@ struct GmailMailboxCollector {
           "found_bodies": .array(found.sorted().map(JSONValue.string)), "body_ids": .array(options.bodyIDs.sorted().map(JSONValue.string)),
           "mailbox_version": frozenMailbox.map(JSONValue.string) ?? .null, "received_after": frozenAfter.map(JSONValue.string) ?? .null,
             "retry_after": retryAfter.map(JSONValue.string) ?? .null])
-        if failures.isEmpty { recordFailure(failure("budget")) }
         if page["complete"] == .bool(true), Set(listing).isSubset(of: completed), !options.bodyIDs.isSubset(of: found) {
           recordFailure(failure("requested-body"))
         }
@@ -259,9 +234,231 @@ struct GmailMailboxCollector {
     }
     let result: JSONObject = ["threads": .array(threads.map(JSONValue.object)), "checkpoint": .object(checkpoint),
       "invalidated": .array(invalidated.map(JSONValue.string)), "complete": .bool(complete),
-      "failures": .array(failures), "requestCount": .integer(Int64(requests))]
+      "failures": .array(failures), "requestCount": .integer(Int64(await limiter.grantedCount))]
     guard try JSONEncoder().encode(result).count <= outputByteBudget else { throw gmailCollectionInvalid() }
     return result
+  }
+
+  private func readThread(
+    id: String,
+    previousVersion: JSONValue?,
+    limiter: GmailCollectionRequestLimiter,
+    fetch: @escaping @Sendable (String, JSONObject, [String]) async throws -> JSONObject
+  ) async throws -> GmailThreadReadOutcome {
+    var started = false
+    func request(_ operation: String, _ arguments: JSONObject, _ selection: [String]) async throws -> JSONObject {
+      try await limiter.acquire()
+      started = true
+      return try await fetch(operation, arguments, selection)
+    }
+    do {
+      let arguments: JSONObject = ["accountId": .string(options.account), "threadId": .string(id)]
+      if let previous = try gmailVersion(previousVersion), options.bodyIDs.isEmpty {
+        let metadata = try await request("thread", arguments, ["id", "providerMetadata.gmail.historyId"])
+        guard metadata["id"] == .string(id) else { throw gmailCollectionInvalid() }
+        if try threadVersion(metadata) == previous { return .unchanged }
+      }
+      var thread = try await request("thread", arguments, Self.threadSelection)
+      guard thread["id"] == .string(id), case let .array(rawMessages)? = thread["messages"] else { throw gmailCollectionInvalid() }
+      let stamp = try threadVersion(thread)
+      var messages: [JSONValue] = [], threadBodies = Set<String>()
+      for value in rawMessages {
+        guard case var .object(message) = value, let messageID = nonEmptyString(message["id"]), gmailIdentifier(messageID),
+          message["accountId"] == .string(options.account), message["threadId"] == .string(id) else { throw gmailCollectionInvalid() }
+        if options.bodyIDs.contains(messageID) {
+          let body = try await request("messageBodyBytes", ["accountId": .string(options.account), "messageId": .string(messageID),
+            "maxBytes": .integer(2_097_152)], bodySelection)
+          guard body["accountId"] == .string(options.account), body["messageId"] == .string(messageID), body["complete"] == .bool(true) else {
+            throw gmailCollectionInvalid()
+          }
+          message["_body_bytes"] = .object(body); threadBodies.insert(messageID)
+        }
+        messages.append(.object(message))
+      }
+      thread["messages"] = .array(messages); thread["_fetched_at"] = .string(ISO8601DateFormatter().string(from: clock()))
+      return .fetched(thread: thread, stamp: stamp, bodies: threadBodies)
+    } catch is CancellationError { throw CancellationError() } catch is GmailCollectionDeadlineRefusal {
+      return started ? .refusedAfterStart : .refusedBeforeStart
+    } catch {
+      if Task.isCancelled { throw CancellationError() }
+      return .failed
+    }
+  }
+
+  private func listPages(
+    startingAt initialPage: JSONObject,
+    receivedAfter: String?,
+    limiter: GmailCollectionRequestLimiter,
+    fetch: @escaping @Sendable (String, JSONObject, [String]) async throws -> JSONObject
+  ) async throws -> (page: JSONObject, failureStage: String?) {
+    guard case let .object(initialState)? = initialPage["state"], case let .array(rawItems)? = initialPage["items"] else {
+      throw gmailCollectionInvalid()
+    }
+    var state = initialState
+    var items = rawItems.compactMap { nonEmptyString($0) }
+    guard items.count == rawItems.count else { throw gmailCollectionInvalid() }
+    var itemSet = Set(items)
+    var requestValue = initialPage["request"] ?? .null
+    var complete = initialPage["complete"] == .bool(true)
+    func pageSnapshot() -> JSONObject {
+      var snapshotState = state
+      snapshotState["items"] = .array(items.map(JSONValue.string))
+      let stateValue = JSONValue.object(snapshotState)
+      return ["state": stateValue, "items": .array(items.map(JSONValue.string)), "request": requestValue,
+        "complete": .bool(complete), "context": initialPage["context"] ?? .null]
+    }
+    while !complete {
+      let remaining = 10_000 - items.count
+      guard remaining > 0 else { return (pageSnapshot(), "listing-limit") }
+      do {
+        guard case let .object(request) = requestValue, let query = request["query"] else { throw gmailCollectionInvalid() }
+        var input: JSONObject = ["accountId": .string(options.account), "query": query, "first": .integer(Int64(min(50, remaining)))]
+        if let receivedAfter { input["receivedAfter"] = .string(receivedAfter) }
+        if let cursor = request["cursor"], cursor != .null { input["after"] = cursor }
+        try await limiter.acquire()
+        let response = try await fetch("threads", ["input": .object(input)], ["edges.node.id", "pageInfo.hasNextPage", "pageInfo.endCursor"])
+        (requestValue, complete) = try acceptListingResponse(response, state: &state, items: &items, itemSet: &itemSet)
+      } catch is CancellationError { throw CancellationError() } catch is GmailCollectionDeadlineRefusal {
+        return (pageSnapshot(), "deadline")
+      } catch is GmailListingLimitError {
+        return (pageSnapshot(), "listing-limit")
+      } catch {
+        if Task.isCancelled { throw CancellationError() }
+        return (pageSnapshot(), "listing")
+      }
+    }
+    return (pageSnapshot(), nil)
+  }
+
+  private func acceptListingResponse(
+    _ response: JSONObject,
+    state: inout JSONObject,
+    items: inout [String],
+    itemSet: inout Set<String>
+  ) throws -> (request: JSONValue, complete: Bool) {
+    guard
+      case let .array(queries)? = state["queries"],
+      case let .integer(rawIndex)? = state["index"],
+      case let .integer(rawMaximum)? = state["maximum"],
+      case let .array(edges)? = response["edges"], edges.count <= 10_000,
+      case let .object(pageInfo)? = response["pageInfo"],
+      case let .bool(hasMore)? = pageInfo["hasNextPage"] else { throw gmailCollectionInvalid() }
+    let index = Int(rawIndex), maximum = Int(rawMaximum)
+    guard queries.indices.contains(index), (1...10_000).contains(maximum), items.count <= maximum else {
+      throw gmailCollectionInvalid()
+    }
+    var proposedItems = items
+    var proposedItemSet = itemSet
+    for edge in edges {
+      guard case let .object(edgeObject) = edge,
+        case let .object(node)? = edgeObject["node"],
+        case let .string(id)? = node["id"], gmailIdentifier(id) else { throw gmailCollectionInvalid() }
+      if proposedItemSet.insert(id).inserted { proposedItems.append(id) }
+    }
+    guard proposedItems.count <= maximum else { throw GmailListingLimitError() }
+    let nextCursor: String?
+    switch pageInfo["endCursor"] {
+    case nil, .null?: nextCursor = nil
+    case let .string(value)?: nextCursor = value.isEmpty ? nil : value
+    default: throw gmailCollectionInvalid()
+    }
+    var visited: [String]
+    switch state["visited"] {
+    case nil, .null?: visited = []
+    case let .array(values)?:
+      guard values.count <= 1_000 else { throw gmailCollectionInvalid() }
+      visited = try values.map {
+        guard case let .string(value) = $0, !value.isEmpty, value.utf8.count <= 8_192 else { throw gmailCollectionInvalid() }
+        return value
+      }
+    default: throw gmailCollectionInvalid()
+    }
+    let priorCursor = nonEmptyString(state["cursor"])
+    var nextIndex = index
+    var cursor: String?
+    if hasMore {
+      guard let nextCursor, nextCursor.utf8.count <= 8_192, nextCursor != priorCursor,
+        !visited.contains(nextCursor), visited.count < 1_000 else { throw gmailCollectionInvalid() }
+      visited.append(nextCursor); cursor = nextCursor
+    } else {
+      nextIndex += 1; cursor = nil; visited = []
+    }
+    let pageCount: Int
+    if case let .integer(value)? = state["pageCount"] { pageCount = Int(value) } else { throw gmailCollectionInvalid() }
+    guard pageCount < 64_000 else { throw gmailCollectionInvalid() }
+    var proposedState = state
+    proposedState["items"] = .array(proposedItems.map(JSONValue.string))
+    proposedState["index"] = .integer(Int64(nextIndex))
+    if let cursor { proposedState["cursor"] = .string(cursor) } else { proposedState.removeValue(forKey: "cursor") }
+    proposedState["visited"] = .array(visited.map(JSONValue.string))
+    proposedState["pageCount"] = .integer(Int64(pageCount + 1))
+    guard let encodedState = try? JSONEncoder().encode(proposedState), encodedState.count <= 7_000_000 else {
+      throw GmailListingLimitError()
+    }
+    state = proposedState
+    items = proposedItems
+    itemSet = proposedItemSet
+    let complete = nextIndex == queries.count
+    let request: JSONValue = complete ? .null : .object([
+      "query": queries[nextIndex], "cursor": cursor.map(JSONValue.string) ?? .null
+    ])
+    return (request, complete)
+  }
+
+  private func loadProfile(
+    _ prefetchedProfile: JSONObject?,
+    limiter: GmailCollectionRequestLimiter,
+    fetch: @escaping @Sendable (String, JSONObject, [String]) async throws -> JSONObject
+  ) async throws -> JSONObject {
+    if let prefetchedProfile {
+      await limiter.recordPrefetchedGrant()
+      return prefetchedProfile
+    }
+    do {
+      try await limiter.acquire()
+      return try await fetch("profile", ["accountId": .string(options.account)], ["emailAddress", "historyId"])
+    } catch is GmailCollectionDeadlineRefusal {
+      throw AdapterExecutionError(.timeout, "Gmail collection execution budget exhausted")
+    }
+  }
+
+  private func acceptThreadOutcome(
+    _ outcome: GmailThreadReadOutcome,
+    id: String,
+    state: inout GmailThreadProcessingState
+  ) -> Bool {
+    switch outcome {
+    case .unchanged:
+      guard state.reserveOutcome(id: id, thread: nil, stamp: nil) else {
+        state.recordFailure(failure("output-budget", id: id)); state.deferred.insert(id); state.stopScheduling = true
+        return false
+      }
+      state.retryAfter = id; state.completed.insert(id); state.deferred.remove(id)
+    case let .fetched(thread, stamp, threadBodies):
+      state.retryAfter = id
+      guard state.reserveOutcome(id: id, thread: thread, stamp: stamp) else {
+        state.recordFailure(failure("output-budget", id: id)); state.deferred.insert(id); state.stopScheduling = true
+        return false
+      }
+      state.threads.append(thread); state.invalidated.append(id); state.found.formUnion(threadBodies)
+      state.completed.insert(id); state.deferred.remove(id)
+      if let stamp { state.versions[id] = .string(stamp) } else { state.versions.removeValue(forKey: id) }
+    case .failed:
+      guard state.reserveOutcome(id: id, thread: nil, stamp: nil) else {
+        state.recordFailure(failure("output-budget", id: id)); state.deferred.insert(id); state.stopScheduling = true
+        return false
+      }
+      state.retryAfter = id; state.recordFailure(failure("thread", id: id)); state.deferred.insert(id)
+    case .refusedAfterStart:
+      guard state.reserveOutcome(id: id, thread: nil, stamp: nil) else {
+        state.recordFailure(failure("output-budget", id: id)); state.deferred.insert(id); state.stopScheduling = true
+        return false
+      }
+      state.retryAfter = id; state.deferred.insert(id); state.deadlineRefused = true; return true
+    case .refusedBeforeStart:
+      state.deadlineRefused = true; return true
+    }
+    return false
   }
 
   private func advancePage(_ saved: JSONValue?, response: JSONObject?) throws -> JSONObject {
@@ -298,8 +495,122 @@ struct GmailMailboxCollector {
   }
 }
 
+private struct GmailListingLimitError: Error {}
+
+private enum GmailThreadReadOutcome: Sendable {
+  case unchanged
+  case fetched(thread: JSONObject, stamp: String?, bodies: Set<String>)
+  case failed
+  case refusedBeforeStart
+  case refusedAfterStart
+
+  var isDeadlineRefusal: Bool {
+    switch self {
+    case .refusedBeforeStart, .refusedAfterStart: true
+    case .unchanged, .fetched, .failed: false
+    }
+  }
+}
+
+private struct GmailThreadProcessingState {
+  let checkpoint: JSONObject
+  let page: JSONObject
+  let listing: [String]
+  let frozenMailbox: String?
+  let frozenAfter: String?
+  let outputByteBudget: Int
+  var completed: Set<String>
+  var deferred: Set<String>
+  var found: Set<String>
+  var retryAfter: String?
+  var versions: JSONObject
+  var threads: [JSONObject] = []
+  var invalidated: [String] = []
+  var failures: [JSONValue] = []
+  var failureCount = 0
+  var stopScheduling = false
+  var deadlineRefused = false
+  private(set) var reservedOutputBytes = 0
+  private(set) var acceptedThreadBytes = 2
+  private var activeThreadIDs = Set<String>()
+
+  init(
+    checkpoint: JSONObject,
+    page: JSONObject,
+    listing: [String],
+    frozenMailbox: String?,
+    frozenAfter: String?,
+    outputByteBudget: Int,
+    completed: Set<String>,
+    deferred: Set<String>,
+    found: Set<String>,
+    retryAfter: String?,
+    versions: JSONObject
+  ) {
+    self.checkpoint = checkpoint
+    self.page = page
+    self.listing = listing
+    self.frozenMailbox = frozenMailbox
+    self.frozenAfter = frozenAfter
+    self.outputByteBudget = outputByteBudget
+    self.completed = completed
+    self.deferred = deferred
+    self.found = found
+    self.retryAfter = retryAfter
+    self.versions = versions
+  }
+
+  mutating func prepareOutputBudget(options: GmailCollectionOptions) {
+    if case let .array(ids)? = checkpoint["active_threads"] {
+      activeThreadIDs = Set(ids.compactMap { nonEmptyString($0) })
+    }
+    activeThreadIDs.formUnion(listing)
+    var baseline = checkpoint
+    baseline["active_threads"] = .array(activeThreadIDs.sorted().map(JSONValue.string))
+    baseline["pending_collection"] = .object([
+      "listing": page["state"] ?? .null,
+      "completed": .array(completed.sorted().map(JSONValue.string)),
+      "deferred": .array(deferred.sorted().map(JSONValue.string)),
+      "found_bodies": .array(found.sorted().map(JSONValue.string)),
+      "body_ids": .array(options.bodyIDs.sorted().map(JSONValue.string)),
+      "mailbox_version": frozenMailbox.map(JSONValue.string) ?? .null,
+      "received_after": frozenAfter.map(JSONValue.string) ?? .null,
+      "retry_after": retryAfter.map(JSONValue.string) ?? .null
+    ])
+    let envelope: JSONObject = ["threads": .array([]), "checkpoint": .object(baseline), "invalidated": .array([]),
+      "complete": .bool(false), "failures": .array([]), "requestCount": .integer(Int64.max)]
+    reservedOutputBytes = ((try? JSONEncoder().encode(envelope).count) ?? outputByteBudget) + 65_536
+    // Any requested body can be discovered and added to found_bodies.
+    reservedOutputBytes += options.bodyIDs.reduce(0) { $0 + conservativeJSONCost(for: $1) }
+  }
+
+  mutating func reserveOutcome(id: String, thread: JSONObject?, stamp: String?) -> Bool {
+    let nextThreadBytes: Int
+    if let thread {
+      guard let encoded = try? JSONEncoder().encode(thread) else { return false }
+      nextThreadBytes = acceptedThreadBytes + encoded.count + (acceptedThreadBytes > 2 ? 1 : 0)
+    } else {
+      nextThreadBytes = acceptedThreadBytes
+    }
+    let metadataBytes = conservativeJSONCost(for: id) * 5 + 64 + (stamp == nil ? 0 : 6 * 128 + 16)
+    guard reservedOutputBytes + metadataBytes + nextThreadBytes <= outputByteBudget else { return false }
+    reservedOutputBytes += metadataBytes
+    acceptedThreadBytes = nextThreadBytes
+    return true
+  }
+
+  private func conservativeJSONCost(for value: String) -> Int { value.utf8.count * 6 + 8 }
+
+  mutating func recordFailure(_ value: JSONValue) {
+    failureCount += 1
+    if failures.count < 128 { failures.append(value) }
+  }
+}
+
 private func gmailIdentifier(_ value: String) -> Bool {
-  !value.isEmpty && value.utf8.count <= 256 && value.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil
+  !value.isEmpty && value.utf8.count <= 256 && value.utf8.allSatisfy {
+    (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 45
+  }
 }
 
 func gmailVersion(_ value: JSONValue?) throws -> String? {

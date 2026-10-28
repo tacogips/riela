@@ -45,6 +45,9 @@ extension BuiltinWorkflowAddonResolver {
 struct XAuthorCollector {
   let options: XCollectionOptions
   var clock: () -> Date = { Date() }
+  var sleep: (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+  /// X search rejects an end_time less than 10 seconds before the request; 1s covers clock skew.
+  static let searchEndLag: TimeInterval = 11
 
   func collect(fetch: (String, JSONObject, JSONObject) async throws -> JSONObject) async throws -> JSONObject {
     guard try xInstant(options.end) <= clock() else { throw xCollectionInvalid() }
@@ -148,7 +151,8 @@ struct XAuthorCollector {
         let arguments = try window.arguments()
         let future = try xInstant(xWire(window.end, upper: true)).timeIntervalSince(clock())
         guard future <= 1 else { throw xCollectionInvalid() }
-        if future > 0 { try await Task.sleep(for: .seconds(future)) }
+        let wait = future + Self.searchEndLag
+        if wait > 0 { try await sleep(wait) }
         let response = try await fetch("searchPosts", arguments, options.selection)
         try window.accept(response, at: ISO8601DateFormatter().string(from: clock()))
       } catch is CancellationError { throw CancellationError() } catch {

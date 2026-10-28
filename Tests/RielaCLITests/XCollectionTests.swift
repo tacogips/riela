@@ -207,6 +207,19 @@ final class XCollectionTests: XCTestCase {
     } catch { XCTAssertTrue(error is CancellationError) }
   }
 
+  func testSearchWaitsUntilEndIsOutsideXMinimumLag() async throws {
+    let end = try xInstant("2026-10-22T01:00:00+00:00")
+    var collector = XAuthorCollector(options: try .init(options()))
+    collector.clock = { end.addingTimeInterval(2) }
+    var waits: [TimeInterval] = []
+    collector.sleep = { waits.append($0) }
+    _ = try await collector.collect { operation, _, _ in
+      if operation == "accountMe" { return ["id": .string("7"), "username": .string("owner")] }
+      return self.page(["100"])
+    }
+    XCTAssertEqual(waits, [XAuthorCollector.searchEndLag - 2], "a run scheduled at the window end must not send end_time within 10s")
+  }
+
   private func options() -> JSONObject {
     ["expectedHandle": .string("owner"), "authorHandles": .array([.string("kenn"), .string("OpenAI")]),
       "start": .string("2026-10-22T00:00:00+00:00"), "end": .string("2026-10-22T01:00:00+00:00"),

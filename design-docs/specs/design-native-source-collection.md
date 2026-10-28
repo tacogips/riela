@@ -100,7 +100,10 @@ Run it inside a private workflow when mailbox content requires inspection.
 
 Options are `accountId` (nonempty opaque configured account name, at most 256
 UTF-8 bytes), `queries` (1–64 nonempty strings), `maxThreads` (1–10000, default
-100), `lookbackHours` (1–168, default 24), optional `window` (two ordered ISO
+100; the maximum number of in-flight per-thread reads, clamped to an effective
+concurrency of `min(maxThreads, 16)`; it never limits how many threads a run
+lists or processes and never enters the scope identity), `lookbackHours`
+(1–168, default 24), optional `window` (two ordered ISO
 instants) or `receivedAfter`, `bodyMessageIds` (up to 32 distinct message IDs),
 `providerBodyMetadata` (default false), `minRequestIntervalSeconds` (0–60,
 default 2.5) and `previous` (checkpoint object). A fixed window replaces relative
@@ -144,8 +147,8 @@ listing/cursor, original mailbox version, cutoff, completed IDs and failed IDs.
 Exhausted listings coalesce unresolved IDs into one retry backlog, without
 multiplying scans for the same poison item. A changed profile can start a fresh
 scan on alternating turns; failed old scans
-cannot monopolize discovery. Failed IDs rotate deterministically even with a
-one-thread budget. A conservative discovery watermark retains older scan floors
+cannot monopolize discovery. Failed IDs rotate deterministically even when only
+one thread read fits in a run. A conservative discovery watermark retains older scan floors
 across long-running lookbacks. Finishing an old scan preserves newer fresh
 thread membership and versions; a subsequent clean fresh pass acknowledges the
 current mailbox. At most 32 pending scans are retained; capacity exhaustion is
@@ -164,6 +167,93 @@ prefix. Failure summaries are capped and contain finite codes/IDs, never provide
 error text or credentials. Native SDK calls have a 30-second ceiling and finish
 before the outer deadline, leaving time to return partial progress. These bounds
 do not make a hung or failing provider complete.
+
+### Full listing, concurrent thread reads and early-stop reasons
+
+A scan lists every page of every query until the provider reports no next page.
+Each listing request asks for 50 items (`min(50, 10_000 − listed)` only when the
+existing 10,000-item hard limit is within one page); the size never depends on
+`maxThreads`. The listing stays sequential because each page needs the previous
+cursor. The pending `listing.maximum` stays 10,000, and the `pending_collection`
+key set is unchanged, so saved production checkpoints resume as before.
+
+Only the per-thread phase is concurrent. One thread read is the sequence of
+requests for one queued ID: the optional version check, the full thread read
+and any requested `messageBodyBytes` reads. At most `min(maxThreads, 16)` thread
+reads run at once. The look-ahead window is the same size: a new read starts
+only while fewer than that many queued IDs are launched but not yet accepted, so
+memory and wasted work after a stop are bounded. The queue order is unchanged:
+never-attempted IDs in listing order, then failed IDs rotated after
+`retry_after`. A thread read only fetches and validates its thread (identity,
+message account/thread fields, complete body contract) and returns an outcome.
+It never changes the checkpoint.
+
+All provider requests in one scan (profile, listing, thread reads) take a start
+slot from one shared rate limiter. The first slot is `now`. Each later slot is
+`max(now, previous slot + minRequestIntervalSeconds)`, so request starts are
+spaced across all workers rather than per worker. The limiter refuses a slot
+that is not strictly before the collector deadline. This deadline check runs
+before every request start, and a refused request is not counted in
+`requestCount`. It reserves the slot before sleeping for `slot − now` through
+the injectable `wait`, using the injectable `clock`, so tests stay deterministic.
+When the coordinator has already read the profile, that read counts as the first
+granted slot, which keeps today's spacing and `requestCount`.
+
+The parent task accepts outcomes one at a time in queue order, so `threads` and
+`invalidated` stay in listing/queue order. It applies the existing checks:
+
+- An unchanged version completes the ID without output.
+- A fetched thread must fit the output budget, reserved together with the full
+  proposed continuation metadata, before it is accepted. Accepting it advances
+  the thread's version, completion and found bodies.
+- A thread-read failure records stage `thread` with the ID and defers the ID.
+- Each processed ID becomes `retry_after`, exactly as in the sequential order.
+  Processed IDs are accepted, unchanged, failed, oversized, or interrupted by
+  the deadline after a request started.
+
+An outcome that is not accepted never advances thread versions, completion or
+found bodies. The mailbox version stays frozen as before.
+
+Early stops are the only way a run ends with `complete: false` and a resumable
+`pending_collection`. Each stop records a finite failure that names its reason:
+
+| Stop | Stage | Effect |
+| --- | --- | --- |
+| Limiter refuses a slot during listing or a thread read | `deadline` (recorded once) | No new reads start. Started requests finish within their child deadline. A thread read refused before its first request stays pending, not deferred. A read refused after at least one of its requests started is deferred and becomes `retry_after`, as the sequential collector does today, so a slow item cannot monopolize runs. |
+| Fetched thread fails the output reservation | `output-budget` (with `threadId`) | That ID is deferred, as oversized items are today. No new reads start. Completed look-ahead outcomes are still evaluated in order. |
+| Listing reaches 10,000 items with more pages | `listing-limit` | Listed IDs are still processed. Recorded even if every listed ID is accepted, because the listing is incomplete. |
+| Listing provider failure | `listing` (unchanged) | Listed prefix is still processed. |
+| Thread provider/validation failure | `thread` (unchanged) | Other threads continue. |
+| Listing complete and all IDs complete, but a requested body is missing | `requested-body` (unchanged) | — |
+| Cancellation | — | Pending reads are cancelled and `CancellationError` propagates. No partial result is returned. |
+
+There is no generic `budget` stage. IDs that were never launched, or whose read was
+refused before its first request, stay in neither `completed` nor `deferred`, so
+the next run resumes them first. Removing the per-run cap means
+large mailboxes can now stop on `output-budget` or `deadline` instead. A mailbox
+whose listing and threads fit both bounds completes in one run whatever
+`maxThreads` is.
+
+Concurrency uses Swift 6 strict checking with no unchecked escapes in the
+production code. The `fetch` closure taken by the scan, the coordinator and the
+adapter is `@Sendable`, and so are the injectable `clock` and `wait`. The rate
+limiter state lives in an actor. The coordinator passes its already-read
+profile into the scan directly instead of capturing a mutable "used" flag. Its
+retry-backlog, scope and failure-stage behavior is otherwise unchanged. The
+adapter's per-call child gateway execution, with a 30-second child deadline, is
+already independent per call, so concurrent calls are safe. Message-bodies mode
+and the other collectors keep their sequential behavior.
+
+GmailCollectionTests covers:
+
+- one-run completion of a multi-page listing with `maxThreads: 1`;
+- a concurrency high-water mark of `≤ 4`, and `16` for larger values;
+- in-order `threads` and `invalidated`;
+- slot spacing through the injected clock and wait;
+- each stop stage, with exact resume.
+
+The resume and rotation tests that relied on `maxThreads: 1/2` are rewritten to
+stop via deadline or output budget. The scope-hash golden tests stay unchanged.
 
 `riela/page-state` also supports `action: "resume"` with an unchanged saved
 `state`, validates it and returns derived request/items/completion without I/O.

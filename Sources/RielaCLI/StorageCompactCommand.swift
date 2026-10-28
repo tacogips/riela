@@ -93,7 +93,7 @@ struct StorageCompactCommandRunner {
       return CLICommandResult(exitCode: failed ? .failure : .success,
         stdout: "Storage compact (\(report.dryRun ? "dry run" : "applied"))\n" + lines.joined(separator: "\n") +
           "\nwork remaining: \(report.workRemaining)\nwarnings: \(report.warnings)\nskipped: \(report.skipped)\n")
-    } catch { return StorageCommandFailure.result(error) }
+    } catch { return StorageCommandFailure.result(error, usagePath: ["storage", "compact"]) }
   }
 
   private func execute(_ options: ParsedStorageCommandArguments) throws -> StorageCompactReport {

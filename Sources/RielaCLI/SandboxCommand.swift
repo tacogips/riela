@@ -22,10 +22,14 @@ struct SandboxCommand: Sendable {
   var runner: any LocalProcessRunning = FoundationLocalProcessRunner()
   var directoryParent: URL?
 
+  static var helpText: String {
+    "riela sandbox run [options] -- executable [arguments]\n" + SandboxRunArguments.helpMessage()
+  }
+
   func run(_ arguments: [String]) async -> CLICommandResult {
     do {
       if arguments == ["--help"] || arguments == ["run", "--help"] {
-        return .init(exitCode: .success, stdout: "riela sandbox run [options] -- executable [arguments]\n" + SandboxRunArguments.helpMessage())
+        return .init(exitCode: .success, stdout: Self.helpText)
       }
       guard arguments.first == "run" else {
         throw CLIUsageError("usage: riela sandbox run --backend auto|container|seatbelt|bubblewrap [options] -- executable [arguments]")

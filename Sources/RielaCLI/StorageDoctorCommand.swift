@@ -83,7 +83,7 @@ struct StorageDoctorCommandRunner {
       }
       return CLICommandResult(exitCode: .success, stdout: files.map(text).joined(separator: "\n"), stderr: warnings.joined(separator: "\n"))
     } catch {
-      return StorageCommandFailure.result(error)
+      return StorageCommandFailure.result(error, usagePath: ["doctor", "storage"])
     }
   }
 
@@ -355,7 +355,8 @@ struct StorageDoctorCommandRunner {
 private enum StorageCommandError: Error { case noStores }
 
 enum StorageCommandFailure {
-  static func result(_ error: Error) -> CLICommandResult {
+  static func result(_ error: any Error, usagePath: [String]) -> CLICommandResult {
+    if CLISubcommandHelp.isCleanExit(error) { return CLISubcommandHelp.result(path: usagePath) }
     let message = (error as? CLIUsageError)?.message ?? String(describing: error)
     let encodedMessage = (try? JSONEncoder().encode(message)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"storage command failed\""
     return CLICommandResult(exitCode: error is CLIUsageError ? .usage : .failure, stdout: "{\"error\":\(encodedMessage)}\n")

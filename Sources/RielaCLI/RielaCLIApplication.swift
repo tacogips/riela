@@ -108,6 +108,7 @@ public struct RielaCLIApplication: Sendable {
   }
 
   private func runParsed(_ arguments: [String]) async -> CLICommandResult {
+    if let request = CLIHelpRequest.detect(arguments) { return CLISubcommandHelp.result(for: request) }
     if arguments.first == "sandbox" {
       return await SandboxCommand().run(Array(arguments.dropFirst()))
     }
@@ -165,8 +166,16 @@ public struct RielaCLIApplication: Sendable {
     } catch let error as CLIUsageError {
       return renderParserFailure(arguments: arguments, error: error)
     } catch {
+      return unexpectedErrorResult(arguments: arguments, error: error)
+    }
+  }
+
+  private func unexpectedErrorResult(arguments: [String], error: any Error) -> CLICommandResult {
+    guard CLISubcommandHelp.isCleanExit(error) else {
       return CLICommandResult(exitCode: .failure, stderr: "\(error)")
     }
+    return CLIHelpRequest.resolve(arguments).map(CLISubcommandHelp.result(for:))
+      ?? CLICommandResult(exitCode: .success, stdout: rielaCLIHelpText)
   }
 
   private func runWorkflow(_ command: WorkflowCommand) async -> CLICommandResult {

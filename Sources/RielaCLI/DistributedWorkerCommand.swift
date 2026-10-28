@@ -10,6 +10,15 @@ import RielaCore
 import RielaServer
 
 struct DistributedWorkerCommand: Sendable {
+  static let helpText = """
+      Usage: riela worker --config <worker.json>
+             riela worker status --config <controller.json>
+      Connect outbound to a RielaApp or serve controller, or inspect controller-local status.
+      worker.json specifies controllerURL, capacity, workspaces and tokenFile containing a Mac-issued worker API key.
+      The key file must be owned by the current user with permissions 0600. tokenEnvironment is also supported.
+
+      """
+
   struct Workspace: Decodable, Sendable {
       var path: String
       var controllerPath: String?
@@ -126,14 +135,7 @@ struct DistributedWorkerCommand: Sendable {
       }
     }
     if arguments == ["worker", "--help"] {
-      return CLICommandResult(exitCode: .success, stdout: """
-      Usage: riela worker --config <worker.json>
-             riela worker status --config <controller.json>
-      Connect outbound to a RielaApp or serve controller, or inspect controller-local status.
-      worker.json specifies controllerURL, capacity, workspaces and tokenFile containing a Mac-issued worker API key.
-      The key file must be owned by the current user with permissions 0600. tokenEnvironment is also supported.
-
-      """)
+      return CLICommandResult(exitCode: .success, stdout: Self.helpText)
     }
     guard arguments.count == 3, arguments[0] == "worker", arguments[1] == "--config" else {
       return CLICommandResult(exitCode: .usage, stderr: "Usage: riela worker --config <worker.json>")

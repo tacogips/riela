@@ -8,6 +8,7 @@ extension RielaClientFamilyArguments {
     do {
       return try Self.parse(arguments)
     } catch {
+      if CLISubcommandHelp.isCleanExit(error) { throw error }
       throw CLIUsageError(Self.message(for: error))
     }
   }

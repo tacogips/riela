@@ -28,7 +28,7 @@ let rielaInfoPlistLinkerSettings: [LinkerSetting] = [
 // Keep the private, macOS-only Notion package out of Linux dependency resolution.
 #if os(macOS)
 let notionPackageDependencies: [Package.Dependency] = [
-  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "0f16afb306f28506ec50c78483e101694315facc")
+  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "41f64e602c3e242a3f1132f2a297dec47a091afa")
 ]
 let notionTargetDependencies: [Target.Dependency] = [
   .product(name: "NotionGatewayCore", package: "notion-gateway", condition: .when(platforms: [.macOS]))
@@ -69,7 +69,7 @@ let package = Package(
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "8282152f29679625fee58729543094961adca633"
+      revision: "64361c28bfaf1dcea1b28ccf99329796053454ab"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.3"),
     .package(url: "https://github.com/swift-server/swift-webauthn.git", revision: "030acd1eedaa835958ae3fcc0e491bec03b2abf1"),
@@ -82,19 +82,19 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
-      revision: "ed020e4a8f45a0acedaf46334e2a67677e3c3e63"
+      revision: "790a6b21def1a11fe50fae57ce503b16d3b002c9"
     ),
     .package(
       url: "https://github.com/tacogips/wrike-gateway.git",
-      revision: "8c67ad9452abdcad38924855bd1ae5a182a3dea2"
+      revision: "9e6044fa1439176aa56fac57062b857378fc2929"
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "ca29da81d8cdb7da40cb6ef6739cd824376bfcdd" // v0.1.29; process-lifetime transport with corelibs callback forwarding.
+      revision: "784ecf9c9b01c766c64f3874b83ed9e367fc8a44" // v0.1.29 + google-service-gateway 0.1.8; process-lifetime transport with corelibs callback forwarding.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
-      revision: "3bd0048a01295ed3559da65b9aef9e767268a907"
+      revision: "18e9f09bf31202316e9756e1620c192392e639ba"
     ),
     .package(
       url: "https://github.com/tacogips/apple-gateway.git",
@@ -106,7 +106,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
-      revision: "e97d952459305828461e3a808d0dfdace902079f"
+      revision: "b05c89e9864bc758365afaf62896e1d8c119cd93"
     )
   ] + notionPackageDependencies,
   targets: [

@@ -1,5 +1,5 @@
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
-ARG GATEWAY_REVISION=ca29da81d8cdb7da40cb6ef6739cd824376bfcdd
+ARG GATEWAY_REVISION=784ecf9c9b01c766c64f3874b83ed9e367fc8a44
 WORKDIR /src
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
     git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD

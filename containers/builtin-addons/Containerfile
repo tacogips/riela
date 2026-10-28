@@ -14,7 +14,7 @@ RUN cc -I/anydoc-native/include /anydoc-smoke.c /anydoc-native/lib/libanydoc_ffi
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS gmail-source
 WORKDIR /gmail-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
-    git fetch --depth 1 origin 4ce54035694bbcbe88c33a4de3f5905677370b0e && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin ca29da81d8cdb7da40cb6ef6739cd824376bfcdd && git checkout --detach FETCH_HEAD
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS analytics-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ WORKDIR /google-analytics-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-analytics-gateway.git && \
     git fetch --depth 1 origin 3bd0048a01295ed3559da65b9aef9e767268a907 && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
-RUN python3 /prepare.py analytics /google-analytics-gateway --crypto-version 4.5.2
+RUN python3 /prepare.py analytics /google-analytics-gateway --crypto-version 5.0.3
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS documents-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
@@ -31,7 +31,7 @@ RUN git init . && git remote add origin https://github.com/tacogips/google-docum
     git fetch --depth 1 origin e97d952459305828461e3a808d0dfdace902079f && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 COPY scripts/container-gateway-support /container-gateway-support
-RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 4.5.2
+RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 5.0.3
 RUN swiftc /container-gateway-support/GatewayPOSIX.swift \
     /container-gateway-support/GatewayPOSIXSmoke.swift -o /posix-smoke && /posix-smoke
 

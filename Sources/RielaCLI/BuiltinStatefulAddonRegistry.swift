@@ -29,6 +29,7 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.xCollectionRegistration,
     BuiltinWorkflowAddonResolver.gmailCollectionRegistration,
     BuiltinWorkflowAddonResolver.youtubeCollectionRegistration,
+    BuiltinWorkflowAddonResolver.videoTranscribeRegistration,
     BuiltinWorkflowAddonResolver.jsonRouteRegistration,
     BuiltinWorkflowAddonResolver.pageStateRegistration,
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,

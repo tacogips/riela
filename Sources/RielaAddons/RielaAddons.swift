@@ -122,6 +122,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/x-collect", version: "1"),
     .init(name: "riela/gmail-collect", version: "1"),
     .init(name: "riela/youtube-collect", version: "1"),
+    .init(name: "riela/video-transcribe", version: "1"),
     .init(name: "riela/json-route", version: "1"),
     .init(name: "riela/page-state", version: "1"),
     .init(name: "riela/collection-checkpoint", version: "1"),

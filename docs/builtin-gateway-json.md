@@ -54,6 +54,8 @@ sent while creating the page; remaining blocks are appended in ordered chunks.
 ```
 
 `markdown` is not accepted by `publishPage`; use native `children` blocks.
+When `pageId` targets an existing page, `data.publishPage.url` is empty because
+the append operation returns block results without page metadata.
 
 Both X readers support `config.userCache: true` (default: disabled). The built-in
 owns the separate `x-gateway-users` cache namespace and its policy: 30 days,

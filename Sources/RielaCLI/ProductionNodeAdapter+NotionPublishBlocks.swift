@@ -4,6 +4,7 @@ import RielaCore
 
 struct DeferredNotionChildren {
   var parentPath: [Int]
+  var offset: Int
   var children: [JSONValue]
 }
 
@@ -160,9 +161,26 @@ func indexNotionResultIDs(_ result: JSONObject, offset: Int, path: [Int], into i
     guard case let .object(block) = item else { continue }
     let blockPath = path + [offset + index]
     if let id = nonEmptyString(block["id"]) { ids[blockPath.map(String.init).joined(separator: ".")] = id }
-    for value in block.values {
-      guard case let .object(body) = value else { continue }
-      indexNotionResultIDs(body, offset: 0, path: blockPath, into: &ids)
+    indexNotionNestedResultIDs(in: block, path: blockPath, into: &ids)
+  }
+}
+
+private func indexNotionNestedResultIDs(in object: JSONObject, path: [Int], into ids: inout [String: String]) {
+  for value in object.values {
+    switch value {
+    case let .object(body):
+      if case .array? = body["results"] {
+        indexNotionResultIDs(body, offset: 0, path: path, into: &ids)
+      } else {
+        indexNotionNestedResultIDs(in: body, path: path, into: &ids)
+      }
+    case let .array(values):
+      for value in values {
+        guard case let .object(body) = value else { continue }
+        indexNotionNestedResultIDs(in: body, path: path, into: &ids)
+      }
+    default:
+      continue
     }
   }
 }
@@ -189,10 +207,15 @@ func stripDeepNotionChildren(
     if key == "children", case let .array(children)? = object[key] {
       if type == "table", children.count > 100, depth < 3 {
         object[key] = .array(Array(children.prefix(100)))
-        deferred.append(DeferredNotionChildren(parentPath: path, children: Array(children.dropFirst(100))))
+        deferred.append(DeferredNotionChildren(parentPath: path, offset: 100, children: Array(children.dropFirst(100))))
+      } else if ["column", "column_list"].contains(type), children.count > 100 || subtreeExceedsRequestBudget {
+        let firstChunk = (try? notionBlockChunks(children))?.first ?? []
+        let retainedCount = max(1, firstChunk.count)
+        object[key] = .array(Array(children.prefix(retainedCount)))
+        deferred.append(DeferredNotionChildren(parentPath: path, offset: retainedCount, children: Array(children.dropFirst(retainedCount))))
       } else if depth >= 3 || children.count > 100 || subtreeExceedsRequestBudget {
         object.removeValue(forKey: key)
-        deferred.append(DeferredNotionChildren(parentPath: path, children: children))
+        deferred.append(DeferredNotionChildren(parentPath: path, offset: 0, children: children))
       } else {
         object[key] = .array(stripNotionChildList(children, depth: depth, path: path, deferred: &deferred))
       }
@@ -200,11 +223,17 @@ func stripDeepNotionChildren(
       if type == "table", children.count > 100, depth < 3 {
         body["children"] = .array(Array(children.prefix(100)))
         object[key] = .object(body)
-        deferred.append(DeferredNotionChildren(parentPath: path, children: Array(children.dropFirst(100))))
+        deferred.append(DeferredNotionChildren(parentPath: path, offset: 100, children: Array(children.dropFirst(100))))
+      } else if ["column", "column_list"].contains(type), children.count > 100 || subtreeExceedsRequestBudget {
+        let firstChunk = (try? notionBlockChunks(children))?.first ?? []
+        let retainedCount = max(1, firstChunk.count)
+        body["children"] = .array(Array(children.prefix(retainedCount)))
+        object[key] = .object(body)
+        deferred.append(DeferredNotionChildren(parentPath: path, offset: retainedCount, children: Array(children.dropFirst(retainedCount))))
       } else if depth >= 3 || children.count > 100 || subtreeExceedsRequestBudget {
         body.removeValue(forKey: "children")
         object[key] = .object(body)
-        deferred.append(DeferredNotionChildren(parentPath: path, children: children))
+        deferred.append(DeferredNotionChildren(parentPath: path, offset: 0, children: children))
       } else {
         body["children"] = .array(stripNotionChildList(children, depth: depth, path: path, deferred: &deferred))
         object[key] = .object(body)
@@ -227,7 +256,8 @@ private func stripNotionChildList(
     let type = (ifObject(child)).flatMap { notionString($0["type"]) }
     let hasChildren = notionBlockCount([child]) > 1
     if hasChildren && ((type == "column_list" && childDepth >= 2) || (type == "table" && childDepth >= 3)) {
-      deferred.append(DeferredNotionChildren(parentPath: path, children: [child]))
+      deferred.append(DeferredNotionChildren(parentPath: path, offset: retained.count, children: Array(children[index...])))
+      break
     } else {
       retained.append(stripDeepNotionChildren(child, depth: childDepth, path: childPath, deferred: &deferred))
     }

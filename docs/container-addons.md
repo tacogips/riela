@@ -71,6 +71,34 @@ host, so 387 MiB must not be interpreted as its complete host disk allocation.
 Do not install Node.js, vendor agent CLIs, or a Swift compiler merely to run
 the built-in HTTP SDK workers: those workers use the linked Swift SDKs.
 
+## Video media add-ons
+
+The `riela/media-download`, `riela/audio-segments`, `riela/video-frames`, and
+`riela/speech-to-text` add-ons select `riela-video-addons:local` when their
+container options omit `image`. The compatibility name
+`riela/video-transcribe` selects it too. An explicit `image` always takes
+precedence. The video image extends the common worker with ffmpeg/ffprobe,
+yt-dlp, and Deno.
+
+Build the common worker first, then build the video image:
+
+```bash
+scripts/build-builtin-addon-container.sh
+scripts/build-video-addon-container.sh
+```
+
+On macOS, start Apple Container before the builds with `container system start`
+if its service is not running. The video build script discovers Apple Container,
+then Docker, then Podman, and accepts a runtime name and base image as its first
+two arguments.
+
+Downloading media and speech-to-text require network egress. Set
+`networkPolicy` to `egress-allowed` for those stages. Audio segmentation and
+video frame extraction can use `networkPolicy: "denied"` when their input files
+are already present. The workflow working directory is the only directory
+shared at the same path, so keep each stage's `outputDir` beneath that directory
+and pass generated files between stages there.
+
 Container execution of an add-on does not by itself isolate an AI agent's shell,
 file tools, or other child processes. Agent execution needs its own enforced
 filesystem, environment, IPC, and network boundary, applied to the whole process

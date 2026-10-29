@@ -42,6 +42,12 @@ run = '''
 scripts/build-homebrew-release.sh "$@"
 '''
 
+[tasks."build:video-addon-container"]
+description = "Build the video media add-on image from the common built-in worker image"
+run = '''
+scripts/build-video-addon-container.sh "$@"
+'''
+
 [tasks."build:homebrew-cask"]
 description = "Build signed and notarized macOS Cask DMGs with RielaApp and riela, or pass targets after --"
 run = '''

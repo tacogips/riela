@@ -9,6 +9,13 @@ import RielaKaibaSupport
 actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinalizationAcknowledging,
   WorkflowAddonTerminalRecording {
   static let guestStateDirectory = "/var/lib/riela/state"
+  private static let addonDefaultImages = [
+    "riela/media-download": "riela-video-addons:local",
+    "riela/audio-segments": "riela-video-addons:local",
+    "riela/video-frames": "riela-video-addons:local",
+    "riela/speech-to-text": "riela-video-addons:local",
+    "riela/video-transcribe": "riela-video-addons:local"
+  ]
   private typealias Invocation = BuiltinAddonContainerInvocation
 
   private let primary: any WorkflowAddonResolving
@@ -62,7 +69,11 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     guard sandbox?.ephemeralHome != true, sandbox?.credentialEnvironment.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "ephemeral HOME and credential files currently require a sandboxed agent node")
     }
-    let settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
+    var settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
+    if let defaultImage = Self.addonDefaultImages[input.addon.name], input.addon.container != nil,
+       input.addon.container?.imageWasSpecified != true {
+      settings.image = defaultImage
+    }
     try settings.validate()
     guard input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") else {
       throw AdapterExecutionError(.policyBlocked, "addon.container currently requires a built-in add-on")

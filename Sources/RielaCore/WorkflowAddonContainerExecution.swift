@@ -38,18 +38,22 @@ public struct WorkflowAddonContainerMount: Codable, Equatable, Sendable {
 public struct WorkflowAddonContainerExecution: Codable, Equatable, Sendable {
   public static let defaultImage = "riela-builtin-addons:local"
   public static let workerEntrypoint = "riela-addon-worker"
-  public var image: String
+  public var image: String {
+    didSet { imageWasSpecified = true }
+  }
+  public private(set) var imageWasSpecified: Bool
   public var runtime: WorkflowAddonContainerRuntime
   public var networkPolicy: WorkflowAddonContainerNetworkPolicy
   public var mounts: [WorkflowAddonContainerMount]
 
   public init(
-    image: String = Self.defaultImage,
+    image: String? = nil,
     runtime: WorkflowAddonContainerRuntime = .auto,
     networkPolicy: WorkflowAddonContainerNetworkPolicy = .egressAllowed,
     mounts: [WorkflowAddonContainerMount] = []
   ) {
-    self.image = image
+    self.image = image ?? Self.defaultImage
+    imageWasSpecified = image != nil
     self.runtime = runtime
     self.networkPolicy = networkPolicy
     self.mounts = mounts
@@ -59,11 +63,20 @@ public struct WorkflowAddonContainerExecution: Codable, Equatable, Sendable {
 
   public init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
+    imageWasSpecified = values.contains(.image)
     image = try values.decodeIfPresent(String.self, forKey: .image) ?? Self.defaultImage
     runtime = try values.decodeIfPresent(WorkflowAddonContainerRuntime.self, forKey: .runtime) ?? .auto
     networkPolicy = try values.decodeIfPresent(WorkflowAddonContainerNetworkPolicy.self, forKey: .networkPolicy) ?? .egressAllowed
     mounts = try values.decodeIfPresent([WorkflowAddonContainerMount].self, forKey: .mounts) ?? []
     try validate()
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    if imageWasSpecified { try values.encode(image, forKey: .image) }
+    try values.encode(runtime, forKey: .runtime)
+    try values.encode(networkPolicy, forKey: .networkPolicy)
+    try values.encode(mounts, forKey: .mounts)
   }
 
   public func validate() throws {

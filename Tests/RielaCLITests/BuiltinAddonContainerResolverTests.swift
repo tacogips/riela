@@ -7,6 +7,47 @@ import XCTest
 @testable import RielaCLI
 
 final class BuiltinAddonContainerResolverTests: XCTestCase {
+  func testMediaAddonsSelectVideoImageOnlyWhenImageIsOmitted() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("video-addon-image-selection")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let addonNames = ["riela/media-download", "riela/audio-segments", "riela/video-frames", "riela/speech-to-text",
+      "riela/video-transcribe"]
+
+    for (index, name) in addonNames.enumerated() {
+      let runner = BuiltinContainerRecordingRunner(output: testOutput())
+      let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+        primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
+        workingDirectory: root, runner: runner)
+      _ = try await resolver.execute(.init(workflowId: "video", stepId: "step-\(index)", nodeId: "node-\(index)",
+        addon: .init(name: name, version: "1", container: .init())), context: .init())
+      let configurations = await runner.configurations
+      let arguments = try XCTUnwrap(configurations.first?.arguments)
+      XCTAssertTrue(arguments.contains("riela-video-addons:local"), "\(name) should select the video image")
+    }
+
+    let explicitImages = ["custom:media", WorkflowAddonContainerExecution.defaultImage]
+    for (index, image) in explicitImages.enumerated() {
+      let runner = BuiltinContainerRecordingRunner(output: testOutput())
+      let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+        primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
+        workingDirectory: root, runner: runner)
+      _ = try await resolver.execute(.init(workflowId: "video", stepId: "explicit-\(index)", nodeId: "explicit-\(index)",
+        addon: .init(name: "riela/video-frames", version: "1", container: .init(image: image))), context: .init())
+      let configurations = await runner.configurations
+      let arguments = try XCTUnwrap(configurations.first?.arguments)
+      XCTAssertTrue(arguments.contains(image), "an explicit image must take precedence")
+    }
+
+    let omitted = try JSONDecoder().decode(WorkflowAddonContainerExecution.self, from: Data("{}".utf8))
+    let explicitDefault = try JSONDecoder().decode(WorkflowAddonContainerExecution.self,
+      from: Data(#"{"image":"riela-builtin-addons:local"}"#.utf8))
+    XCTAssertFalse(omitted.imageWasSpecified)
+    XCTAssertTrue(explicitDefault.imageWasSpecified)
+    var changedAfterInitialization = WorkflowAddonContainerExecution()
+    changedAfterInitialization.image = WorkflowAddonContainerExecution.defaultImage
+    XCTAssertTrue(changedAfterInitialization.imageWasSpecified)
+  }
+
   func testSandboxFinalizationRetainsAdmissionForExecuteAcknowledgeAndTerminal() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("addon-finalization-admission")
     defer { try? FileManager.default.removeItem(at: root) }

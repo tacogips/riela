@@ -14,13 +14,18 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
     XCTAssertTrue(MediaPipelineOptions.isSafeURL(normalized))
     for raw in [
       "http://localhost/a", "http://127.2.3.4/a", "http://10.0.0.1/a", "http://192.168.1.1/a",
-      "http://[::1]/a", "http://[fd00::1]/a"
+      "http://[::1]/a", "http://[fd00::1]/a", "http://2130706433/a",
+      "http://0x7f.0.0.1/a", "http://0177.0.0.1/a", "http://127.1/a",
+      "http://0.0.0.0/a", "http://[::127.0.0.1]/a", "http://example.com./a",
+      "http://[fe80::1%25en0]/a"
     ] {
       XCTAssertFalse(
         MediaPipelineOptions.normalizedURL(raw).map(MediaPipelineOptions.isSafeURL) ?? true, raw)
     }
     XCTAssertTrue(MediaPipelineOptions.host("media.example.com", matches: "example.com"))
     XCTAssertFalse(MediaPipelineOptions.host("example.com.attacker.test", matches: "example.com"))
+    let shortLink = try XCTUnwrap(MediaPipelineOptions.normalizedURL("https://youtu.be/abc"))
+    XCTAssertEqual(shortLink.host, "www.youtube.com")
   }
 
   func testDifferenceHashAndDedupeUse256Bits() throws {
@@ -68,7 +73,10 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
     let service = MediaPipelineService(
       runner: runner, workingDirectory: root,
       http: { _ in throw MediaPipelineTestError.unexpectedHTTP },
-      resolverEnvironment: ["PATH": bin.path])
+      resolverEnvironment: [
+        "PATH": bin.path, "HOME": "/resolver/home", "XDG_CACHE_HOME": "/resolver/cache",
+        "DENO_DIR": "/resolver/deno"
+      ])
     XCTAssertEqual(
       service.ytDlpArguments(["--no-playlist"]),
       ["--ignore-config", "--js-runtimes", "deno:\(deno.path)", "--no-playlist"])
@@ -77,6 +85,9 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
     _ = try await service.run(URL(fileURLWithPath: "/bin/true"), [], stage: "frames", deadline: nil)
     let configuration = await runner.configuration
     XCTAssertEqual(configuration?.environment["PATH"], service.resolvedSearchPath)
+    XCTAssertEqual(configuration?.environment["HOME"], "/resolver/home")
+    XCTAssertEqual(configuration?.environment["XDG_CACHE_HOME"], "/resolver/cache")
+    XCTAssertEqual(configuration?.environment["DENO_DIR"], "/resolver/deno")
     XCTAssertTrue(service.resolvedSearchPath.contains("/usr/bin"))
 
     let tool = bin.appendingPathComponent("yt-dlp")
@@ -90,6 +101,9 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
             terminationStatus: 1)),
       workingDirectory: root, http: { _ in throw MediaPipelineTestError.unexpectedHTTP },
       resolverEnvironment: ["PATH": bin.path])
+    let cachedArguments = service.ytDlpArguments(["--download"], cacheDirectory: root)
+    let cacheDirectoryIndex = try XCTUnwrap(cachedArguments.firstIndex(of: "--cache-dir"))
+    XCTAssertEqual(cachedArguments[cacheDirectoryIndex + 1], root.path)
     XCTAssertEqual(try failing.executable(nil, name: "yt-dlp", stage: "metadata").path, tool.path)
     do {
       _ = try await failing.run(tool, [], stage: "download", deadline: nil)
@@ -129,6 +143,73 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
       requests.last?.url?.absoluteString, "https://api.example.test/v1/audio/transcriptions")
     XCTAssertEqual(requests.last?.timeoutInterval, 9)
   }
+
+  func testProcessTimeoutIsPreservedAndNetworkRetryStopsAtMaximumAttempts() async throws {
+    let root = try makeTestDirectory("timeout-retry")
+    let timeoutService = MediaPipelineService(
+      runner: ThrowingMediaPipelineRunner(error: AdapterExecutionError(.timeout, "deadline")),
+      workingDirectory: root, http: { _ in throw MediaPipelineTestError.unexpectedHTTP })
+    do {
+      _ = try await timeoutService.run(URL(fileURLWithPath: "/bin/ffmpeg"), [], stage: "audio", deadline: nil)
+      XCTFail("expected process timeout")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .timeout)
+      XCTAssertEqual(error.message, "deadline")
+    }
+    let cancellationService = MediaPipelineService(
+      runner: ThrowingMediaPipelineRunner(error: CancellationError()),
+      workingDirectory: root, http: { _ in throw MediaPipelineTestError.unexpectedHTTP })
+    do {
+      _ = try await cancellationService.run(URL(fileURLWithPath: "/bin/ffmpeg"), [], stage: "audio", deadline: nil)
+      XCTFail("expected cancellation")
+    } catch is CancellationError {
+      // Cancellation should cross the process boundary unchanged.
+    }
+
+    let audio = root.appendingPathComponent("audio.mp3")
+    try Data([1, 2, 3]).write(to: audio)
+    let retrying = RetryableMediaPipelineHTTPStub(failures: 1)
+    let retryService = MediaPipelineService(
+      runner: FoundationLocalProcessRunner(), workingDirectory: root,
+      http: { request in try await retrying.send(request) })
+    let options = MediaPipelineSTTOptions(model: "model", language: nil, prompt: nil, maxAttempts: 2)
+    let transcript = try await retryService.transcribeChunk(
+      audio, options: options, apiKey: "api-secret", baseURL: "https://api.example.test",
+      deadline: nil, timeoutSeconds: 2)
+    XCTAssertEqual(transcript, "recognized speech")
+    let retriedCount = await retrying.count
+    XCTAssertEqual(retriedCount, 2)
+
+    let failing = RetryableMediaPipelineHTTPStub(failures: 4)
+    let giveUpService = MediaPipelineService(
+      runner: FoundationLocalProcessRunner(), workingDirectory: root,
+      http: { request in try await failing.send(request) })
+    do {
+      _ = try await giveUpService.transcribeChunk(
+        audio, options: options, apiKey: "api-secret", baseURL: "https://api.example.test",
+        deadline: nil, timeoutSeconds: 2)
+      XCTFail("expected retries to stop at maxAttempts")
+    } catch {
+      XCTAssertFalse(String(describing: error).contains("api-secret"))
+    }
+    let failedCount = await failing.count
+    XCTAssertEqual(failedCount, 2)
+
+    let httpFailureService = MediaPipelineService(
+      runner: FoundationLocalProcessRunner(), workingDirectory: root,
+      http: { _ in
+        .init(status: 401, body: Data("api-secret must not be shown".utf8), retryAfter: nil)
+      })
+    do {
+      _ = try await httpFailureService.transcribeChunk(
+        audio, options: options, apiKey: "api-secret", baseURL: "https://api.example.test",
+        deadline: nil, timeoutSeconds: 2)
+      XCTFail("expected HTTP failure")
+    } catch {
+      XCTAssertFalse(String(describing: error).contains("api-secret"))
+      XCTAssertTrue(String(describing: error).contains("HTTP 401"))
+    }
+  }
 }
 
 extension MediaPipelineMediaLogicTests {
@@ -155,6 +236,23 @@ private struct FixedResultMediaPipelineRunner: LocalProcessRunning {
   let result: LocalProcessResult
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws
     -> LocalProcessResult { result }
+}
+
+private struct ThrowingMediaPipelineRunner: LocalProcessRunning {
+  let error: Error
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws
+    -> LocalProcessResult { throw error }
+}
+
+private actor RetryableMediaPipelineHTTPStub {
+  private(set) var count = 0
+  private let failures: Int
+  init(failures: Int) { self.failures = failures }
+  func send(_ request: URLRequest) throws -> MediaPipelineHTTPResponse {
+    count += 1
+    if count <= failures { throw MediaPipelineTestError.unexpectedHTTP }
+    return .init(status: 200, body: Data("{\"text\":\"recognized speech\"}".utf8), retryAfter: nil)
+  }
 }
 
 private actor MediaPipelineHTTPStub {

@@ -1,81 +1,108 @@
 # Composable video pipeline
 
-The media pipeline uses four single purpose builtins. Install `yt-dlp` and
-`ffmpeg` on macOS with `brew install yt-dlp ffmpeg`, or on Debian/Ubuntu with
-`apt-get install yt-dlp ffmpeg`. Keep stage output directories under the
-workflow working directory so a container stage sees the same paths as its
-neighbors. The download stage needs network access; local extraction stages
-can run with networking denied.
+Install `yt-dlp` and `ffmpeg` with `brew install yt-dlp ffmpeg` on macOS or
+`apt-get install yt-dlp ffmpeg` on Debian and Ubuntu. The download stage needs
+network access. Audio extraction, frame sampling, and speech recognition can
+run in separate stages with only the speech stage allowed to reach its API.
+
+This example shows the data flow as two workflow definitions. The parent
+downloads the video, extracts audio segments, samples frames for those time
+boundaries, and fans each result into the segment workflow. Whole-value
+templates preserve JSON arrays and objects as JSON values.
 
 ```json
 {
-  "id": "download",
-  "addon": {
-    "name": "riela/media-download",
-    "version": "1",
-    "container": { "image": "riela-video-addons:local", "networkPolicy": "egress-allowed" },
-    "config": { "options": {
+  "workflowId": "video-pipeline",
+  "entryStepId": "download",
+  "nodes": [
+    { "id": "download", "addon": { "name": "riela/media-download", "version": "1", "config": { "options": {
       "url": "https://www.youtube.com/watch?v=8QxKwYOyUaE",
       "outputDir": ".riela/artifacts/media-download"
-    } }
-  }
+    } } } },
+    { "id": "audio", "addon": { "name": "riela/audio-segments", "version": "1", "config": { "options": {
+      "path": "{{input.mediaDownload.path}}",
+      "segmentSeconds": 180
+    } } } },
+    { "id": "videoFrames", "addon": { "name": "riela/video-frames", "version": "1", "config": { "options": {
+      "path": "{{input.audioSegments.sourcePath}}",
+      "segments": "{{input.audioSegments.segments}}"
+    } } } },
+    { "id": "segment-join", "kind": "output" }
+  ],
+  "steps": [
+    { "id": "download", "nodeId": "download", "transitions": [{ "toStepId": "audio" }] },
+    { "id": "audio", "nodeId": "audio", "transitions": [{ "toStepId": "videoFrames" }] },
+    { "id": "videoFrames", "nodeId": "videoFrames", "transitions": [{
+      "toWorkflowId": "video-pipeline-segment",
+      "toStepId": "speechToText",
+      "resumeStepId": "segment-join",
+      "fanout": {
+        "groupId": "video-segments",
+        "itemsFrom": "/videoFrames/segments",
+        "itemVariable": "segment",
+        "concurrency": 4,
+        "joinStepId": "segment-join",
+        "failurePolicy": "fail-fast",
+        "resultOrder": "input"
+      }
+    }] },
+    { "id": "segment-join", "nodeId": "segment-join" }
+  ]
 }
 ```
 
-Pass `download.output.mediaDownload.path` to the next stages. Split audio and
-sample frames independently, then provide the audio segment boundaries as the
-frame stage's `segments` option. Fan out over
-`videoFrames.segments`; each item has the segment's time boundaries, its frame
-objects and `imagePaths`, ready for an agent to receive image context.
+The fanout branch transcribes each matching audio segment, then sends that
+transcript and only that segment's frames to the agent:
 
 ```json
 {
-  "id": "audio",
-  "addon": {
-    "name": "riela/audio-segments", "version": "1",
-    "container": { "image": "riela-video-addons:local", "networkPolicy": "denied" },
-    "config": { "options": {
-      "path": "{{steps.download.output.mediaDownload.path}}",
-      "outputDir": ".riela/artifacts/audio-segments"
-    } }
-  }
+  "workflowId": "video-pipeline-segment",
+  "entryStepId": "speechToText",
+  "nodes": [
+    { "id": "speechToText", "addon": {
+      "name": "riela/speech-to-text",
+      "version": "1",
+      "env": {
+        "OPENAI_API_KEY": { "fromEnv": "OPENAI_API_KEY", "required": true },
+        "OPENAI_BASE_URL": { "fromEnv": "OPENAI_BASE_URL" }
+      },
+      "config": { "options": { "path": "{{segment.path}}" } }
+    } },
+    { "id": "describeSegment", "nodeFile": "nodes/describe-segment.json" },
+    { "id": "segment-output", "kind": "output" }
+  ],
+  "steps": [
+    { "id": "speechToText", "nodeId": "speechToText", "transitions": [{ "toStepId": "describeSegment" }] },
+    { "id": "describeSegment", "nodeId": "describeSegment", "transitions": [{ "toStepId": "segment-output" }] },
+    { "id": "segment-output", "nodeId": "segment-output" }
+  ]
 }
 ```
+
+Use this node definition for `nodes/describe-segment.json`:
 
 ```json
 {
-  "id": "frames",
-  "addon": {
-    "name": "riela/video-frames", "version": "1",
-    "container": { "image": "riela-video-addons:local", "networkPolicy": "denied" },
-    "config": { "options": {
-      "path": "{{steps.download.output.mediaDownload.path}}",
-      "segments": "{{steps.audio.output.audioSegments.segments}}",
-      "outputDir": ".riela/artifacts/video-frames"
-    } }
-  }
+  "id": "describeSegment",
+  "description": "Describe the current video segment from its transcript and images.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": false,
+  "promptTemplate": "Describe this video segment using its transcript and images.\nTranscript: {{speechToText.text}}\nSegment frames: {{segment.frames}}",
+  "variables": {}
 }
 ```
 
-For each item from `/steps/frames/output/videoFrames/segments`, run
-`riela/speech-to-text` with that item's matching audio path, then pass the
-transcript and the same item to an agent node. The speech stage needs
-`OPENAI_API_KEY`; optional `OPENAI_BASE_URL` accepts an API origin with or
-without `/v1`. Bind only those variables to the speech stage.
+Riela templates do not support `steps.<id>.output` references. Use the current
+step input (`{{input...}}`) for upstream values and the fanout item variable
+inside the branch. An agent wired directly to the video-frames output receives
+every segment's `imagePaths`, because adapters collect image attachments
+recursively. Keep agents inside the fanout branch or set
+`forwardImageAttachments` to `false` on a directly wired agent.
 
-```json
-{
-  "id": "speech",
-  "addon": {
-    "name": "riela/speech-to-text", "version": "1",
-    "container": { "image": "riela-video-addons:local", "networkPolicy": "egress-allowed" },
-    "env": { "OPENAI_API_KEY": { "fromEnv": "OPENAI_API_KEY", "required": true } },
-    "config": { "options": { "path": "{{item.path}}" } }
-  }
-}
-```
-
-Every stage writes a stage-specific manifest and reuses outputs when its
-options and inputs match (`cache` defaults to `true`). Set `cache` to `false`
-to force a stage to run again. Download URLs are canonicalized; private and
-local hosts are rejected, and `allowedHosts` can restrict accepted suffixes.
+The default output directories are scoped to each video or input media file;
+explicit output directories can be supplied when a workflow needs stable
+locations. Set `cache` to `false` to recompute a stage. Download URLs are
+canonicalized, local and private hosts are rejected, and `allowedHosts` can
+restrict accepted suffixes.

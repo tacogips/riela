@@ -53,7 +53,8 @@ enum MediaPipelineOptions {
       let rawHost = components.host?.lowercased()
     else { return false }
     let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-    guard host != "localhost", !host.hasSuffix(".localhost"), !host.hasSuffix(".") else {
+    guard !host.contains("%"), host != "localhost", !host.hasSuffix(".localhost"),
+      !host.hasSuffix(".") else {
       return false
     }
     if host.contains(":"), isPrivateIPv6(host) { return false }

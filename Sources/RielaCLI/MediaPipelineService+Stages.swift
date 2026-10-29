@@ -1,5 +1,6 @@
 import Foundation
 import RielaAdapters
+import RielaCore
 
 #if canImport(FoundationNetworking)
   import FoundationNetworking
@@ -23,7 +24,9 @@ extension MediaPipelineService {
     _ file: URL, options: MediaPipelineSTTOptions, apiKey: String, baseURL: String,
     deadline: Date?, timeoutSeconds: Double
   ) async throws -> String {
-    guard let fileData = try? Data(contentsOf: file), fileData.count < 25_000_000 else {
+    let fileSize = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue
+    guard let fileSize, fileSize <= 25_000_000,
+      let fileData = try? Data(contentsOf: file), fileData.count <= 25_000_000 else {
       throw MediaPipelineError.stage("stt", "audio file exceeds the 25 MB upload limit")
     }
     let boundary = "RielaBoundary-\(UUID().uuidString)"
@@ -129,9 +132,12 @@ extension MediaPipelineService {
             "-y", "-ss", String(format: "%.3f", time), "-i", mediaURL.path, "-frames:v", "1",
             "-vf", "scale=\(options.width):-2", path.path
           ], stage: "frames", deadline: deadline)
-      } catch is CancellationError { throw CancellationError() } catch {
+      } catch is CancellationError { throw CancellationError() } catch let error as AdapterExecutionError
+        where error.code == .timeout { throw error } catch let error as MediaPipelineError {
+        guard case .stage(_, let message) = error,
+          message.hasPrefix("process exited with status ") else { throw error }
         try? FileManager.default.removeItem(at: path)
-      }
+      } catch { throw error }
       if !FileManager.default.fileExists(atPath: path.path), index == selected.last {
         do {
           _ = try await run(
@@ -140,9 +146,12 @@ extension MediaPipelineService {
               "-y", "-sseof", "-0.1", "-i", mediaURL.path, "-frames:v", "1",
               "-vf", "scale=\(options.width):-2", path.path
             ], stage: "frames", deadline: deadline)
-        } catch is CancellationError { throw CancellationError() } catch {
+        } catch is CancellationError { throw CancellationError() } catch let error as AdapterExecutionError
+          where error.code == .timeout { throw error } catch let error as MediaPipelineError {
+          guard case .stage(_, let message) = error,
+            message.hasPrefix("process exited with status ") else { throw error }
           try? FileManager.default.removeItem(at: path)
-        }
+        } catch { throw error }
       }
       if FileManager.default.fileExists(atPath: path.path) {
         frames.append(.init(time: time, path: path.standardizedFileURL.path))

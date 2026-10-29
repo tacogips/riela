@@ -167,6 +167,7 @@ extension BuiltinWorkflowAddonResolver {
     let c = MediaPipelineContext(resolver: self, stage: "media-download")
     let service = c.service
     guard let raw = try c.string(values, "url") else { throw MediaPipelineStageError.option("url") }
+    let originalHost = URLComponents(string: raw)?.host?.lowercased()
     guard let url = MediaPipelineOptions.normalizedURL(raw) else {
       throw MediaPipelineStageError.option("url")
     }
@@ -180,31 +181,47 @@ extension BuiltinWorkflowAddonResolver {
       hosts = nil
     }
     guard MediaPipelineOptions.isSafeURL(url),
-      hosts?.contains(where: { MediaPipelineOptions.host(url.host ?? "", matches: $0) }) ?? true
+      hosts?.contains(where: { allowedHost in
+        [originalHost, url.host].compactMap { $0 }.contains {
+          MediaPipelineOptions.host($0, matches: allowedHost)
+        }
+      }) ?? true
     else { throw MediaPipelineStageError.option("url") }
     let maxMB = Int(try c.number(values, "maxFileSizeMB", 2048, 1...1_000_000))
     let maxDuration = try c.number(values, "maxDurationSeconds", 7200, 1...172800)
     let format = try c.string(
       values, "format", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b")!
-    let ytPath = try c.string(values, "ytDlpPath")
-    let ffmpegPath = try c.string(values, "ffmpegPath")
     let key = url.absoluteString
     let identity = String(try c.fingerprint(.string(key)).prefix(24))
+    let ytPath = try c.string(values, "ytDlpPath")
+    let ffmpegPath = try c.string(values, "ffmpegPath")
     let enabled = try c.bool(values, "cache", true)
     let fp = try c.fingerprint(
       .object([
         "url": .string(key), "maxFileSizeMB": .integer(Int64(maxMB)),
-        "maxDurationSeconds": .number(maxDuration), "format": .string(format),
-        "allowedHosts": values["allowedHosts"] ?? .null,
-        "ytDlpPath": ytPath.map(JSONValue.string) ?? .null,
-        "ffmpegPath": ffmpegPath.map(JSONValue.string) ?? .null
+        "format": .string(format)
       ]))
+    let outputDir =
+      try c.string(values, "outputDir").map(c.path)
+      ?? (self.artifactRootURL ?? workingDirectory.appendingPathComponent(".riela/artifacts"))
+      .appendingPathComponent("media-download/\(identity)")
+    if let cached = c.cached(
+      outputDir: outputDir, manifest: "media-download-manifest.json", fingerprint: fp,
+      enabled: enabled) {
+      return cached
+    }
+    try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+    let manifest = "media-download-manifest.json"
+    try? FileManager.default.removeItem(at: outputDir.appendingPathComponent(manifest))
+    let ytCache = outputDir.appendingPathComponent(".yt-dlp-cache", isDirectory: true)
+    try FileManager.default.createDirectory(at: ytCache, withIntermediateDirectories: true)
     let yt = try service.executable(ytPath, name: "yt-dlp", stage: "metadata")
     let metadata = try await service.run(
       yt,
       service.ytDlpArguments([
         "--no-playlist", "-O", "%(.{id,title,duration,is_live,live_status})j", key
-      ]), stage: "metadata", deadline: deadline)
+      ], cacheDirectory: ytCache),
+      stage: "metadata", deadline: deadline)
     guard let data = metadata.stdout.data(using: .utf8),
       let info = try JSONSerialization.jsonObject(with: data) as? [String: Any]
     else { throw MediaPipelineStageError.stage("metadata", "invalid yt-dlp metadata") }
@@ -220,16 +237,10 @@ extension BuiltinWorkflowAddonResolver {
     }
     let id = info["id"] as? String
     let title = info["title"] as? String ?? "Video"
-    let outputDir =
-      try c.string(values, "outputDir").map(c.path)
-      ?? (self.artifactRootURL ?? workingDirectory.appendingPathComponent(".riela/artifacts"))
-      .appendingPathComponent("media-download/\(id ?? identity)")
-    if let cached = c.cached(
-      outputDir: outputDir, manifest: "media-download-manifest.json", fingerprint: fp,
-      enabled: enabled) {
-      return cached
+    for file in (try? FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)) ?? []
+      where file.lastPathComponent.hasPrefix("video.") {
+      try? FileManager.default.removeItem(at: file)
     }
-    try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
     let ffmpeg = try service.executable(ffmpegPath, name: "ffmpeg", stage: "download")
     let template = outputDir.appendingPathComponent("video.%(ext)s").path
     let result = try await service.run(
@@ -238,7 +249,8 @@ extension BuiltinWorkflowAddonResolver {
         "--no-playlist", "--max-filesize", "\(maxMB)M", "--ffmpeg-location", ffmpeg.path, "-f",
         format, "--merge-output-format", "mp4", "-o", template, "--print", "after_move:filepath",
         "--no-simulate", key
-      ]), stage: "download", deadline: deadline)
+      ], cacheDirectory: ytCache),
+      stage: "download", deadline: deadline)
     guard let path = result.stdout.split(whereSeparator: \.isNewline).last.map(String.init),
       FileManager.default.fileExists(atPath: path)
     else {
@@ -272,10 +284,13 @@ extension BuiltinWorkflowAddonResolver {
     let target = try c.number(values, "segmentSeconds", 180, 30...600)
     let noise = try c.number(values, "silenceNoiseDb", -35, -100...0)
     let silenceMin = try c.number(values, "silenceMinSeconds", 0.4, 0.05...10)
+    let inputFileSize = Int64((try? media.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+    let inputIdentity = String(
+      try c.fingerprint(.object(["path": .string(media.path), "size": .integer(inputFileSize)])).prefix(24))
     let out =
       try c.string(values, "outputDir").map(c.path)
-      ?? media.deletingLastPathComponent().appendingPathComponent("../segments", isDirectory: true)
-      .standardizedFileURL
+      ?? workingDirectory.appendingPathComponent(".riela/artifacts")
+      .appendingPathComponent("audio-segments/\(inputIdentity)")
     let fp = try c.fingerprint(
       .object([
         "path": .string(media.path),
@@ -296,16 +311,22 @@ extension BuiltinWorkflowAddonResolver {
       try c.string(values, "ffmpegPath"), name: "ffmpeg", stage: "audio")
     let ffprobe = try service.executable(
       try c.string(values, "ffprobePath"), name: "ffprobe", stage: "audio")
+    let manifest = "audio-segments-manifest.json"
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    try? FileManager.default.removeItem(at: out.appendingPathComponent(manifest))
     let probe = try await service.run(
-      ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "json", media.path],
+      ffprobe, ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", media.path],
       stage: "audio", deadline: deadline)
-    guard let data = probe.stdout.data(using: .utf8),
-      let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let format = root["format"] as? [String: Any], let rawDuration = format["duration"],
+    guard let probeData = probe.stdout.data(using: .utf8),
+      let probeRoot = try JSONSerialization.jsonObject(with: probeData) as? [String: Any]
+    else { throw MediaPipelineStageError.stage("audio", "could not inspect media streams") }
+    guard let streams = probeRoot["streams"] as? [[String: Any]],
+      streams.contains(where: { $0["codec_type"] as? String == "audio" })
+    else { throw MediaPipelineStageError.stage("audio", "input media has no audio stream") }
+    guard let format = probeRoot["format"] as? [String: Any], let rawDuration = format["duration"],
       let duration = (rawDuration as? NSNumber)?.doubleValue
         ?? (rawDuration as? String).flatMap(Double.init), duration > 0
     else { throw MediaPipelineStageError.stage("audio", "could not read media duration") }
-    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
     let audio = out.appendingPathComponent("audio.mp3")
     _ = try await service.run(
       ffmpeg,
@@ -339,11 +360,12 @@ extension BuiltinWorkflowAddonResolver {
     let payload: JSONObject = [
       "audioSegments": .object([
         "status": .string("completed"), "durationSeconds": .number(duration),
-        "audioPath": .string(audio.path), "segments": .array(segments),
+        "audioPath": .string(audio.path), "sourcePath": .string(media.path),
+        "segments": .array(segments),
         "outputDir": .string(out.path), "cached": .bool(false)
       ])
     ]
-    try c.save(payload, outputDir: out, manifest: "audio-segments-manifest.json", fingerprint: fp)
+    try c.save(payload, outputDir: out, manifest: manifest, fingerprint: fp)
     return payload
   }
 
@@ -381,6 +403,8 @@ extension BuiltinWorkflowAddonResolver {
       return hit
     }
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let manifest = "video-frames-manifest.json"
+    try? FileManager.default.removeItem(at: out.appendingPathComponent(manifest))
     let frameOptions = MediaFrameExtractionOptions(
       intervalSeconds: interval, dedupeThreshold: threshold, width: width)
     let ffmpeg = try service.executable(
@@ -439,7 +463,7 @@ extension BuiltinWorkflowAddonResolver {
       result["segments"] = .array(outputSegments)
     }
     let payload: JSONObject = ["videoFrames": .object(result)]
-    try c.save(payload, outputDir: out, manifest: "video-frames-manifest.json", fingerprint: fp)
+    try c.save(payload, outputDir: out, manifest: manifest, fingerprint: fp)
     return payload
   }
 
@@ -451,7 +475,9 @@ extension BuiltinWorkflowAddonResolver {
       throw MediaPipelineStageError.option("path")
     }
     let audio = c.path(rawPath)
-    guard let data = try? Data(contentsOf: audio), data.count <= 25_000_000 else {
+    let fileSize = (try? FileManager.default.attributesOfItem(atPath: audio.path)[.size] as? NSNumber)?.intValue
+    guard let fileSize, fileSize <= 25_000_000,
+      let data = try? Data(contentsOf: audio), data.count <= 25_000_000 else {
       throw MediaPipelineStageError.stage(
         "stt", "audio file is missing or exceeds the 25 MB upload limit")
     }
@@ -473,15 +499,13 @@ extension BuiltinWorkflowAddonResolver {
         .policyBlocked, "speech-to-text requires addon.env.OPENAI_API_KEY")
     }
     let cacheFile = URL(fileURLWithPath: audio.path + ".stt.json")
+    let baseURL = env["OPENAI_BASE_URL"] ?? "https://api.openai.com"
     let fingerprint = try c.fingerprint(
       .object([
-        "provider": .string("openai"), "model": .string(model),
+        "provider": .string("openai"), "model": .string(model), "baseURL": .string(baseURL),
         "language": language.map(JSONValue.string) ?? .null,
-        "prompt": prompt.map(JSONValue.string) ?? .null, "maxAttempts": .integer(Int64(attempts)),
-        "timeoutSeconds": .number(timeout), "size": .integer(Int64(data.count)),
-        "mtime": .string(
-          ((try? audio.resourceValues(forKeys: [.contentModificationDateKey])
-            .contentModificationDate) ?? .distantPast).description)
+        "prompt": prompt.map(JSONValue.string) ?? .null,
+        "contentSHA256": .string(JSONCanonical.sha256Hex(data))
       ]))
     let enabled = try c.bool(values, "cache", true)
     if enabled, let cached = try? Data(contentsOf: cacheFile),
@@ -500,7 +524,7 @@ extension BuiltinWorkflowAddonResolver {
       model: model, language: language, prompt: prompt, maxAttempts: attempts)
     let text = try await service.transcribeChunk(
       audio, options: sttOptions, apiKey: apiKey,
-      baseURL: env["OPENAI_BASE_URL"] ?? "https://api.openai.com", deadline: deadline,
+      baseURL: baseURL, deadline: deadline,
       timeoutSeconds: timeout)
     let payload: JSONObject = [
       "speechToText": .object([
@@ -509,7 +533,7 @@ extension BuiltinWorkflowAddonResolver {
         "path": .string(audio.path), "cached": .bool(false)
       ])
     ]
-    try JSONEncoder().encode(
+    try? JSONEncoder().encode(
       JSONValue.object(["optionsFingerprint": .string(fingerprint), "text": .string(text)])
     ).write(to: cacheFile, options: .atomic)
     return payload

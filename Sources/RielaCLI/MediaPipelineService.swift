@@ -1,5 +1,6 @@
 import Foundation
 import RielaAdapters
+import RielaCore
 
 #if canImport(FoundationNetworking)
   import FoundationNetworking
@@ -33,7 +34,7 @@ struct MediaPipelineService: Sendable {
       let result = try await runner.run(
         configuration: .init(
           executableURL: executable, arguments: arguments,
-          environment: ["PATH": resolvedSearchPath], workingDirectoryURL: workingDirectory,
+          environment: processEnvironment, workingDirectoryURL: workingDirectory,
           stdoutCaptureByteLimit: 2_000_000, stderrCaptureByteLimit: 2_000_000), stdin: "",
         deadline: deadline)
       guard result.terminationStatus == 0 else {
@@ -43,7 +44,8 @@ struct MediaPipelineService: Sendable {
         )
       }
       return result
-    } catch let error as MediaPipelineError { throw error } catch {
+    } catch is CancellationError { throw CancellationError() } catch let error as AdapterExecutionError
+      where error.code == .timeout { throw error } catch let error as MediaPipelineError { throw error } catch {
       throw MediaPipelineError.stage(stage, "could not run \(executable.lastPathComponent)")
     }
   }
@@ -80,6 +82,14 @@ struct MediaPipelineService: Sendable {
     }.joined(separator: ":")
   }
 
+  var processEnvironment: [String: String] {
+    var result = ["PATH": resolvedSearchPath]
+    for name in ["HOME", "XDG_CACHE_HOME", "DENO_DIR"] {
+      if let value = resolverEnvironment[name] { result[name] = value }
+    }
+    return result
+  }
+
   func ytDlpArguments(_ arguments: [String]) -> [String] {
     let deno = resolvedSearchPath.split(separator: ":").map {
       URL(fileURLWithPath: String($0)).appendingPathComponent("deno")
@@ -90,6 +100,10 @@ struct MediaPipelineService: Sendable {
 
   func ytDlpArguments(_ arguments: [String], deno: URL?) -> [String] {
     ["--ignore-config"] + (deno.map { ["--js-runtimes", "deno:\($0.path)"] } ?? []) + arguments
+  }
+
+  func ytDlpArguments(_ arguments: [String], cacheDirectory: URL) -> [String] {
+    ytDlpArguments(["--cache-dir", cacheDirectory.path] + arguments)
   }
 
   func missingDownloadOutputMessage(maxFileSizeMB: Int) -> String {

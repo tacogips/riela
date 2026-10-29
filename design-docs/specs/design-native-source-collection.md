@@ -577,3 +577,28 @@ Structured collector cursors remain literal bounded JSON (16 KiB), including
 per-author last IDs, independent page cursors and coverage metadata. Only `null`
 implicitly signals acquisition completion; a provider may explicitly set
 `acquisitionComplete`. Exact version acknowledgements never alter that cursor.
+
+## YouTube: `riela/youtube-collect`, version `1`
+
+The native collector uses the macOS-only `YouTubeGatewayCore` package to read
+metadata for explicitly listed public videos and recent uploads from listed
+channels. Bind `YOUTUBE_GATEWAY_ACCESS_TOKEN` or
+`YOUTUBE_GATEWAY_TOKEN_STORE_JSON` through `addon.env`; the collector passes
+only those allowlisted values to the client. Linux execution fails with a
+policy error because the linked gateway is macOS-only.
+
+`options.videos` accepts YouTube watch, shorts, live and youtu.be URLs or bare
+video IDs. `options.channels` accepts channel IDs, channel URLs and handles.
+Malformed references become finite failure records. Optional
+`publishedAfter` filters channel uploads by their publication instant;
+explicit video references are never filtered. `maxPerChannel` defaults to 10
+and is limited to 1–50. Each channel is resolved to its uploads playlist, one
+playlist page is inspected, and selected video IDs are enriched in batched
+`videos.list` requests of at most 50 IDs.
+
+The output is `{videos, failures, requests}` with the opaque input `context`
+preserved by the node. Explicit videos appear first in input order, followed by
+channel uploads newest first. Duplicate IDs merge their `sources` entries.
+Partial channel and video API failures return alongside successful metadata;
+failure messages never include provider responses or credentials. The complete
+configuration and output are capped at 8 MB.

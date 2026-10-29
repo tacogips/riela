@@ -29,7 +29,7 @@ riela workflow run <workflow> --variables '{"task": "..."}'
   web console, a GraphQL control plane, or let Telegram, Discord, Slack,
   webhooks, cron schedules and file changes start workflows for you.
 - **Connect your tools.** Built-in add-ons for Gmail, Google Docs / Sheets /
-  Analytics, Wrike, X, Apple Notes and notifications, document-to-Markdown
+  Analytics, Wrike, X, YouTube, Apple Notes and notifications, document-to-Markdown
   conversion, key-value state, workflow memory and kaiba long-term notes.
 - **Edit, share and scale.** Edit workflows as graphs in the app, publish and
   install them as packages, run recurring routines, and spread steps across

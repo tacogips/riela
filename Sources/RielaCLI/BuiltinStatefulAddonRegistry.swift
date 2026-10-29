@@ -28,6 +28,7 @@ enum BuiltinStatefulAddonRegistry {
   static let registrations: [BuiltinAddonHandlerRegistration] = [
     BuiltinWorkflowAddonResolver.xCollectionRegistration,
     BuiltinWorkflowAddonResolver.gmailCollectionRegistration,
+    BuiltinWorkflowAddonResolver.youtubeCollectionRegistration,
     BuiltinWorkflowAddonResolver.jsonRouteRegistration,
     BuiltinWorkflowAddonResolver.pageStateRegistration,
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,

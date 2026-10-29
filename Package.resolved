@@ -1,5 +1,5 @@
 {
-  "originHash" : "b8df9e09fd3d58fbb3a1a6739883f0aedac92c9fc0c38823c6e8308b244eae44",
+  "originHash" : "cf0aade52665b9bef77b3efa39f3284746f6e88a1cf8b145e4a3b1ea2248ca5e",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -167,6 +167,14 @@
       "state" : {
         "revision" : "3609db11a39831a5737f5b0ce1a2eb931609db36",
         "version" : "0.1.27"
+      }
+    },
+    {
+      "identity" : "youtube-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/youtube-gateway.git",
+      "state" : {
+        "revision" : "7128a395c25ae6685aa38f2246e30d6bbd3ce767"
       }
     }
   ],

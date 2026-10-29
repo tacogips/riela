@@ -30,12 +30,24 @@ let rielaInfoPlistLinkerSettings: [LinkerSetting] = [
 let notionPackageDependencies: [Package.Dependency] = [
   .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "41f64e602c3e242a3f1132f2a297dec47a091afa")
 ]
+let youtubePackageDependencies: [Package.Dependency] = [
+  .package(url: "https://github.com/tacogips/youtube-gateway.git", revision: "7128a395c25ae6685aa38f2246e30d6bbd3ce767")
+]
+let youtubeTargetDependencies: [Target.Dependency] = [
+  .product(name: "YouTubeGatewayCore", package: "youtube-gateway", condition: .when(platforms: [.macOS]))
+]
+let youtubeTestTargetDependencies: [Target.Dependency] = [
+  .product(name: "YouTubeGatewayCore", package: "youtube-gateway", condition: .when(platforms: [.macOS]))
+]
 let notionTargetDependencies: [Target.Dependency] = [
   .product(name: "NotionGatewayCore", package: "notion-gateway", condition: .when(platforms: [.macOS]))
 ]
 #else
 let notionPackageDependencies: [Package.Dependency] = []
 let notionTargetDependencies: [Target.Dependency] = []
+let youtubePackageDependencies: [Package.Dependency] = []
+let youtubeTargetDependencies: [Target.Dependency] = []
+let youtubeTestTargetDependencies: [Target.Dependency] = []
 #endif
 
 let package = Package(
@@ -108,7 +120,7 @@ let package = Package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
       revision: "b05c89e9864bc758365afaf62896e1d8c119cd93"
     )
-  ] + notionPackageDependencies,
+  ] + notionPackageDependencies + youtubePackageDependencies,
   targets: [
     .target(
       name: "RielaJavaScript",
@@ -300,7 +312,7 @@ let package = Package(
         "RielaWorkflowRegistry",
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "WebHooky", package: "web-hooky")
-      ] + notionTargetDependencies,
+      ] + notionTargetDependencies + youtubeTargetDependencies,
       resources: [.copy("Resources/PublicWebBrowser.py")]
     ),
     .executableTarget(
@@ -403,12 +415,11 @@ let package = Package(
         "RielaServer",
         "RielaWorkflowRegistry",
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway")
-      ]
+      ] + youtubeTestTargetDependencies
     )
   ],
   swiftLanguageModes: [.v6]
 )
-
 
 // A focused build still compiles the production runtime unchanged. Limiting
 // discovery to these regression suites avoids unrelated UI/server actor tests

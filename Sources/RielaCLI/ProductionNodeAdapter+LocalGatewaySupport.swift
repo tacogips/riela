@@ -368,6 +368,13 @@ private struct NotionUploadPolicyScope {
   var artifactRootURL: URL?
 }
 
+private func requireNotionAppendResults(_ result: JSONObject, required: Bool, addonName: String) throws {
+  guard required else { return }
+  guard case .array? = result["results"] else {
+    throw AdapterExecutionError(.invalidOutput, "\(addonName) appendBlocks response is missing results")
+  }
+}
+
 private func executeNotionPublishPage(
   input: WorkflowAddonExecutionInput, config: JSONObject, runner: @escaping LocalGatewayGraphQLRunner,
   variables: JSONObject, childEnvironment: [String: String], runtimeEnvironment: [String: String],
@@ -487,6 +494,7 @@ private func executeNotionPublishPage(
           variables: ["pageId": .string(existingPageId), "children": .array(chunk)], environment: runtimeEnvironment,
           bindings: childEnvironment, context: context, addonName: addonName)
         let appendResult: JSONObject = appendResponse.data.values.first.flatMap { if case let .object(obj) = $0 { obj } else { nil } } ?? [:]
+        try requireNotionAppendResults(appendResult, required: true, addonName: addonName)
         indexNotionResultIDs(appendResult, offset: nextIndex, path: [], into: &createdBlockIDs)
         nextIndex += chunk.count
         appendRequests += 1
@@ -521,7 +529,9 @@ private func executeNotionPublishPage(
       let deferred = deferredQueue.removeFirst()
       let (shallowChildren, nestedDeferred) = stripDeepNotionChildren(deferred.children)
       deferredQueue.append(contentsOf: nestedDeferred.map {
-        DeferredNotionChildren(parentPath: deferred.parentPath + $0.parentPath, children: $0.children)
+        let nestedPath = $0.parentPath.isEmpty ? [] : [deferred.offset + $0.parentPath[0]] + Array($0.parentPath.dropFirst())
+        return DeferredNotionChildren(parentPath: deferred.parentPath + nestedPath,
+          offset: $0.offset, children: $0.children)
       })
       let targetId = try await notionBlockID(at: deferred.parentPath, pageId: id, knownIDs: createdBlockIDs, runner: runner,
         environment: runtimeEnvironment, bindings: childEnvironment, context: context, addonName: addonName)
@@ -533,7 +543,8 @@ private func executeNotionPublishPage(
           variables: ["id": .string(targetId), "children": .array(chunk)], environment: runtimeEnvironment,
           bindings: childEnvironment, context: context, addonName: addonName)
         let appendResult: JSONObject = appendResponse.data.values.first.flatMap { if case let .object(obj) = $0 { obj } else { nil } } ?? [:]
-        indexNotionResultIDs(appendResult, offset: indexOffset, path: deferred.parentPath, into: &createdBlockIDs)
+        try requireNotionAppendResults(appendResult, required: existingPageId != nil, addonName: addonName)
+        indexNotionResultIDs(appendResult, offset: deferred.offset + indexOffset, path: deferred.parentPath, into: &createdBlockIDs)
         indexOffset += chunk.count
         appendRequests += 1
       }

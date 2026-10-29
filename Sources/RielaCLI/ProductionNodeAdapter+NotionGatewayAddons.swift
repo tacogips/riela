@@ -53,7 +53,8 @@ extension BuiltinWorkflowAddonResolver {
     context: AdapterExecutionContext
   ) async throws -> AdapterExecutionOutput {
     try await LocalGatewayGraphQLEngine(
-      environment: environment, descriptor: operation.descriptor, runnerOverride: localGatewayGraphQLRunner
+      environment: environment, descriptor: operation.descriptor, runnerOverride: localGatewayGraphQLRunner,
+      workingDirectory: workingDirectory
     ).execute(input, context: context)
   }
 }

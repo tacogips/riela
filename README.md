@@ -537,6 +537,67 @@ The catalog-provided JSON-mode operations include `findChildPage` for reader
 and writer, and `ensurePagePath` for writer. See
 `riela gateway notion --role writer schema` for the writer schema.
 
+The writer also supports the riela-side `uploadLocalFile` operation for local
+files, including images produced by earlier nodes. Pass `arguments.path`
+(relative to the workflow working directory, or an absolute path under that
+directory or the session artifact directory); optional `filename`,
+`contentType`, `kind` (`image` or `file`), and `caption` customize the
+upload. The default content type follows the filename extension, and the
+default kind is `image` for image content types and `file` otherwise. Files
+must be regular files no larger than 20 MiB. The result is under
+`payload.notionGateway` and includes `fileUploadId`, `filename`,
+`contentType`, `sizeBytes`, `status`, and a ready-to-append `block`.
+Pass that block to `appendBlocks`:
+
+```json
+{
+  "name": "riela/notion-gateway-write",
+  "version": "1",
+  "config": {
+    "operation": "uploadLocalFile",
+    "arguments": {"path": "captures/frame-001.png", "caption": "Frame 1"}
+  },
+  "env": {"NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY", "required": false}}
+}
+```
+
+In a following writer node, use `appendBlocks` with
+`{"children":"{{upload.notionGateway.block}}"}` and the target page `id`.
+Upload create and send are two sequential SDK calls; a failed send is never
+retried automatically.
+
+For a complete rich page, use the riela-side `publishPage` composite operation.
+It can ensure a title path, upload nested local image/file blocks once per path,
+and split large block lists into ordered Notion requests:
+
+```json
+{
+  "name": "riela/notion-gateway-write",
+  "version": "1",
+  "config": {
+    "operation": "publishPage",
+    "arguments": {
+      "parentId": "3fecc02c-b023-801b-a2d2-f8e10e7c2077",
+      "path": ["ART", "YouTube", "2026-10"],
+      "title": "2026-10-29 Channel | Video title",
+      "children": [
+        {"type": "heading_2", "heading_2": {"rich_text": [{"type": "text", "text": {"content": "Summary"}}]}},
+        {"type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Published by a workflow."}}]}}
+      ],
+      "position": {"type": "page_start"}
+    }
+  },
+  "env": {"NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY", "required": false}}
+}
+```
+
+`children` contains native Notion blocks. Image or file blocks can use
+`{"type":"local_file","local_file":{"path":"captures/frame.jpg"}}` as
+their payload; captions remain attached after upload. Failed local uploads
+become placeholder paragraphs and appear in `data.publishPage.failedUploads`.
+The result also includes the created `pageId`, URL, effective `parentId`,
+uploaded files, append request count and block count. Do not pass `markdown`.
+
 `riela gateway notion --role reader|writer ...` delegates the gateway's native
 CLI commands, including `schema`, `graphql`, `page` and `block`; reader is the
 default. Supply `NOTION_API_KEY` from the caller environment, for example through

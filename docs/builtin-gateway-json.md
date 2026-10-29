@@ -19,13 +19,41 @@ concurrency and per-item failure handling.
 | `riela/gmail-gateway-read` | same reader JSON contract | same reader selections | operation mode uses Gmail catalog and inline document/size checks; legacy mode checks query template and mode conflicts | thrown error, unchanged | [Gmail](../examples/builtin-gateway-json/README.md) | existing reader container; validated typed values become document literals |
 | `riela/wrike-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | — | fixed-tier linked gateway |
 | `riela/google-analytics-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | — | fixed-tier linked gateway, macOS build |
-| `riela/notion-gateway-read`, `-write` | literal `operation`, object `arguments`; catalog includes `findChildPage` for reader and writer, plus `ensurePagePath` for writer | optional fields, literal selection set, or catalog default | catalog argument names/types, required values, selection fields and single root field | thrown error, unchanged | [Notion sync](../examples/notion-gateway-json-sync/README.md) | fixed-role SDK, macOS build |
+| `riela/notion-gateway-read`, `-write` | literal `operation`, object `arguments`; catalog includes `findChildPage` for reader and writer, plus `ensurePagePath` for writer; writer also supports riela-side `uploadLocalFile` and `publishPage` | optional fields, literal selection set, or catalog default; composite publish creates a page and appends oversized block lists | catalog checks plus local file path, argument and 20 MiB checks | upload failures become placeholders; append failures report an incomplete created page; upload sends are never retried | [Notion sync](../examples/notion-gateway-json-sync/README.md) | fixed-role SDK, macOS build |
 | `riela/google-docs-gateway-read`, `-write`; `google-sheet-gateway-read`, `-write`; `google-drive-gateway-read`, `-write` | literal catalog command in `operation`, object `arguments` | no selection; shape the result with postprocess | command and typed argument checks, rendered key checks, forbidden-command check | thrown error, unchanged | — | fixed-role SDK argv construction and existing command runner, macOS build |
 | `riela/google-service-gateway-read`, `-write` | literal operation such as `services.get`, object `arguments` | no selection; shape the result with postprocess | tier allowlist, nested keys, required values and runtime-matching JSON types | thrown error, unchanged | — | existing typed service client |
 | `riela/apple-gateway-graphql` (`full`) | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | Apple catalog checks when `addon.inputs` is absent; inputs override the config at runtime | thrown error, unchanged | — | macOS SDK; container requests are prepared on the host and use its existing exact-argv bridge |
 | Apple Notes, Mail, Calendar, Reminders, notifications and clock product nodes | operation fixed by add-on name; existing JSON `config`/`inputs` | fixed SDK query and output projection | context-free; fixed product-node input rules remain runtime-owned | thrown error, unchanged | — | existing native boundary and scoped host bridge |
 | named `kaiba/*` nodes | operation fixed by add-on name; object `arguments` | existing typed result projection | nested object/config and forbidden connection keys; argument names/types stay runtime-only (no catalog) | thrown error, unchanged | — | preflight-captured HTTP client; host or worker |
 | Kaiba GraphQL compatibility nodes | `arguments` containing `query` and optional `variables` | authored GraphQL document | query/document/operationName must be literal strings; variables remain data | thrown error, unchanged | — | same preflight-captured HTTP client |
+
+### Notion `publishPage`
+
+The writer composite operation accepts a parent, optional page-title `path`, a
+page `title`, native Notion `children`, and optional `position`. Local image/file
+payloads use `{"type":"local_file","local_file":{"path":"..."},"caption":[]}`;
+the writer uploads each distinct path once and replaces it with a Notion
+`file_upload` payload. Failed uploads become placeholder paragraphs and are
+reported in `data.publishPage.failedUploads`. Up to 100 top-level blocks are
+sent while creating the page; remaining blocks are appended in ordered chunks.
+
+```json
+{
+  "operation": "publishPage",
+  "arguments": {
+    "parentId": "3fecc02c-b023-801b-a2d2-f8e10e7c2077",
+    "path": ["ART", "YouTube", "2026-10"],
+    "title": "2026-10-29 Channel | Video title",
+    "children": [
+      {"type": "heading_2", "heading_2": {"rich_text": [{"type": "text", "text": {"content": "Summary"}}]}},
+      {"type": "image", "image": {"type": "local_file", "local_file": {"path": "captures/frame.jpg"}, "caption": []}}
+    ],
+    "position": {"type": "page_start"}
+  }
+}
+```
+
+`markdown` is not accepted by `publishPage`; use native `children` blocks.
 
 Both X readers support `config.userCache: true` (default: disabled). The built-in
 owns the separate `x-gateway-users` cache namespace and its policy: 30 days,

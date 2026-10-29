@@ -17,26 +17,32 @@ final class RecordingGatewayGraphQLRunner: @unchecked Sendable {
 
   private let lock = NSLock()
   private let response: String
+  private let responses: [String]?
+  private let failureAtCall: Int?
   private let failure: (any Error)?
   private var calls: [Call] = []
 
-  init(response: String = "{}", failure: (any Error)? = nil) {
+  init(response: String = "{}", failure: (any Error)? = nil, responses: [String]? = nil, failureAtCall: Int? = nil) {
     self.response = response
     self.failure = failure
+    self.responses = responses
+    self.failureAtCall = failureAtCall
   }
 
   var runner: LocalGatewayGraphQLRunner {
     { [self] tier, document, variablesJSON, environment in
-      lock.withLock {
+      let callNumber = lock.withLock {
         calls.append(Call(
           tier: tier,
           document: document,
           variablesJSON: variablesJSON,
           environment: environment
         ))
+        return calls.count
       }
-      if let failure { throw failure }
-      return response
+      if failureAtCall == callNumber, let failure { throw failure }
+      if let failure, failureAtCall == nil { throw failure }
+      return responses.flatMap { $0.isEmpty ? nil : $0[min(callNumber - 1, $0.count - 1)] } ?? response
     }
   }
 

@@ -11,6 +11,19 @@ import RielaObservability
 import RielaWork
 import RielaWorkflowRegistry
 
+private func workflowAddonEnvironment(
+  _ environment: [String: String],
+  options: WorkflowRunOptions
+) -> [String: String] {
+  var addonEnvironment = environment
+  if let artifactRoot = options.artifactRoot {
+    addonEnvironment["RIELA_ARTIFACT_DIR"] = absoluteURL(
+      artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
+    ).path
+  }
+  return addonEnvironment
+}
+
 public struct WorkflowRunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
   public var patchApplier: any WorkflowNodePatchApplying
@@ -89,7 +102,7 @@ public struct WorkflowRunCommand: Sendable {
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
-        environment: runEnvironment,
+        environment: workflowAddonEnvironment(runEnvironment, options: options),
         definitionRunContext: .init(
           definitionSource: definitionSource,
           sessionStoreRoot: storeRoot,

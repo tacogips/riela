@@ -49,7 +49,7 @@ def prepare_x(root: Path) -> None:
     executor.write_text(text)
 
 
-def prepare_analytics(root: Path, crypto_version: str = "4.5.2") -> None:
+def prepare_analytics(root: Path, crypto_version: str = "5.0.3") -> None:
     core = root / "Sources/GoogleAnalyticsGatewayCore"
     portable_posix = "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\n"
     loopback = core / "Auth/OAuthLoopback.swift"
@@ -93,7 +93,7 @@ private func nativeFileTimesMatch(_ before: stat, _ after: stat) -> Bool {
     add_crypto_dependency(root, "GoogleAnalyticsGatewayCore", crypto_version)
 
 
-def prepare_documents(root: Path, crypto_version: str = "4.5.2") -> None:
+def prepare_documents(root: Path, crypto_version: str = "5.0.3") -> None:
     core = root / "Sources/GoogleDocumentsGatewayCore"
     replace(core / "GatewayCredentials.swift", "import CryptoKit\n",
             "#if canImport(CryptoKit)\nimport CryptoKit\n#else\nimport Crypto\n#endif\n")
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("gateway", choices=("x", "analytics", "documents", "riela"))
     parser.add_argument("source", type=Path)
-    parser.add_argument("--crypto-version", choices=("4.5.2",), default="4.5.2")
+    parser.add_argument("--crypto-version", choices=("4.5.2", "5.0.3"), default="5.0.3")
     arguments = parser.parse_args()
     # Gmail needs no adaptation: the pinned gmail-gateway SDK is portable upstream.
     if arguments.gateway in ("analytics", "documents"):

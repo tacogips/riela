@@ -380,19 +380,136 @@ final class NotionGatewayAddonTests: XCTestCase {
       let output = try await sdkRunner("writer", call.document, call.variablesJSON, [:])
       XCTAssertFalse(output.contains("INVALID_SELECTION"), call.document)
       XCTAssertFalse(output.localizedCaseInsensitiveContains("validation error"), call.document)
-      XCTAssertTrue(output.contains("AUTHENTICATION_REQUIRED") || output.localizedCaseInsensitiveContains("authentication") || output.localizedCaseInsensitiveContains("api key"), "\(call.document)\n\(output)")
+      XCTAssertTrue(output.contains("AUTHENTICATION_REQUIRED"), "\(call.document)\n\(output)")
     }
     #endif
   }
 
   func testPublishPageSupportsExistingPageAndNullPath() async throws {
     let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"appendBlocks":{"id":"existing"}}}"#)
-    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+    let output = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
       jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: [
         "pageId": .string("existing"), "path": .null, "children": .array([.object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array([])])])])
       ]), context: .init())
     XCTAssertEqual(recorder.allCalls().count, 1)
     XCTAssertTrue(recorder.allCalls()[0].document.contains("appendBlocks"))
+    XCTAssertTrue(try JSONValue.object(output.payload).compactJSONString().contains("\"url\":\"\""))
+  }
+
+  func testPublishPageChunksTableAfterFirstHundredRows() async throws {
+    let rows = (0..<150).map { JSONValue.object(["type": .string("table_row"), "table_row": .object(["cells": .array([]), "row": .integer(Int64($0))])]) }
+    let table: JSONValue = .object(["type": .string("table"), "table": .object(["table_width": .integer(0), "children": .array(rows)])])
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"createPage":{"id":"page","url":"u","results":[{"id":"table-id"}]}}}"#,
+      #"{"data":{"appendBlocks":{"results":[]}}}"#
+    ])
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"), "children": .array([table])]), context: .init())
+    XCTAssertEqual(recorder.allCalls().count, 2)
+    XCTAssertTrue(recorder.allCalls()[0].variablesJSON?.contains("\"row\":99") == true)
+    XCTAssertTrue(recorder.allCalls()[1].variablesJSON?.contains("\"row\":149") == true)
+  }
+
+  func testToggleColumnListDefersTheWholeColumnBlock() async throws {
+    let column: JSONValue = .object(["type": .string("column"), "column": .object(["children": .array([
+      .object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array([])])])
+    ])])])
+    let columns: JSONValue = .object(["type": .string("column_list"), "column_list": .object(["children": .array([column])])])
+    let toggle: JSONValue = .object(["type": .string("toggle"), "toggle": .object(["children": .array([columns])])])
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"createPage":{"id":"page","url":"u","results":[{"id":"toggle-id"}]}}}"#,
+      #"{"data":{"appendBlocks":{"results":[]}}}"#
+    ])
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"), "children": .array([toggle])]), context: .init())
+    XCTAssertEqual(recorder.allCalls().count, 2)
+    XCTAssertTrue(recorder.allCalls()[0].variablesJSON?.contains("column_list") == false)
+    XCTAssertTrue(recorder.allCalls()[1].variablesJSON?.contains("column_list") == true)
+    XCTAssertTrue(recorder.allCalls()[1].variablesJSON?.contains("\"column\":{\"children\":[]") == false)
+  }
+
+  func testDepthThreeTableIsDeferredAsAWholeBlock() async throws {
+    let table: JSONValue = .object(["type": .string("table"), "table": .object(["table_width": .integer(1), "children": .array([
+      .object(["type": .string("table_row"), "table_row": .object(["cells": .array([])])])
+    ])])])
+    let nested: JSONValue = .object(["type": .string("paragraph"), "paragraph": .object(["children": .array([
+      .object(["type": .string("paragraph"), "paragraph": .object(["children": .array([table])])])
+    ])])])
+    let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"createPage":{"id":"page","url":"u","results":[{"id":"outer-id","paragraph":{"children":{"results":[{"id":"inner-id"}]}}}]}}}"#)
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"), "children": .array([nested])]), context: .init())
+    XCTAssertEqual(recorder.allCalls().count, 3)
+    XCTAssertFalse(recorder.allCalls()[0].variablesJSON?.contains("table_row") == true)
+    XCTAssertTrue(recorder.allCalls().last?.variablesJSON?.contains("table") == true)
+    XCTAssertTrue(recorder.allCalls().last?.variablesJSON?.contains("table_row") == true)
+  }
+
+  func testExistingPageDeferredPathStartsFromCreatedAppendBlock() async throws {
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"appendBlocks":{"results":[{"id":"new-root"}]}}}"#,
+      #"{"data":{"blockChildren":{"results":[{"id":"new-middle"}]}}}"#,
+      #"{"data":{"blockChildren":{"results":[{"id":"new-leaf"}]}}}"#,
+      #"{"data":{"appendBlocks":{"results":[]}}}"#
+    ])
+    let level3: JSONValue = .object(["type": .string("paragraph"), "paragraph": .object(["children": .array([
+      .object(["type": .string("paragraph"), "paragraph": .object(["children": .array([
+        .object(["type": .string("paragraph"), "paragraph": .object(["children": .array([
+          .object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array([])])])
+        ])])])
+      ])])])
+    ])])])
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["pageId": .string("existing-page"), "children": .array([level3])]), context: .init())
+    let calls = recorder.allCalls()
+    XCTAssertEqual(calls.count, 4)
+    XCTAssertTrue(calls[1].variablesJSON?.contains("new-root") == true)
+    XCTAssertFalse(calls[1].variablesJSON?.contains("existing-page") == true)
+    XCTAssertTrue(calls[2].variablesJSON?.contains("new-middle") == true)
+    XCTAssertTrue(calls[3].variablesJSON?.contains("new-leaf") == true)
+  }
+
+  func testLargeToggleSubtreeIsDeferredWithoutExceedingBlockLimit() async throws {
+    let grandchildren = (0..<9).map { _ in JSONValue.object(["type": .string("paragraph"), "paragraph": .object(["children": .array([
+      .object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array([])])])
+    ])])]) }
+    let children = (0..<100).map { index in JSONValue.object(["type": .string("paragraph"), "paragraph": .object(["index": .integer(Int64(index)), "children": .array(grandchildren)])]) }
+    let toggle: JSONValue = .object(["type": .string("toggle"), "toggle": .object(["children": .array(children)])])
+    let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"createPage":{"id":"page","url":"u","results":[{"id":"toggle-id"}]}}}"#)
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"), "children": .array([toggle])]), context: .init())
+    XCTAssertGreaterThan(recorder.allCalls().count, 1)
+    for call in recorder.allCalls() where call.document.contains("createPage") || call.document.contains("appendBlocks") {
+      let variables = try XCTUnwrap(call.variablesJSON?.data(using: .utf8)).flatMap { try? JSONDecoder().decode(JSONObject.self, from: $0) }
+      XCTAssertLessThanOrEqual((variables?["children"].flatMap { if case let .array(blocks) = $0 { blocks.count } else { nil } }) ?? 0, 100)
+    }
+  }
+
+  func testUntypedLocalFileIsNormalizedAndReportedAsFailed() async throws {
+    let file: JSONValue = .object(["image": .object(["type": .string("local_file"), "local_file": .object(["path": .string("absent.png")])])])
+    let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"createPage":{"id":"page","url":"u"}}}"#)
+    let output = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"), "children": .array([file])]), context: .init())
+    XCTAssertFalse(recorder.allCalls()[0].variablesJSON?.contains("local_file") == true)
+    guard case let .object(data)? = output.payload["data"], case let .object(result)? = data["publishPage"],
+          case let .array(failed)? = result["failedUploads"] else { return XCTFail("missing failed upload") }
+    XCTAssertEqual(failed.count, 1)
+  }
+
+  func testNotionUploadPolicyReceivesArtifactRootWithoutEnvironmentPropagation() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/notion-artifact-policy", isDirectory: true)
+    let artifacts = root.appendingPathComponent("artifacts", isDirectory: true)
+    try FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data([1]).write(to: artifacts.appendingPathComponent("file.bin"))
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"createAttachmentUpload":{"id":"upload"}}}"#,
+      #"{"data":{"sendAttachmentUpload":{"id":"upload","status":"uploaded"}}}"#
+    ])
+    let resolver = try await makeScenarioBackedAddonResolver(scenarioPath: nil, workingDirectory: root.path, environment: [:],
+      artifactRootURL: artifacts, localGatewayGraphQLRunner: recorder.runner)
+    _ = try await resolver.execute(jsonInput("riela/notion-gateway-write", operation: "uploadLocalFile", arguments: ["path": .string(artifacts.appendingPathComponent("file.bin").path)]), context: .init())
+    XCTAssertEqual(recorder.allCalls().count, 2)
+    XCTAssertTrue(recorder.allCalls().allSatisfy { $0.environment["RIELA_ARTIFACT_DIR"] == nil })
   }
 
   func testAppendResultsResolveRelocatedChildrenAndChunkLargeChildLists() async throws {

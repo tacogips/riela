@@ -53,16 +53,19 @@ struct LocalGatewayGraphQLEngine {
   var environment: [String: String]
   var descriptor: LocalGatewayGraphQLDescriptor
   var workingDirectory: URL
+  var artifactRootURL: URL?
 
   init(
     environment: [String: String],
     descriptor: LocalGatewayGraphQLDescriptor,
     runnerOverride: LocalGatewayGraphQLRunner? = nil,
-    workingDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    workingDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+    artifactRootURL: URL? = nil
   ) {
     self.environment = environment
     self.descriptor = descriptor
     self.workingDirectory = workingDirectory
+    self.artifactRootURL = artifactRootURL
     if let runnerOverride {
       self.descriptor.run = runnerOverride
     }
@@ -85,7 +88,8 @@ struct LocalGatewayGraphQLEngine {
        config["operation"] == .string("uploadLocalFile") {
       return try await executeNotionLocalFileUpload(
         input: input, config: config, runner: descriptor.run, variables: variables,
-        childEnvironment: childEnvironment, runtimeEnvironment: environment, workingDirectory: workingDirectory, context: context
+        childEnvironment: childEnvironment, runtimeEnvironment: environment, workingDirectory: workingDirectory,
+        artifactRootURL: artifactRootURL, context: context
       )
     }
     if descriptor.providerName == "notion-gateway", descriptor.tier == "writer",
@@ -93,7 +97,7 @@ struct LocalGatewayGraphQLEngine {
       return try await executeNotionPublishPage(
         input: input, config: config, runner: descriptor.run, variables: variables,
         childEnvironment: childEnvironment, runtimeEnvironment: environment,
-        workingDirectory: workingDirectory, context: context
+        workingDirectory: workingDirectory, artifactRootURL: artifactRootURL, context: context
       )
     }
     if descriptor.providerName == "gmail-gateway" {
@@ -256,6 +260,7 @@ private func executeNotionLocalFileUpload(
   childEnvironment: [String: String],
   runtimeEnvironment: [String: String],
   workingDirectory: URL,
+  artifactRootURL: URL?,
   context: AdapterExecutionContext
 ) async throws -> AdapterExecutionOutput {
   let addonName = input.addon.name
@@ -279,8 +284,8 @@ private func executeNotionLocalFileUpload(
   let root = workingDirectory.standardizedFileURL
   let resolved = URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL
   var permittedRoots = [root.resolvingSymlinksInPath().standardizedFileURL]
-  if let artifactPath = runtimeEnvironment["RIELA_ARTIFACT_DIR"], !artifactPath.isEmpty {
-    permittedRoots.append(URL(fileURLWithPath: artifactPath, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL)
+  if let artifactRootURL {
+    permittedRoots.append(artifactRootURL.resolvingSymlinksInPath().standardizedFileURL)
   }
   permittedRoots.append(contentsOf: try notionLocalFileRoots(config: config, variables: variables, addonName: addonName)
     .map { URL(fileURLWithPath: $0, isDirectory: true, relativeTo: root).resolvingSymlinksInPath().standardizedFileURL })
@@ -356,15 +361,17 @@ private struct NotionUploadFailure: Error, Sendable {
   var message: String
 }
 
-private struct DeferredNotionChildren {
-  var parentPath: [Int]
-  var children: [JSONValue]
+private struct NotionUploadPolicyScope {
+  var runtimeEnvironment: [String: String]
+  var bindings: [String: String]
+  var workingDirectory: URL
+  var artifactRootURL: URL?
 }
 
 private func executeNotionPublishPage(
   input: WorkflowAddonExecutionInput, config: JSONObject, runner: @escaping LocalGatewayGraphQLRunner,
   variables: JSONObject, childEnvironment: [String: String], runtimeEnvironment: [String: String],
-  workingDirectory: URL, context: AdapterExecutionContext
+  workingDirectory: URL, artifactRootURL: URL?, context: AdapterExecutionContext
 ) async throws -> AdapterExecutionOutput {
   let addonName = input.addon.name
   guard config["queryTemplate"] == nil, config["variablesTemplate"] == nil, config["selection"] == nil,
@@ -421,8 +428,9 @@ private func executeNotionPublishPage(
       nextIndex += 1
       group.addTask {
         do {
-          let upload = try await uploadNotionLocalPath(path, runtimeEnvironment: runtimeEnvironment,
-            bindings: childEnvironment, kind: localFileKinds[path] ?? "image", workingDirectory: workingDirectory, runner: runner,
+          let upload = try await uploadNotionLocalPath(path, policyScope: .init(runtimeEnvironment: runtimeEnvironment,
+            bindings: childEnvironment, workingDirectory: workingDirectory, artifactRootURL: artifactRootURL),
+            kind: localFileKinds[path] ?? "image", runner: runner,
             context: context, input: input, addonName: addonName, roots: configuredLocalFileRoots)
           return (path, .success(upload))
         } catch {
@@ -437,8 +445,9 @@ private func executeNotionPublishPage(
       nextIndex += 1
       group.addTask {
         do {
-          let upload = try await uploadNotionLocalPath(path, runtimeEnvironment: runtimeEnvironment,
-            bindings: childEnvironment, kind: localFileKinds[path] ?? "image", workingDirectory: workingDirectory, runner: runner,
+          let upload = try await uploadNotionLocalPath(path, policyScope: .init(runtimeEnvironment: runtimeEnvironment,
+            bindings: childEnvironment, workingDirectory: workingDirectory, artifactRootURL: artifactRootURL),
+            kind: localFileKinds[path] ?? "image", runner: runner,
             context: context, input: input, addonName: addonName, roots: configuredLocalFileRoots)
           return (path, .success(upload))
         } catch {
@@ -462,6 +471,7 @@ private func executeNotionPublishPage(
   let (blocks, deferredChildren) = stripDeepNotionChildren(normalizedBlocks)
   let position = arguments["position"]
   var pageId: String? = existingPageId
+  // appendBlocks does not return page metadata, so pageId mode reports an empty URL.
   var pageURL = ""
   var createdBlockIDs: [String: String] = [:]
   var appendRequests = 0
@@ -572,7 +582,9 @@ private func collectLocalFilePaths(in value: JSONValue, into paths: inout [Strin
     if case let .array(values) = value { collectLocalFilePaths(values, into: &paths, allowAttachments: allowAttachments, baseDirectory: baseDirectory) }
     return
   }
-  if case let .string(type)? = object["type"], ["image", "file"].contains(type),
+  let inferredContentKeys = object.keys.filter { $0 != "object" && $0 != "children" && $0 != "id" }
+  let type = notionString(object["type"]) ?? (inferredContentKeys.count == 1 ? inferredContentKeys[0] : nil)
+  if let type, ["image", "file"].contains(type),
      type == "image" || allowAttachments, case let .object(payload)? = object[type], payload["type"] == .string("local_file"),
      case let .object(local)? = payload["local_file"], let path = nonEmptyString(local["path"]) {
     let standardized = URL(fileURLWithPath: path, relativeTo: baseDirectory).standardizedFileURL.path
@@ -587,230 +599,20 @@ private func childIsPotentialBlockContainer(key: String, value: JSONValue) -> Bo
   key == "children" || (ifObject(value) != nil && key != "local_file" && key != "file_upload")
 }
 
-private func ifObject(_ value: JSONValue) -> JSONObject? {
+func ifObject(_ value: JSONValue) -> JSONObject? {
   guard case let .object(object) = value else { return nil }
   return object
 }
 
-private func notionString(_ value: JSONValue?) -> String? {
+func notionString(_ value: JSONValue?) -> String? {
   guard case let .string(text)? = value else { return nil }
   return text
 }
 
-private func normalizeNotionBlock(_ block: JSONValue, uploadIds: [String: String], failures: inout [JSONValue], paths: [String: String], allowAttachments: Bool, baseDirectory: URL) -> [JSONValue] {
-  guard case var .object(object) = block, case let .string(type)? = object["type"] else { return [block] }
-  if ["image", "file"].contains(type), case var .object(payload)? = object[type], payload["type"] == .string("local_file") {
-    let local = payload["local_file"].flatMap(ifObject)
-    let path = local.flatMap { nonEmptyString($0["path"]) }
-    let standardized = path.map { URL(fileURLWithPath: $0, relativeTo: baseDirectory).standardizedFileURL.path } ?? ""
-    if let id = (type == "file" && !allowAttachments) ? nil : uploadIds[standardized] {
-      payload["type"] = .string("file_upload"); payload["file_upload"] = .object(["id": .string(id)])
-      payload.removeValue(forKey: "local_file"); object[type] = .object(payload)
-    } else {
-      let basename = path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "unknown"
-      if !failures.contains(where: { notionString(ifObject($0)?["path"]) == standardized }) {
-        failures.append(.object(["path": .string(standardized), "message": .string(type == "file" && !allowAttachments ? "local file attachments are disabled" : "local_file path is missing or upload failed")]))
-      }
-      return [paragraphText("[\(type == "image" ? "画像" : "ファイル")を保存できませんでした: \(basename)]")]
-    }
-  }
-  for key in Array(object.keys) {
-    if key == "children", case let .array(children)? = object[key] {
-      object[key] = .array(children.flatMap { normalizeNotionBlock($0, uploadIds: uploadIds, failures: &failures, paths: paths, allowAttachments: allowAttachments, baseDirectory: baseDirectory) })
-    } else if let value = object[key], var body = ifObject(value), case let .array(children)? = body["children"] {
-      body["children"] = .array(children.flatMap { normalizeNotionBlock($0, uploadIds: uploadIds, failures: &failures, paths: paths, allowAttachments: allowAttachments, baseDirectory: baseDirectory) })
-      object[key] = .object(body)
-    }
-  }
-  var extraTextBlocks: [JSONValue] = []
-  if case var .object(body)? = object[type], case let .array(richText)? = body["rich_text"] {
-    var retained: [JSONValue] = []
-    var overflow: [JSONValue] = []
-    for item in richText {
-      guard case let .object(itemObject) = item else {
-        if retained.count < 100 { retained.append(item) } else { overflow.append(item) }
-        continue
-      }
-      if case let .object(text)? = itemObject["text"], case let .string(content)? = text["content"], content.utf16.count > 2_000 {
-        let pieces = splitUTF16(content, maxUnits: 2_000)
-        let items = pieces.map { piece -> JSONValue in
-          var copy = itemObject
-          var copiedText = text
-          copiedText["content"] = .string(piece)
-          copy["text"] = .object(copiedText)
-          return .object(copy)
-        }
-        for item in items {
-          if retained.count < 100 { retained.append(item) } else { overflow.append(item) }
-        }
-        continue
-      }
-      let normalized = JSONValue.object(itemObject)
-      if retained.count < 100 { retained.append(normalized) } else { overflow.append(normalized) }
-    }
-    body["rich_text"] = .array(retained)
-    for batch in stride(from: 0, to: overflow.count, by: 100) {
-      var overflowBody = body
-      overflowBody.removeValue(forKey: "children")
-      overflowBody["rich_text"] = .array(Array(overflow[batch..<min(batch + 100, overflow.count)]))
-      extraTextBlocks.append(.object(["object": .string("block"), "type": .string(type), type: .object(overflowBody)]))
-    }
-    object[type] = .object(body)
-  } else if case let .object(body)? = object[type] {
-    object[type] = .object(body)
-  }
-  return [.object(object)] + extraTextBlocks
-}
-
-private func splitUTF16(_ value: String, maxUnits: Int) -> [String] {
-  var result: [String] = []
-  var current = ""
-  var units = 0
-  for scalar in value.unicodeScalars {
-    let count = scalar.value > 0xFFFF ? 2 : 1
-    if units + count > maxUnits, !current.isEmpty { result.append(current); current = ""; units = 0 }
-    current.unicodeScalars.append(scalar)
-    units += count
-  }
-  if !current.isEmpty { result.append(current) }
-  return result
-}
-
-private func paragraphText(_ text: String) -> JSONValue {
-  paragraphBlock([.object(["type": .string("text"), "text": .object(["content": .string(text)])])])
-}
-
-private func paragraphBlock(_ richText: [JSONValue]) -> JSONValue {
-  .object(["object": .string("block"), "type": .string("paragraph"), "paragraph": .object(["rich_text": .array(richText)])])
-}
-
-private func notionBlockCount(_ blocks: [JSONValue]) -> Int {
-  blocks.reduce(into: 0) { count, block in
-    count += 1
-    guard case let .object(object) = block, let type = notionString(object["type"]) else { return }
-    if case let .array(children)? = object["children"] { count += notionBlockCount(children) }
-    if case let .object(body)? = object[type], case let .array(children)? = body["children"] { count += notionBlockCount(children) }
-  }
-}
-
-private func notionBlockChunks(_ blocks: [JSONValue]) throws -> [[JSONValue]] {
-  var chunks: [[JSONValue]] = []
-  var current: [JSONValue] = []
-  for block in blocks {
-    let candidate = current + [block]
-    let encodedSize = try JSONValue.array(candidate).compactJSONString().utf8.count
-    if !current.isEmpty && (candidate.count > 100 || notionBlockCount(candidate) > 900 || encodedSize > 399_488) {
-      chunks.append(current)
-      current = [block]
-      guard notionBlockCount(current) <= 900, try JSONValue.array(current).compactJSONString().utf8.count <= 399_488 else {
-        throw AdapterExecutionError(.policyBlocked, "publishPage block exceeds Notion request limits")
-      }
-    } else {
-      current = candidate
-    }
-  }
-  if !current.isEmpty { chunks.append(current) }
-  return chunks
-}
-
-private func requireNotionPageID(_ id: String?, addonName: String) throws -> String {
-  guard let id, !id.isEmpty else { throw AdapterExecutionError(.invalidOutput, "\(addonName) page id is unavailable") }
-  return id
-}
-
-private func indexNotionResultIDs(_ result: JSONObject, offset: Int, path: [Int], into ids: inout [String: String]) {
-  guard case let .array(results)? = result["results"] else { return }
-  for (index, item) in results.enumerated() {
-    guard case let .object(block) = item else { continue }
-    let blockPath = path + [offset + index]
-    if let id = nonEmptyString(block["id"]) { ids[blockPath.map(String.init).joined(separator: ".")] = id }
-    for value in block.values {
-      guard case let .object(body) = value else { continue }
-      indexNotionResultIDs(body, offset: 0, path: blockPath, into: &ids)
-    }
-  }
-}
-
-private func stripDeepNotionChildren(_ blocks: [JSONValue]) -> ([JSONValue], [DeferredNotionChildren]) {
-  var deferred: [DeferredNotionChildren] = []
-  let shallow = blocks.enumerated().map { index, block in
-    stripDeepNotionChildren(block, depth: 1, path: [index], deferred: &deferred)
-  }
-  return (shallow, deferred)
-}
-
-private func stripDeepNotionChildren(
-  _ block: JSONValue,
-  depth: Int,
-  path: [Int],
-  deferred: inout [DeferredNotionChildren]
-) -> JSONValue {
-  guard case var .object(object) = block, case let .string(type)? = object["type"] else { return block }
-  for key in Array(object.keys) {
-    if key == "children", case let .array(children)? = object[key] {
-      if depth >= 3 || children.count > 100, type != "column_list", type != "table" {
-        object.removeValue(forKey: key)
-        deferred.append(DeferredNotionChildren(parentPath: path, children: children))
-      } else {
-        object[key] = .array(children.enumerated().map { index, child in
-          stripDeepNotionChildren(child, depth: depth + 1, path: path + [index], deferred: &deferred)
-        })
-      }
-    } else if let value = object[key], var body = ifObject(value), case let .array(children)? = body["children"] {
-      if depth >= 3 || children.count > 100, type != "column_list", type != "table" {
-        body.removeValue(forKey: "children")
-        object[key] = .object(body)
-        deferred.append(DeferredNotionChildren(parentPath: path, children: children))
-      } else {
-        body["children"] = .array(children.enumerated().map { index, child in
-          stripDeepNotionChildren(child, depth: depth + 1, path: path + [index], deferred: &deferred)
-        })
-        object[key] = .object(body)
-      }
-    }
-  }
-  return .object(object)
-}
-
-private func notionBlockID(
-  at path: [Int],
-  pageId: String,
-  knownIDs: [String: String],
-  runner: @escaping LocalGatewayGraphQLRunner,
-  environment: [String: String],
-  bindings: [String: String],
-  context: AdapterExecutionContext,
-  addonName: String
-) async throws -> String {
-  if let known = knownIDs[path.map(String.init).joined(separator: ".")] { return known }
-  var parentId = pageId
-  for index in path {
-    var cursor: JSONValue?
-    var children: [JSONValue] = []
-    repeat {
-      var variables: JSONObject = ["id": .string(parentId), "pageSize": .integer(100)]
-      if let cursor { variables["startCursor"] = cursor }
-      let response = try await notionPublishCall(runner: runner,
-        document: "query($id:ID!,$pageSize:Int,$startCursor:String){blockChildren(id:$id,pageSize:$pageSize,startCursor:$startCursor)}",
-        variables: variables, environment: environment, bindings: bindings, context: context, addonName: addonName)
-      let result: JSONObject = response.data.values.first.flatMap { if case let .object(object) = $0 { object } else { nil } } ?? [:]
-      if case let .array(page)? = result["results"] { children.append(contentsOf: page) }
-      cursor = result["has_more"] == .bool(true) ? result["next_cursor"] : nil
-    } while cursor != nil
-    guard children.indices.contains(index), case let .object(block) = children[index], let id = nonEmptyString(block["id"]) else {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) could not resolve a Notion block id for nested children")
-    }
-    parentId = id
-  }
-  return parentId
-}
-
 private func uploadNotionLocalPath(
   _ path: String,
-  runtimeEnvironment: [String: String],
-  bindings: [String: String],
+  policyScope: NotionUploadPolicyScope,
   kind: String,
-  workingDirectory: URL,
   runner: @escaping LocalGatewayGraphQLRunner,
   context: AdapterExecutionContext,
   input: WorkflowAddonExecutionInput,
@@ -819,8 +621,9 @@ private func uploadNotionLocalPath(
 ) async throws -> NotionPublishedUpload {
   let config: JSONObject = ["arguments": .object(["path": .string(path), "kind": .string(kind)]), "localFileRoots": .array(roots.map(JSONValue.string))]
   let output = try await executeNotionLocalFileUpload(
-    input: input, config: config, runner: runner, variables: [:], childEnvironment: bindings,
-    runtimeEnvironment: runtimeEnvironment, workingDirectory: workingDirectory, context: context
+    input: input, config: config, runner: runner, variables: [:], childEnvironment: policyScope.bindings,
+    runtimeEnvironment: policyScope.runtimeEnvironment, workingDirectory: policyScope.workingDirectory,
+    artifactRootURL: policyScope.artifactRootURL, context: context
   )
   guard case let .object(namespace)? = output.payload["notionGateway"],
         let id = nonEmptyString(namespace["fileUploadId"]) else {
@@ -829,7 +632,7 @@ private func uploadNotionLocalPath(
   return NotionPublishedUpload(id: id, status: nonEmptyString(namespace["status"]) ?? "uploaded")
 }
 
-private func notionPublishCall(
+func notionPublishCall(
   runner: @escaping LocalGatewayGraphQLRunner,
   document: String,
   variables: JSONObject,

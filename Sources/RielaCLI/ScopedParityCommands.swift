@@ -428,7 +428,8 @@ fileprivate extension ScopedParityCommandRunner {
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: effectiveMockScenarioPath,
         workingDirectory: executionWorkingDirectory,
-        environment: kaibaContext.environment
+        environment: kaibaContext.environment,
+        artifactRootURL: addonArtifactRootURL(environment: kaibaContext.environment, workingDirectory: executionWorkingDirectory)
       )
       let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
         sessionStore: parsed.sessionStore,

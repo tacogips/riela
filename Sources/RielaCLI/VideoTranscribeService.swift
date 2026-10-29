@@ -172,9 +172,13 @@ struct VideoTranscribeService: Sendable {
   }
 
   func ytDlpArguments(_ arguments: [String]) -> [String] {
-    guard let deno = resolvedSearchPath.split(separator: ":").map({ URL(fileURLWithPath: String($0)).appendingPathComponent("deno") })
-      .first(where: { fileManager.isExecutableFile(atPath: $0.path) }) else { return arguments }
-    return ["--js-runtimes", "deno:\(deno.path)"] + arguments
+    let deno = resolvedSearchPath.split(separator: ":").map({ URL(fileURLWithPath: String($0)).appendingPathComponent("deno") })
+      .first(where: { fileManager.isExecutableFile(atPath: $0.path) })
+    return ytDlpArguments(arguments, deno: deno)
+  }
+
+  func ytDlpArguments(_ arguments: [String], deno: URL?) -> [String] {
+    ["--ignore-config"] + (deno.map { ["--js-runtimes", "deno:\($0.path)"] } ?? []) + arguments
   }
 
   private func probeDuration(_ ffprobe: URL, mediaURL: URL, deadline: Date?) async throws -> Double {

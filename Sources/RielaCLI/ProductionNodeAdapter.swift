@@ -7,6 +7,11 @@ import RielaCore
 import RielaKaibaAddons
 import RielaMemory
 
+func addonArtifactRootURL(environment: [String: String], workingDirectory: String) -> URL? {
+  guard let path = environment["RIELA_ARTIFACT_DIR"], !path.isEmpty else { return nil }
+  return absoluteURL(path, relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true)).standardizedFileURL
+}
+
 public func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
   codexSupervisorModeEnabled: Bool = false,
@@ -77,14 +82,18 @@ func makeScenarioBackedAddonResolver(
   scenarioPath: String?,
   workingDirectory: String,
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-  definitionRunContext: BuiltinDefinitionRunContext? = nil
+  definitionRunContext: BuiltinDefinitionRunContext? = nil,
+  artifactRootURL: URL? = nil,
+  localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil
 ) async throws -> any WorkflowAddonResolving {
   let workingDirectoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
   let fallback = try await makeProductionAddonResolver(
     workingDirectory: workingDirectoryURL,
     environment: environment,
     mockScenarioPath: scenarioPath,
-    definitionRunContext: definitionRunContext
+    definitionRunContext: definitionRunContext,
+    artifactRootURL: artifactRootURL,
+    localGatewayGraphQLRunner: localGatewayGraphQLRunner
   )
   guard let scenarioPath else {
     return fallback
@@ -100,11 +109,14 @@ func makeProductionAddonResolver(
   workingDirectory: URL,
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
   mockScenarioPath: String? = nil,
-  definitionRunContext: BuiltinDefinitionRunContext? = nil
+  definitionRunContext: BuiltinDefinitionRunContext? = nil,
+  artifactRootURL: URL? = nil,
+  localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil
 ) async throws -> any WorkflowAddonResolving {
   try await makeProductionAddonResolver(workingDirectory: workingDirectory, environment: environment,
     mockScenarioPath: mockScenarioPath, processRunner: FoundationLocalProcessRunner(),
-    definitionRunContext: definitionRunContext)
+    definitionRunContext: definitionRunContext, artifactRootURL: artifactRootURL,
+    localGatewayGraphQLRunner: localGatewayGraphQLRunner)
 }
 
 func makeProductionAddonResolver(
@@ -112,7 +124,9 @@ func makeProductionAddonResolver(
   environment: [String: String],
   mockScenarioPath: String?,
   processRunner: any LocalProcessRunning,
-  definitionRunContext: BuiltinDefinitionRunContext? = nil
+  definitionRunContext: BuiltinDefinitionRunContext? = nil,
+  artifactRootURL: URL? = nil,
+  localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil
 ) async throws -> any WorkflowAddonResolving {
   let workflowTaskExecutor = DefaultGeneratedWorkflowTaskExecutor(
     runner: CommandGeneratedWorkflowTaskRunner(mockScenarioPath: mockScenarioPath)
@@ -121,8 +135,10 @@ func makeProductionAddonResolver(
     environment: environment,
     workingDirectory: workingDirectory,
     workflowTaskExecutor: workflowTaskExecutor,
+    localGatewayGraphQLRunner: localGatewayGraphQLRunner,
     containerProcessRunner: processRunner,
-    definitionRunContext: definitionRunContext
+    definitionRunContext: definitionRunContext,
+    artifactRootURL: artifactRootURL
   )
   let registrations = try await installedContainerAddonRegistrations(workingDirectory: workingDirectory)
   var primary: any WorkflowAddonResolving = builtin
@@ -383,6 +399,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var appleGatewayRunner: AppleGatewayRunner?
   var containerProcessRunner: any LocalProcessRunning
   var definitionRunContext: BuiltinDefinitionRunContext?
+  var artifactRootURL: URL?
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -405,7 +422,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil,
     appleGatewayRunner: AppleGatewayRunner? = nil,
     containerProcessRunner: any LocalProcessRunning = FoundationLocalProcessRunner(),
-    definitionRunContext: BuiltinDefinitionRunContext? = nil
+    definitionRunContext: BuiltinDefinitionRunContext? = nil,
+    artifactRootURL: URL? = nil
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -426,6 +444,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.appleGatewayRunner = appleGatewayRunner
     self.containerProcessRunner = containerProcessRunner
     self.definitionRunContext = definitionRunContext
+    self.artifactRootURL = artifactRootURL?.standardizedFileURL
   }
 
   private func validateBuiltinWorkerInput(_ input: WorkflowAddonExecutionInput) throws {

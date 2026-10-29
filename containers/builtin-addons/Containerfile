@@ -76,6 +76,10 @@ COPY scripts/collect-swift-runtime.sh /collect-swift-runtime.sh
 RUN sh /collect-swift-runtime.sh /runtime-swift /install/riela
 
 FROM ubuntu:24.04
+ARG RIELA_REVISION
+ARG RIELA_VERSION
+LABEL org.opencontainers.image.revision="$RIELA_REVISION" \
+      org.opencontainers.image.version="$RIELA_VERSION"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata libcurl4t64 libxml2 libsqlite3-0 libstdc++6 libgcc-s1 libssl3t64 zlib1g git openssh-client && rm -rf /var/lib/apt/lists/*
 COPY --from=build /runtime-swift/ /usr/lib/swift/linux/
 COPY --from=build /install/ /opt/riela/

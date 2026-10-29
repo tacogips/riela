@@ -9,6 +9,13 @@ import RielaKaibaSupport
 actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinalizationAcknowledging,
   WorkflowAddonTerminalRecording {
   static let guestStateDirectory = "/var/lib/riela/state"
+  private static let addonDefaultImages = [
+    "riela/media-download": "riela-video-addons:local",
+    "riela/audio-segments": "riela-video-addons:local",
+    "riela/video-frames": "riela-video-addons:local",
+    "riela/speech-to-text": "riela-video-addons:local",
+    "riela/video-transcribe": "riela-video-addons:local"
+  ]
   private typealias Invocation = BuiltinAddonContainerInvocation
 
   private let primary: any WorkflowAddonResolving
@@ -48,7 +55,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
   }
 
   private func executeUnprocessed(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    let sandbox = input.addon.sandbox
+    var sandbox = input.addon.sandbox
     guard sandbox == nil || input.addon.container == nil else {
       throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")
     }
@@ -62,7 +69,18 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     guard sandbox?.ephemeralHome != true, sandbox?.credentialEnvironment.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "ephemeral HOME and credential files currently require a sandboxed agent node")
     }
-    let settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
+    var settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
+    let selectedContainer = sandbox?.container ?? input.addon.container
+    if let defaultImage = Self.addonDefaultImages[input.addon.name],
+       selectedContainer?.image == nil || selectedContainer?.image == WorkflowAddonContainerExecution.defaultImage,
+       sandbox == nil || sandbox?.backend == .container {
+      settings.image = defaultImage
+      if sandbox != nil {
+        var sandboxContainer = sandbox?.container ?? .init()
+        sandboxContainer.image = defaultImage
+        sandbox?.container = sandboxContainer
+      }
+    }
     try settings.validate()
     guard input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") else {
       throw AdapterExecutionError(.policyBlocked, "addon.container currently requires a built-in add-on")

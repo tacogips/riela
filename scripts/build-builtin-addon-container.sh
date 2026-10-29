@@ -5,6 +5,11 @@ repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runtime=${1:-${RIELA_CONTAINER_RUNTIME:-auto}}
 image=${2:-riela-builtin-addons:local}
 if [ "$#" -gt 2 ]; then shift 2; else set --; fi
+riela_revision=$(git -C "$repo_root" rev-parse HEAD)
+if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then
+  riela_revision="$riela_revision-dirty"
+fi
+riela_version=$(tr -d '[:space:]' < "$repo_root/VERSION")
 
 if [ "$runtime" = auto ]; then
   if [ "$(uname -s)" = Darwin ] && command -v container >/dev/null 2>&1; then
@@ -35,4 +40,5 @@ cp "$repo_root/scripts/prepare-container-gateway-source.py" "$build_context/scri
 cp "$repo_root/scripts/strip-macos-only-pins.swift" "$build_context/scripts/strip-macos-only-pins.swift"
 cp "$repo_root/scripts/collect-swift-runtime.sh" "$build_context/scripts/collect-swift-runtime.sh"
 cp -R "$repo_root/scripts/container-gateway-support" "$build_context/scripts/container-gateway-support"
-"$runtime" build -t "$image" -f "$build_context/Containerfile" "$@" "$build_context"
+"$runtime" build --build-arg "RIELA_REVISION=$riela_revision" --build-arg "RIELA_VERSION=$riela_version" \
+  -t "$image" -f "$build_context/Containerfile" "$@" "$build_context"

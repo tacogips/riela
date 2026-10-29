@@ -44,12 +44,12 @@ public struct WorkflowAddonContainerExecution: Codable, Equatable, Sendable {
   public var mounts: [WorkflowAddonContainerMount]
 
   public init(
-    image: String = Self.defaultImage,
+    image: String? = nil,
     runtime: WorkflowAddonContainerRuntime = .auto,
     networkPolicy: WorkflowAddonContainerNetworkPolicy = .egressAllowed,
     mounts: [WorkflowAddonContainerMount] = []
   ) {
-    self.image = image
+    self.image = image ?? Self.defaultImage
     self.runtime = runtime
     self.networkPolicy = networkPolicy
     self.mounts = mounts

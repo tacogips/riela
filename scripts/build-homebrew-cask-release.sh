@@ -363,6 +363,7 @@ print_plan() {
   printf '  staged signed Tauri helper: %s/Contents/Helpers/RielaDesktop.app\n' "$staged_app"
   printf '  staged CLI web assets: %s/Web\n' "$work_dir"
   printf '  signing order: CLI, nested Tauri helper, parent app, DMG\n'
+  printf '  notarized and stapled app: %s\n' "$staged_app"
   printf '  notarized DMG: %s\n' "$dmg_path"
   printf '  checksum: %s.sha256\n' "$dmg_path"
   printf '  required Apple env: APPLE_SIGNING_IDENTITY\n'
@@ -395,6 +396,7 @@ build_target() {
     return 1
   fi
   require_command codesign
+  require_command ditto
   require_command hdiutil
   require_command security
   require_command spctl
@@ -430,6 +432,24 @@ build_target() {
   codesign --verify --strict --verbose=2 "$desktop_app"
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$staged_app"
   codesign --verify --deep --strict --verbose=2 "$staged_app"
+
+  # Homebrew copies RielaApp.app out of the DMG, so the DMG's stapled ticket
+  # does not travel with it. Notarize and staple the app itself so Gatekeeper
+  # can verify it offline after install instead of reporting "Apple could not
+  # verify RielaApp.app is free of malware".
+  local app_zip_path
+  app_zip_path="$release_dir/work/riela-$version-$target-RielaApp.zip"
+  assert_child_path "$release_dir" "$app_zip_path"
+  rm -f "$app_zip_path"
+  ditto -c -k --keepParent "$staged_app" "$app_zip_path"
+  "$notarytool" submit "$app_zip_path" \
+    --keychain-profile "$notary_profile" \
+    --wait
+  rm -f "$app_zip_path"
+  "$stapler" staple "$staged_app"
+  "$stapler" validate "$staged_app"
+  codesign --verify --deep --strict --verbose=2 "$staged_app"
+  spctl --assess --type execute --verbose=4 "$staged_app"
 
   hdiutil create -quiet -fs HFS+ -format UDZO -volname "riela" -srcfolder "$work_dir" "$dmg_path"
   codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg_path"

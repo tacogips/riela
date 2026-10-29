@@ -156,6 +156,11 @@ Linux Formula assets for the macOS tap update.
 - A successful Swift build does not prove notarization.
 - Gatekeeper trust requires the executable signature, notarization acceptance,
   stapling, and `spctl --type open` acceptance for the DMG.
+- `RielaApp.app` must be notarized and stapled on its own before it is packed
+  into the DMG. Homebrew copies the app out of the DMG, so a ticket stapled only
+  to the DMG is lost and Gatekeeper blocks first launch with "Apple could not
+  verify RielaApp.app is free of malware". Check an installed app with
+  `syspolicy_check distribution /Applications/RielaApp.app`.
 - The Cask DMG must contain both `RielaApp.app` and `riela`; do not regress it
   to a CLI-only Cask.
 - The formula remains macOS CLI-only; do not add `RielaApp.app` or Linux

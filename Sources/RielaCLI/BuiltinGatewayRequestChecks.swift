@@ -90,14 +90,15 @@ enum BuiltinGatewayRequestChecks {
     guard case let .object(arguments)? = leaf["arguments"] else {
       return [WorkflowGatewayRequestIssue(relativePath: "arguments", message: "must be an object")]
     }
-    let supported: Set<String> = ["parentId", "path", "title", "children", "position"]
+    let supported: Set<String> = ["parentId", "pageId", "path", "title", "children", "position"]
     var issues = arguments.keys.sorted().compactMap { key -> WorkflowGatewayRequestIssue? in
       guard !supported.contains(key) else { return nil }
       return WorkflowGatewayRequestIssue(relativePath: "arguments.\(key)", message: key == "markdown"
         ? "publishPage does not support markdown; provide native children blocks"
         : "is not an argument of operation 'publishPage'")
     }
-    for required in ["parentId", "title", "children"] where arguments[required] == nil {
+    let requiredArguments = arguments["pageId"] == nil ? ["parentId", "title", "children"] : ["children"]
+    for required in requiredArguments where arguments[required] == nil {
       issues.append(WorkflowGatewayRequestIssue(relativePath: "arguments", message: "is missing required argument '\(required)'"))
     }
     return issues

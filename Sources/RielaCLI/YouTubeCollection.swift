@@ -44,8 +44,8 @@ struct YouTubeCollectionOptions {
     default: throw youtubeCollectionInvalid()
     }
     guard !videos.isEmpty || !channels.isEmpty else { throw youtubeCollectionInvalid() }
-    self.videos = videos.compactMap { if case let .string(text) = $0 { return text }; return nil }
-    self.channels = channels.compactMap { if case let .string(text) = $0 { return text }; return nil }
+    self.videos = videos.compactMap { if case let .string(text) = $0 { return text.trimmingCharacters(in: .whitespacesAndNewlines) }; return nil }
+    self.channels = channels.compactMap { if case let .string(text) = $0 { return text.trimmingCharacters(in: .whitespacesAndNewlines) }; return nil }
     self.publishedAfter = after
     self.maxPerChannel = Int(maximum)
   }
@@ -53,7 +53,9 @@ struct YouTubeCollectionOptions {
 
 struct YouTubeCollection {
   let options: YouTubeCollectionOptions
+#if canImport(YouTubeGatewayCore)
   var makeClient: (@Sendable ([String: String]) throws -> any YouTubeCollectionClient)?
+#endif
 
   #if canImport(YouTubeGatewayCore)
   init(options: YouTubeCollectionOptions, makeClient: @escaping @Sendable ([String: String]) throws -> any YouTubeCollectionClient = {
@@ -65,7 +67,6 @@ struct YouTubeCollection {
   #else
   init(options: YouTubeCollectionOptions) {
     self.options = options
-    self.makeClient = nil
   }
   #endif
 
@@ -75,15 +76,17 @@ struct YouTubeCollection {
     guard Set(environment.keys).isSubset(of: allowed) else {
       throw AdapterExecutionError(.policyBlocked, "YouTube collection only allows YOUTUBE_GATEWAY_ACCESS_TOKEN and YOUTUBE_GATEWAY_TOKEN_STORE_JSON")
     }
-    guard environment.values.contains(where: { !$0.isEmpty }) else {
+    let trimmedEnvironment = environment.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    guard trimmedEnvironment.values.contains(where: { !$0.isEmpty }) else {
       throw AdapterExecutionError(.policyBlocked, "Set YOUTUBE_GATEWAY_ACCESS_TOKEN or YOUTUBE_GATEWAY_TOKEN_STORE_JSON")
     }
     guard let makeClient else { throw youtubeCollectionInvalid() }
     let client: any YouTubeCollectionClient
-    do { client = try makeClient(environment) } catch {
+    do { client = try makeClient(trimmedEnvironment) } catch {
       throw AdapterExecutionError(.policyBlocked, "Set YOUTUBE_GATEWAY_ACCESS_TOKEN or YOUTUBE_GATEWAY_TOKEN_STORE_JSON")
     }
     var requests = 0
+    var successfulRequests = 0
     var failures: [JSONValue] = []
     var selected: [(String, String)] = []
     var explicitOrder: [String] = []
@@ -97,9 +100,10 @@ struct YouTubeCollection {
       if explicitIDs.insert(id).inserted { explicitOrder.append(id) }
     }
     let after = options.publishedAfter
+    var resolvedChannelIDs = Set<String>()
     for target in options.channels {
       guard let reference = YouTubeChannelReference.parse(target) else {
-        failures.append(youtubeFailure(target, "channel", "Unparseable channel reference")); continue
+        failures.append(youtubeFailure(target, "reference", "Unparseable channel reference")); continue
       }
       let channelPage: ChannelPage
       do {
@@ -109,16 +113,20 @@ struct YouTubeCollection {
         case let .handle(handle): channelPage = try await client.channelsList(.init(forHandle: handle, parts: ["snippet", "contentDetails"]))
         }
       } catch {
-        failures.append(youtubeFailure(target, "channel", "YouTube channel lookup failed")); continue
+        try handleYouTubeRequestError(error)
+        failures.append(youtubeFailure(target, "channel", youtubeFailureMessage("YouTube channel lookup failed", error))); continue
       }
+      successfulRequests += 1
       guard let channel = channelPage.items.first, let channelID = channel.id,
         let uploads = channel.contentDetails?.relatedPlaylists?.uploads else {
         failures.append(youtubeFailure(target, "channel", "Channel uploads playlist was unavailable")); continue
       }
+      guard resolvedChannelIDs.insert(channelID).inserted else { continue }
       do {
         requests += 1
         let page = try await client.playlistItemsList(.init(playlistID: uploads, maxResults: options.maxPerChannel,
           parts: ["snippet", "contentDetails"]))
+        successfulRequests += 1
         for item in page.items {
           guard let id = item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId else { continue }
           let published = (item.contentDetails?.videoPublishedAt ?? item.snippet?.publishedAt).flatMap(youtubeInstant)
@@ -128,7 +136,8 @@ struct YouTubeCollection {
           channelUploads.append(.init(id: id, source: "channel:" + channelID, publishedAt: published))
         }
       } catch {
-        failures.append(youtubeFailure(target, "uploads", "YouTube uploads lookup failed"))
+        try handleYouTubeRequestError(error)
+        failures.append(youtubeFailure(target, "uploads", youtubeFailureMessage("YouTube uploads lookup failed", error)))
       }
     }
     selected.append(contentsOf: channelUploads.enumerated().sorted { lhs, rhs in
@@ -148,6 +157,7 @@ struct YouTubeCollection {
       do {
         requests += 1
         let page = try await client.videosList(.init(ids: ids, parts: ["snippet", "contentDetails", "liveStreamingDetails"]))
+        successfulRequests += 1
         for video in page.items {
           guard let id = video.id else { continue }
           let snippet = video.snippet
@@ -172,8 +182,12 @@ struct YouTubeCollection {
           failures.append(youtubeFailure(id, "videos", "Video was not returned; it may be private or deleted"))
         }
       } catch {
-        failures.append(youtubeFailure(ids.joined(separator: ","), "videos", "YouTube video lookup failed"))
+        try handleYouTubeRequestError(error)
+        failures.append(youtubeFailure(ids.joined(separator: ","), "videos", youtubeFailureMessage("YouTube video lookup failed", error)))
       }
+    }
+    if requests > 0 && successfulRequests == 0 {
+      throw AdapterExecutionError(.policyBlocked, "All attempted YouTube requests failed")
     }
     let channelIDs = orderedIDs.filter { !explicitIDs.contains($0) }
     let orderedChannelIDs = channelIDs.enumerated().sorted { lhs, rhs in
@@ -193,6 +207,25 @@ struct YouTubeCollection {
     #endif
   }
 }
+
+#if canImport(YouTubeGatewayCore)
+private func handleYouTubeRequestError(_ error: Error) throws {
+  guard let error = error as? GatewayError else { return }
+  switch error.kind {
+  case .authentication:
+    throw AdapterExecutionError(.policyBlocked, "YouTube authentication failed; check YOUTUBE_GATEWAY_ACCESS_TOKEN or YOUTUBE_GATEWAY_TOKEN_STORE_JSON")
+  case .quotaExceeded:
+    throw AdapterExecutionError(.policyBlocked, "YouTube API quota exceeded")
+  default: break
+  }
+}
+
+private func youtubeFailureMessage(_ message: String, _ error: Error) -> String {
+  guard let error = error as? GatewayError else { return message }
+  let status = error.status.map(String.init) ?? "unknown status"
+  return "\(message) (\(error.kind.rawValue), \(status))"
+}
+#endif
 
 func youtubeDuration(_ value: String?) -> Int? {
   guard let value, value.first == "P" else { return nil }

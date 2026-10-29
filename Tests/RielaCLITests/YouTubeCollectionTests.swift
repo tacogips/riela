@@ -8,21 +8,39 @@ import YouTubeGatewayCore
 
 private actor YouTubeFixtureTransport: HTTPTransport {
   private let failingResource: String?
+  private let failureStatus: Int
+  private let failureBody: String
+  private let omitMaxres: Bool
   private(set) var urls: [URL] = []
 
-  init(failingResource: String? = nil) { self.failingResource = failingResource }
+  init(failingResource: String? = nil, failureStatus: Int = 503, failureBody: String = #"{"error":{"errors":[{"reason":"backendError"}]}}"#, omitMaxres: Bool = false) {
+    self.failingResource = failingResource
+    self.failureStatus = failureStatus
+    self.failureBody = failureBody
+    self.omitMaxres = omitMaxres
+  }
 
   func send(_ request: URLRequest) async throws -> HTTPResult {
     guard let url = request.url else { throw URLError(.badURL) }
     urls.append(url)
     let resource = url.pathComponents.last ?? ""
-    if resource == failingResource { return HTTPResult(data: Data(), status: 503) }
-    let body: String
+    if resource == failingResource { return HTTPResult(data: Data(failureBody.utf8), status: failureStatus) }
+    var body: String
     switch resource {
     case "channels":
-      body = #"{"items":[{"id":"UCFBqEEd6cWtdCIEO0mHMluA","contentDetails":{"relatedPlaylists":{"uploads":"UUuploads"}}}]}"#
+      let handle = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "forHandle" })?.value
+      switch handle {
+      case "older": body = #"{"items":[{"id":"CHolder","contentDetails":{"relatedPlaylists":{"uploads":"UUolder"}}}]}"#
+      case "newer": body = #"{"items":[{"id":"CHnewer","contentDetails":{"relatedPlaylists":{"uploads":"UUnewer"}}}]}"#
+      default: body = #"{"items":[{"id":"UCFBqEEd6cWtdCIEO0mHMluA","contentDetails":{"relatedPlaylists":{"uploads":"UUuploads"}}}]}"#
+      }
     case "playlistItems":
-      body = #"{"items":[{"contentDetails":{"videoId":"8QxKwYOyUaE","videoPublishedAt":"2026-10-28T15:02:55Z"}},{"contentDetails":{"videoId":"oldVideo123","videoPublishedAt":"2026-10-01T00:00:00Z"}}]}"#
+      let playlist = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "playlistId" })?.value
+      switch playlist {
+      case "UUolder": body = #"{"items":[{"contentDetails":{"videoId":"videoold001","videoPublishedAt":"2026-10-20T00:00:00Z"}}]}"#
+      case "UUnewer": body = #"{"items":[{"contentDetails":{"videoId":"videonew001","videoPublishedAt":"2026-10-28T00:00:00Z"}}]}"#
+      default: body = #"{"items":[{"contentDetails":{"videoId":"8QxKwYOyUaE","videoPublishedAt":"2026-10-28T15:02:55Z"}},{"contentDetails":{"videoId":"oldVideo123","videoPublishedAt":"2026-10-01T00:00:00Z"}}]}"#
+      }
     case "videos":
       body = #"""
       {"items":[{
@@ -39,14 +57,27 @@ private actor YouTubeFixtureTransport: HTTPTransport {
         "id":"oldVideo123",
         "snippet":{"title":"Explicit old video","publishedAt":"2026-10-01T00:00:00Z"},
         "contentDetails":{"duration":"PT0S"}
+      },{
+        "id":"videoold001",
+        "snippet":{"title":"Older channel video","publishedAt":"2026-10-20T00:00:00Z"}
+      },{
+        "id":"videonew001",
+        "snippet":{"title":"Newer channel video","publishedAt":"2026-10-28T00:00:00Z"}
       }]}
       """#
     default: body = #"{"items":[]}"#
     }
+    if omitMaxres { body = body.replacingOccurrences(of: #""maxres":{"url":"https://img/max.jpg"},"#, with: "") }
     return HTTPResult(data: Data(body.utf8), status: 200)
   }
 
   func recordedURLs() -> [URL] { urls }
+}
+
+private struct YouTubeGatewayFailureFixture {
+  let status: Int
+  let body: String
+  let expectedMessage: String
 }
 
 final class YouTubeCollectionTests: XCTestCase {
@@ -55,6 +86,7 @@ final class YouTubeCollectionTests: XCTestCase {
     XCTAssertThrowsError(try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")]), "maxPerChannel": .integer(51)]))
     XCTAssertThrowsError(try YouTubeCollectionOptions(["channels": .array([.string("@handle")]), "publishedAfter": .string("2026-10-20")]))
     XCTAssertThrowsError(try YouTubeCollectionOptions(["videos": .array([.string("x")]), "unexpected": .bool(true)]))
+    XCTAssertThrowsError(try YouTubeCollectionOptions(["videos": .string("8QxKwYOyUaE")]))
     XCTAssertEqual(YouTubeVideoReference.parse("https://www.youtube.com/watch?v=8QxKwYOyUaE&t=482s"), "8QxKwYOyUaE")
     XCTAssertEqual(YouTubeVideoReference.parse("https://youtu.be/8QxKwYOyUaE?t=10"), "8QxKwYOyUaE")
     XCTAssertEqual(YouTubeChannelReference.parse("https://www.youtube.com/@somebody/videos"), .handle("somebody"))
@@ -62,16 +94,16 @@ final class YouTubeCollectionTests: XCTestCase {
 
   func testChannelHandleSequenceFilteringDedupeAndOutputContract() async throws {
     let options = try YouTubeCollectionOptions([
-      "videos": .array([.string("https://www.youtube.com/watch?v=8QxKwYOyUaE&t=482s"), .string("oldVideo123"), .string("bad-ref")]),
-      "channels": .array([.string("@handle"), .string("UCFBqEEd6cWtdCIEO0mHMluA")]),
-      "publishedAfter": .string("2026-10-20T00:00:00Z"), "maxPerChannel": .integer(5)
+      "videos": .array([.string("  https://www.youtube.com/watch?v=8QxKwYOyUaE&t=482s  "), .string("oldVideo123"), .string("bad-ref")]),
+      "channels": .array([.string(" @handle "), .string("UCFBqEEd6cWtdCIEO0mHMluA")]),
+      "publishedAfter": .string("2026-10-20T00:00:00.123+09:00"), "maxPerChannel": .integer(5)
     ])
     let transport = YouTubeFixtureTransport()
     let collector = YouTubeCollection(options: options) { environment in
       try YouTubeClient.fromEnvironment(environment, transport: transport)
     }
     let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
-    XCTAssertEqual(result["requests"], .integer(5))
+    XCTAssertEqual(result["requests"], .integer(4))
     guard case let .array(videos)? = result["videos"], case let .object(video)? = videos.first else {
       return XCTFail("expected video payload")
     }
@@ -88,8 +120,10 @@ final class YouTubeCollectionTests: XCTestCase {
     XCTAssertEqual(explicitOld["sources"], .array([.string("video")]))
     guard case let .array(failures)? = result["failures"] else { return XCTFail("expected failures") }
     XCTAssertEqual(failures.count, 1)
+    guard case let .object(referenceFailure) = failures[0] else { return XCTFail("expected reference failure") }
+    XCTAssertEqual(referenceFailure["stage"], .string("reference"))
     let urls = await transport.recordedURLs()
-    XCTAssertEqual(urls.map(\.pathComponents.last), ["channels", "playlistItems", "channels", "playlistItems", "videos"])
+    XCTAssertEqual(urls.map(\.pathComponents.last), ["channels", "playlistItems", "channels", "videos"])
     XCTAssertEqual(URLComponents(url: urls[0], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "forHandle" })?.value, "handle")
     XCTAssertEqual(URLComponents(url: urls[1], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "playlistId" })?.value, "UUuploads")
     XCTAssertEqual(URLComponents(url: urls[1], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "maxResults" })?.value, "5")
@@ -116,7 +150,111 @@ final class YouTubeCollectionTests: XCTestCase {
       case let .object(failure)? = failures.first else { return XCTFail("expected partial result") }
     XCTAssertEqual(videos.count, 1)
     XCTAssertEqual(failure["stage"], .string("channel"))
+    XCTAssertEqual(failure["message"], .string("YouTube channel lookup failed (provider, 503)"))
     XCTAssertEqual(result["requests"], .integer(2))
+  }
+
+  func testWhitespaceCredentialIsUnset() async throws {
+    let collector = YouTubeCollection(options: try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")])]))
+    do {
+      _ = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": " \n "])
+      XCTFail("expected credential error")
+    } catch { XCTAssertTrue(String(describing: error).contains("Set YOUTUBE_GATEWAY_ACCESS_TOKEN")) }
+  }
+
+  func testAuthenticationAndQuotaErrorsFailNode() async throws {
+    let options = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")]), "channels": .array([.string("UCFBqEEd6cWtdCIEO0mHMluA")])])
+    let failures = [
+      YouTubeGatewayFailureFixture(status: 401, body: #"{"error":"invalid_grant"}"#, expectedMessage: "YOUTUBE_GATEWAY_TOKEN_STORE_JSON"),
+      YouTubeGatewayFailureFixture(status: 403, body: #"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#, expectedMessage: "quota exceeded")
+    ]
+    for failure in failures {
+      let transport = YouTubeFixtureTransport(failingResource: "channels", failureStatus: failure.status, failureBody: failure.body)
+      let collector = YouTubeCollection(options: options) { environment in
+        try YouTubeClient.fromEnvironment(environment, transport: transport)
+      }
+      do {
+        _ = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+        XCTFail("expected node failure")
+      } catch { XCTAssertTrue(String(describing: error).localizedCaseInsensitiveContains(failure.expectedMessage)) }
+    }
+  }
+
+  func testAllFailedRequestsFailAndVideosFailureReportsRequestCount() async throws {
+    let options = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")])])
+    let failedTransport = YouTubeFixtureTransport(failingResource: "videos")
+    let allFail = YouTubeCollection(options: options) { environment in
+      try YouTubeClient.fromEnvironment(environment, transport: failedTransport)
+    }
+    do {
+      _ = try await allFail.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+      XCTFail("expected all-failed node error")
+    } catch { XCTAssertTrue(String(describing: error).contains("All attempted YouTube requests failed")) }
+    let attemptedURLs = await failedTransport.recordedURLs()
+    XCTAssertEqual(attemptedURLs.count, 1)
+
+    let partialOptions = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")]), "channels": .array([.string("UCFBqEEd6cWtdCIEO0mHMluA")])])
+    let partialTransport = YouTubeFixtureTransport(failingResource: "videos")
+    let partial = YouTubeCollection(options: partialOptions) { environment in
+      try YouTubeClient.fromEnvironment(environment, transport: partialTransport)
+    }
+    let result = try await partial.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    XCTAssertEqual(result["requests"], .integer(3))
+    guard case let .array(failures)? = result["failures"], case let .object(failure)? = failures.last else { return XCTFail("expected batch failure") }
+    XCTAssertEqual(failure["stage"], .string("videos"))
+    XCTAssertEqual(failure["message"], .string("YouTube video lookup failed (provider, 503)"))
+  }
+
+  func testVideoIDsOverFiftySplitAcrossBatches() async throws {
+    let ids = (0..<51).map { String(format: "v%010d", $0) }
+    let options = try YouTubeCollectionOptions(["videos": .array(ids.map(JSONValue.string))])
+    let transport = YouTubeFixtureTransport()
+    let collector = YouTubeCollection(options: options) { environment in try YouTubeClient.fromEnvironment(environment, transport: transport) }
+    let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    XCTAssertEqual(result["requests"], .integer(2))
+    let videoURLs = await transport.recordedURLs().filter { $0.pathComponents.last == "videos" }
+    XCTAssertEqual(videoURLs.count, 2)
+  }
+
+  func testMissingVideoIDCreatesVideosFailureAndFallbackThumbnailIsChosen() async throws {
+    let options = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE"), .string("anotherID12")])])
+    let transport = YouTubeFixtureTransport(omitMaxres: true)
+    let collector = YouTubeCollection(options: options) { environment in try YouTubeClient.fromEnvironment(environment, transport: transport) }
+    let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    guard case let .array(failures)? = result["failures"], case let .object(failure)? = failures.first else { return XCTFail("expected missing video failure") }
+    XCTAssertEqual(failure["target"], .string("anotherID12"))
+    XCTAssertEqual(failure["stage"], .string("videos"))
+    guard case let .array(videos)? = result["videos"], case let .object(video)? = videos.first else { return XCTFail("expected returned video") }
+    XCTAssertEqual(video["thumbnailUrl"], .string("https://img/high.jpg"))
+  }
+
+  func testMultipleChannelsAreOrderedNewestFirst() async throws {
+    let options = try YouTubeCollectionOptions(["channels": .array([.string("@older"), .string("@newer")])])
+    let transport = YouTubeFixtureTransport()
+    let collector = YouTubeCollection(options: options) { environment in try YouTubeClient.fromEnvironment(environment, transport: transport) }
+    let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    guard case let .array(videos)? = result["videos"] else { return XCTFail("expected channel videos") }
+    XCTAssertEqual(videos.compactMap { value -> String? in
+      guard case let .object(object) = value, case let .string(id)? = object["id"] else { return nil }; return id
+    }, ["videonew001", "videoold001"])
+  }
+
+  func testAdapterRejectsUnexpectedAddonEnvironmentTarget() async throws {
+    let input = WorkflowAddonExecutionInput(workflowId: "w", stepId: "s", nodeId: "n",
+      addon: .init(name: "riela/youtube-collect", version: "1",
+        config: ["options": .object(["videos": .array([.string("8QxKwYOyUaE")])])],
+        env: ["UNEXPECTED": .object(["fromEnv": .string("SOURCE")])]))
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(environment: ["SOURCE": "secret"]).execute(input, context: .init())
+      XCTFail("expected unexpected target error")
+    } catch { XCTAssertTrue(String(describing: error).contains("only allows")) }
+    let unknownConfig = WorkflowAddonExecutionInput(workflowId: "w", stepId: "s", nodeId: "n",
+      addon: .init(name: "riela/youtube-collect", version: "1",
+        config: ["options": .object(["videos": .array([.string("8QxKwYOyUaE")])]), "unexpected": .bool(true)]))
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(unknownConfig, context: .init())
+      XCTFail("expected unknown config key error")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
   }
 
   func testCredentialsAreAllowlistedAndMissingCredentialErrorIsSafe() async throws {

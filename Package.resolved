@@ -1,5 +1,5 @@
 {
-  "originHash" : "cf0aade52665b9bef77b3efa39f3284746f6e88a1cf8b145e4a3b1ea2248ca5e",
+  "originHash" : "aedcd0a2c06e63a322263c27002c1b77d3b7ef2be1a1501aa21caff192bff27e",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -174,7 +174,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/youtube-gateway.git",
       "state" : {
-        "revision" : "7128a395c25ae6685aa38f2246e30d6bbd3ce767"
+        "revision" : "33006f3a7e1082521285e7c8323fa442afc35948"
       }
     }
   ],

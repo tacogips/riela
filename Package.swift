@@ -31,7 +31,7 @@ let notionPackageDependencies: [Package.Dependency] = [
   .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "41f64e602c3e242a3f1132f2a297dec47a091afa")
 ]
 let youtubePackageDependencies: [Package.Dependency] = [
-  .package(url: "https://github.com/tacogips/youtube-gateway.git", revision: "7128a395c25ae6685aa38f2246e30d6bbd3ce767")
+  .package(url: "https://github.com/tacogips/youtube-gateway.git", revision: "33006f3a7e1082521285e7c8323fa442afc35948")
 ]
 let youtubeTargetDependencies: [Target.Dependency] = [
   .product(name: "YouTubeGatewayCore", package: "youtube-gateway", condition: .when(platforms: [.macOS]))

@@ -33,7 +33,7 @@ RUN set -eu; \
     rm -rf /tmp/yt-dlp.zip /tmp/deno.zip /tmp/deno
 
 FROM ${WORKER_IMAGE}
-RUN grep -aFq 'videoFrames' /opt/riela/riela && grep -aFq 'sourcePath' /opt/riela/riela || { echo "base worker binary lacks video add-on implementation; rebuild the base image with scripts/build-builtin-addon-container.sh" >&2; exit 1; }
+RUN grep -aFq 'riela/video-frames' /opt/riela/riela && grep -aFq 'riela/media-download' /opt/riela/riela || { echo "base worker binary lacks video add-on registration; rebuild the base image with scripts/build-builtin-addon-container.sh" >&2; exit 1; }
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=video-tools /opt/yt-dlp /opt/yt-dlp

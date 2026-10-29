@@ -475,7 +475,8 @@ final class NotionGatewayAddonTests: XCTestCase {
     ])])])
     let recorder = RecordingGatewayGraphQLRunner(responses: [
       #"{"data":{"appendBlocks":{"results":[{"id":"root-id"}]}}}"#,
-      #"{"data":{"appendBlocks":{"results":[{"id":"column-list-id"},{"id":"sibling-id"}]}}}"#,
+      #"{"data":{"appendBlocks":{"results":[]}}}"#,
+      #"{"data":{"blockChildren":{"results":[{"id":"p-id"},{"id":"column-list-id"},{"id":"sibling-id"}]}}}"#,
       #"{"data":{"blockChildren":{"results":[{"id":"q-id"}]}}}"#,
       #"{"data":{"blockChildren":{"results":[{"id":"r-id"}]}}}"#,
       #"{"data":{"appendBlocks":{"results":[]}}}"#
@@ -485,10 +486,95 @@ final class NotionGatewayAddonTests: XCTestCase {
         "children": .array([.object(["type": .string("toggle"), "toggle": .object(["rich_text": .array([]),
           "children": .array([retained, columnList, deepSibling])])])])]), context: .init())
     let calls = recorder.allCalls()
-    XCTAssertEqual(calls.count, 5)
+    XCTAssertEqual(calls.count, 6)
     XCTAssertTrue(calls[1].variablesJSON?.contains("column_list") == true)
     XCTAssertTrue(calls[1].variablesJSON?.contains("sibling-id") == false)
-    XCTAssertTrue(calls[4].variablesJSON?.contains("r-id") == true)
+    let finalAppend = try XCTUnwrap(calls[5].variablesJSON)
+    let finalVariables = try JSONDecoder().decode(JSONObject.self, from: XCTUnwrap(finalAppend.data(using: .utf8)))
+    XCTAssertEqual(finalVariables["id"], .string("r-id"), "deep deferred content should resolve through sibling path 0.2")
+  }
+
+  func testOversizedColumnStripsDeepChildrenFromKeptPrefix() async throws {
+    let paragraphs: [JSONValue] = (0..<101).map { index in
+      var block: JSONObject = ["type": .string("paragraph"), "paragraph": .object(["index": .integer(Int64(index))])]
+      if index == 0 {
+        block["paragraph"] = .object(["index": .integer(0), "children": .array([
+          .object(["type": .string("paragraph"), "paragraph": .object(["index": .integer(1000)])])
+        ])])
+      }
+      return .object(block)
+    }
+    let column: JSONValue = .object(["type": .string("column"), "column": .object(["children": .array(paragraphs)])])
+    let columnList: JSONValue = .object(["type": .string("column_list"), "column_list": .object(["children": .array([column])])])
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"appendBlocks":{"results":[{"id":"column-list-id","column_list":{"children":{"results":[{"id":"column-id","column":{"children":{"results":[{"id":"p0-id"}]}}}]}}}]}}}"#,
+      #"{"data":{"appendBlocks":{"results":[]}}}"#
+    ])
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["pageId": .string("p"), "children": .array([columnList])]), context: .init())
+    let calls = recorder.allCalls()
+    var observedIndices: [Int] = []
+    for call in calls {
+      guard let variables = call.variablesJSON, let data = variables.data(using: .utf8),
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+      func inspect(_ value: Any, level: Int = 0) throws {
+        guard let object = value as? [String: Any] else { return }
+        if let children = object["children"] as? [Any] {
+          XCTAssertLessThanOrEqual(children.count, 100)
+          XCTAssertLessThanOrEqual(level + 1, 2)
+          for child in children { try inspect(child, level: level + 1) }
+        }
+        for (key, nested) in object where key != "children" { try inspect(nested, level: level) }
+        if let paragraph = object["paragraph"] as? [String: Any], let index = paragraph["index"] as? Int {
+          observedIndices.append(index)
+        }
+      }
+      try inspect(root, level: -1)
+    }
+    XCTAssertEqual(observedIndices.filter { $0 < 101 }, Array(0..<101))
+  }
+
+  func testOversizedColumnListKeepsTwoColumnsAndAppendsEachRemainderInOrder() async throws {
+    let columns: [JSONValue] = (0..<2).map { columnIndex in
+      let paragraphs = (0..<500).map { index in
+        JSONValue.object(["type": .string("paragraph"), "paragraph": .object([
+          "column": .integer(Int64(columnIndex)), "index": .integer(Int64(index))
+        ])])
+      }
+      return .object(["type": .string("column"), "column": .object(["children": .array(paragraphs)])])
+    }
+    let columnList: JSONValue = .object(["type": .string("column_list"), "column_list": .object(["children": .array(columns)])])
+    let response = #"{"data":{"appendBlocks":{"results":[{"id":"list-id","column_list":{"children":{"results":[{"id":"column-0"},{"id":"column-1"}]}}}]}}}"#
+    let recorder = RecordingGatewayGraphQLRunner(response: response)
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["pageId": .string("p"), "children": .array([columnList])]), context: .init())
+    let calls = recorder.allCalls()
+    XCTAssertGreaterThanOrEqual(calls.count, 3)
+    var seen = [Int: [Int]]()
+    for call in calls {
+      guard let variables = call.variablesJSON, let data = variables.data(using: .utf8),
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+      func inspect(_ value: Any) {
+        guard let object = value as? [String: Any] else { return }
+        if let children = object["children"] as? [Any] {
+          XCTAssertLessThanOrEqual(children.count, 100)
+          if object["type"] as? String == "column_list" { XCTAssertGreaterThanOrEqual(children.count, 2) }
+          for child in children { inspect(child) }
+        }
+        if let body = object["paragraph"] as? [String: Any], let column = body["column"] as? Int,
+           let index = body["index"] as? Int { seen[column, default: []].append(index) }
+        for (key, nested) in object where key != "children" { inspect(nested) }
+      }
+      inspect(root)
+    }
+    XCTAssertEqual(seen[0], Array(0..<500))
+    XCTAssertEqual(seen[1], Array(0..<500))
+    let firstRequest = try XCTUnwrap(calls.first?.variablesJSON)
+    XCTAssertTrue(firstRequest.contains("\"column\":0"))
+    XCTAssertTrue(firstRequest.contains("\"column\":1"))
+    XCTAssertTrue(firstRequest.contains("\"index\":0"))
+    XCTAssertTrue(firstRequest.contains("\"index\":99"))
+    XCTAssertTrue(firstRequest.contains("\"index\":499") == false)
   }
 
   func testColumnKeepsFirstChildChunkWhenExcessIsDeferred() async throws {

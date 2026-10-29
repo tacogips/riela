@@ -8,7 +8,7 @@
 import Foundation
 
 /// Packages that Package.swift links only on macOS.
-let macOSOnlyIdentities: Set<String> = ["notion-gateway"]
+let macOSOnlyIdentities: Set<String> = ["notion-gateway", "youtube-gateway"]
 
 let arguments = CommandLine.arguments.dropFirst()
 guard arguments.count <= 1 else {

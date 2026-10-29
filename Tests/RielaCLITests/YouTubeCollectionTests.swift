@@ -80,6 +80,22 @@ private struct YouTubeGatewayFailureFixture {
   let expectedMessage: String
 }
 
+private struct FailingYouTubeCollectionClient: YouTubeCollectionClient {
+  enum Failure: Sendable { case configuration, cancellation }
+  let failure: Failure
+
+  func videosList(_ options: VideoListOptions) async throws -> VideoPage { try throwFailure() }
+  func channelsList(_ options: ChannelListOptions) async throws -> ChannelPage { try throwFailure() }
+  func playlistItemsList(_ options: PlaylistItemsListOptions) async throws -> PlaylistItemsPage { try throwFailure() }
+
+  private func throwFailure() throws -> Never {
+    switch failure {
+    case .configuration: throw GatewayError("No refresh token; run auth login")
+    case .cancellation: throw CancellationError()
+    }
+  }
+}
+
 final class YouTubeCollectionTests: XCTestCase {
   func testOptionsValidationAndReferenceParsingPassThrough() throws {
     XCTAssertNoThrow(try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")]), "maxPerChannel": .integer(50)]))
@@ -87,6 +103,8 @@ final class YouTubeCollectionTests: XCTestCase {
     XCTAssertThrowsError(try YouTubeCollectionOptions(["channels": .array([.string("@handle")]), "publishedAfter": .string("2026-10-20")]))
     XCTAssertThrowsError(try YouTubeCollectionOptions(["videos": .array([.string("x")]), "unexpected": .bool(true)]))
     XCTAssertThrowsError(try YouTubeCollectionOptions(["videos": .string("8QxKwYOyUaE")]))
+    XCTAssertThrowsError(try YouTubeCollectionOptions(["videos": .array([.string(" \n\t ")])]))
+    XCTAssertThrowsError(try YouTubeCollectionOptions(["channels": .array([.string(" \n\t ")])]))
     XCTAssertEqual(YouTubeVideoReference.parse("https://www.youtube.com/watch?v=8QxKwYOyUaE&t=482s"), "8QxKwYOyUaE")
     XCTAssertEqual(YouTubeVideoReference.parse("https://youtu.be/8QxKwYOyUaE?t=10"), "8QxKwYOyUaE")
     XCTAssertEqual(YouTubeChannelReference.parse("https://www.youtube.com/@somebody/videos"), .handle("somebody"))
@@ -180,6 +198,35 @@ final class YouTubeCollectionTests: XCTestCase {
     }
   }
 
+  func testCredentialConfigurationErrorFailsNodeWithEnvironmentNames() async throws {
+    let options = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")])])
+    let collector = YouTubeCollection(options: options) { _ in
+      FailingYouTubeCollectionClient(failure: .configuration)
+    }
+    do {
+      _ = try await collector.collect(environment: ["YOUTUBE_GATEWAY_TOKEN_STORE_JSON": "secret-store"])
+      XCTFail("expected token configuration error")
+    } catch {
+      let message = String(describing: error)
+      XCTAssertTrue(message.contains("YOUTUBE_GATEWAY_ACCESS_TOKEN"))
+      XCTAssertTrue(message.contains("YOUTUBE_GATEWAY_TOKEN_STORE_JSON"))
+      XCTAssertFalse(message.contains("secret-store"))
+    }
+  }
+
+  func testRequestCancellationIsRethrown() async throws {
+    let options = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")])])
+    let collector = YouTubeCollection(options: options) { _ in
+      FailingYouTubeCollectionClient(failure: .cancellation)
+    }
+    do {
+      _ = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+      XCTFail("expected cancellation")
+    } catch is CancellationError {
+      // Expected: request cancellation must not become a per-target failure.
+    }
+  }
+
   func testAllFailedRequestsFailAndVideosFailureReportsRequestCount() async throws {
     let options = try YouTubeCollectionOptions(["videos": .array([.string("8QxKwYOyUaE")])])
     let failedTransport = YouTubeFixtureTransport(failingResource: "videos")
@@ -254,6 +301,12 @@ final class YouTubeCollectionTests: XCTestCase {
     do {
       _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(unknownConfig, context: .init())
       XCTFail("expected unknown config key error")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+    let nonObjectOptions = WorkflowAddonExecutionInput(workflowId: "w", stepId: "s", nodeId: "n",
+      addon: .init(name: "riela/youtube-collect", version: "1", config: ["options": .string("not-an-object")]))
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(nonObjectOptions, context: .init())
+      XCTFail("expected non-object options error")
     } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
   }
 

@@ -30,9 +30,9 @@ struct YouTubeCollectionOptions {
   init(_ value: JSONObject) throws {
     guard Set(value.keys).isSubset(of: ["videos", "channels", "publishedAfter", "maxPerChannel"]),
       case let .array(videos) = value["videos"] ?? .array([]),
-      videos.allSatisfy({ if case let .string(text) = $0 { return !text.isEmpty }; return false }),
+      videos.allSatisfy({ if case let .string(text) = $0 { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }; return false }),
       case let .array(channels) = value["channels"] ?? .array([]),
-      channels.allSatisfy({ if case let .string(text) = $0 { return !text.isEmpty }; return false }),
+      channels.allSatisfy({ if case let .string(text) = $0 { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }; return false }),
       case let .integer(maximum) = value["maxPerChannel"] ?? .integer(10), (1...50).contains(maximum)
     else { throw youtubeCollectionInvalid() }
     let after: Date?
@@ -210,9 +210,10 @@ struct YouTubeCollection {
 
 #if canImport(YouTubeGatewayCore)
 private func handleYouTubeRequestError(_ error: Error) throws {
+  if error is CancellationError || Task.isCancelled { throw CancellationError() }
   guard let error = error as? GatewayError else { return }
   switch error.kind {
-  case .authentication:
+  case .authentication, .configuration:
     throw AdapterExecutionError(.policyBlocked, "YouTube authentication failed; check YOUTUBE_GATEWAY_ACCESS_TOKEN or YOUTUBE_GATEWAY_TOKEN_STORE_JSON")
   case .quotaExceeded:
     throw AdapterExecutionError(.policyBlocked, "YouTube API quota exceeded")

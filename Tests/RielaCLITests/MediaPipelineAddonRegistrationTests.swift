@@ -7,6 +7,35 @@ import XCTest
 @testable import RielaCLI
 
 final class MediaPipelineAddonTests: XCTestCase {
+  func testMediaPipelineUnexpectedErrorKeepsRedactedDiagnostic() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "riela-media-diagnostic-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let input = WorkflowAddonExecutionInput(
+      workflowId: "media-diagnostic", stepId: "audio", nodeId: "audio",
+      addon: .init(name: "riela/audio-segments", version: "1", config: [
+        "options": .object(["path": .string("fixture.mp4")])
+      ]), variables: [:])
+    let resolver = BuiltinWorkflowAddonResolver(
+      environment: ["OPENAI_API_KEY": "secret-api-token"], workingDirectory: root)
+    let pipeline = MediaPipelineContext(resolver: resolver, stage: "audio-segments")
+
+    do {
+      _ = try await pipeline.finish(input, .init()) { _, _ in
+        throw NSError(domain: "fixture", code: 7, userInfo: [
+          NSLocalizedDescriptionKey: "ffmpeg failed after receiving secret-api-token; Bearer abc123"
+        ])
+      }
+      XCTFail("unexpected media pipeline errors should be surfaced")
+    } catch let error as AdapterExecutionError {
+      XCTAssertTrue(error.message.contains("audio-segments processing failed: ffmpeg failed"), error.message)
+      XCTAssertTrue(error.message.contains("[REDACTED]"), error.message)
+      XCTAssertFalse(error.message.contains("secret-api-token"), error.message)
+      XCTAssertFalse(error.message.contains("abc123"), error.message)
+    }
+  }
+
   func testMediaDownloadWritesOutputAndCachesByOptions() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "riela-media-download-\(UUID().uuidString)", isDirectory: true)

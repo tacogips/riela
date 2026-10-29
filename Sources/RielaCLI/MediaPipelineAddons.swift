@@ -11,7 +11,7 @@ private enum MediaPipelineStageError: Error {
   case option(String)
   case stage(String, String)
 }
-private struct MediaPipelineContext: Sendable {
+struct MediaPipelineContext: Sendable {
   let resolver: BuiltinWorkflowAddonResolver
   let stage: String
   var service: MediaPipelineService {
@@ -88,7 +88,11 @@ private struct MediaPipelineContext: Sendable {
       throw AdapterExecutionError(.invalidInput, "invalid \(stage) option '\(option)'")
     } catch MediaPipelineError.stage(let name, let message) {
       throw AdapterExecutionError(.providerError, "\(stage) \(name) failed: \(message)")
-    } catch { throw AdapterExecutionError(.providerError, "\(stage) processing failed") }
+    } catch {
+      let detail = safeDiagnostic(for: error)
+      throw AdapterExecutionError(.providerError,
+        detail.isEmpty ? "\(stage) processing failed" : "\(stage) processing failed: \(detail)")
+    }
   }
   func cached(outputDir: URL, manifest: String, fingerprint: String, enabled: Bool) -> JSONObject? {
     let file = outputDir.appendingPathComponent(manifest)
@@ -139,6 +143,28 @@ private struct MediaPipelineContext: Sendable {
     case .array(let array): return array.allSatisfy(referencedFilesExist)
     default: return true
     }
+  }
+
+  func safeDiagnostic(for error: any Error) -> String {
+    var message: String
+    if type(of: error) == NSError.self {
+      message = (error as NSError).localizedDescription
+    } else {
+      message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+    }
+    for (name, secret) in resolver.environment where secret.count >= 4 &&
+      ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH"].contains(where: {
+        name.uppercased().contains($0)
+      }) {
+      message = message.replacingOccurrences(of: secret, with: "[REDACTED]")
+    }
+    if let expression = try? NSRegularExpression(
+      pattern: #"(?i)(bearer\s+)[^\s]+|sk-[A-Za-z0-9_-]{8,}|(OPENAI_API_KEY[=:]\s*)[^\s,;]+"#) {
+      message = expression.stringByReplacingMatches(
+        in: message, range: NSRange(message.startIndex..., in: message), withTemplate: "$1$2[REDACTED]")
+    }
+    let singleLine = message.unicodeScalars.map { CharacterSet.newlines.contains($0) ? " " : String($0) }.joined()
+    return String(singleLine.suffix(500)).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 }
 

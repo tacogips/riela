@@ -537,6 +537,35 @@ The catalog-provided JSON-mode operations include `findChildPage` for reader
 and writer, and `ensurePagePath` for writer. See
 `riela gateway notion --role writer schema` for the writer schema.
 
+The writer also supports the riela-side `uploadLocalFile` operation for local
+files, including images produced by earlier nodes. Pass `arguments.path`
+(relative to the workflow working directory, or an absolute path under that
+directory or the session artifact directory); optional `filename`,
+`contentType`, `kind` (`image` or `file`), and `caption` customize the
+upload. The default content type follows the filename extension, and the
+default kind is `image` for image content types and `file` otherwise. Files
+must be regular files no larger than 20 MiB. The result is under
+`payload.notionGateway` and includes `fileUploadId`, `filename`,
+`contentType`, `sizeBytes`, `status`, and a ready-to-append `block`.
+Pass that block to `appendBlocks`:
+
+```json
+{
+  "name": "riela/notion-gateway-write",
+  "version": "1",
+  "config": {
+    "operation": "uploadLocalFile",
+    "arguments": {"path": "captures/frame-001.png", "caption": "Frame 1"}
+  },
+  "env": {"NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY", "required": false}}
+}
+```
+
+In a following writer node, use `appendBlocks` with
+`{"children":"{{upload.notionGateway.block}}"}` and the target page `id`.
+Upload create and send are two sequential SDK calls; a failed send is never
+retried automatically.
+
 `riela gateway notion --role reader|writer ...` delegates the gateway's native
 CLI commands, including `schema`, `graphql`, `page` and `block`; reader is the
 default. Supply `NOTION_API_KEY` from the caller environment, for example through

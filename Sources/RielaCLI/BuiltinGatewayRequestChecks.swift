@@ -15,6 +15,9 @@ enum BuiltinGatewayRequestChecks {
     guard leaf["operation"] != nil else { return extendedIssues(addon, leaf: leaf) }
 
     if let (provider, tier) = graphQLAddons[addon.name] {
+      if addon.name == "riela/notion-gateway-write", leaf["operation"] == .string("uploadLocalFile") {
+        return localFileUploadIssues(addonName: addon.name, leaf: leaf)
+      }
       guard let catalog = graphQLCatalog(provider: provider, tier: tier) else { return [] }
       return operationIssues(addonName: addon.name, leaf: leaf, catalog: catalog)
     }
@@ -55,6 +58,25 @@ enum BuiltinGatewayRequestChecks {
       #endif
     }
     return extendedIssues(addon, leaf: leaf)
+  }
+
+  private static func localFileUploadIssues(addonName: String, leaf: JSONObject) -> [WorkflowGatewayRequestIssue] {
+    if isExactPlaceholder(leaf["arguments"]) { return [] }
+    guard case let .object(arguments)? = leaf["arguments"] else {
+      return [WorkflowGatewayRequestIssue(relativePath: "arguments", message: "must be an object")]
+    }
+    let supported: Set<String> = ["path", "filename", "contentType", "kind", "caption"]
+    var issues = arguments.keys.sorted().compactMap { key -> WorkflowGatewayRequestIssue? in
+      guard !supported.contains(key) else { return nil }
+      return WorkflowGatewayRequestIssue(relativePath: "arguments.\(key)", message: "is not an argument of operation 'uploadLocalFile'")
+    }
+    if arguments["path"] == nil {
+      issues.append(WorkflowGatewayRequestIssue(relativePath: "arguments", message: "is missing required argument 'path'"))
+    }
+    if case let .string(kind)? = arguments["kind"], kind != "image", kind != "file" {
+      issues.append(WorkflowGatewayRequestIssue(relativePath: "arguments.kind", message: "must be image or file"))
+    }
+    return issues
   }
 
   static func leafConfig(_ addon: WorkflowNodeAddonRef) -> JSONObject {

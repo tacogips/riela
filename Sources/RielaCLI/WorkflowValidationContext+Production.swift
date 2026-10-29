@@ -70,9 +70,9 @@ extension WorkflowValidationContext {
         return nil
         #endif
       }
-      return WorkflowGatewayCatalogProjection(
-        provider: provider, tier: tier, operationNames: Set(catalog.operations.map(\.name))
-      )
+      var operationNames = Set(catalog.operations.map(\.name))
+      if provider == .notion, tier == "writer" { operationNames.insert("uploadLocalFile") }
+      return WorkflowGatewayCatalogProjection(provider: provider, tier: tier, operationNames: operationNames)
     } catch {
       return nil
     }

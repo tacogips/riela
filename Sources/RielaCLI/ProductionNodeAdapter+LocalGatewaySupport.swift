@@ -36,7 +36,7 @@ struct LocalGatewayGraphQLDescriptor {
   /// addon.env may only populate target names this predicate accepts, so the
   /// binding mechanism cannot inject arbitrary variables into the gateway.
   var isAllowedEnvironmentTarget: (String) -> Bool
-  var catalog: (() throws -> GatewaySchemaCatalog)? = nil
+  var catalog: (() throws -> GatewaySchemaCatalog)?
   /// Optional provider-owned, normalized operational observations, separate from selected source data.
   var observationMetadata: ((String) -> JSONObject)?
   var run: LocalGatewayGraphQLRunner
@@ -47,14 +47,17 @@ struct LocalGatewayGraphQLDescriptor {
 struct LocalGatewayGraphQLEngine {
   var environment: [String: String]
   var descriptor: LocalGatewayGraphQLDescriptor
+  var workingDirectory: URL
 
   init(
     environment: [String: String],
     descriptor: LocalGatewayGraphQLDescriptor,
-    runnerOverride: LocalGatewayGraphQLRunner? = nil
+    runnerOverride: LocalGatewayGraphQLRunner? = nil,
+    workingDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
   ) {
     self.environment = environment
     self.descriptor = descriptor
+    self.workingDirectory = workingDirectory
     if let runnerOverride {
       self.descriptor.run = runnerOverride
     }
@@ -73,6 +76,13 @@ struct LocalGatewayGraphQLEngine {
       .mapValues(JSONValue.string)
     let variables = try addonVariables(for: input, additionalVariables: nowVariables)
     var childEnvironment = try resolvedChildEnvironment(input)
+    if descriptor.providerName == "notion-gateway", descriptor.tier == "writer",
+       config["operation"] == .string("uploadLocalFile") {
+      return try await executeNotionLocalFileUpload(
+        input: input, config: config, runner: descriptor.run, variables: variables,
+        childEnvironment: childEnvironment, runtimeEnvironment: environment, workingDirectory: workingDirectory, context: context
+      )
+    }
     if descriptor.providerName == "gmail-gateway" {
       childEnvironment.merge(try gatewayWriteRetryEnvironment(input, prefix: "GMAIL_GATEWAY_")) { _, configured in configured }
     }
@@ -86,7 +96,7 @@ struct LocalGatewayGraphQLEngine {
         config: config, variables: variables, catalog: catalog(), addonName: input.addon.name
       )
       document = built.document
-      variablesJSON = String(decoding: try JSONEncoder().encode(built.variables), as: UTF8.self)
+      variablesJSON = String(bytes: try JSONEncoder().encode(built.variables), encoding: .utf8)
     } else {
       document = try documentOverride ?? renderedDocument(config: config, variables: variables, addonName: input.addon.name)
       if descriptor.acceptsVariables {
@@ -222,6 +232,144 @@ struct LocalGatewayGraphQLEngine {
     addonName: String
   ) throws -> AppleGatewayGraphQLEnvelope {
     try AppleGatewayGraphQLEnvelope(stdout: stdout, addonName: addonName)
+  }
+}
+
+private func executeNotionLocalFileUpload(
+  input: WorkflowAddonExecutionInput,
+  config: JSONObject,
+  runner: @escaping LocalGatewayGraphQLRunner,
+  variables: JSONObject,
+  childEnvironment: [String: String],
+  runtimeEnvironment: [String: String],
+  workingDirectory: URL,
+  context: AdapterExecutionContext
+) async throws -> AdapterExecutionOutput {
+  let addonName = input.addon.name
+  guard config["queryTemplate"] == nil, config["variablesTemplate"] == nil, config["selection"] == nil,
+        config["select"] == nil, config["command"] == nil, config["argsTemplate"] == nil else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile cannot be mixed with a GraphQL document or selection")
+  }
+  let arguments = try BuiltinGatewayJSONRequest.renderedArguments(config: config, variables: variables, addonName: addonName)
+  let supportedArguments: Set<String> = ["path", "filename", "contentType", "kind", "caption"]
+  guard arguments.keys.allSatisfy(supportedArguments.contains) else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile contains an unsupported argument")
+  }
+  for key in supportedArguments where arguments[key] != nil {
+    guard case .string? = arguments[key] else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile argument \(key) must be a string")
+    }
+  }
+  guard let path = nonEmptyString(arguments["path"]) else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile requires arguments.path")
+  }
+  let root = workingDirectory.standardizedFileURL
+  let resolved = URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL
+  var permittedRoots = [root.resolvingSymlinksInPath().standardizedFileURL]
+  if let artifactPath = runtimeEnvironment["RIELA_ARTIFACT_DIR"], !artifactPath.isEmpty {
+    permittedRoots.append(URL(fileURLWithPath: artifactPath, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL)
+  }
+  guard permittedRoots.contains(where: { resolved.path == $0.path || resolved.path.hasPrefix($0.path + "/") }) else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile path is outside the working and artifact directories")
+  }
+  var isDirectory: ObjCBool = false
+  guard FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDirectory), !isDirectory.boolValue,
+        let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.path),
+        let size = attributes[.size] as? NSNumber else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile path must be an existing file")
+  }
+  let sizeBytes = size.int64Value
+  guard sizeBytes <= 20 * 1_024 * 1_024 else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile file exceeds 20 MiB")
+  }
+  let data: Data
+  do { data = try Data(contentsOf: resolved) } catch {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile file could not be read")
+  }
+  let filename = nonEmptyString(arguments["filename"]) ?? resolved.lastPathComponent
+  let contentType = nonEmptyString(arguments["contentType"]) ?? notionUploadContentType(filename: filename)
+  let kind = nonEmptyString(arguments["kind"]) ?? (contentType.lowercased().hasPrefix("image/") ? "image" : "file")
+  guard kind == "image" || kind == "file" else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) uploadLocalFile kind must be image or file")
+  }
+  guard kind != "image" || contentType.lowercased().hasPrefix("image/") else {
+    throw AdapterExecutionError(.policyBlocked, "\(addonName) image upload requires an image contentType")
+  }
+  let createField = kind == "image" ? "createFileUpload" : "createAttachmentUpload"
+  let sendField = kind == "image" ? "sendFileUpload" : "sendAttachmentUpload"
+  let createDocument = "mutation($filename:String!,$contentType:String!){\(createField)(filename:$filename,contentType:$contentType){id}}"
+  let createVariables = try notionUploadVariables(["filename": .string(filename), "contentType": .string(contentType)])
+  let gatewayEnvironment = sanitizedGatewayEnvironment(runtimeEnvironment: runtimeEnvironment, bindings: childEnvironment)
+  let created = try await notionUploadCall(runner: runner, document: createDocument, variables: createVariables,
+    environment: gatewayEnvironment, context: context, addonName: addonName)
+  let createdField = try created.mutationField(createField, addonName: addonName)
+  guard let uploadId = nonEmptyString(createdField["id"]) else {
+    throw AdapterExecutionError(.invalidOutput, "\(addonName) upload create response is missing an id")
+  }
+  let sendDocument = "mutation($id:ID!,$filename:String!,$contentType:String!,$dataBase64:String!){\(sendField)(id:$id,filename:$filename,contentType:$contentType,dataBase64:$dataBase64){id status}}"
+  let sendVariables = try notionUploadVariables([
+    "id": .string(uploadId), "filename": .string(filename), "contentType": .string(contentType),
+    "dataBase64": .string(data.base64EncodedString())
+  ])
+  let sent = try await notionUploadCall(runner: runner, document: sendDocument, variables: sendVariables,
+    environment: gatewayEnvironment, context: context, addonName: addonName)
+  let sentField = try sent.mutationField(sendField, addonName: addonName)
+  guard let uploadStatus = nonEmptyString(sentField["status"]) else {
+    throw AdapterExecutionError(.invalidOutput, "\(addonName) upload send response is missing a status")
+  }
+  let caption = nonEmptyString(arguments["caption"]).map { [
+    JSONValue.object(["type": .string("text"), "text": .object(["content": .string($0)])])
+  ] } ?? []
+  let blockType = kind == "image" ? "image" : "file"
+  let inner: JSONObject = ["type": .string("file_upload"), "file_upload": .object(["id": .string(uploadId)])]
+  var blockBody: JSONObject = ["type": .string(blockType), blockType: .object(inner)]
+  if !caption.isEmpty { blockBody[blockType] = .object(inner.merging(["caption": .array(caption)]) { _, rhs in rhs }) }
+  let block = JSONValue.object(["object": .string("block")].merging(blockBody) { _, rhs in rhs })
+  let payload: JSONObject = [
+    "status": .string("ok"), "addon": .string(addonName), "stepId": .string(input.stepId),
+    "data": .object([sendField: .object(sentField)]), "requestId": .string(sent.requestId ?? ""),
+    "replyText": .string("notion-gateway writer upload succeeded."),
+    "block": block,
+    "notionGateway": .object([
+      "runtime": .object(["mode": .string("in-process"), "tier": .string("writer")]),
+      "requestId": .string(sent.requestId ?? ""), "fileUploadId": .string(uploadId),
+      "filename": .string(filename), "contentType": .string(contentType), "sizeBytes": .integer(sizeBytes),
+      "status": .string(uploadStatus), "block": block
+    ])
+  ]
+  return AdapterExecutionOutput(provider: "notion-gateway", model: addonName, promptText: "", completionPassed: true,
+    when: ["success": true], payload: payload)
+}
+
+private func notionUploadVariables(_ variables: JSONObject) throws -> String {
+  let data = try JSONEncoder().encode(JSONValue.object(variables))
+  guard let string = String(data: data, encoding: .utf8) else {
+    throw AdapterExecutionError(.invalidOutput, "notion-gateway upload variables could not be encoded")
+  }
+  return string
+}
+
+private func notionUploadCall(
+  runner: @escaping LocalGatewayGraphQLRunner, document: String, variables: String, environment: [String: String],
+  context: AdapterExecutionContext, addonName: String
+) async throws -> AppleGatewayGraphQLEnvelope {
+  let stdout = try await localGatewayRunWithDeadline(deadline: context.deadline, addonName: addonName, providerName: "notion-gateway") {
+    try await runner("writer", document, variables, environment)
+  }
+  let envelope = try AppleGatewayGraphQLEnvelope(stdout: stdout, addonName: addonName)
+  guard envelope.errors.isEmpty else {
+    throw AdapterExecutionError(.providerError, "\(addonName) GraphQL errors: \(appleGatewayCompactText(envelope.errors.joined(separator: "; ")))")
+  }
+  return envelope
+}
+
+private func notionUploadContentType(filename: String) -> String {
+  switch URL(fileURLWithPath: filename).pathExtension.lowercased() {
+  case "jpg", "jpeg": "image/jpeg"
+  case "png": "image/png"
+  case "gif": "image/gif"
+  case "webp": "image/webp"
+  default: "application/octet-stream"
   }
 }
 

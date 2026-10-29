@@ -33,3 +33,13 @@ and `imagePaths`. Do not fan out over a global image list: images are scoped to
 each batch for the downstream tool-less summarizer. `outputDir` can select a
 persistent cache location; a matching completed manifest avoids downloading
 and transcribing again. Use `path` instead of `url` for local files.
+
+YouTube URLs are canonicalized to `https://www.youtube.com/watch?v=ID`; the
+`t`, `si`, `feature`, and `pp` query parameters are removed. URL inputs reject
+local and private network addresses. Set `allowedHosts` to an array of host
+suffixes to restrict URL sources further, for example `["youtube.com",
+"youtu.be"]`. `maxFileSizeMB` limits downloaded media and defaults to 2048.
+
+`OPENAI_BASE_URL` may be the API origin (for example
+`https://api.openai.com`) or may end in `/v1`; the addon appends
+`/v1/audio/transcriptions` in either case.

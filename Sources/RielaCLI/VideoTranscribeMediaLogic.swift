@@ -31,8 +31,8 @@ enum VideoTranscribeMediaLogic {
   }
 
   static func silences(stderr: String) -> [VideoSilence] {
-    let startPattern = try? NSRegularExpression(pattern: #"silence_start:\s*([0-9.]+)"#)
-    let endPattern = try? NSRegularExpression(pattern: #"silence_end:\s*([0-9.]+)"#)
+    let startPattern = try? NSRegularExpression(pattern: #"silence_start:\s*(-?[0-9]+(?:\.[0-9]+)?)"#)
+    let endPattern = try? NSRegularExpression(pattern: #"silence_end:\s*(-?[0-9]+(?:\.[0-9]+)?)"#)
     var pending: Double?, values: [VideoSilence] = []
     for line in stderr.components(separatedBy: .newlines) {
       if let match = startPattern?.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),

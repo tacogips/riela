@@ -21,13 +21,15 @@ struct VideoTranscribeOptions: Sendable {
   let ffprobePath: String?
   let carryForwardFrame: Bool
   let cache: Bool
+  let allowedHosts: [String]?
+  let maxFileSizeMB: Int
 
   init(_ values: JSONObject, workingDirectory: URL) throws {
     let rawURL = values["url"]?.stringValue
     let rawPath = values["path"]?.stringValue
-    guard (rawURL != nil) != (rawPath != nil) else { throw VideoTranscribeError.invalidOptions }
+    guard (rawURL != nil) != (rawPath != nil) else { throw VideoTranscribeError.invalidOption("url/path") }
     if let rawURL {
-      guard let normalized = Self.normalizedURL(rawURL) else { throw VideoTranscribeError.invalidOptions }
+      guard let normalized = Self.normalizedURL(rawURL) else { throw VideoTranscribeError.invalidOption("url") }
       source = .url(normalized)
     } else if let rawPath {
       let pathURL = (rawPath.hasPrefix("/") ? URL(fileURLWithPath: rawPath) : workingDirectory.appendingPathComponent(rawPath)).standardizedFileURL
@@ -42,7 +44,7 @@ struct VideoTranscribeOptions: Sendable {
     batchSeconds = try Self.number(values, "batchSeconds", default: 180, range: 30...600)
     language = values["language"]?.stringValue
     sttPrompt = values["sttPrompt"]?.stringValue
-    guard case let .object(stt) = values["stt"] ?? .object([:]) else { throw VideoTranscribeError.invalidOptions }
+    guard case let .object(stt) = values["stt"] ?? .object([:]) else { throw VideoTranscribeError.invalidOption("stt") }
     guard stt["provider"]?.stringValue == nil || stt["provider"]?.stringValue == "openai" else {
       throw VideoTranscribeError.unsupportedProvider(stt["provider"]?.stringValue ?? "")
     }
@@ -56,15 +58,84 @@ struct VideoTranscribeOptions: Sendable {
     ffprobePath = values["ffprobePath"]?.stringValue
     carryForwardFrame = Self.boolean(values["carryForwardFrame"]) ?? true
     cache = Self.boolean(values["cache"]) ?? true
+    if let value = values["allowedHosts"] {
+      guard case let .array(hostValues) = value, hostValues.allSatisfy({ $0.stringValue != nil }) else {
+        throw VideoTranscribeError.invalidOption("allowedHosts")
+      }
+      allowedHosts = hostValues.compactMap(\.stringValue)
+    } else { allowedHosts = nil }
+    maxFileSizeMB = Int(try Self.number(values, "maxFileSizeMB", default: 2048, range: 1...1_000_000))
+    if case let .url(url) = source {
+      guard Self.isSafeURL(url), allowedHosts?.contains(where: { Self.host(url.host ?? "", matches: $0) }) ?? true else {
+        throw VideoTranscribeError.invalidOption("url")
+      }
+    }
   }
 
   static func normalizedURL(_ raw: String) -> URL? {
     guard var components = URLComponents(string: raw), let scheme = components.scheme,
       ["http", "https"].contains(scheme.lowercased()), components.host != nil else { return nil }
     if let host = components.host?.lowercased(), ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"].contains(host) {
-      components.queryItems = components.queryItems?.filter { $0.name.lowercased() != "t" && $0.name.lowercased() != "start" }
+      let id = components.queryItems?.first(where: { $0.name == "v" })?.value
+      components.queryItems = (components.queryItems ?? []).filter { !["t", "si", "feature", "pp", "start"].contains($0.name.lowercased()) }
+      let pathComponents = components.path.split(separator: "/")
+      let pathID: String?
+      if host.hasSuffix("youtu.be") {
+        pathID = pathComponents.first.map(String.init)
+      } else if pathComponents.count > 1, ["shorts", "live", "embed"].contains(String(pathComponents[0])) {
+        pathID = String(pathComponents[1])
+      } else { pathID = nil }
+      let videoID = id ?? pathID
+      if let videoID {
+        components = URLComponents(); components.scheme = "https"; components.host = "www.youtube.com"
+        components.path = "/watch"; components.queryItems = [URLQueryItem(name: "v", value: videoID)]
+      } else {
+        components.scheme = "https"
+        components.host = "www.youtube.com"
+      }
     }
+    if components.queryItems?.isEmpty == true { components.query = nil }
     return components.url
+  }
+
+  private static func host(_ host: String, matches suffix: String) -> Bool {
+    let normalized = suffix.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    return host.lowercased() == normalized || host.lowercased().hasSuffix("." + normalized)
+  }
+
+  private static func isSafeURL(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+      ["http", "https"].contains(components.scheme?.lowercased() ?? ""), let rawHost = components.host?.lowercased() else { return false }
+    let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    guard
+      host != "localhost", !host.hasSuffix(".localhost") else { return false }
+    if host.contains(":"), isPrivateIPv6(host) { return false }
+    if host.split(separator: ".").count == 4, host.allSatisfy({ $0.isNumber || $0 == "." }) {
+      return !isPrivateIPv4(host)
+    }
+    return true
+  }
+
+  private static func isPrivateIPv6(_ host: String) -> Bool {
+    let value = host.lowercased()
+    if value.hasPrefix("::ffff:"), isPrivateIPv4(String(value.dropFirst("::ffff:".count))) { return true }
+    if value.hasPrefix("::ffff:"), let mapped = ipv4MappedAddress(value), isPrivateIPv4(mapped) { return true }
+    return value == "::1" || value == "::" || value.hasPrefix("fc") || value.hasPrefix("fd") || value.hasPrefix("fe8") ||
+      value.hasPrefix("fe9") || value.hasPrefix("fea") || value.hasPrefix("feb") || value.hasPrefix("::ffff:127.") || value.hasPrefix("::ffff:10.")
+  }
+
+  private static func ipv4MappedAddress(_ host: String) -> String? {
+    let groups = host.dropFirst("::ffff:".count).split(separator: ":")
+    guard groups.count == 2, let high = UInt16(groups[0], radix: 16), let low = UInt16(groups[1], radix: 16) else { return nil }
+    return "\(high >> 8).\(high & 255).\(low >> 8).\(low & 255)"
+  }
+
+  private static func isPrivateIPv4(_ address: String) -> Bool {
+    let parts = address.split(separator: ".").compactMap { UInt8($0) }
+    guard parts.count == 4 else { return false }
+    let first = Int(parts[0]), second = Int(parts[1])
+    return first == 127 || first == 10 || (first == 172 && (16...31).contains(second)) ||
+      (first == 192 && second == 168) || (first == 169 && second == 254)
   }
 
   static func number(_ values: JSONObject, _ key: String, default defaultValue: Double, range: ClosedRange<Double>) throws -> Double {
@@ -73,9 +144,9 @@ struct VideoTranscribeOptions: Sendable {
     switch value {
     case let .integer(int): number = Double(int)
     case let .number(double): number = double
-    default: throw VideoTranscribeError.invalidOptions
+    default: throw VideoTranscribeError.invalidOption(key)
     }
-    guard number.isFinite, range.contains(number) else { throw VideoTranscribeError.invalidOptions }
+    guard number.isFinite, range.contains(number) else { throw VideoTranscribeError.invalidOption(key) }
     return number
   }
 
@@ -84,6 +155,7 @@ struct VideoTranscribeOptions: Sendable {
 
 enum VideoTranscribeError: Error {
   case invalidOptions
+  case invalidOption(String)
   case unsupportedProvider(String)
   case stage(String, String)
 }

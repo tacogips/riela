@@ -24,7 +24,7 @@ extension BuiltinWorkflowAddonResolver {
       }
       let service = VideoTranscribeService(runner: containerProcessRunner, workingDirectory: workingDirectory,
         artifactRoot: URL(fileURLWithPath: environment["RIELA_ARTIFACT_DIR"] ?? workingDirectory.appendingPathComponent(".riela/artifacts").path),
-        http: videoTranscribeNativeHTTP)
+        http: videoTranscribeNativeHTTP, resolverEnvironment: environment)
       let payload = try await service.collect(options: options, apiKey: apiKey,
         baseURL: credentials["OPENAI_BASE_URL"] ?? "https://api.openai.com", deadline: context.deadline)
       guard try JSONEncoder().encode(payload).count <= 8_000_000 else { throw AdapterExecutionError(.invalidInput, "video-transcribe output exceeds 8 MB") }
@@ -36,6 +36,8 @@ extension BuiltinWorkflowAddonResolver {
       throw error
     } catch VideoTranscribeError.invalidOptions {
       throw AdapterExecutionError(.invalidInput, "invalid video-transcribe options")
+    } catch VideoTranscribeError.invalidOption(let option) {
+      throw AdapterExecutionError(.invalidInput, "invalid video-transcribe option '\(option)'")
     } catch VideoTranscribeError.unsupportedProvider(let provider) {
       throw AdapterExecutionError(.invalidInput, "video-transcribe STT provider '\(provider)' is unsupported; use openai")
     } catch VideoTranscribeError.stage(let stage, let message) {

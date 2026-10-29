@@ -20,14 +20,18 @@ struct VideoTranscribeService: Sendable {
   let workingDirectory: URL
   let artifactRoot: URL
   let http: VideoTranscribeHTTP
+  var resolverEnvironment: [String: String] = ProcessInfo.processInfo.environment
   private var fileManager: FileManager { .default }
   private let outputLimit = 8_000_000
 
   func collect(options: VideoTranscribeOptions, apiKey: String, baseURL: String, deadline: Date?) async throws -> JSONObject {
-    let sourceInfo = try await resolveSource(options, deadline: deadline)
-    guard sourceInfo.duration <= options.maxDurationSeconds else { throw VideoTranscribeError.stage("metadata", "duration exceeds maxDurationSeconds") }
+    let identity: String
+    switch options.source {
+    case let .url(url): identity = url.absoluteString
+    case let .path(url): identity = url.path
+    }
     let output = options.outputDirectory ?? artifactRoot.appendingPathComponent("video-transcribe", isDirectory: true)
-      .appendingPathComponent(sourceInfo.videoID ?? String(webCollectionKey(sourceInfo.identity).prefix(24)), isDirectory: true)
+      .appendingPathComponent(String(webCollectionKey(identity).prefix(24)), isDirectory: true)
     let absoluteOutput = output.path.hasPrefix("/") ? output.standardizedFileURL : workingDirectory.appendingPathComponent(output.path).standardizedFileURL
     let fingerprint = try optionsFingerprint(options)
     let manifestURL = absoluteOutput.appendingPathComponent("manifest.json")
@@ -35,7 +39,8 @@ struct VideoTranscribeService: Sendable {
       let manifest = try? JSONSerialization.jsonObject(with: cached) as? [String: Any],
       manifest["status"] as? String == "completed", manifest["optionsFingerprint"] as? String == fingerprint,
       let payload = manifest["payload"] as? [String: Any], let data = try? JSONSerialization.data(withJSONObject: payload),
-      let object = try? JSONDecoder().decode(JSONValue.self, from: data), case let .object(value) = object {
+      let object = try? JSONDecoder().decode(JSONValue.self, from: data), case let .object(value) = object,
+      cacheFilesExist(value, output: absoluteOutput) {
       var payload = value
       if case var .object(video)? = payload["videoTranscribe"] {
         video["cached"] = .bool(true)
@@ -43,26 +48,41 @@ struct VideoTranscribeService: Sendable {
       }
       return payload
     }
+    let sourceInfo = try await resolveSource(options, deadline: deadline)
+    guard sourceInfo.duration <= options.maxDurationSeconds else { throw VideoTranscribeError.stage("metadata", "duration exceeds maxDurationSeconds") }
     try fileManager.createDirectory(at: absoluteOutput, withIntermediateDirectories: true)
     let mediaDirectory = absoluteOutput.appendingPathComponent("media", isDirectory: true)
     let chunksDirectory = absoluteOutput.appendingPathComponent("chunks", isDirectory: true)
     let framesDirectory = absoluteOutput.appendingPathComponent("frames", isDirectory: true)
     try [mediaDirectory, chunksDirectory, framesDirectory].forEach { try fileManager.createDirectory(at: $0, withIntermediateDirectories: true) }
+    let audioURL = absoluteOutput.appendingPathComponent("audio.mp3")
+    defer {
+      if !options.keepMedia {
+        try? fileManager.removeItem(at: audioURL)
+        try? fileManager.removeItem(at: mediaDirectory)
+        if let files = try? fileManager.contentsOfDirectory(at: chunksDirectory, includingPropertiesForKeys: nil) {
+          for file in files where file.pathExtension != "json" { try? fileManager.removeItem(at: file) }
+        }
+      }
+    }
     let mediaURL: URL
     if let local = sourceInfo.localPath { mediaURL = local } else { mediaURL = try await download(options, sourceInfo: sourceInfo, mediaDirectory: mediaDirectory, deadline: deadline) }
     let ffmpeg = try executable(options.ffmpegPath, name: "ffmpeg", stage: "audio")
     let ffprobe = try executable(options.ffprobePath, name: "ffprobe", stage: "audio")
     let duration = try await probeDuration(ffprobe, mediaURL: mediaURL, deadline: deadline)
+    let streamInfo = try await probeStreams(ffprobe, mediaURL: mediaURL, deadline: deadline)
+    guard streamInfo.audio else { throw VideoTranscribeError.stage("audio", "video has no audio stream") }
     guard duration <= options.maxDurationSeconds else { throw VideoTranscribeError.stage("metadata", "duration exceeds maxDurationSeconds") }
-    let audioURL = absoluteOutput.appendingPathComponent("audio.mp3")
     _ = try await run(ffmpeg, ["-y", "-i", mediaURL.path, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", audioURL.path], stage: "audio", deadline: deadline)
-    let silenceResult = try await run(ffmpeg, ["-i", mediaURL.path, "-af", "silencedetect=noise=-35dB:d=0.4", "-f", "null", "-"], stage: "silence", deadline: deadline)
+    let silenceResult = try await run(ffmpeg, ["-nostats", "-i", audioURL.path, "-vn", "-af", "silencedetect=noise=-35dB:d=0.4", "-f", "null", "-"], stage: "silence", deadline: deadline)
     let batchPlan = VideoTranscribeMediaLogic.batches(duration: duration, target: options.batchSeconds,
       silences: VideoTranscribeMediaLogic.silences(stderr: silenceResult.stderr))
     let chunkURLs = try await makeChunks(ffmpeg: ffmpeg, audioURL: audioURL, batches: batchPlan, directory: chunksDirectory, deadline: deadline)
+    let keptFrames = streamInfo.video
+      ? try await extractFrames(ffmpeg: ffmpeg, mediaURL: mediaURL, options: options, directory: framesDirectory, deadline: deadline)
+      : (frames: [VideoFrame](), sampled: 0)
     let transcripts = try await transcribe(chunkURLs, options: options, apiKey: apiKey, baseURL: baseURL,
-      directory: chunksDirectory, deadline: deadline)
-    let keptFrames = try await extractFrames(ffmpeg: ffmpeg, mediaURL: mediaURL, options: options, directory: framesDirectory, deadline: deadline)
+      directory: chunksDirectory, cacheKeys: batchPlan.map { "\(fingerprint):\($0.start):\($0.end)" }, deadline: deadline)
     let assigned = VideoTranscribeMediaLogic.framesByBatch(keptFrames.frames, batches: batchPlan, carryForward: options.carryForwardFrame)
     var batches: [JSONValue] = []
     for index in batchPlan.indices {
@@ -94,11 +114,6 @@ struct VideoTranscribeService: Sendable {
     let manifest: [String: Any] = ["status": "completed", "optionsFingerprint": fingerprint,
       "payload": try JSONSerialization.jsonObject(with: JSONEncoder().encode(JSONValue.object(payload)))]
     try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys]).write(to: manifestURL, options: .atomic)
-    if !options.keepMedia {
-      try? fileManager.removeItem(at: audioURL)
-      if sourceInfo.localPath == nil { try? fileManager.removeItem(at: mediaURL) }
-      for chunk in chunkURLs { try? fileManager.removeItem(at: chunk) }
-    }
     return payload
   }
 
@@ -112,11 +127,7 @@ struct VideoTranscribeService: Sendable {
       "frameDedupeThreshold": .number(options.frameDedupeThreshold), "frameWidth": .integer(Int64(options.frameWidth)),
       "batchSeconds": .number(options.batchSeconds), "language": options.language.map(JSONValue.string) ?? .null,
       "sttPrompt": options.sttPrompt.map(JSONValue.string) ?? .null, "model": .string(options.model),
-      "concurrency": .integer(Int64(options.concurrency)), "maxAttempts": .integer(Int64(options.maxAttempts)),
-      "maxDurationSeconds": .number(options.maxDurationSeconds), "keepMedia": .bool(options.keepMedia),
-      "carryForwardFrame": .bool(options.carryForwardFrame), "outputDir": options.outputDirectory.map { .string($0.path) } ?? .null,
-      "ytDlpPath": options.ytDlpPath.map(JSONValue.string) ?? .null, "ffmpegPath": options.ffmpegPath.map(JSONValue.string) ?? .null,
-      "ffprobePath": options.ffprobePath.map(JSONValue.string) ?? .null, "cache": .bool(options.cache)])
+      "sttProvider": .string("openai"), "carryForwardFrame": .bool(options.carryForwardFrame)])
     return JSONCanonical.sha256Hex(try JSONCanonical.encode(effectiveOptions))
   }
 
@@ -124,14 +135,25 @@ struct VideoTranscribeService: Sendable {
     do {
       let result = try await runner.run(configuration: .init(executableURL: executable, arguments: arguments,
         workingDirectoryURL: workingDirectory, stdoutCaptureByteLimit: 2_000_000, stderrCaptureByteLimit: 2_000_000), stdin: "", deadline: deadline)
-      guard result.terminationStatus == 0 else { throw VideoTranscribeError.stage(stage, "process exited with status \(result.terminationStatus)") }
+      guard result.terminationStatus == 0 else {
+        throw VideoTranscribeError.stage(stage, "process exited with status \(result.terminationStatus): \(redactedStderrTail(result.stderr))")
+      }
       return result
     } catch let error as VideoTranscribeError { throw error } catch { throw VideoTranscribeError.stage(stage, "process could not run") }
   }
 
-  private func executable(_ override: String?, name: String, stage: String) throws -> URL {
+  private func redactedStderrTail(_ stderr: String) -> String {
+    let tail = String(stderr.suffix(500))
+    guard let expression = try? NSRegularExpression(pattern: #"(?i)(bearer\s+)[^\s]+|sk-[A-Za-z0-9_-]{8,}"#) else { return tail }
+    let range = NSRange(tail.startIndex..., in: tail)
+    return expression.stringByReplacingMatches(in: tail, range: range, withTemplate: "[REDACTED]")
+  }
+
+  func executable(_ override: String?, name: String, stage: String) throws -> URL {
     if let override { return URL(fileURLWithPath: override) }
-    let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin").split(separator: ":")
+    let resolverPath = resolverEnvironment["PATH"] ?? ""
+    let processPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    let paths = (resolverPath + ":" + processPath + ":/opt/homebrew/bin:/usr/local/bin").split(separator: ":")
     if let path = paths.map({ URL(fileURLWithPath: String($0)).appendingPathComponent(name) }).first(where: { fileManager.isExecutableFile(atPath: $0.path) }) { return path }
     throw VideoTranscribeError.stage(stage, "\(name) is missing; install with brew install yt-dlp ffmpeg")
   }
@@ -139,10 +161,18 @@ struct VideoTranscribeService: Sendable {
   private func probeDuration(_ ffprobe: URL, mediaURL: URL, deadline: Date?) async throws -> Double {
     let result = try await run(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "json", mediaURL.path], stage: "audio", deadline: deadline)
     guard let data = result.stdout.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let format = root["format"] as? [String: Any], let text = format["duration"] as? String, let value = Double(text), value > 0 else {
+      let format = root["format"] as? [String: Any], let raw = format["duration"], let value = (raw as? NSNumber)?.doubleValue ?? (raw as? String).flatMap(Double.init), value > 0 else {
       throw VideoTranscribeError.stage("audio", "could not read media duration")
     }
     return value
+  }
+
+  private func probeStreams(_ ffprobe: URL, mediaURL: URL, deadline: Date?) async throws -> (video: Bool, audio: Bool) {
+    let result = try await run(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type", "-of", "json", mediaURL.path], stage: "audio", deadline: deadline)
+    guard let data = result.stdout.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let streams = root["streams"] as? [[String: Any]] else { throw VideoTranscribeError.stage("audio", "could not inspect media streams") }
+    let types = streams.compactMap { $0["codec_type"] as? String }
+    return (types.contains("video"), types.contains("audio"))
   }
 
   private func resolveSource(_ options: VideoTranscribeOptions, deadline: Date?) async throws -> VideoSourceInfo {
@@ -155,7 +185,7 @@ struct VideoTranscribeService: Sendable {
       return .init(identity: path.path, videoID: nil, title: path.deletingPathExtension().lastPathComponent, url: nil, localPath: path, duration: 0)
     case let .url(url):
       let ytdlp = try executable(options.ytDlpPath, name: "yt-dlp", stage: "metadata")
-      let result = try await run(ytdlp, ["-J", "--no-playlist", url.absoluteString], stage: "metadata", deadline: deadline)
+      let result = try await run(ytdlp, ["--ignore-config", "--no-playlist", "-O", "%(.{id,title,duration,is_live,live_status})j", url.absoluteString], stage: "metadata", deadline: deadline)
       guard let data = result.stdout.data(using: .utf8), let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         throw VideoTranscribeError.stage("metadata", "invalid yt-dlp metadata")
       }
@@ -163,7 +193,7 @@ struct VideoTranscribeService: Sendable {
       guard (info["is_live"] as? Bool) != true, liveStatus != "is_live", liveStatus != "is_upcoming" else {
         throw VideoTranscribeError.stage("metadata", "live and upcoming streams are not supported")
       }
-      let duration = info["duration"] as? Double ?? 0
+      let duration = (info["duration"] as? NSNumber)?.doubleValue ?? 0
       guard duration > 0, duration <= options.maxDurationSeconds else { throw VideoTranscribeError.stage("metadata", "video duration is missing or exceeds maxDurationSeconds") }
       return .init(identity: url.absoluteString, videoID: info["id"] as? String, title: info["title"] as? String ?? "Video",
         url: url.absoluteString, localPath: nil, duration: duration)
@@ -173,13 +203,30 @@ struct VideoTranscribeService: Sendable {
   private func download(_ options: VideoTranscribeOptions, sourceInfo: VideoSourceInfo, mediaDirectory: URL, deadline: Date?) async throws -> URL {
     guard case let .url(url) = options.source else { throw VideoTranscribeError.stage("download", "missing URL") }
     let ytdlp = try executable(options.ytDlpPath, name: "yt-dlp", stage: "download")
-    let template = mediaDirectory.appendingPathComponent("%(id)s.%(ext)s").path
-    _ = try await run(ytdlp, ["--no-playlist", "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b", "--merge-output-format", "mp4", "-o", template, url.absoluteString], stage: "download", deadline: deadline)
-    let candidates = try fileManager.contentsOfDirectory(at: mediaDirectory, includingPropertiesForKeys: nil)
-    guard let media = candidates.first(where: { $0.lastPathComponent.hasPrefix(sourceInfo.videoID ?? "") }) else {
+    try? fileManager.removeItem(at: mediaDirectory)
+    try fileManager.createDirectory(at: mediaDirectory, withIntermediateDirectories: true)
+    let template = mediaDirectory.appendingPathComponent("video.%(ext)s").path
+    let ffmpeg = try executable(options.ffmpegPath, name: "ffmpeg", stage: "download")
+    let result = try await run(ytdlp, ["--ignore-config", "--no-playlist", "--max-filesize", "\(options.maxFileSizeMB)M", "--ffmpeg-location", ffmpeg.path,
+      "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b", "--merge-output-format", "mp4", "-o", template,
+      "--print", "after_move:filepath", "--no-simulate", url.absoluteString], stage: "download", deadline: deadline)
+    guard let filepath = result.stdout.split(whereSeparator: \.isNewline).last.map(String.init),
+      fileManager.fileExists(atPath: filepath), URL(fileURLWithPath: filepath).deletingLastPathComponent().standardizedFileURL == mediaDirectory.standardizedFileURL else {
       throw VideoTranscribeError.stage("download", "yt-dlp did not produce a media file")
     }
-    return media
+    return URL(fileURLWithPath: filepath)
+  }
+
+  func cacheFilesExist(_ payload: JSONObject, output: URL) -> Bool {
+    guard fileManager.fileExists(atPath: output.appendingPathComponent("transcript.json").path),
+      case let .object(video)? = payload["videoTranscribe"], case let .array(batches)? = video["batches"] else { return false }
+    for batch in batches {
+      guard case let .object(value) = batch, case let .array(frames)? = value["frames"] else { return false }
+      for frame in frames {
+        guard case let .object(item) = frame, let path = item["path"]?.stringValue, fileManager.fileExists(atPath: path) else { return false }
+      }
+    }
+    return true
   }
 }
 

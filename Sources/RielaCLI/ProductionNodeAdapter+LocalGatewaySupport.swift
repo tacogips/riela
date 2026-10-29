@@ -347,9 +347,13 @@ private func executeNotionLocalFileUpload(
     when: ["success": true], payload: payload)
 }
 
-private struct NotionPublishedUpload {
+private struct NotionPublishedUpload: Sendable {
   var id: String
   var status: String
+}
+
+private struct NotionUploadFailure: Error, Sendable {
+  var message: String
 }
 
 private struct DeferredNotionChildren {
@@ -406,16 +410,51 @@ private func executeNotionPublishPage(
   var uploadIds: [String: String] = [:]
   var uploaded: [JSONValue] = []
   var failures: [JSONValue] = []
-  // Sequential uploads are intentionally bounded below the service's limit of three.
-  for path in paths.keys.sorted() {
-    do {
-      let upload = try await uploadNotionLocalPath(path, runtimeEnvironment: runtimeEnvironment,
-        bindings: childEnvironment, kind: paths[path] ?? "image", workingDirectory: workingDirectory, runner: runner,
-        context: context, input: input, addonName: addonName, roots: configuredLocalFileRoots)
+  let orderedPaths = paths.keys.sorted()
+  let localFileKinds = paths
+  let uploadResults = await withTaskGroup(of: (String, Result<NotionPublishedUpload, NotionUploadFailure>).self) { group in
+    var results: [(String, Result<NotionPublishedUpload, NotionUploadFailure>)] = []
+    var nextIndex = 0
+    let initialCount = min(3, orderedPaths.count)
+    for _ in 0..<initialCount {
+      let path = orderedPaths[nextIndex]
+      nextIndex += 1
+      group.addTask {
+        do {
+          let upload = try await uploadNotionLocalPath(path, runtimeEnvironment: runtimeEnvironment,
+            bindings: childEnvironment, kind: localFileKinds[path] ?? "image", workingDirectory: workingDirectory, runner: runner,
+            context: context, input: input, addonName: addonName, roots: configuredLocalFileRoots)
+          return (path, .success(upload))
+        } catch {
+          return (path, .failure(NotionUploadFailure(message: notionPublishErrorMessage(error))))
+        }
+      }
+    }
+    while let result = await group.next() {
+      results.append(result)
+      guard nextIndex < orderedPaths.count else { continue }
+      let path = orderedPaths[nextIndex]
+      nextIndex += 1
+      group.addTask {
+        do {
+          let upload = try await uploadNotionLocalPath(path, runtimeEnvironment: runtimeEnvironment,
+            bindings: childEnvironment, kind: localFileKinds[path] ?? "image", workingDirectory: workingDirectory, runner: runner,
+            context: context, input: input, addonName: addonName, roots: configuredLocalFileRoots)
+          return (path, .success(upload))
+        } catch {
+          return (path, .failure(NotionUploadFailure(message: notionPublishErrorMessage(error))))
+        }
+      }
+    }
+    return results.sorted { $0.0 < $1.0 }
+  }
+  for (path, result) in uploadResults {
+    switch result {
+    case let .success(upload):
       uploadIds[path] = upload.id
       uploaded.append(.object(["path": .string(path), "id": .string(upload.id), "status": .string(upload.status)]))
-    } catch {
-      failures.append(.object(["path": .string(path), "message": .string(notionPublishErrorMessage(error))]))
+    case let .failure(failure):
+      failures.append(.object(["path": .string(path), "message": .string(failure.message)]))
     }
   }
   let normalizedBlocks = rawBlocks.flatMap { normalizeNotionBlock($0, uploadIds: uploadIds, failures: &failures, paths: paths, allowAttachments: allowAttachments, baseDirectory: workingDirectory) }

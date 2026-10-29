@@ -51,13 +51,7 @@ struct MediaPipelineService: Sendable {
   }
 
   private func redactedStderrTail(_ stderr: String) -> String {
-    let tail = String(stderr.suffix(500))
-    guard
-      let expression = try? NSRegularExpression(
-        pattern: #"(?i)(bearer\s+)[^\s]+|sk-[A-Za-z0-9_-]{8,}"#)
-    else { return tail }
-    return expression.stringByReplacingMatches(
-      in: tail, range: NSRange(tail.startIndex..., in: tail), withTemplate: "[REDACTED]")
+    MediaPipelineRedaction.diagnostic(String(stderr.suffix(4_000)), environment: resolverEnvironment)
   }
 
   func executable(_ override: String?, name: String, stage: String) throws -> URL {

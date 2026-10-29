@@ -83,11 +83,11 @@ struct MediaPipelineContext: Sendable {
       as AdapterExecutionError { throw error } catch MediaPipelineStageError.option(let option) {
       throw AdapterExecutionError(.invalidInput, "invalid \(stage) option '\(option)'")
     } catch MediaPipelineStageError.stage(let name, let message) {
-      throw AdapterExecutionError(.providerError, "\(stage) \(name) failed: \(message)")
+      throw AdapterExecutionError(.providerError, "\(stage) \(name) failed: \(redacted(message))")
     } catch MediaPipelineError.invalidOption(let option) {
       throw AdapterExecutionError(.invalidInput, "invalid \(stage) option '\(option)'")
     } catch MediaPipelineError.stage(let name, let message) {
-      throw AdapterExecutionError(.providerError, "\(stage) \(name) failed: \(message)")
+      throw AdapterExecutionError(.providerError, "\(stage) \(name) failed: \(redacted(message))")
     } catch {
       let detail = safeDiagnostic(for: error)
       throw AdapterExecutionError(.providerError,
@@ -146,25 +146,17 @@ struct MediaPipelineContext: Sendable {
   }
 
   func safeDiagnostic(for error: any Error) -> String {
-    var message: String
+    let message: String
     if type(of: error) == NSError.self {
       message = (error as NSError).localizedDescription
     } else {
       message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     }
-    for (name, secret) in resolver.environment where secret.count >= 4 &&
-      ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH"].contains(where: {
-        name.uppercased().contains($0)
-      }) {
-      message = message.replacingOccurrences(of: secret, with: "[REDACTED]")
-    }
-    if let expression = try? NSRegularExpression(
-      pattern: #"(?i)(bearer\s+)[^\s]+|sk-[A-Za-z0-9_-]{8,}|(OPENAI_API_KEY[=:]\s*)[^\s,;]+"#) {
-      message = expression.stringByReplacingMatches(
-        in: message, range: NSRange(message.startIndex..., in: message), withTemplate: "$1$2[REDACTED]")
-    }
-    let singleLine = message.unicodeScalars.map { CharacterSet.newlines.contains($0) ? " " : String($0) }.joined()
-    return String(singleLine.suffix(500)).trimmingCharacters(in: .whitespacesAndNewlines)
+    return redacted(message)
+  }
+
+  func redacted(_ message: String) -> String {
+    MediaPipelineRedaction.diagnostic(message, environment: resolver.environment)
   }
 }
 

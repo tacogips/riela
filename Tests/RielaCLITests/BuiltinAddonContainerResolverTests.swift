@@ -7,47 +7,6 @@ import XCTest
 @testable import RielaCLI
 
 final class BuiltinAddonContainerResolverTests: XCTestCase {
-  func testExplicitContainerMapsWorkspacePathsAtWorkerBoundary() async throws {
-    let root = try makeRielaCLITestTemporaryDirectory("container-workspace-paths")
-    defer { try? FileManager.default.removeItem(at: root) }
-    let runner = BuiltinContainerRecordingRunner(output: .init(
-      provider: "fixture", model: "riela/video-frames", promptText: "", completionPassed: true,
-      payload: ["videoFrames": .object(["outputDir": .string("/workspace/frames"), "frames": .array([
-        .object(["path": .string("/workspace/frames/frame.jpg")])
-      ])])]))
-    let resolver = BuiltinAddonContainerResolver(
-      transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
-      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
-      workingDirectory: root, runner: runner)
-    let input = WorkflowAddonExecutionInput(
-      workflowId: "video", stepId: "frames", nodeId: "frames",
-      addon: .init(name: "riela/video-frames", version: "1",
-        config: ["options": .object(["path": .string(root.appendingPathComponent("video.mp4").path)])],
-        container: .init(runtime: .docker)),
-      resolvedInputPayload: ["audioSegments": .object(["sourcePath": .string(root.appendingPathComponent("video.mp4").path)])])
-
-    let output = try await resolver.execute(input, context: .init())
-    let requests = await runner.requests
-    let request = try XCTUnwrap(requests.first)
-    guard case .object(let options)? = request.input?.addon.config?["options"] else {
-      return XCTFail("worker request should retain options object")
-    }
-    XCTAssertEqual(options["path"], .string("/workspace/video.mp4"))
-    guard case .object(let audioSegments)? = request.input?.resolvedInputPayload["audioSegments"] else {
-      return XCTFail("worker request should retain upstream audio output")
-    }
-    XCTAssertEqual(audioSegments["sourcePath"], .string("/workspace/video.mp4"))
-    guard case let .object(videoFrames)? = output.payload["videoFrames"] else {
-      return XCTFail("container output should retain its videoFrames object")
-    }
-    guard case let .array(frames)? = videoFrames["frames"],
-          case let .object(frame)? = frames.first else {
-      return XCTFail("container frame output should be mapped back to the host workspace")
-    }
-    XCTAssertEqual(videoFrames["outputDir"], JSONValue.string(root.appendingPathComponent("frames").path))
-    XCTAssertEqual(frame["path"], JSONValue.string(root.appendingPathComponent("frames/frame.jpg").path))
-  }
-
   func testMediaAddonsSelectVideoImageWhenBaseImageIsSelected() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("video-addon-image-selection")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -64,9 +23,6 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
       let configurations = await runner.configurations
       let arguments = try XCTUnwrap(configurations.first?.arguments)
       XCTAssertTrue(arguments.contains("riela-video-addons:local"), "\(name) should select the video image")
-      XCTAssertTrue(arguments.contains("-w"))
-      XCTAssertTrue(arguments.contains(BuiltinAddonContainerWorkspacePaths.guestWorkspaceDirectory))
-      XCTAssertTrue(arguments.contains("\(root.path):/workspace"))
     }
 
     let explicitImages = ["custom:media"]

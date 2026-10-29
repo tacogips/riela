@@ -59,7 +59,6 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     guard sandbox == nil || input.addon.container == nil else {
       throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")
     }
-    let usesWorkspaceTranslation = input.addon.container != nil
     guard sandbox != nil || input.addon.container != nil else { return try await primary.execute(input, context: context) }
     let input = try prepareAppleGatewayContainerOperation(input, workingDirectory: workingDirectory)
     if input.addon.name == "riela/private-workflow" {
@@ -137,8 +136,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     guard childEnvironment["HOME"] == nil, childEnvironment["RIELA_ADDON_STATE_DIR"] == nil else {
       throw AdapterExecutionError(.policyBlocked, "container HOME and RIELA_ADDON_STATE_DIR are runtime-owned")
     }
-    var workerInput = usesWorkspaceTranslation
-      ? BuiltinAddonContainerWorkspacePaths.mapInput(input, from: workingDirectory) : input
+    var workerInput = input
     workerInput.addon.container = nil
     workerInput.addon.sandbox = nil
     if BuiltinAppleGatewayAdminAddon(rawValue: input.addon.name) == .fileDownload,
@@ -184,15 +182,13 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     guard let output = try reply.validatedOutput(for: .execute) else {
       throw AdapterExecutionError(.invalidOutput, "container worker returned no execution output")
     }
-    let hostOutput = usesWorkspaceTranslation
-      ? BuiltinAddonContainerWorkspacePaths.mapOutput(output, to: workingDirectory) : output
-    if let token = hostOutput.runtimeFinalizationToken {
+    if let token = output.runtimeFinalizationToken {
       try transportStore.record(invocation, token: token)
       if let workflowId = input.executionIdentity?.workflowExecutionId {
         try transportStore.record(invocation, workflowExecutionId: workflowId)
       }
     }
-    return hostOutput
+    return output
   }
 
   func acknowledgeAcceptedFinalization(_ token: WorkflowAddonFinalizationToken) async throws {
@@ -346,8 +342,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     childEnvironment["RIELA_ADDON_STATE_DIR"] = stateRoot.path
     let arguments = driver.runArguments(image: invocation.settings.image, options: .init(
       environment: childEnvironment, mounts: mounts, entrypoint: WorkflowAddonContainerExecution.workerEntrypoint,
-      workingDirectory: BuiltinAddonContainerWorkspacePaths.guestWorkspaceDirectory,
-      networkAllowed: invocation.settings.networkPolicy == .egressAllowed,
+      workingDirectory: workingDirectory.path, networkAllowed: invocation.settings.networkPolicy == .egressAllowed,
       readOnlyRootFilesystem: true))
     let executable = driver.executable
     return LocalProcessConfiguration(
@@ -411,21 +406,18 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
   }
 
   private func resolvedMounts(settings: WorkflowAddonContainerExecution, driver: any ContainerRuntimeDriver) throws -> [ContainerRuntimeMount] {
-    for target in settings.mounts.map(\.target) {
+    for target in [workingDirectory.path] + settings.mounts.map(\.target) {
       let path = URL(fileURLWithPath: target).standardizedFileURL.path
-      let reservedDirectories = [Self.guestStateDirectory, BuiltinAddonContainerWorkspacePaths.guestWorkspaceDirectory]
-      guard path != "/", !reservedDirectories.contains(where: { reserved in
-        path == reserved || path.hasPrefix(reserved + "/") || reserved.hasPrefix(path + "/")
-      }) else {
-        throw AdapterExecutionError(.policyBlocked, "container mount overlaps a reserved worker directory")
+      guard path != Self.guestStateDirectory, !path.hasPrefix(Self.guestStateDirectory + "/"),
+            !Self.guestStateDirectory.hasPrefix(path.hasSuffix("/") ? path : path + "/") else {
+        throw AdapterExecutionError(.policyBlocked, "container mount overlaps the reserved worker state directory")
       }
     }
     guard workingDirectory.path != "/", !workingDirectory.path.contains(","), !workingDirectory.path.contains(":") else {
       throw AdapterExecutionError(.policyBlocked, "invalid container workspace mount")
     }
-    let workspaceTarget = BuiltinAddonContainerWorkspacePaths.guestWorkspaceDirectory
-    var mounts = [ContainerRuntimeMount(source: workingDirectory.path, target: workspaceTarget, readOnly: false)]
-    var targets = Set([workspaceTarget])
+    var mounts = [ContainerRuntimeMount(source: workingDirectory.path, target: workingDirectory.path, readOnly: false)]
+    var targets = Set([workingDirectory.path])
     for mount in settings.mounts {
       let sourceURL = mount.source.hasPrefix("/") ? URL(fileURLWithPath: mount.source) : workingDirectory.appendingPathComponent(mount.source)
       let source = sourceURL.resolvingSymlinksInPath().standardizedFileURL.path

@@ -36,6 +36,48 @@ final class MediaPipelineAddonTests: XCTestCase {
     }
   }
 
+  func testMediaPipelineRedactionRemovesCredentials() {
+    let environment = ["OPENAI_API_KEY": "env-secret-value", "PATH": "/usr/bin"]
+    let redact = { MediaPipelineRedaction.redact($0, environment: environment) }
+    XCTAssertEqual(
+      redact("GET https://user:pass@example.com/v1/x?sig=abc&token=def#frag failed"),
+      "GET https://example.com/v1/x failed")
+    XCTAssertEqual(redact("Authorization: Basic dXNlcjpwYXNz"), "Authorization: [REDACTED]")
+    XCTAssertEqual(redact("header Basic dXNlcjpwYXNz end"), "header Basic [REDACTED] end")
+    XCTAssertEqual(redact("using Bearer abc.def-123"), "using Bearer [REDACTED]")
+    XCTAssertEqual(redact("key sk-proj_ABCDEFGH1234 rejected"), "key [REDACTED] rejected")
+    XCTAssertEqual(redact("OPENAI_API_KEY=plain123 set"), "OPENAI_API_KEY=[REDACTED] set")
+    XCTAssertEqual(redact("sent env-secret-value upstream"), "sent [REDACTED] upstream")
+    XCTAssertEqual(redact("ffmpeg: /usr/bin/ffmpeg exited"), "ffmpeg: /usr/bin/ffmpeg exited")
+  }
+
+  func testMediaPipelineStageErrorIsRedacted() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "riela-media-stage-redaction-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let input = WorkflowAddonExecutionInput(
+      workflowId: "media-redaction", stepId: "stt", nodeId: "stt",
+      addon: .init(name: "riela/speech-to-text", version: "1", config: [
+        "options": .object(["path": .string("a.mp3")])
+      ]), variables: [:])
+    let resolver = BuiltinWorkflowAddonResolver(
+      environment: ["OPENAI_API_KEY": "secret-api-token"], workingDirectory: root)
+    let pipeline = MediaPipelineContext(resolver: resolver, stage: "speech-to-text")
+    do {
+      _ = try await pipeline.finish(input, .init()) { _, _ in
+        throw MediaPipelineError.stage(
+          "stt", "POST https://u:p@api.example.com/v1/audio?key=q secret-api-token Bearer zzz")
+      }
+      XCTFail("stage errors should be surfaced")
+    } catch let error as AdapterExecutionError {
+      XCTAssertTrue(error.message.contains("https://api.example.com/v1/audio"), error.message)
+      for leaked in ["u:p@", "key=q", "secret-api-token", "zzz"] {
+        XCTAssertFalse(error.message.contains(leaked), error.message)
+      }
+    }
+  }
+
   func testMediaDownloadWritesOutputAndCachesByOptions() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "riela-media-download-\(UUID().uuidString)", isDirectory: true)

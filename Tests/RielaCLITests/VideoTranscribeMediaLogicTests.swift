@@ -269,6 +269,48 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
     XCTAssertNotEqual(try Data(contentsOf: URL(fileURLWithPath: firstPath)), try Data(contentsOf: URL(fileURLWithPath: secondPath)))
     XCTAssertEqual(carriedFrame["carried"], .bool(true))
   }
+
+  func testAudioOnlySkipsFramesAndVideoWithoutAudioFailsClearly() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/audio-only", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    guard let ffmpegPath = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+      throw XCTSkip("ffmpeg is not installed")
+    }
+    let ffprobePath = URL(fileURLWithPath: ffmpegPath).deletingLastPathComponent().appendingPathComponent("ffprobe").path
+    guard FileManager.default.isExecutableFile(atPath: ffprobePath) else { throw XCTSkip("ffprobe is not installed") }
+    let runner = FoundationLocalProcessRunner()
+    let audioInput = root.appendingPathComponent("audio.mp3")
+    let audioGenerated = try await runner.run(configuration: .init(executableURL: URL(fileURLWithPath: ffmpegPath), arguments: [
+      "-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=3", "-c:a", "libmp3lame", audioInput.path
+    ], workingDirectoryURL: root), stdin: "", deadline: nil)
+    XCTAssertEqual(audioGenerated.terminationStatus, 0, audioGenerated.stderr)
+    let audioOptions = try VideoTranscribeOptions([
+      "path": .string(audioInput.path), "outputDir": .string(root.appendingPathComponent("audio-output").path),
+      "ffmpegPath": .string(ffmpegPath), "ffprobePath": .string(ffprobePath), "stt": .object(["maxAttempts": .integer(1)])
+    ], workingDirectory: root)
+    let service = VideoTranscribeService(runner: runner, workingDirectory: root, artifactRoot: root,
+      http: { _ in .init(status: 200, body: Data("{\"text\":\"audio only\"}".utf8), retryAfter: nil) })
+    let audioResult = try await service.collect(options: audioOptions, apiKey: "test-secret", baseURL: "https://example.test", deadline: nil)
+    guard case let .object(audioVideo)? = audioResult["videoTranscribe"], case let .object(frames)? = audioVideo["frames"] else {
+      return XCTFail("audio-only media should return frame metadata")
+    }
+    XCTAssertEqual(frames["sampled"], .integer(0))
+    XCTAssertEqual(frames["kept"], .integer(0))
+
+    let videoInput = root.appendingPathComponent("video.mp4")
+    let videoGenerated = try await runner.run(configuration: .init(executableURL: URL(fileURLWithPath: ffmpegPath), arguments: [
+      "-y", "-f", "lavfi", "-i", "color=black:size=64x64:rate=1:duration=3", "-c:v", "mpeg4", "-an", videoInput.path
+    ], workingDirectoryURL: root), stdin: "", deadline: nil)
+    XCTAssertEqual(videoGenerated.terminationStatus, 0, videoGenerated.stderr)
+    let videoOptions = try VideoTranscribeOptions([
+      "path": .string(videoInput.path), "outputDir": .string(root.appendingPathComponent("video-output").path),
+      "ffmpegPath": .string(ffmpegPath), "ffprobePath": .string(ffprobePath)
+    ], workingDirectory: root)
+    do {
+      _ = try await service.collect(options: videoOptions, apiKey: "unused", baseURL: "https://example.test", deadline: nil)
+      XCTFail("video without an audio stream should fail")
+    } catch { XCTAssertTrue(String(describing: error).contains("video has no audio stream")) }
+  }
 }
 
 private actor VideoTranscribeHTTPStub {

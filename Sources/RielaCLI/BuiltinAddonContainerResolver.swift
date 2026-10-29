@@ -71,7 +71,9 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     }
     var settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
     let selectedContainer = sandbox?.container ?? input.addon.container
-    if let defaultImage = Self.addonDefaultImages[input.addon.name], selectedContainer?.imageWasSpecified != true {
+    if let defaultImage = Self.addonDefaultImages[input.addon.name],
+       selectedContainer?.image == nil || selectedContainer?.image == WorkflowAddonContainerExecution.defaultImage,
+       sandbox == nil || sandbox?.backend == .container {
       settings.image = defaultImage
       if sandbox != nil {
         var sandboxContainer = sandbox?.container ?? .init()

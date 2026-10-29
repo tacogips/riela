@@ -7,7 +7,7 @@ import XCTest
 @testable import RielaCLI
 
 final class BuiltinAddonContainerResolverTests: XCTestCase {
-  func testMediaAddonsSelectVideoImageOnlyWhenImageIsOmitted() async throws {
+  func testMediaAddonsSelectVideoImageWhenBaseImageIsSelected() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("video-addon-image-selection")
     defer { try? FileManager.default.removeItem(at: root) }
     let addonNames = ["riela/media-download", "riela/audio-segments", "riela/video-frames", "riela/speech-to-text",
@@ -25,7 +25,7 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
       XCTAssertTrue(arguments.contains("riela-video-addons:local"), "\(name) should select the video image")
     }
 
-    let explicitImages = ["custom:media", WorkflowAddonContainerExecution.defaultImage]
+    let explicitImages = ["custom:media"]
     for (index, image) in explicitImages.enumerated() {
       let runner = BuiltinContainerRecordingRunner(output: testOutput())
       let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
@@ -38,14 +38,38 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
       XCTAssertTrue(arguments.contains(image), "an explicit image must take precedence")
     }
 
-    let omitted = try JSONDecoder().decode(WorkflowAddonContainerExecution.self, from: Data("{}".utf8))
-    let explicitDefault = try JSONDecoder().decode(WorkflowAddonContainerExecution.self,
-      from: Data(#"{"image":"riela-builtin-addons:local"}"#.utf8))
-    XCTAssertFalse(omitted.imageWasSpecified)
-    XCTAssertTrue(explicitDefault.imageWasSpecified)
-    var changedAfterInitialization = WorkflowAddonContainerExecution()
-    changedAfterInitialization.image = WorkflowAddonContainerExecution.defaultImage
-    XCTAssertTrue(changedAfterInitialization.imageWasSpecified)
+    let explicitDefaultRunner = BuiltinContainerRecordingRunner(output: testOutput())
+    let explicitDefaultResolver = BuiltinAddonContainerResolver(
+      transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
+      workingDirectory: root, runner: explicitDefaultRunner)
+    _ = try await explicitDefaultResolver.execute(.init(workflowId: "video", stepId: "explicit-default", nodeId: "explicit-default",
+      addon: .init(name: "riela/video-frames", version: "1",
+        container: .init(image: WorkflowAddonContainerExecution.defaultImage))), context: .init())
+    let explicitDefaultConfigurations = await explicitDefaultRunner.configurations
+    XCTAssertTrue(try XCTUnwrap(explicitDefaultConfigurations.first?.arguments).contains("riela-video-addons:local"),
+      "the base default image cannot run media add-ons")
+  }
+
+  func testNativeSandboxDoesNotReceiveContainerImageMapping() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("video-addon-native-sandbox")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let primary = ContainerTestNativeResolver()
+    let runner = BuiltinContainerRecordingRunner(output: testOutput())
+    let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: primary, environment: ["RIELA_SANDBOX_WORKER_EXECUTABLE": worker], workingDirectory: root, runner: runner)
+    let input = WorkflowAddonExecutionInput(workflowId: "video", stepId: "native", nodeId: "native",
+      addon: .init(name: "riela/video-frames", version: "1", sandbox: .init(backend: .auto)))
+    do {
+      _ = try await resolver.execute(input, context: .init())
+      let configurations = await runner.configurations
+      XCTAssertEqual(configurations.count, 1, "native sandbox execution should reach the worker")
+    } catch let error as AdapterExecutionError {
+      XCTAssertNotEqual(error.message, "sandbox.container requires backend=container")
+      throw error
+    }
   }
 
   func testSandboxMediaAddonSelectsVideoImageAndNonMediaAddonKeepsBaseImage() async throws {

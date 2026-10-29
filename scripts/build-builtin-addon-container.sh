@@ -6,6 +6,9 @@ runtime=${1:-${RIELA_CONTAINER_RUNTIME:-auto}}
 image=${2:-riela-builtin-addons:local}
 if [ "$#" -gt 2 ]; then shift 2; else set --; fi
 riela_revision=$(git -C "$repo_root" rev-parse HEAD)
+if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then
+  riela_revision="$riela_revision-dirty"
+fi
 riela_version=$(tr -d '[:space:]' < "$repo_root/VERSION")
 
 if [ "$runtime" = auto ]; then

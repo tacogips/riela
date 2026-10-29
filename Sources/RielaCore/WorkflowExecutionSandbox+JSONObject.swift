@@ -29,7 +29,7 @@ extension WorkflowExecutionSandbox {
           "source": .string($0.source), "target": .string($0.target), "readOnly": .bool($0.readOnly)
         ]) })
       ]
-      if container.imageWasSpecified { containerObject["image"] = .string(container.image) }
+      containerObject["image"] = .string(container.image)
       object["container"] = .object(containerObject)
     }
     return object

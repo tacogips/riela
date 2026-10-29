@@ -398,6 +398,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   /// machine's real Notes, Mail, Calendars, and Reminders.
   var appleGatewayRunner: AppleGatewayRunner?
   var containerProcessRunner: any LocalProcessRunning
+  var mediaPipelineHTTP: MediaPipelineHTTP
   var definitionRunContext: BuiltinDefinitionRunContext?
   var artifactRootURL: URL?
 
@@ -422,6 +423,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil,
     appleGatewayRunner: AppleGatewayRunner? = nil,
     containerProcessRunner: any LocalProcessRunning = FoundationLocalProcessRunner(),
+    mediaPipelineHTTP: @escaping MediaPipelineHTTP = mediaPipelineNativeHTTP,
     definitionRunContext: BuiltinDefinitionRunContext? = nil,
     artifactRootURL: URL? = nil
   ) {
@@ -443,6 +445,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.googleDocumentsGatewayRunner = googleDocumentsGatewayRunner
     self.appleGatewayRunner = appleGatewayRunner
     self.containerProcessRunner = containerProcessRunner
+    self.mediaPipelineHTTP = mediaPipelineHTTP
     self.definitionRunContext = definitionRunContext
     self.artifactRootURL = artifactRootURL?.standardizedFileURL
   }

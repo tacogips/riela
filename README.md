@@ -31,8 +31,9 @@ riela workflow run <workflow> --variables '{"task": "..."}'
 - **Connect your tools.** Built-in add-ons for Gmail, Google Docs / Sheets /
   Analytics, Wrike, X, YouTube, Apple Notes and notifications, document-to-Markdown
   conversion, key-value state, workflow memory and kaiba long-term notes.
-- **Process video as grounded batches.** `riela/video-transcribe` combines
-  transcripts with batch-scoped screenshots for downstream fan-out workflows.
+- **Compose media workflows.** `riela/media-download`, `riela/audio-segments`,
+  `riela/video-frames` and `riela/speech-to-text` split fetching, extraction,
+  frame sampling and transcription into reusable stages.
 - **Edit, share and scale.** Edit workflows as graphs in the app, publish and
   install them as packages, run recurring routines, and spread steps across
   distributed workers.

@@ -80,19 +80,23 @@ Provider response text and credentials are excluded from failure summaries.
 Do not forward unrelated runtime input/history through context. Preserve
 source/account/query/window identity and pending versions during migration.
 
-## Media: `riela/video-transcribe`, version `1`
+## Composable media pipeline, version `1`
 
-This addon accepts exactly one `options.url` (HTTP(S), including YouTube) or
-`options.path` (local media). It uses yt-dlp for URL metadata/download and
-ffmpeg/ffprobe for audio, silence boundaries and sampled frames. `addon.env`
-allows `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`; credentials never enter
-the output or diagnostics. Frame samples use a 256-bit difference hash and are
-assigned to the same half-open time batches as the transcript chunks.
+The media workflow is four builtins: `riela/media-download` fetches bounded,
+non-live media with yt-dlp; `riela/audio-segments` extracts mono 16 kHz MP3 and
+chooses silence-aware boundaries; `riela/video-frames` samples and deduplicates
+JPEG frames and can attach them to supplied half-open segments; and
+`riela/speech-to-text` transcribes one audio file with OpenAI. Each addon uses
+only `options` and `context` in its rendered config. Download accepts no
+credentials; speech accepts `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`.
 
-Each batch contains `transcript`, `frames` and `imagePaths`. Frame objects use
-`kind: image` and `mediaType: image/jpeg` so a fan-out agent receives only that
-batch's images. The output intentionally has no top-level frame collection.
-Completed manifests carry an effective-options fingerprint for cache hits.
+Frame sampling uses a 256-bit difference hash. The flat `frames` output has no
+image forwarding metadata. When segment ranges are provided, each returned
+segment adds image frame objects (`kind: image`, `mediaType: image/jpeg`) and
+`imagePaths`, which agent adapters forward for that fanout item. Each stage has
+its own options fingerprinted manifest and verifies referenced files before a
+cache hit. Keep shared stage paths under the workflow working directory when
+running the stages in containers.
 
 ## Gmail: `riela/gmail-collect`, version `1`
 

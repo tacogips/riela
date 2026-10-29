@@ -19,7 +19,10 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
     "riela/time-signal",
     "riela/gmail-gateway-read",
     "riela/x-gateway-read",
-    "riela/video-transcribe"
+    "riela/media-download",
+    "riela/audio-segments",
+    "riela/video-frames",
+    "riela/speech-to-text"
   ]
 
   func testIssue116BuiltinsHaveVersionOneDescriptors() {

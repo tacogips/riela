@@ -9,4 +9,5 @@
 - [x] Run `swift build`, focused suites, and SwiftLint.
 - [ ] Run the sample URL workflow and prove the second-run cache hit; kinko is
   currently locked, so the authorized API key cannot be injected.
-- [ ] Commit and push `feat/video-transcribe`.
+- [x] Commit and push `feat/video-transcribe` (implementation commit
+  `6adc239`).

@@ -442,9 +442,10 @@ extension MediaPipelineAddonTests {
     let port = try await server.startForTesting()
     addTeardownBlock { await server.stop() }
     let baseURL = "http://127.0.0.1:\(port)"
+    let artifactRoot = root.appendingPathComponent("artifact-store", isDirectory: true)
     let resolver = BuiltinWorkflowAddonResolver(
       environment: ["OPENAI_API_KEY": "fake-key", "OPENAI_BASE_URL": baseURL],
-      workingDirectory: root, containerProcessRunner: runner)
+      workingDirectory: root, containerProcessRunner: runner, artifactRootURL: artifactRoot)
     let audioOutput = try await resolver.execute(
       WorkflowAddonExecutionInput(
         workflowId: "media-compose", stepId: "audio", nodeId: "audio",
@@ -462,10 +463,10 @@ extension MediaPipelineAddonTests {
     XCTAssertEqual(audioFields?["sourcePath"], .string(clip.standardizedFileURL.path))
     XCTAssertTrue(
       audioFields?["outputDir"]?.stringValue?.hasPrefix(
-        root.appendingPathComponent(".riela/artifacts/audio-segments/").path) == true)
+        artifactRoot.appendingPathComponent("audio-segments/").path) == true)
     XCTAssertTrue(
       audioFields?["outputDir"]?.stringValue?.hasPrefix(
-        root.appendingPathComponent(".riela/artifacts/audio-segments/").path) == true)
+        artifactRoot.appendingPathComponent("audio-segments/").path) == true)
     let cachedAudio = try await resolver.execute(
       WorkflowAddonExecutionInput(
         workflowId: "media-compose", stepId: "audio", nodeId: "audio",
@@ -484,6 +485,10 @@ extension MediaPipelineAddonTests {
     else {
       return XCTFail("expected three audio segments")
     }
+    let frameOutputDirectory = root.appendingPathComponent(".riela/artifacts/frames", isDirectory: true)
+    try FileManager.default.createDirectory(at: frameOutputDirectory, withIntermediateDirectories: true)
+    let staleFrame = frameOutputDirectory.appendingPathComponent("frame_9999.jpg")
+    try Data("stale".utf8).write(to: staleFrame)
     let framesOutput = try await resolver.execute(
       WorkflowAddonExecutionInput(
         workflowId: "media-compose", stepId: "frames", nodeId: "frames",
@@ -497,6 +502,7 @@ extension MediaPipelineAddonTests {
           ]), variables: [:], resolvedInputPayload: [
             "audioSegments": .object(try XCTUnwrap(audioFields))
           ]), context: .init())
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staleFrame.path))
     guard let videoFields = videoFramesFields(framesOutput),
       case .array(let flatFrames)? = videoFields["frames"],
       case .array(let attachedSegments)? = videoFields["segments"], attachedSegments.count == 3
@@ -582,6 +588,31 @@ private func framePath(_ segment: JSONValue) -> String? {
 }
 
 extension MediaPipelineAddonTests {
+  func testMediaStageOutputDirectoryCannotBeWorkingRootOrHome() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "riela-media-output-safety-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let media = root.appendingPathComponent("input.mp4")
+    try Data("input".utf8).write(to: media)
+    let resolver = BuiltinWorkflowAddonResolver(workingDirectory: root)
+    for outputDirectory in [".", NSHomeDirectory()] {
+      do {
+        _ = try await resolver.execute(
+          WorkflowAddonExecutionInput(
+            workflowId: "media-output-safety", stepId: "frames", nodeId: "frames",
+            addon: .init(name: "riela/video-frames", version: "1", config: [
+              "options": .object([
+                "path": .string(media.path), "outputDir": .string(outputDirectory)
+              ])
+            ]), variables: [:]), context: .init())
+        XCTFail("unsafe outputDir should be rejected: \(outputDirectory)")
+      } catch let error as AdapterExecutionError {
+        XCTAssertTrue(error.message.contains("outputDir must not be"), error.message)
+      }
+    }
+  }
+
   func testVideoFramesHandlesNTSCEndOfStreamSamples() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "riela-media-ntsc-\(UUID().uuidString)", isDirectory: true)

@@ -24,6 +24,22 @@ private struct MediaPipelineContext: Sendable {
       ? URL(fileURLWithPath: value) : resolver.workingDirectory.appendingPathComponent(value))
       .standardizedFileURL
   }
+  func outputDirectory(_ value: String?, stage: String) throws -> URL? {
+    guard let value else { return nil }
+    let output = path(value).resolvingSymlinksInPath().standardizedFileURL
+    let workingRoot = resolver.workingDirectory.resolvingSymlinksInPath().standardizedFileURL
+    let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+      .resolvingSymlinksInPath().standardizedFileURL
+    guard output != workingRoot, output != home else {
+      throw MediaPipelineStageError.stage(
+        stage, "outputDir must not be the working directory root or the user's home directory")
+    }
+    return output
+  }
+  var artifactDirectory: URL {
+    (resolver.artifactRootURL ?? resolver.workingDirectory.appendingPathComponent(".riela/artifacts"))
+      .appendingPathComponent("audio-segments", isDirectory: true)
+  }
   func number(
     _ values: JSONObject, _ name: String, _ fallback: Double, _ range: ClosedRange<Double>
   ) throws -> Double {
@@ -109,7 +125,7 @@ private struct MediaPipelineContext: Sendable {
     switch value {
     case .object(let object):
       return object.allSatisfy { key, child in
-        if ["path", "audioPath"].contains(key), case .string(let path) = child {
+        if ["path", "audioPath", "sourcePath"].contains(key), case .string(let path) = child {
           return FileManager.default.fileExists(atPath: path)
         }
         if key == "imagePaths", case .array(let paths) = child {
@@ -202,7 +218,7 @@ extension BuiltinWorkflowAddonResolver {
         "format": .string(format)
       ]))
     let outputDir =
-      try c.string(values, "outputDir").map(c.path)
+      try c.outputDirectory(c.string(values, "outputDir"), stage: "media-download")
       ?? (self.artifactRootURL ?? workingDirectory.appendingPathComponent(".riela/artifacts"))
       .appendingPathComponent("media-download/\(identity)")
     if let cached = c.cached(
@@ -237,9 +253,9 @@ extension BuiltinWorkflowAddonResolver {
     }
     let id = info["id"] as? String
     let title = info["title"] as? String ?? "Video"
-    for file in (try? FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)) ?? []
+    for file in try FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)
       where file.lastPathComponent.hasPrefix("video.") {
-      try? FileManager.default.removeItem(at: file)
+      try FileManager.default.removeItem(at: file)
     }
     let ffmpeg = try service.executable(ffmpegPath, name: "ffmpeg", stage: "download")
     let template = outputDir.appendingPathComponent("video.%(ext)s").path
@@ -287,10 +303,8 @@ extension BuiltinWorkflowAddonResolver {
     let inputFileSize = Int64((try? media.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
     let inputIdentity = String(
       try c.fingerprint(.object(["path": .string(media.path), "size": .integer(inputFileSize)])).prefix(24))
-    let out =
-      try c.string(values, "outputDir").map(c.path)
-      ?? workingDirectory.appendingPathComponent(".riela/artifacts")
-      .appendingPathComponent("audio-segments/\(inputIdentity)")
+    let out = try c.outputDirectory(c.string(values, "outputDir"), stage: "audio-segments")
+      ?? c.artifactDirectory.appendingPathComponent(inputIdentity, isDirectory: true)
     let fp = try c.fingerprint(
       .object([
         "path": .string(media.path),
@@ -383,10 +397,13 @@ extension BuiltinWorkflowAddonResolver {
     let threshold = try c.number(values, "dedupeThreshold", 0.15, 0...1)
     let width = Int(try c.number(values, "width", 960, 2...7680))
     let carry = try c.bool(values, "carryForward", true)
-    let out =
-      try c.string(values, "outputDir").map(c.path)
-      ?? media.deletingLastPathComponent().appendingPathComponent("frames", isDirectory: true)
     let attrs = try media.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+    let inputIdentity = String(try c.fingerprint(.object([
+      "path": .string(media.path), "size": .integer(Int64(attrs.fileSize ?? 0))
+    ])).prefix(24))
+    let out = try c.outputDirectory(c.string(values, "outputDir"), stage: "video-frames")
+      ?? (self.artifactRootURL ?? workingDirectory.appendingPathComponent(".riela/artifacts"))
+        .appendingPathComponent("video-frames/\(inputIdentity)", isDirectory: true)
     var fingerprintOptions: JSONObject = [
       "path": .string(media.path), "size": .integer(Int64(attrs.fileSize ?? 0)),
       "mtime": .string((attrs.contentModificationDate ?? .distantPast).description),
@@ -405,6 +422,10 @@ extension BuiltinWorkflowAddonResolver {
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
     let manifest = "video-frames-manifest.json"
     try? FileManager.default.removeItem(at: out.appendingPathComponent(manifest))
+    for file in try FileManager.default.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)
+      where file.lastPathComponent.hasPrefix("frame_") && file.pathExtension == "jpg" {
+      try FileManager.default.removeItem(at: file)
+    }
     let frameOptions = MediaFrameExtractionOptions(
       intervalSeconds: interval, dedupeThreshold: threshold, width: width)
     let ffmpeg = try service.executable(

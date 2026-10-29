@@ -80,6 +80,20 @@ Provider response text and credentials are excluded from failure summaries.
 Do not forward unrelated runtime input/history through context. Preserve
 source/account/query/window identity and pending versions during migration.
 
+## Media: `riela/video-transcribe`, version `1`
+
+This addon accepts exactly one `options.url` (HTTP(S), including YouTube) or
+`options.path` (local media). It uses yt-dlp for URL metadata/download and
+ffmpeg/ffprobe for audio, silence boundaries and sampled frames. `addon.env`
+allows `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`; credentials never enter
+the output or diagnostics. Frame samples use a 256-bit difference hash and are
+assigned to the same half-open time batches as the transcript chunks.
+
+Each batch contains `transcript`, `frames` and `imagePaths`. Frame objects use
+`kind: image` and `mediaType: image/jpeg` so a fan-out agent receives only that
+batch's images. The output intentionally has no top-level frame collection.
+Completed manifests carry an effective-options fingerprint for cache hits.
+
 ## Gmail: `riela/gmail-collect`, version `1`
 
 ```json

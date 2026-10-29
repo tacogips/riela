@@ -18,7 +18,8 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
     "riela/cursor-sdk-worker",
     "riela/time-signal",
     "riela/gmail-gateway-read",
-    "riela/x-gateway-read"
+    "riela/x-gateway-read",
+    "riela/video-transcribe"
   ]
 
   func testIssue116BuiltinsHaveVersionOneDescriptors() {

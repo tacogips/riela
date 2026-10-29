@@ -144,6 +144,27 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
     XCTAssertEqual(requests.last?.timeoutInterval, 9)
   }
 
+  func testMultipartSTTAcceptsExactDecimalTwentyFiveMegabyteLimit() async throws {
+    let root = try makeTestDirectory("stt-size-limit")
+    let audio = root.appendingPathComponent("audio.mp3")
+    XCTAssertTrue(FileManager.default.createFile(atPath: audio.path, contents: Data()))
+    let file = try FileHandle(forWritingTo: audio)
+    try file.truncate(atOffset: 25_000_000)
+    try file.close()
+    let service = MediaPipelineService(
+      runner: FoundationLocalProcessRunner(), workingDirectory: root,
+      http: { _ in
+        .init(status: 200, body: Data("{\"text\":\"recognized speech\"}".utf8), retryAfter: nil)
+      })
+    let options = MediaPipelineSTTOptions(
+      model: "gpt-4o-transcribe", language: nil, prompt: nil, maxAttempts: 1)
+
+    let transcript = try await service.transcribeChunk(
+      audio, options: options, apiKey: "secret-value", baseURL: "https://api.example.test",
+      deadline: nil, timeoutSeconds: 9)
+    XCTAssertEqual(transcript, "recognized speech")
+  }
+
   func testProcessTimeoutIsPreservedAndNetworkRetryStopsAtMaximumAttempts() async throws {
     let root = try makeTestDirectory("timeout-retry")
     let timeoutService = MediaPipelineService(

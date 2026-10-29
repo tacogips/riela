@@ -55,7 +55,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
   }
 
   private func executeUnprocessed(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    let sandbox = input.addon.sandbox
+    var sandbox = input.addon.sandbox
     guard sandbox == nil || input.addon.container == nil else {
       throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")
     }
@@ -70,9 +70,14 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       throw AdapterExecutionError(.policyBlocked, "ephemeral HOME and credential files currently require a sandboxed agent node")
     }
     var settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
-    if let defaultImage = Self.addonDefaultImages[input.addon.name], input.addon.container != nil,
-       input.addon.container?.imageWasSpecified != true {
+    let selectedContainer = sandbox?.container ?? input.addon.container
+    if let defaultImage = Self.addonDefaultImages[input.addon.name], selectedContainer?.imageWasSpecified != true {
       settings.image = defaultImage
+      if sandbox != nil {
+        var sandboxContainer = sandbox?.container ?? .init()
+        sandboxContainer.image = defaultImage
+        sandbox?.container = sandboxContainer
+      }
     }
     try settings.validate()
     guard input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") else {

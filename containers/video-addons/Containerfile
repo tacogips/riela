@@ -7,27 +7,33 @@ ARG DENO_VERSION=2.9.8
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && \
     rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
-    case "$TARGETARCH" in \
-      amd64) yt_asset=yt-dlp_linux; yt_sha=767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795; \
+    target_arch="$TARGETARCH"; \
+    if [ -z "$target_arch" ]; then \
+      case "$(dpkg --print-architecture)" in amd64) target_arch=amd64 ;; arm64) target_arch=arm64 ;; *) echo "unsupported dpkg architecture" >&2; exit 1 ;; esac; \
+    fi; \
+    case "$target_arch" in \
+      amd64) yt_asset=yt-dlp_linux.zip; yt_binary=yt-dlp_linux; yt_sha=f34053415136e55073dd64ba5326d161ecc23ce0e98c081d8752867b37809450; \
         deno_asset=deno-x86_64-unknown-linux-gnu.zip; deno_sha=e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609 ;; \
-      arm64) yt_asset=yt-dlp_linux_aarch64; yt_sha=e87e9533e89fe5889abaa21f5114dfe7756d6aa6219b83551add04d48b18e483; \
+      arm64) yt_asset=yt-dlp_linux_aarch64.zip; yt_binary=yt-dlp_linux_aarch64; yt_sha=74708e707e8fa8177c8347e58152337edf320149cd7b225defd453f7cde47822; \
         deno_asset=deno-aarch64-unknown-linux-gnu.zip; deno_sha=d49596c20b9788cf8f5d8ddf644103d4bde56ed239753f0bdb92ba9361d51905 ;; \
-      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+      *) echo "unsupported TARGETARCH: $target_arch" >&2; exit 1 ;; \
     esac; \
     # yt-dlp values are from the official immutable release SHA2-256SUMS:
     # https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/SHA2-256SUMS
-    curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${yt_asset}" -o /tmp/yt-dlp; \
-    echo "$yt_sha  /tmp/yt-dlp" | sha256sum -c -; \
-    install -m 0755 /tmp/yt-dlp /usr/local/bin/yt-dlp; \
+    curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${yt_asset}" -o /tmp/yt-dlp.zip; \
+    echo "$yt_sha  /tmp/yt-dlp.zip" | sha256sum -c -; \
+    mkdir -p /opt/yt-dlp; unzip -q /tmp/yt-dlp.zip "$yt_binary" -d /opt/yt-dlp; \
+    chmod 0755 "/opt/yt-dlp/$yt_binary"; ln -s "/opt/yt-dlp/$yt_binary" /usr/local/bin/yt-dlp; \
     # Deno values are from each archive's official SHA-256 sidecar:
     # https://github.com/denoland/deno/releases/tag/v2.9.8
     curl -fsSL "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${deno_asset}" -o /tmp/deno.zip; \
     echo "$deno_sha  /tmp/deno.zip" | sha256sum -c -; \
     unzip -q /tmp/deno.zip deno -d /tmp/deno; \
     install -m 0755 /tmp/deno/deno /usr/local/bin/deno; \
-    rm -rf /tmp/yt-dlp /tmp/deno.zip /tmp/deno
+    rm -rf /tmp/yt-dlp.zip /tmp/deno.zip /tmp/deno
 
 FROM ${WORKER_IMAGE}
+RUN grep -aFq 'riela/media-download' /opt/riela/riela || { echo "base worker binary lacks riela/media-download; rebuild the base image with scripts/build-builtin-addon-container.sh" >&2; exit 1; }
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=video-tools /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp

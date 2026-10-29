@@ -1,5 +1,5 @@
 import Foundation
-import RielaCore
+@testable import RielaCore
 import XCTest
 
 final class WorkflowExecutionSandboxTests: XCTestCase {
@@ -32,5 +32,29 @@ final class WorkflowExecutionSandboxTests: XCTestCase {
     ] {
       XCTAssertThrowsError(try JSONDecoder().decode(WorkflowExecutionSandbox.self, from: Data(source.utf8)), source)
     }
+  }
+
+  func testContainerImageSpecificationRoundTripsWithoutChangingLegacyEqualityOrDigest() throws {
+    let legacy = try JSONDecoder().decode(WorkflowAddonContainerExecution.self, from: Data(#"{"runtime":"auto","networkPolicy":"egress-allowed","mounts":[]}"#.utf8))
+    let current = WorkflowAddonContainerExecution()
+    XCTAssertEqual(current, legacy)
+    XCTAssertNotEqual(current, WorkflowAddonContainerExecution(image: "custom:worker"))
+    XCTAssertFalse(legacy.imageWasSpecified)
+
+    let encoded = try JSONEncoder().encode(legacy)
+    let roundTripped = try JSONDecoder().decode(WorkflowAddonContainerExecution.self, from: encoded)
+    XCTAssertEqual(roundTripped, legacy)
+    XCTAssertFalse(roundTripped.imageWasSpecified)
+
+    let sandbox = WorkflowExecutionSandbox(backend: .container, container: legacy)
+    let projected = try JSONDecoder().decode(WorkflowExecutionSandbox.self, from: JSONEncoder().encode(sandbox.jsonObject))
+    XCTAssertEqual(projected, sandbox)
+    XCTAssertFalse(try XCTUnwrap(projected.container).imageWasSpecified)
+
+    let workflowWithoutContainerImage = WorkflowDefinition(workflowId: "legacy",
+      defaults: .init(nodeTimeoutMs: 30_000, maxLoopIterations: 20), entryStepId: "start",
+      nodeRegistry: [], steps: [], nodes: [])
+    let digest = JSONCanonical.sha256Hex(try JSONCanonical.encode(workflowWithoutContainerImage))
+    XCTAssertEqual(digest, "52f1666a94c1fd6d93059bbfb49d2490c6cd5cad18914094d59358a9069b8902")
   }
 }

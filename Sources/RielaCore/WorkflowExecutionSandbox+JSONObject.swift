@@ -22,13 +22,15 @@ extension WorkflowExecutionSandbox {
       ])
     }
     if let container {
-      object["container"] = .object([
-        "image": .string(container.image), "runtime": .string(container.runtime.rawValue),
+      var containerObject: JSONObject = [
+        "runtime": .string(container.runtime.rawValue),
         "networkPolicy": .string(container.networkPolicy.rawValue),
         "mounts": .array(container.mounts.map { .object([
           "source": .string($0.source), "target": .string($0.target), "readOnly": .bool($0.readOnly)
         ]) })
-      ])
+      ]
+      if container.imageWasSpecified { containerObject["image"] = .string(container.image) }
+      object["container"] = .object(containerObject)
     }
     return object
   }

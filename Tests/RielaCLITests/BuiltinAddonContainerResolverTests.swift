@@ -48,6 +48,37 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
     XCTAssertTrue(changedAfterInitialization.imageWasSpecified)
   }
 
+  func testSandboxMediaAddonSelectsVideoImageAndNonMediaAddonKeepsBaseImage() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("video-addon-sandbox-image-selection")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    for (name, expectedImage) in [("riela/media-download", "riela-video-addons:local"),
+      ("riela/git-commit", WorkflowAddonContainerExecution.defaultImage)] {
+      let runner = BuiltinContainerRecordingRunner(output: testOutput())
+      let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
+      let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+        primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker",
+          "RIELA_SANDBOX_WORKER_EXECUTABLE": worker],
+        workingDirectory: root, runner: runner)
+      _ = try await resolver.execute(.init(workflowId: "sandbox-image", stepId: name, nodeId: name,
+        addon: .init(name: name, version: "1", sandbox: .init(backend: .container))), context: .init())
+      let configurations = await runner.configurations
+      let arguments = try XCTUnwrap(configurations.first?.arguments)
+      XCTAssertTrue(arguments.contains(expectedImage), "\(name) should select \(expectedImage)")
+    }
+
+    let runner = BuiltinContainerRecordingRunner(output: testOutput())
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
+      workingDirectory: root, runner: runner)
+    _ = try await resolver.execute(.init(workflowId: "container-image", stepId: "git", nodeId: "git",
+      addon: .init(name: "riela/git-commit", version: "1", container: .init())), context: .init())
+    let configurations = await runner.configurations
+    let arguments = try XCTUnwrap(configurations.last?.arguments)
+    XCTAssertTrue(arguments.contains(WorkflowAddonContainerExecution.defaultImage))
+  }
+
   func testSandboxFinalizationRetainsAdmissionForExecuteAcknowledgeAndTerminal() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("addon-finalization-admission")
     defer { try? FileManager.default.removeItem(at: root) }

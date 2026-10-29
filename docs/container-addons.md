@@ -87,6 +87,11 @@ scripts/build-builtin-addon-container.sh
 scripts/build-video-addon-container.sh
 ```
 
+The common worker base must be rebuilt from the same Riela source revision as
+the host whenever Riela changes. The video build checks the base image's OCI
+revision label and asks you to rebuild it when it is stale; pass
+`--allow-stale-base` only when deliberately overriding this check.
+
 On macOS, start Apple Container before the builds with `container system start`
 if its service is not running. The video build script discovers Apple Container,
 then Docker, then Podman, and accepts a runtime name and base image as its first

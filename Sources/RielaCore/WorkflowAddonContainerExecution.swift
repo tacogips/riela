@@ -79,6 +79,10 @@ public struct WorkflowAddonContainerExecution: Codable, Equatable, Sendable {
     try values.encode(mounts, forKey: .mounts)
   }
 
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.image == rhs.image && lhs.runtime == rhs.runtime && lhs.networkPolicy == rhs.networkPolicy && lhs.mounts == rhs.mounts
+  }
+
   public func validate() throws {
     guard !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !image.hasPrefix("-"),
           !image.contains(where: { $0.isWhitespace || $0.isNewline }), !image.contains("\0") else {

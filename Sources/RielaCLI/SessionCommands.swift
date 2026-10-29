@@ -551,7 +551,8 @@ public struct SessionRerunCommand: Sendable {
         workingDirectory: kaibaContext.workingDirectory,
         environment: kaibaContext.environment,
         definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot,
-          workingDirectory: kaibaContext.workingDirectory)
+          workingDirectory: kaibaContext.workingDirectory),
+        artifactRootURL: addonArtifactRootURL(environment: kaibaContext.environment, workingDirectory: kaibaContext.workingDirectory)
       )
       // Rerun re-acquires the same advisory per-workflow lease as a fresh run
       // (design S11); the lease binds to the new session on its first save.
@@ -818,7 +819,8 @@ public struct SessionResumeCommand: Sendable {
         workingDirectory: kaibaContext.workingDirectory,
         environment: kaibaContext.environment,
         definitionRunContext: .init(definitionSource: persisted.session.definitionSource, sessionStoreRoot: storeRoot,
-          workingDirectory: kaibaContext.workingDirectory)
+          workingDirectory: kaibaContext.workingDirectory),
+        artifactRootURL: addonArtifactRootURL(environment: kaibaContext.environment, workingDirectory: kaibaContext.workingDirectory)
       )
       // Resume re-acquires the same advisory per-workflow lease as a fresh
       // run (design S11); the lease binds to the resumed session on its

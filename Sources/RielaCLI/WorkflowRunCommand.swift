@@ -11,17 +11,10 @@ import RielaObservability
 import RielaWork
 import RielaWorkflowRegistry
 
-private func workflowAddonEnvironment(
-  _ environment: [String: String],
-  options: WorkflowRunOptions
-) -> [String: String] {
-  var addonEnvironment = environment
-  if let artifactRoot = options.artifactRoot {
-    addonEnvironment["RIELA_ARTIFACT_DIR"] = absoluteURL(
-      artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
-    ).path
+private func workflowArtifactRootURL(options: WorkflowRunOptions) -> URL? {
+  options.artifactRoot.map {
+    absoluteURL($0, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
   }
-  return addonEnvironment
 }
 
 public struct WorkflowRunCommand: Sendable {
@@ -100,15 +93,15 @@ public struct WorkflowRunCommand: Sendable {
       )
       let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       let addonResolver = try await makeScenarioBackedAddonResolver(
-        scenarioPath: options.mockScenarioPath,
-        workingDirectory: runWorkingDirectory,
-        environment: workflowAddonEnvironment(runEnvironment, options: options),
+        scenarioPath: options.mockScenarioPath, workingDirectory: runWorkingDirectory,
+        environment: runEnvironment,
         definitionRunContext: .init(
           definitionSource: definitionSource,
           sessionStoreRoot: storeRoot,
           workingDirectory: resolution.workingDirectory,
           cliProcessRunner: improvementCLIProcessRunnerOverride
-        )
+        ),
+        artifactRootURL: workflowArtifactRootURL(options: options)
       )
       switch try runConcurrencyPreflight(bundle: bundle, storeRoot: storeRoot, options: options) {
       case let .finish(result):

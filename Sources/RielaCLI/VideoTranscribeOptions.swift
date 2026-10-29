@@ -1,5 +1,10 @@
 import Foundation
 import RielaCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 struct VideoTranscribeOptions: Sendable {
   enum Source: Sendable { case url(URL), path(URL) }
@@ -107,35 +112,38 @@ struct VideoTranscribeOptions: Sendable {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
       ["http", "https"].contains(components.scheme?.lowercased() ?? ""), let rawHost = components.host?.lowercased() else { return false }
     let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-    guard
-      host != "localhost", !host.hasSuffix(".localhost") else { return false }
+    guard host != "localhost", !host.hasSuffix(".localhost"), !host.hasSuffix(".") else { return false }
     if host.contains(":"), isPrivateIPv6(host) { return false }
-    if host.split(separator: ".").count == 4, host.allSatisfy({ $0.isNumber || $0 == "." }) {
-      return !isPrivateIPv4(host)
-    }
+    if let address = parsedIPv4(host), isPrivateIPv4(address) { return false }
     return true
   }
 
   private static func isPrivateIPv6(_ host: String) -> Bool {
-    let value = host.lowercased()
-    if value.hasPrefix("::ffff:"), isPrivateIPv4(String(value.dropFirst("::ffff:".count))) { return true }
-    if value.hasPrefix("::ffff:"), let mapped = ipv4MappedAddress(value), isPrivateIPv4(mapped) { return true }
-    return value == "::1" || value == "::" || value.hasPrefix("fc") || value.hasPrefix("fd") || value.hasPrefix("fe8") ||
-      value.hasPrefix("fe9") || value.hasPrefix("fea") || value.hasPrefix("feb") || value.hasPrefix("::ffff:127.") || value.hasPrefix("::ffff:10.")
+    var address = in6_addr()
+    guard host.withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return false }
+    let bytes = withUnsafeBytes(of: &address) { Array($0) }
+    let isUnspecified = bytes.allSatisfy { $0 == 0 }
+    let isLoopback = bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
+    let isUniqueLocal = bytes[0] & 0xfe == 0xfc
+    let isLinkLocal = bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80
+    let isIPv4Mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+    let isCompatibleIPv4 = bytes[0..<12].allSatisfy { $0 == 0 }
+    guard isIPv4Mapped || isCompatibleIPv4 else { return isUnspecified || isLoopback || isUniqueLocal || isLinkLocal }
+    return isUnspecified || isLoopback || isPrivateIPv4(Array(bytes[12..<16]))
   }
 
-  private static func ipv4MappedAddress(_ host: String) -> String? {
-    let groups = host.dropFirst("::ffff:".count).split(separator: ":")
-    guard groups.count == 2, let high = UInt16(groups[0], radix: 16), let low = UInt16(groups[1], radix: 16) else { return nil }
-    return "\(high >> 8).\(high & 255).\(low >> 8).\(low & 255)"
+  private static func parsedIPv4(_ host: String) -> [UInt8]? {
+    var address = in_addr()
+    guard host.withCString({ inet_aton($0, &address) }) == 1 else { return nil }
+    return withUnsafeBytes(of: address.s_addr) { Array($0) }
   }
 
-  private static func isPrivateIPv4(_ address: String) -> Bool {
-    let parts = address.split(separator: ".").compactMap { UInt8($0) }
+  private static func isPrivateIPv4(_ parts: [UInt8]) -> Bool {
     guard parts.count == 4 else { return false }
     let first = Int(parts[0]), second = Int(parts[1])
-    return first == 127 || first == 10 || (first == 172 && (16...31).contains(second)) ||
-      (first == 192 && second == 168) || (first == 169 && second == 254)
+    return parts.allSatisfy { $0 == 0 } || first == 0 || first == 127 || first == 10 ||
+      (first == 172 && (16...31).contains(second)) || (first == 192 && second == 168) ||
+      (first == 169 && second == 254)
   }
 
   static func number(_ values: JSONObject, _ key: String, default defaultValue: Double, range: ClosedRange<Double>) throws -> Double {

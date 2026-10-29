@@ -13,13 +13,32 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
     if case let .path(url) = options.source { XCTAssertEqual(url.path, "/tmp/work/clip.mp4") } else { XCTFail("expected path source") }
     XCTAssertThrowsError(try VideoTranscribeOptions(["url": .string("https://example.com"), "path": .string("x")], workingDirectory: URL(fileURLWithPath: "/tmp")))
     XCTAssertThrowsError(try VideoTranscribeOptions(["path": .string("x"), "frameIntervalSeconds": .integer(0)], workingDirectory: URL(fileURLWithPath: "/tmp")))
-    for unsafe in ["file:///tmp/a", "http://localhost/a", "http://127.2.3.4/a", "http://10.1.2.3/a", "http://172.16.0.2/a", "http://192.168.1.1/a", "http://169.254.1.1/a", "http://[::1]/a", "http://[fd00::1]/a", "http://[fe80::1]/a"] {
+    for unsafe in ["file:///tmp/a", "http://localhost/a", "http://localhost./a", "http://127.2.3.4/a", "http://10.1.2.3/a", "http://172.16.0.2/a", "http://192.168.1.1/a", "http://169.254.1.1/a", "http://0.0.0.0/a", "http://2130706433/a", "http://0x7f.0.0.1/a", "http://0177.0.0.1/a", "http://127.1/a", "http://[::1]/a", "http://[0:0:0:0:0:0:0:1]/a", "http://[::127.0.0.1]/a", "http://[fd00::1]/a", "http://[fe80::1]/a"] {
       XCTAssertThrowsError(try VideoTranscribeOptions(["url": .string(unsafe)], workingDirectory: URL(fileURLWithPath: "/tmp")), unsafe)
     }
     XCTAssertThrowsError(try VideoTranscribeOptions(["url": .string("https://example.com"), "allowedHosts": .array([.string("youtube.com")])], workingDirectory: URL(fileURLWithPath: "/tmp")))
     XCTAssertThrowsError(try VideoTranscribeOptions(["path": .string("x"), "batchSeconds": .integer(2)], workingDirectory: URL(fileURLWithPath: "/tmp"))) { error in
       XCTAssertEqual(String(describing: error).contains("batchSeconds"), true)
     }
+  }
+
+  func testChildProcessGetsResolvedSearchPathAndExplicitDenoRuntime() async throws {
+    let root = try makeVideoTranscribeTestDirectory("process-environment")
+    let bin = root.appendingPathComponent("bin", isDirectory: true)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    let deno = bin.appendingPathComponent("deno")
+    try Data([0]).write(to: deno)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: deno.path)
+    let runner = CapturingVideoTranscribeRunner()
+    let service = VideoTranscribeService(runner: runner, workingDirectory: root, artifactRoot: root,
+      http: { _ in throw VideoTranscribeTestError.unexpectedHTTP }, resolverEnvironment: ["PATH": bin.path])
+    XCTAssertEqual(service.ytDlpArguments(["--no-playlist"]), ["--js-runtimes", "deno:\(deno.path)", "--no-playlist"])
+    _ = try await service.run(URL(fileURLWithPath: "/bin/true"), [], stage: "frames", deadline: nil)
+    let configuration = await runner.configuration
+    XCTAssertEqual(configuration?.environment["PATH"], service.resolvedSearchPath)
+    XCTAssertTrue(configuration?.environment["PATH"]?.contains("/opt/homebrew/bin") == true)
+    XCTAssertTrue(configuration?.environment["PATH"]?.contains("/usr/local/bin") == true)
+    XCTAssertTrue(service.missingDownloadOutputMessage(maxFileSizeMB: 321).contains("--max-filesize limit of 321M"))
   }
 
   func testURLNormalizationRemovesYouTubeTimeParameter() throws {
@@ -38,7 +57,7 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
   }
 
   func testResolverPathIsUsedAndToolStderrTailIsRedactedAndBounded() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/resolver", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("resolver")
     let bin = root.appendingPathComponent("bin", isDirectory: true)
     try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
     let tool = bin.appendingPathComponent("yt-dlp")
@@ -83,7 +102,7 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
   }
 
   func testSTTMultipartRetries429AndKeepsCredentialsOutOfErrors() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("stt")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let audio = root.appendingPathComponent("audio.mp3")
     try Data([1, 2, 3, 4]).write(to: audio)
@@ -107,7 +126,7 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
   }
 
   func testCompletedCacheAvoidsProcessAndHTTP() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/cache", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("cache")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let normalizedURL = try XCTUnwrap(VideoTranscribeOptions.normalizedURL("https://www.youtube.com/watch?v=abc&t=12"))
     let options = try VideoTranscribeOptions(["url": .string(normalizedURL.absoluteString)], workingDirectory: root)
@@ -143,8 +162,25 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
     XCTAssertNotEqual(try service.optionsFingerprint(base), try service.optionsFingerprint(changedPrompt))
   }
 
+  func testChunkCacheIdentityIgnoresFrameSettingsAndIncludesSTTSettings() throws {
+    let root = URL(fileURLWithPath: "/tmp")
+    let service = VideoTranscribeService(runner: ThrowingVideoTranscribeRunner(), workingDirectory: root, artifactRoot: root,
+      http: { _ in throw VideoTranscribeTestError.unexpectedHTTP })
+    let base = try VideoTranscribeOptions(["path": .string("clip.mp4"), "frameIntervalSeconds": .integer(10),
+      "frameWidth": .integer(640), "frameDedupeThreshold": .number(0.1), "language": .string("ja"), "sttPrompt": .string("names")], workingDirectory: root)
+    let changedFrames = try VideoTranscribeOptions(["path": .string("clip.mp4"), "frameIntervalSeconds": .integer(30),
+      "frameWidth": .integer(1280), "frameDedupeThreshold": .number(0.9), "language": .string("ja"), "sttPrompt": .string("names")], workingDirectory: root)
+    let changedModel = try VideoTranscribeOptions(["path": .string("clip.mp4"), "language": .string("ja"), "sttPrompt": .string("names"),
+      "stt": .object(["model": .string("other-model")])], workingDirectory: root)
+    let batch = VideoBatch(start: 0, end: 30)
+    XCTAssertEqual(try service.transcriptCacheKey(source: "/clip.mp4", batch: batch, options: base),
+      try service.transcriptCacheKey(source: "/clip.mp4", batch: batch, options: changedFrames))
+    XCTAssertNotEqual(try service.transcriptCacheKey(source: "/clip.mp4", batch: batch, options: base),
+      try service.transcriptCacheKey(source: "/clip.mp4", batch: batch, options: changedModel))
+  }
+
   func testChunkTranscriptIsReusedOnlyForMatchingCacheKey() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/chunk-cache", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("chunk-cache")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let chunk = root.appendingPathComponent("0000.mp3")
     try Data([1]).write(to: chunk)
@@ -164,7 +200,7 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
   }
 
   func testCacheValidationRequiresTranscriptAndEveryFrameFile() throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/cache-files", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("cache-files")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let transcriptURL = root.appendingPathComponent("transcript.json")
     try Data("{}".utf8).write(to: transcriptURL)
@@ -180,8 +216,24 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
     XCTAssertFalse(service.cacheFilesExist(payload, output: root))
   }
 
+  func testFailedRecomputeRemovesOldManifest() async throws {
+    let root = try makeVideoTranscribeTestDirectory("stale-manifest")
+    let output = root.appendingPathComponent("output", isDirectory: true)
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let manifest = output.appendingPathComponent("manifest.json")
+    try Data("stale".utf8).write(to: manifest)
+    let options = try VideoTranscribeOptions(["path": .string(root.appendingPathComponent("missing.mp4").path),
+      "outputDir": .string(output.path)], workingDirectory: root)
+    let service = VideoTranscribeService(runner: ThrowingVideoTranscribeRunner(), workingDirectory: root, artifactRoot: root,
+      http: { _ in throw VideoTranscribeTestError.unexpectedHTTP })
+    do {
+      _ = try await service.collect(options: options, apiKey: "unused", baseURL: "https://example.test", deadline: nil)
+      XCTFail("expected recompute failure")
+    } catch { XCTAssertFalse(FileManager.default.fileExists(atPath: manifest.path)) }
+  }
+
   func testSTTFailureDoesNotLeakAPIKeyAndRetriesNetworkErrors() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/errors", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("errors")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let audio = root.appendingPathComponent("audio.mp3"); try Data([1]).write(to: audio)
     let options = try VideoTranscribeOptions(["path": .string(audio.path), "stt": .object(["maxAttempts": .integer(2)])], workingDirectory: root)
@@ -203,7 +255,7 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
   }
 
   func testNetworkErrorRetriesThenGivesUpAtMaxAttempts() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/retries", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("retries")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let audio = root.appendingPathComponent("audio.mp3"); try Data([1]).write(to: audio)
     let options = try VideoTranscribeOptions(["path": .string(audio.path), "stt": .object(["maxAttempts": .integer(2)])], workingDirectory: root)
@@ -219,7 +271,7 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
   }
 
   func testFFmpegIntegrationBuildsBatchScopedTranscriptImagesWhenAvailable() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/integration", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("integration")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: root.appendingPathComponent("output", isDirectory: true))
     guard let ffmpegPath = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
@@ -270,8 +322,36 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
     XCTAssertEqual(carriedFrame["carried"], .bool(true))
   }
 
+  func testNTSCFrameExtractionDropsAnUndecodableFinalSample() async throws {
+    let root = try makeVideoTranscribeTestDirectory("ntsc-final-frame")
+    guard let ffmpegPath = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+      throw XCTSkip("ffmpeg is not installed")
+    }
+    let ffprobePath = URL(fileURLWithPath: ffmpegPath).deletingLastPathComponent().appendingPathComponent("ffprobe").path
+    guard FileManager.default.isExecutableFile(atPath: ffprobePath) else { throw XCTSkip("ffprobe is not installed") }
+    let runner = FoundationLocalProcessRunner()
+    let input = root.appendingPathComponent("ntsc.mp4")
+    let generated = try await runner.run(configuration: .init(executableURL: URL(fileURLWithPath: ffmpegPath), arguments: [
+      "-y", "-f", "lavfi", "-i", "color=black:size=320x240:rate=30000/1001:duration=20.02",
+      "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=20.02", "-t", "20.02", "-c:v", "mpeg4", "-q:v", "5",
+      "-c:a", "aac", input.path
+    ], workingDirectoryURL: root), stdin: "", deadline: nil)
+    XCTAssertEqual(generated.terminationStatus, 0, generated.stderr)
+    let options = try VideoTranscribeOptions(["path": .string(input.path), "outputDir": .string(root.appendingPathComponent("output").path),
+      "ffmpegPath": .string(ffmpegPath), "ffprobePath": .string(ffprobePath), "frameIntervalSeconds": .integer(10),
+      "stt": .object(["maxAttempts": .integer(1)])], workingDirectory: root)
+    let service = VideoTranscribeService(runner: runner, workingDirectory: root, artifactRoot: root,
+      http: { _ in .init(status: 200, body: Data("{\"text\":\"ntsc\"}".utf8), retryAfter: nil) })
+    let result = try await service.collect(options: options, apiKey: "unused", baseURL: "https://example.test", deadline: nil)
+    guard case let .object(video)? = result["videoTranscribe"], case let .object(frames)? = video["frames"] else {
+      return XCTFail("missing video/frame metadata")
+    }
+    XCTAssertEqual(video["status"], .string("completed"))
+    XCTAssertGreaterThanOrEqual(frames["sampled"]?.asInt64 ?? 0, 2)
+  }
+
   func testAudioOnlySkipsFramesAndVideoWithoutAudioFailsClearly() async throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/video-transcribe-tests/audio-only", isDirectory: true)
+    let root = try makeVideoTranscribeTestDirectory("audio-only")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     guard let ffmpegPath = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
       throw XCTSkip("ffmpeg is not installed")
@@ -321,6 +401,25 @@ private actor VideoTranscribeHTTPStub {
     requests.append(request); count += 1
     if count == 1 { return .init(status: 429, body: Data("secret-value".utf8), retryAfter: 0) }
     return .init(status: 200, body: Data("{\"text\":\"recognized speech\"}".utf8), retryAfter: nil)
+  }
+}
+
+private extension VideoTranscribeMediaLogicTests {
+  func makeVideoTranscribeTestDirectory(_ name: String) throws -> URL {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("tmp/video-transcribe-tests/\(name)-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    return root
+  }
+}
+
+private actor CapturingVideoTranscribeRunner: LocalProcessRunning {
+  private(set) var configuration: LocalProcessConfiguration?
+
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
+    self.configuration = configuration
+    return .init(stdout: "", stderr: "", terminationStatus: 0)
   }
 }
 

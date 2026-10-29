@@ -102,9 +102,25 @@ extension VideoTranscribeService {
       let seconds = Int(time)
       let name = String(format: "frame_%02d%02d%02d_%03d.jpg", seconds / 3600, seconds / 60 % 60, seconds % 60, milliseconds)
       let path = directory.appendingPathComponent(name)
-      _ = try await run(ffmpeg, ["-y", "-ss", String(format: "%.3f", time), "-i", mediaURL.path, "-frames:v", "1",
-        "-vf", "scale=\(options.frameWidth):-2", path.path], stage: "frames", deadline: deadline)
-      guard FileManager.default.fileExists(atPath: path.path) else { throw VideoTranscribeError.stage("frames", "ffmpeg did not produce frame at \(time) seconds") }
+      do {
+        _ = try await run(ffmpeg, ["-y", "-ss", String(format: "%.3f", time), "-i", mediaURL.path, "-frames:v", "1",
+          "-vf", "scale=\(options.frameWidth):-2", path.path], stage: "frames", deadline: deadline)
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        try? FileManager.default.removeItem(at: path)
+      }
+      if !FileManager.default.fileExists(atPath: path.path), index == selected.last {
+        do {
+          _ = try await run(ffmpeg, ["-y", "-sseof", "-0.1", "-i", mediaURL.path, "-frames:v", "1",
+            "-vf", "scale=\(options.frameWidth):-2", path.path], stage: "frames", deadline: deadline)
+        } catch is CancellationError {
+          throw CancellationError()
+        } catch {
+          try? FileManager.default.removeItem(at: path)
+        }
+      }
+      guard FileManager.default.fileExists(atPath: path.path) else { continue }
       frames.append(.init(time: time, path: path.standardizedFileURL.path))
     }
     return (frames, count)

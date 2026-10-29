@@ -48,6 +48,7 @@ struct VideoTranscribeService: Sendable {
       }
       return payload
     }
+    if fileManager.fileExists(atPath: manifestURL.path) { try fileManager.removeItem(at: manifestURL) }
     let sourceInfo = try await resolveSource(options, deadline: deadline)
     guard sourceInfo.duration <= options.maxDurationSeconds else { throw VideoTranscribeError.stage("metadata", "duration exceeds maxDurationSeconds") }
     try fileManager.createDirectory(at: absoluteOutput, withIntermediateDirectories: true)
@@ -82,7 +83,7 @@ struct VideoTranscribeService: Sendable {
       ? try await extractFrames(ffmpeg: ffmpeg, mediaURL: mediaURL, options: options, directory: framesDirectory, deadline: deadline)
       : (frames: [VideoFrame](), sampled: 0)
     let transcripts = try await transcribe(chunkURLs, options: options, apiKey: apiKey, baseURL: baseURL,
-      directory: chunksDirectory, cacheKeys: batchPlan.map { "\(fingerprint):\($0.start):\($0.end)" }, deadline: deadline)
+      directory: chunksDirectory, cacheKeys: try batchPlan.map { try transcriptCacheKey(source: identity, batch: $0, options: options) }, deadline: deadline)
     let assigned = VideoTranscribeMediaLogic.framesByBatch(keptFrames.frames, batches: batchPlan, carryForward: options.carryForwardFrame)
     var batches: [JSONValue] = []
     for index in batchPlan.indices {
@@ -131,10 +132,18 @@ struct VideoTranscribeService: Sendable {
     return JSONCanonical.sha256Hex(try JSONCanonical.encode(effectiveOptions))
   }
 
+  func transcriptCacheKey(source: String, batch: VideoBatch, options: VideoTranscribeOptions) throws -> String {
+    let value: JSONValue = .object(["source": .string(source), "start": .number(batch.start), "end": .number(batch.end),
+      "language": options.language.map(JSONValue.string) ?? .null, "sttPrompt": options.sttPrompt.map(JSONValue.string) ?? .null,
+      "provider": .string("openai"), "model": .string(options.model)])
+    return JSONCanonical.sha256Hex(try JSONCanonical.encode(value))
+  }
+
   func run(_ executable: URL, _ arguments: [String], stage: String, deadline: Date?) async throws -> LocalProcessResult {
     do {
       let result = try await runner.run(configuration: .init(executableURL: executable, arguments: arguments,
-        workingDirectoryURL: workingDirectory, stdoutCaptureByteLimit: 2_000_000, stderrCaptureByteLimit: 2_000_000), stdin: "", deadline: deadline)
+        environment: ["PATH": resolvedSearchPath], workingDirectoryURL: workingDirectory,
+        stdoutCaptureByteLimit: 2_000_000, stderrCaptureByteLimit: 2_000_000), stdin: "", deadline: deadline)
       guard result.terminationStatus == 0 else {
         throw VideoTranscribeError.stage(stage, "process exited with status \(result.terminationStatus): \(redactedStderrTail(result.stderr))")
       }
@@ -151,11 +160,21 @@ struct VideoTranscribeService: Sendable {
 
   func executable(_ override: String?, name: String, stage: String) throws -> URL {
     if let override { return URL(fileURLWithPath: override) }
-    let resolverPath = resolverEnvironment["PATH"] ?? ""
-    let processPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
-    let paths = (resolverPath + ":" + processPath + ":/opt/homebrew/bin:/usr/local/bin").split(separator: ":")
+    let paths = resolvedSearchPath.split(separator: ":")
     if let path = paths.map({ URL(fileURLWithPath: String($0)).appendingPathComponent(name) }).first(where: { fileManager.isExecutableFile(atPath: $0.path) }) { return path }
     throw VideoTranscribeError.stage(stage, "\(name) is missing; install with brew install yt-dlp ffmpeg")
+  }
+
+  var resolvedSearchPath: String {
+    let resolverPath = resolverEnvironment["PATH"] ?? ""
+    let processPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    return [resolverPath, processPath, "/opt/homebrew/bin", "/usr/local/bin"].filter { !$0.isEmpty }.joined(separator: ":")
+  }
+
+  func ytDlpArguments(_ arguments: [String]) -> [String] {
+    guard let deno = resolvedSearchPath.split(separator: ":").map({ URL(fileURLWithPath: String($0)).appendingPathComponent("deno") })
+      .first(where: { fileManager.isExecutableFile(atPath: $0.path) }) else { return arguments }
+    return ["--js-runtimes", "deno:\(deno.path)"] + arguments
   }
 
   private func probeDuration(_ ffprobe: URL, mediaURL: URL, deadline: Date?) async throws -> Double {
@@ -185,7 +204,7 @@ struct VideoTranscribeService: Sendable {
       return .init(identity: path.path, videoID: nil, title: path.deletingPathExtension().lastPathComponent, url: nil, localPath: path, duration: 0)
     case let .url(url):
       let ytdlp = try executable(options.ytDlpPath, name: "yt-dlp", stage: "metadata")
-      let result = try await run(ytdlp, ["--ignore-config", "--no-playlist", "-O", "%(.{id,title,duration,is_live,live_status})j", url.absoluteString], stage: "metadata", deadline: deadline)
+      let result = try await run(ytdlp, ytDlpArguments(["--no-playlist", "-O", "%(.{id,title,duration,is_live,live_status})j", url.absoluteString]), stage: "metadata", deadline: deadline)
       guard let data = result.stdout.data(using: .utf8), let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         throw VideoTranscribeError.stage("metadata", "invalid yt-dlp metadata")
       }
@@ -207,14 +226,18 @@ struct VideoTranscribeService: Sendable {
     try fileManager.createDirectory(at: mediaDirectory, withIntermediateDirectories: true)
     let template = mediaDirectory.appendingPathComponent("video.%(ext)s").path
     let ffmpeg = try executable(options.ffmpegPath, name: "ffmpeg", stage: "download")
-    let result = try await run(ytdlp, ["--ignore-config", "--no-playlist", "--max-filesize", "\(options.maxFileSizeMB)M", "--ffmpeg-location", ffmpeg.path,
+    let result = try await run(ytdlp, ytDlpArguments(["--no-playlist", "--max-filesize", "\(options.maxFileSizeMB)M", "--ffmpeg-location", ffmpeg.path,
       "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b", "--merge-output-format", "mp4", "-o", template,
-      "--print", "after_move:filepath", "--no-simulate", url.absoluteString], stage: "download", deadline: deadline)
+      "--print", "after_move:filepath", "--no-simulate", url.absoluteString]), stage: "download", deadline: deadline)
     guard let filepath = result.stdout.split(whereSeparator: \.isNewline).last.map(String.init),
       fileManager.fileExists(atPath: filepath), URL(fileURLWithPath: filepath).deletingLastPathComponent().standardizedFileURL == mediaDirectory.standardizedFileURL else {
-      throw VideoTranscribeError.stage("download", "yt-dlp did not produce a media file")
+      throw VideoTranscribeError.stage("download", missingDownloadOutputMessage(maxFileSizeMB: options.maxFileSizeMB))
     }
     return URL(fileURLWithPath: filepath)
+  }
+
+  func missingDownloadOutputMessage(maxFileSizeMB: Int) -> String {
+    "yt-dlp did not produce a media file; it may have exceeded the --max-filesize limit of \(maxFileSizeMB)M"
   }
 
   func cacheFilesExist(_ payload: JSONObject, output: URL) -> Bool {

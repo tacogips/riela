@@ -32,7 +32,8 @@ final class VideoTranscribeMediaLogicTests: XCTestCase {
     let runner = CapturingVideoTranscribeRunner()
     let service = VideoTranscribeService(runner: runner, workingDirectory: root, artifactRoot: root,
       http: { _ in throw VideoTranscribeTestError.unexpectedHTTP }, resolverEnvironment: ["PATH": bin.path])
-    XCTAssertEqual(service.ytDlpArguments(["--no-playlist"]), ["--js-runtimes", "deno:\(deno.path)", "--no-playlist"])
+    XCTAssertEqual(service.ytDlpArguments(["--no-playlist"]), ["--ignore-config", "--js-runtimes", "deno:\(deno.path)", "--no-playlist"])
+    XCTAssertEqual(service.ytDlpArguments(["--no-playlist"], deno: nil), ["--ignore-config", "--no-playlist"])
     _ = try await service.run(URL(fileURLWithPath: "/bin/true"), [], stage: "frames", deadline: nil)
     let configuration = await runner.configuration
     XCTAssertEqual(configuration?.environment["PATH"], service.resolvedSearchPath)

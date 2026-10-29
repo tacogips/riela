@@ -180,6 +180,139 @@ final class NotionGatewayAddonTests: XCTestCase {
     XCTAssertEqual(variables["contentType"], .string("application/octet-stream"))
   }
 
+  func testPublishPageEnsuresPathAndChunksTopLevelBlocksInOrder() async throws {
+    let responses = [
+      #"{"data":{"ensurePagePath":{"id":"folder-id"}}}"#,
+      #"{"data":{"createPage":{"id":"page-id","url":"https://notion.test/page-id"}}}"#,
+      #"{"data":{"appendBlocks":{"id":"page-id"}}}"#,
+      #"{"data":{"appendBlocks":{"id":"page-id"}}}"#
+    ]
+    let recorder = RecordingGatewayGraphQLRunner(responses: responses)
+    var args: JSONObject = ["parentId": .string("parent-id"), "path": .array([.string("ART"), .string("YouTube")]),
+      "title": .string("Video"), "children": .array((0..<230).map { .object(["type": .string("paragraph"), "paragraph": .object(["text": .string("\($0)")])]) })]
+    args["position"] = .object(["type": .string("page_start")])
+    let result = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: args), context: .init())
+    let calls = recorder.allCalls()
+    XCTAssertEqual(calls.count, 4)
+    XCTAssertTrue(calls[0].document.contains("ensurePagePath"))
+    XCTAssertTrue(calls[1].document.contains("createPage"))
+    XCTAssertEqual(calls[2].variablesJSON?.contains("page-id"), true)
+    XCTAssertEqual(calls[3].variablesJSON?.contains("page-id"), true)
+    let createVars = try XCTUnwrap(calls[1].variablesJSON?.data(using: .utf8)).flatMap { try? JSONDecoder().decode(JSONObject.self, from: $0) }
+    XCTAssertEqual(createVars?["parentId"], .string("folder-id"))
+    XCTAssertEqual(result.payload["data"], .object(["publishPage": .object([
+      "pageId": .string("page-id"), "url": .string("https://notion.test/page-id"), "parentId": .string("folder-id"),
+      "uploadedFiles": .array([]), "failedUploads": .array([]), "appendRequests": .integer(2), "blocks": .integer(230)
+    ])]))
+  }
+
+  func testPublishPageRejectsMarkdownAndReaderAddon() async throws {
+    let valid: JSONObject = ["parentId": .string("p"), "title": .string("t"), "children": .array([])]
+    XCTAssertFalse(BuiltinGatewayRequestChecks.issues(WorkflowNodeAddonRef(name: "riela/notion-gateway-read", version: "1",
+      config: ["operation": .string("publishPage"), "arguments": .object(valid)])).isEmpty)
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: RecordingGatewayGraphQLRunner().runner).execute(
+        jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: valid.merging(["markdown": .string("no")]) { _, rhs in rhs }), context: .init())
+      XCTFail("markdown was accepted")
+    } catch let error as AdapterExecutionError { XCTAssertTrue(error.message.contains("does not support markdown")) }
+  }
+
+  func testPublishPageUploadsOneDistinctNestedImageAndPreservesToggle() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/notion-publish-images", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data([1, 2, 3]).write(to: root.appendingPathComponent("same.jpg"))
+    let image: JSONValue = .object(["type": .string("image"), "image": .object([
+      "type": .string("local_file"), "local_file": .object(["path": .string("same.jpg")]),
+      "caption": .array([.object(["type": .string("text"), "text": .object(["content": .string("caption")])])])
+    ])])
+    let toggle: JSONValue = .object(["type": .string("toggle"), "toggle": .object(["rich_text": .array([]), "children": .array([image])])])
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"createFileUpload":{"id":"upload-1"}}}"#,
+      #"{"data":{"sendFileUpload":{"id":"upload-1","status":"uploaded"}}}"#,
+      #"{"data":{"createPage":{"id":"page-1","url":"u"}}}"#
+    ])
+    let resolver = BuiltinWorkflowAddonResolver(workingDirectory: root, localGatewayGraphQLRunner: recorder.runner)
+    let result = try await resolver.execute(jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: [
+      "parentId": .string("p"), "title": .string("t"), "children": .array([image, toggle])
+    ]), context: .init())
+    XCTAssertEqual(recorder.allCalls().count, 3)
+    guard case let .object(data)? = result.payload["data"], case let .object(published)? = data["publishPage"],
+          case let .array(uploaded)? = published["uploadedFiles"] else { return XCTFail("missing publish result") }
+    XCTAssertEqual(uploaded.count, 1)
+    XCTAssertEqual(published["failedUploads"], .array([]))
+    XCTAssertTrue(recorder.allCalls()[2].variablesJSON?.contains("file_upload") == true)
+    XCTAssertTrue(recorder.allCalls()[2].variablesJSON?.contains("upload-1") == true)
+  }
+
+  func testPublishPageTurnsFailedUploadIntoPlaceholderAndReportsIt() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/notion-publish-failed", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data([1]).write(to: root.appendingPathComponent("missing.jpg"))
+    let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"createPage":{"id":"page-1","url":"u"}}}"#,
+      failure: AdapterExecutionError(.providerError, "upload failed"), failureAtCall: 1)
+    let result = try await BuiltinWorkflowAddonResolver(workingDirectory: root, localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"),
+        "children": .array([.object(["type": .string("image"), "image": .object(["type": .string("local_file"),
+          "local_file": .object(["path": .string("missing.jpg")])])])])]), context: .init())
+    guard case let .object(data)? = result.payload["data"], case let .object(published)? = data["publishPage"],
+          case let .array(failed)? = published["failedUploads"] else { return XCTFail("missing failure results") }
+    XCTAssertEqual(failed.count, 1)
+    XCTAssertTrue(recorder.allCalls().last?.variablesJSON?.contains("画像を保存できませんでした: missing.jpg") == true)
+  }
+
+  func testPublishPageAppendFailureReportsCreatedPageAsIncomplete() async throws {
+    let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"createPage":{"id":"page-1","url":"u"}}}"#,
+      failure: AdapterExecutionError(.providerError, "append failed"), failureAtCall: 2)
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+        jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"),
+          "children": .array((0..<101).map { .object(["type": .string("paragraph"), "paragraph": .object(["n": .integer(Int64($0))])]) })]), context: .init())
+      XCTFail("append error was ignored")
+    } catch let error as AdapterExecutionError {
+      XCTAssertTrue(error.message.contains("\"pageId\":\"page-1\""))
+      XCTAssertTrue(error.message.contains("\"incomplete\":true"))
+      XCTAssertTrue(error.message.contains("append failed"))
+    }
+    XCTAssertEqual(recorder.allCalls().count, 2)
+  }
+
+  func testPublishPageSplitsLongTextAndRichTextArrays() async throws {
+    let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"createPage":{"id":"page-1","url":"u"}}}"#)
+    let richText = (0..<101).map { _ in JSONValue.object(["type": .string("text"), "text": .object(["content": .string(String(repeating: "x", count: 2_100))])]) }
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"),
+        "children": .array([.object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array(richText)])])])]), context: .init())
+    let variables = try XCTUnwrap(recorder.lastCall()?.variablesJSON?.data(using: .utf8)).flatMap { try? JSONDecoder().decode(JSONObject.self, from: $0) }
+    guard case let .array(blocks)? = variables?["children"] else { return XCTFail("missing create blocks") }
+    XCTAssertGreaterThan(blocks.count, 1)
+    let json = try XCTUnwrap(String(data: JSONEncoder().encode(JSONValue.array(blocks)), encoding: .utf8))
+    XCTAssertFalse(json.contains(String(repeating: "x", count: 2_001)))
+  }
+
+  func testPublishPageMovesDepthThreeChildrenToTheReturnedBlockId() async throws {
+    let recorder = RecordingGatewayGraphQLRunner(responses: [
+      #"{"data":{"createPage":{"id":"page-1","url":"u"}}}"#,
+      #"{"data":{"blockChildren":{"results":[{"id":"root-block"}]}}}"#,
+      #"{"data":{"blockChildren":{"results":[{"id":"nested-block"}]}}}"#,
+      #"{"data":{"appendBlocks":{"results":[]}}}"#
+    ])
+    let deep: JSONValue = .object(["type": .string("toggle"), "toggle": .object(["rich_text": .array([]), "children": .array([
+      .object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array([]), "children": .array([
+        .object(["type": .string("paragraph"), "paragraph": .object(["rich_text": .array([])])])
+      ])])])
+    ])])])
+    _ = try await BuiltinWorkflowAddonResolver(localGatewayGraphQLRunner: recorder.runner).execute(
+      jsonInput("riela/notion-gateway-write", operation: "publishPage", arguments: ["parentId": .string("p"), "title": .string("t"),
+        "children": .array([deep])]), context: .init())
+    let calls = recorder.allCalls()
+    XCTAssertEqual(calls.count, 4)
+    XCTAssertTrue(calls[1].document.contains("blockChildren"))
+    XCTAssertTrue(calls[3].variablesJSON?.contains("nested-block") == true)
+  }
+
   func testPinnedRoleVariablesAndOnlyExplicitCredentialBinding() async throws {
     for (name, tier) in [("riela/notion-gateway-read", "reader"), ("riela/notion-gateway-write", "writer")] {
       let recorder = RecordingGatewayGraphQLRunner(response: #"{"data":{"page":{"id":"synthetic-page","has_more":true,"next_cursor":"cursor"}},"errors":[],"extensions":{"requestId":"synthetic"}}"#)

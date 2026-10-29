@@ -18,6 +18,12 @@ enum BuiltinGatewayRequestChecks {
       if addon.name == "riela/notion-gateway-write", leaf["operation"] == .string("uploadLocalFile") {
         return localFileUploadIssues(addonName: addon.name, leaf: leaf)
       }
+      if leaf["operation"] == .string("publishPage") {
+        guard addon.name == "riela/notion-gateway-write" else {
+          return [WorkflowGatewayRequestIssue(relativePath: "operation", message: "publishPage is supported only by riela/notion-gateway-write")]
+        }
+        return publishPageIssues(leaf: leaf)
+      }
       guard let catalog = graphQLCatalog(provider: provider, tier: tier) else { return [] }
       return operationIssues(addonName: addon.name, leaf: leaf, catalog: catalog)
     }
@@ -75,6 +81,24 @@ enum BuiltinGatewayRequestChecks {
     }
     if case let .string(kind)? = arguments["kind"], kind != "image", kind != "file" {
       issues.append(WorkflowGatewayRequestIssue(relativePath: "arguments.kind", message: "must be image or file"))
+    }
+    return issues
+  }
+
+  private static func publishPageIssues(leaf: JSONObject) -> [WorkflowGatewayRequestIssue] {
+    guard !isExactPlaceholder(leaf["arguments"]) else { return [] }
+    guard case let .object(arguments)? = leaf["arguments"] else {
+      return [WorkflowGatewayRequestIssue(relativePath: "arguments", message: "must be an object")]
+    }
+    let supported: Set<String> = ["parentId", "path", "title", "children", "position"]
+    var issues = arguments.keys.sorted().compactMap { key -> WorkflowGatewayRequestIssue? in
+      guard !supported.contains(key) else { return nil }
+      return WorkflowGatewayRequestIssue(relativePath: "arguments.\(key)", message: key == "markdown"
+        ? "publishPage does not support markdown; provide native children blocks"
+        : "is not an argument of operation 'publishPage'")
+    }
+    for required in ["parentId", "title", "children"] where arguments[required] == nil {
+      issues.append(WorkflowGatewayRequestIssue(relativePath: "arguments", message: "is missing required argument '\(required)'"))
     }
     return issues
   }

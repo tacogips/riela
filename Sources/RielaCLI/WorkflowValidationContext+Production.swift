@@ -71,7 +71,7 @@ extension WorkflowValidationContext {
         #endif
       }
       var operationNames = Set(catalog.operations.map(\.name))
-      if provider == .notion, tier == "writer" { operationNames.insert("uploadLocalFile") }
+      if provider == .notion, tier == "writer" { operationNames.formUnion(["uploadLocalFile", "publishPage"]) }
       return WorkflowGatewayCatalogProjection(provider: provider, tier: tier, operationNames: operationNames)
     } catch {
       return nil

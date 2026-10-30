@@ -359,7 +359,8 @@ extension DeterministicWorkflowRunner {
           item: item,
           sessionId: result.session.sessionId,
           reason: "branch session ended with status '\(result.status.rawValue)'",
-          cancelled: result.session.failureKind == .cancelled
+          cancelled: result.session.failureKind == .cancelled,
+          stepOutputs: directive.includeStepOutputs.map { fanoutStepOutputs($0, session: result.session) }
         )
       }
       return .success(
@@ -379,6 +380,7 @@ extension DeterministicWorkflowRunner {
       // after it marks a child failed, so persist that actual terminal record
       // before returning a branch failure rather than losing it in the catch.
       var terminalFailureKind: WorkflowSessionFailureKind?
+      var terminalStepOutputs: JSONObject?
       if let reservedChildSessionId,
          let terminal = try await store.loadSession(id: reservedChildSessionId) {
         if !terminal.status.isTerminal || terminal.failureKind == .maxStepsExceeded {
@@ -387,6 +389,9 @@ extension DeterministicWorkflowRunner {
             directive: directive, request: request)
         }
         terminalFailureKind = terminal.failureKind
+        // Read from the durable terminal snapshot so a resumed join rebuilds
+        // the same accepted outputs that preceded the failure.
+        terminalStepOutputs = directive.includeStepOutputs.map { fanoutStepOutputs($0, session: terminal) }
         // Workflow cancellation is represented by a failed terminal session
         // with failureKind=.cancelled. Keep that distinction in the persisted
         // snapshot: the parent join may render a cancelled branch, but must
@@ -408,7 +413,8 @@ extension DeterministicWorkflowRunner {
         item: item,
         sessionId: reservedChildSessionId,
         reason: workflowRunFailureReason(error),
-        cancelled: isWorkflowRunCancellation(error) || terminalFailureKind == .cancelled
+        cancelled: isWorkflowRunCancellation(error) || terminalFailureKind == .cancelled,
+        stepOutputs: terminalStepOutputs
       )
     }
   }
@@ -672,9 +678,12 @@ private struct FanoutBranchOutcome: Sendable {
   }
 
   /// `cancelled` is the real cancellation signal observed by the caller; the
-  /// failure text is never inspected to infer it.
+  /// failure text is never inspected to infer it. `stepOutputs` carries the
+  /// selected steps that were accepted before the branch stopped; the key is
+  /// omitted when none were.
   static func failure(
-    index: Int, item: JSONValue, sessionId: String?, reason: String, cancelled: Bool
+    index: Int, item: JSONValue, sessionId: String?, reason: String, cancelled: Bool,
+    stepOutputs: JSONObject? = nil
   ) -> FanoutBranchOutcome {
     var record: JSONObject = [
       "index": .integer(Int64(index)),
@@ -685,6 +694,7 @@ private struct FanoutBranchOutcome: Sendable {
     if let sessionId {
       record["sessionId"] = .string(sessionId)
     }
+    if let stepOutputs, !stepOutputs.isEmpty { record["stepOutputs"] = .object(stepOutputs) }
     return FanoutBranchOutcome(index: index, record: record)
   }
 }

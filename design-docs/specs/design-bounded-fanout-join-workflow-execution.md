@@ -280,5 +280,7 @@ help text should describe it as a fanout concurrency cap.
 `design-youtube-processing-builtins.md` §B adds the opt-in
 `fanout.includeStepOutputs`. Completed branch records gain
 `stepOutputs{stepId: acceptedPayload}`, taken from the durable child session,
-for both same-workflow and `toWorkflowId` fanouts. The join is limited to
+for both same-workflow and `toWorkflowId` fanouts. Failed and cancelled records
+carry the named steps accepted before the branch stopped, and omit the key when
+there are none. The join is limited to
 8,000,000 bytes. When the field is absent, the join stays byte-identical.

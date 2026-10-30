@@ -73,17 +73,17 @@ the built-in HTTP SDK workers: those workers use the linked Swift SDKs.
 
 ## Video media add-ons
 
-`riela/media-download` is deprecated and remains available. The package
-container add-on `media/yt-dlp-download` builds its self-contained image from
-its `Containerfile`, requires the `network.egress` capability, and writes under
-the same-path artifact root. See [migration guidance](workflows/video-pipeline.md#migrating-from-rielamedia-download).
+Riela has no built-in media downloader. The package container add-on
+`media/yt-dlp-download` builds its self-contained image (yt-dlp, Deno, ffmpeg)
+from its `Containerfile`, requires the `network.egress` capability, and writes
+under the same-path artifact root. See
+[the video pipeline guide](workflows/video-pipeline.md).
 
-The `riela/media-download`, `riela/audio-segments`, `riela/video-frames`, and
-`riela/speech-to-text` add-ons select `riela-video-addons:local` when their
-container options omit `image`. The compatibility name
-`riela/video-transcribe` selects it too. An explicit `image` always takes
-precedence. The video image extends the common worker with ffmpeg/ffprobe,
-yt-dlp, and Deno.
+The `riela/audio-segments`, `riela/video-frames`, and `riela/speech-to-text`
+add-ons select `riela-video-addons:local` when their container options omit
+`image`. The compatibility name `riela/video-transcribe` selects it too. An
+explicit `image` always takes precedence. The video image extends the common
+worker with ffmpeg/ffprobe.
 
 Build the common worker first, then build the video image:
 
@@ -102,7 +102,7 @@ if its service is not running. The video build script discovers Apple Container,
 then Docker, then Podman, and accepts a runtime name and base image as its first
 two arguments.
 
-Downloading media and speech-to-text require network egress. Set
+The downloader add-on and speech-to-text require network egress. Set
 `networkPolicy` to `egress-allowed` for those stages. Audio segmentation and
 video frame extraction can use `networkPolicy: "denied"` when their input files
 are already present. The workflow working directory is the only directory

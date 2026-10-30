@@ -6,28 +6,6 @@ import XCTest
 @testable import RielaCLI
 
 final class MediaPipelineMediaLogicTests: XCTestCase {
-  func testYouTubeNormalizationAndPrivateHostRejection() throws {
-    let normalized = try XCTUnwrap(
-      MediaPipelineOptions.normalizedURL(
-        "https://m.youtube.com/watch?feature=share&si=x&v=abc&t=482s&pp=y"))
-    XCTAssertEqual(normalized.absoluteString, "https://www.youtube.com/watch?v=abc")
-    XCTAssertTrue(MediaPipelineOptions.isSafeURL(normalized))
-    for raw in [
-      "http://localhost/a", "http://127.2.3.4/a", "http://10.0.0.1/a", "http://192.168.1.1/a",
-      "http://[::1]/a", "http://[fd00::1]/a", "http://2130706433/a",
-      "http://0x7f.0.0.1/a", "http://0177.0.0.1/a", "http://127.1/a",
-      "http://0.0.0.0/a", "http://[::127.0.0.1]/a", "http://example.com./a",
-      "http://[fe80::1%25en0]/a"
-    ] {
-      XCTAssertFalse(
-        MediaPipelineOptions.normalizedURL(raw).map(MediaPipelineOptions.isSafeURL) ?? true, raw)
-    }
-    XCTAssertTrue(MediaPipelineOptions.host("media.example.com", matches: "example.com"))
-    XCTAssertFalse(MediaPipelineOptions.host("example.com.attacker.test", matches: "example.com"))
-    let shortLink = try XCTUnwrap(MediaPipelineOptions.normalizedURL("https://youtu.be/abc"))
-    XCTAssertEqual(shortLink.host, "www.youtube.com")
-  }
-
   func testDifferenceHashAndDedupeUse256Bits() throws {
     let flat = Array(repeating: UInt8(10), count: 272)
     let changed = (0..<272).map { $0.isMultiple(of: 2) ? UInt8(10) : UInt8(20) }
@@ -62,13 +40,10 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
     XCTAssertEqual(assigned[2].map(\.1), [false])
   }
 
-  func testProcessEnvironmentDenoLookupAndRedactedStderrTail() async throws {
+  func testProcessEnvironmentLookupAndRedactedStderrTail() async throws {
     let root = try makeTestDirectory("process")
     let bin = root.appendingPathComponent("bin", isDirectory: true)
     try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-    let deno = bin.appendingPathComponent("deno")
-    try Data([0]).write(to: deno)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: deno.path)
     let runner = CapturingMediaPipelineRunner()
     let service = MediaPipelineService(
       runner: runner, workingDirectory: root,
@@ -77,20 +52,15 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
         "PATH": bin.path, "HOME": "/resolver/home", "XDG_CACHE_HOME": "/resolver/cache",
         "DENO_DIR": "/resolver/deno"
       ])
-    XCTAssertEqual(
-      service.ytDlpArguments(["--no-playlist"]),
-      ["--ignore-config", "--js-runtimes", "deno:\(deno.path)", "--no-playlist"])
-    XCTAssertEqual(
-      service.ytDlpArguments(["--no-playlist"], deno: nil), ["--ignore-config", "--no-playlist"])
     _ = try await service.run(URL(fileURLWithPath: "/bin/true"), [], stage: "frames", deadline: nil)
     let configuration = await runner.configuration
     XCTAssertEqual(configuration?.environment["PATH"], service.resolvedSearchPath)
     XCTAssertEqual(configuration?.environment["HOME"], "/resolver/home")
     XCTAssertEqual(configuration?.environment["XDG_CACHE_HOME"], "/resolver/cache")
-    XCTAssertEqual(configuration?.environment["DENO_DIR"], "/resolver/deno")
+    XCTAssertNil(configuration?.environment["DENO_DIR"])
     XCTAssertTrue(service.resolvedSearchPath.contains("/usr/bin"))
 
-    let tool = bin.appendingPathComponent("yt-dlp")
+    let tool = bin.appendingPathComponent("ffmpeg")
     try Data([0]).write(to: tool)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
     let failing = MediaPipelineService(
@@ -101,10 +71,7 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
             terminationStatus: 1)),
       workingDirectory: root, http: { _ in throw MediaPipelineTestError.unexpectedHTTP },
       resolverEnvironment: ["PATH": bin.path])
-    let cachedArguments = service.ytDlpArguments(["--download"], cacheDirectory: root)
-    let cacheDirectoryIndex = try XCTUnwrap(cachedArguments.firstIndex(of: "--cache-dir"))
-    XCTAssertEqual(cachedArguments[cacheDirectoryIndex + 1], root.path)
-    XCTAssertEqual(try failing.executable(nil, name: "yt-dlp", stage: "metadata").path, tool.path)
+    XCTAssertEqual(try failing.executable(nil, name: "ffmpeg", stage: "frames").path, tool.path)
     do {
       _ = try await failing.run(tool, [], stage: "download", deadline: nil)
       XCTFail("expected process failure")

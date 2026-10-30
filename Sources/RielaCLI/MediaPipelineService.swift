@@ -61,10 +61,9 @@ struct MediaPipelineService: Sendable {
       .first(where: { fileManager.isExecutableFile(atPath: $0.path) }) {
       return path
     }
-    let package = name == "yt-dlp" ? "yt-dlp" : "ffmpeg"
     throw MediaPipelineError.stage(
       stage,
-      "\(name) is missing; macOS: brew install \(package); Linux: apt-get install \(package) (or use the media add-on image)"
+      "\(name) is missing; macOS: brew install ffmpeg; Linux: apt-get install ffmpeg (or use the media add-on image)"
     )
   }
 
@@ -78,29 +77,9 @@ struct MediaPipelineService: Sendable {
 
   var processEnvironment: [String: String] {
     var result = ["PATH": resolvedSearchPath]
-    for name in ["HOME", "XDG_CACHE_HOME", "DENO_DIR"] {
+    for name in ["HOME", "XDG_CACHE_HOME"] {
       if let value = resolverEnvironment[name] { result[name] = value }
     }
     return result
-  }
-
-  func ytDlpArguments(_ arguments: [String]) -> [String] {
-    let deno = resolvedSearchPath.split(separator: ":").map {
-      URL(fileURLWithPath: String($0)).appendingPathComponent("deno")
-    }
-    .first(where: { fileManager.isExecutableFile(atPath: $0.path) })
-    return ytDlpArguments(arguments, deno: deno)
-  }
-
-  func ytDlpArguments(_ arguments: [String], deno: URL?) -> [String] {
-    ["--ignore-config"] + (deno.map { ["--js-runtimes", "deno:\($0.path)"] } ?? []) + arguments
-  }
-
-  func ytDlpArguments(_ arguments: [String], cacheDirectory: URL) -> [String] {
-    ytDlpArguments(["--cache-dir", cacheDirectory.path] + arguments)
-  }
-
-  func missingDownloadOutputMessage(maxFileSizeMB: Int) -> String {
-    "yt-dlp did not produce a media file; it may have exceeded the --max-filesize limit of \(maxFileSizeMB)M"
   }
 }

@@ -78,110 +78,8 @@ final class MediaPipelineAddonTests: XCTestCase {
     }
   }
 
-  func testMediaDownloadWritesOutputAndCachesByOptions() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "riela-media-download-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let runner = MediaDownloadProcessFixture()
-    let resolver = BuiltinWorkflowAddonResolver(
-      environment: [:], workingDirectory: root, containerProcessRunner: runner)
-    let base: JSONObject = [
-      "url": .string("https://www.youtube.com/watch?v=fixture&t=482s"),
-      "outputDir": .string(".riela/artifacts/download"),
-      "ytDlpPath": .string("/mock/yt-dlp"), "ffmpegPath": .string("/mock/ffmpeg")
-    ]
-    func execute(_ options: JSONObject) async throws -> AdapterExecutionOutput {
-      try await resolver.execute(
-        WorkflowAddonExecutionInput(
-          workflowId: "media-download-test", stepId: "download", nodeId: "download",
-          addon: .init(name: "riela/media-download", version: "1", config: ["options": .object(options)]),
-          variables: [:]), context: .init())
-    }
-    let first = try await execute(base)
-    XCTAssertEqual(mediaDownloadFields(first)?["status"], .string("downloaded"))
-    XCTAssertEqual(mediaDownloadFields(first)?["cached"], .bool(false))
-    let second = try await execute(base)
-    XCTAssertEqual(mediaDownloadFields(second)?["cached"], .bool(true))
-    let nonOutputChange = try await execute(base.merging([
-      "maxDurationSeconds": .integer(600), "allowedHosts": .array([.string("youtube.com")]),
-      "ytDlpPath": .string("/missing/yt-dlp"), "ffmpegPath": .string("/missing/ffmpeg")
-    ]) { _, new in new })
-    XCTAssertEqual(mediaDownloadFields(nonOutputChange)?["cached"], .bool(true))
-    let changed = try await execute(base.merging(["format": .string("best")]) { _, new in new })
-    XCTAssertEqual(mediaDownloadFields(changed)?["cached"], .bool(false))
-    let calls = await runner.calls
-    XCTAssertEqual(calls, 4, "a cache hit must not invoke yt-dlp")
-    let downloaded = root.appendingPathComponent(".riela/artifacts/download/video.mp4")
-    XCTAssertTrue(FileManager.default.fileExists(atPath: downloaded.path))
-    let stale = root.appendingPathComponent(".riela/artifacts/download/video.webm")
-    try Data("stale video".utf8).write(to: stale)
-    _ = try await execute(base.merging(["format": .string("audio only")]) { _, new in new })
-    XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
-    let configurations = await runner.configurations
-    XCTAssertTrue(configurations.allSatisfy { $0.arguments.contains("--cache-dir") })
-    XCTAssertTrue(configurations.allSatisfy { $0.environment["PATH"] != nil })
-  }
-
-  func testMediaDownloadFailureNamesStageAndRedactsStderr() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "riela-media-download-failure-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let runner = MediaDownloadProcessFixture(failDownload: true)
-    let manifest = root.appendingPathComponent(".riela/artifacts/download/media-download-manifest.json")
-    try FileManager.default.createDirectory(at: manifest.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("old manifest".utf8).write(to: manifest)
-    let resolver = BuiltinWorkflowAddonResolver(
-      environment: [:], workingDirectory: root, containerProcessRunner: runner)
-    do {
-      _ = try await resolver.execute(
-        WorkflowAddonExecutionInput(
-          workflowId: "media-download-test", stepId: "download", nodeId: "download",
-          addon: .init(name: "riela/media-download", version: "1", config: ["options": .object([
-            "url": .string("https://example.com/video"),
-            "outputDir": .string(".riela/artifacts/download"),
-            "ytDlpPath": .string("/mock/yt-dlp"), "ffmpegPath": .string("/mock/ffmpeg")
-          ])]), variables: [:]), context: .init())
-      XCTFail("download process failure should be reported")
-    } catch let error as AdapterExecutionError {
-      XCTAssertTrue(error.message.contains("media-download download failed"), error.message)
-      XCTAssertTrue(error.message.contains("[REDACTED]"), error.message)
-      XCTAssertFalse(error.message.contains("secret-token"), error.message)
-      XCTAssertFalse(FileManager.default.fileExists(atPath: manifest.path))
-    }
-  }
-
-  func testMediaDownloadAllowsOriginalShortLinkHostAndUsesURLScopedDefaultFolder() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "riela-media-short-link-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let runner = MediaDownloadProcessFixture()
-    let resolver = BuiltinWorkflowAddonResolver(
-      environment: [:], workingDirectory: root, containerProcessRunner: runner)
-    let output = try await resolver.execute(
-      WorkflowAddonExecutionInput(
-        workflowId: "media", stepId: "download", nodeId: "download",
-        addon: .init(name: "riela/media-download", version: "1", config: ["options": .object([
-          "url": .string("https://youtu.be/fixture"),
-          "allowedHosts": .array([.string("youtu.be")]),
-          "ytDlpPath": .string("/mock/yt-dlp"), "ffmpegPath": .string("/mock/ffmpeg")
-        ])]), variables: [:]), context: .init())
-    guard let fields = mediaDownloadFields(output),
-      let directory = fields["outputDir"]?.stringValue
-    else { return XCTFail("download should accept the allowed original short-link host") }
-    XCTAssertTrue(directory.hasPrefix(root.appendingPathComponent(".riela/artifacts/media-download/").path))
-    XCTAssertTrue(URL(fileURLWithPath: directory).lastPathComponent.allSatisfy {
-      $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-"
-    })
-    let processCalls = await runner.calls
-    XCTAssertEqual(processCalls, 2)
-  }
-
-  func testMediaDownloadAudioSegmentsVideoFramesSpeechToTextRejectMissingRequiredOptions() async throws {
+  func testAudioSegmentsVideoFramesSpeechToTextRejectMissingRequiredOptions() async throws {
     let options: [(String, String)] = [
-      ("riela/media-download", "url"),
       ("riela/audio-segments", "path"),
       ("riela/video-frames", "path"),
       ("riela/speech-to-text", "path")
@@ -201,14 +99,12 @@ final class MediaPipelineAddonTests: XCTestCase {
     }
   }
 
-  func testMediaDownloadAudioSegmentsVideoFramesSpeechToTextAreRegistered() {
+  func testAudioSegmentsVideoFramesSpeechToTextAreRegistered() {
     let names = Set(BuiltinStatefulAddonRegistry.registrations.map(\.name))
     XCTAssertTrue(
-      names.isSuperset(of: [
-        "riela/media-download", "riela/audio-segments", "riela/video-frames",
-        "riela/speech-to-text"
-      ]))
+      names.isSuperset(of: ["riela/audio-segments", "riela/video-frames", "riela/speech-to-text"]))
     XCTAssertFalse(names.contains("riela/video-transcribe"))
+    XCTAssertFalse(names.contains("riela/media-download"))
   }
 }
 
@@ -351,17 +247,26 @@ extension MediaPipelineAddonTests {
       workingDirectory: root,
       containerProcessRunner: MediaProbeFixtureRunner(
         probe: #"{"streams":[{"codec_type":"audio"}]}"#))
-    let zeroFrames = try await audioOnlyResolver.execute(
-      WorkflowAddonExecutionInput(
-        workflowId: "media", stepId: "frames", nodeId: "frames",
-        addon: .init(name: "riela/video-frames", version: "1", config: ["options": .object([
-          "path": .string(media.path), "outputDir": .string(root.appendingPathComponent("audio-only-frames").path),
-          "ffprobePath": .string("/mock/ffprobe"), "ffmpegPath": .string("/mock/ffmpeg")
-        ])]), variables: [:]), context: .init())
+    let audioOnlyFramesDir = root.appendingPathComponent("audio-only-frames", isDirectory: true)
+    let audioOnlyFramesInput = WorkflowAddonExecutionInput(
+      workflowId: "media", stepId: "frames", nodeId: "frames",
+      addon: .init(name: "riela/video-frames", version: "1", config: ["options": .object([
+        "path": .string(media.path), "outputDir": .string(audioOnlyFramesDir.path),
+        "ffprobePath": .string("/mock/ffprobe"), "ffmpegPath": .string("/mock/ffmpeg")
+      ])]), variables: [:])
+    let zeroFrames = try await audioOnlyResolver.execute(audioOnlyFramesInput, context: .init())
     guard let zeroFields = videoFramesFields(zeroFrames),
       case .integer(0)? = zeroFields["sampled"], case .array(let frames)? = zeroFields["frames"]
     else { return XCTFail("audio-only input should produce zero sampled frames") }
     XCTAssertTrue(frames.isEmpty)
+    XCTAssertEqual(zeroFields["sourcePath"], .string(media.standardizedFileURL.path))
+    try stripVideoFramesSourcePath(
+      manifest: audioOnlyFramesDir.appendingPathComponent("video-frames-manifest.json"))
+    let replayed = try await audioOnlyResolver.execute(audioOnlyFramesInput, context: .init())
+    XCTAssertEqual(videoFramesFields(replayed)?["cached"], .bool(true))
+    XCTAssertEqual(
+      videoFramesFields(replayed)?["sourcePath"], .string(media.standardizedFileURL.path),
+      "a cache replay of a manifest without sourcePath must still return it")
 
     let frameDir = root.appendingPathComponent("frames", isDirectory: true)
     let frameManifest = frameDir.appendingPathComponent("video-frames-manifest.json")
@@ -420,41 +325,6 @@ private actor MediaPipelineHTTPFixture {
 private actor MediaPipelineRequestCounter {
   private(set) var count = 0
   func increment() { count += 1 }
-}
-
-private actor MediaDownloadProcessFixture: LocalProcessRunning {
-  private(set) var calls = 0
-  private(set) var configurations: [LocalProcessConfiguration] = []
-  private let failDownload: Bool
-
-  init(failDownload: Bool = false) {
-    self.failDownload = failDownload
-  }
-
-  func run(
-    configuration: LocalProcessConfiguration, stdin: String, deadline: Date?
-  ) async throws -> LocalProcessResult {
-    calls += 1
-    configurations.append(configuration)
-    if configuration.arguments.contains("-O") {
-      return LocalProcessResult(
-        stdout: #"{"id":"fixture","title":"Fixture video","duration":120,"is_live":false}"#,
-        stderr: "", terminationStatus: 0)
-    }
-    if failDownload {
-      return LocalProcessResult(
-        stdout: "", stderr: "Bearer secret-token sk-12345678901234567890", terminationStatus: 1)
-    }
-    guard let outputIndex = configuration.arguments.firstIndex(of: "-o"),
-      configuration.arguments.indices.contains(outputIndex + 1)
-    else { return LocalProcessResult(stdout: "", stderr: "missing output template", terminationStatus: 2) }
-    let path = configuration.arguments[outputIndex + 1]
-      .replacingOccurrences(of: "%(ext)s", with: "mp4")
-    try FileManager.default.createDirectory(
-      at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("fixture media".utf8).write(to: URL(fileURLWithPath: path))
-    return LocalProcessResult(stdout: path + "\n", stderr: "", terminationStatus: 0)
-  }
 }
 
 private struct MediaProbeFixtureRunner: LocalProcessRunning {
@@ -574,6 +444,7 @@ extension MediaPipelineAddonTests {
             "audioSegments": .object(try XCTUnwrap(audioFields))
           ]), context: .init())
     XCTAssertFalse(FileManager.default.fileExists(atPath: staleFrame.path))
+    XCTAssertEqual(videoFramesFields(framesOutput)?["sourcePath"], .string(clip.standardizedFileURL.path))
     guard let videoFields = videoFramesFields(framesOutput),
       case .array(let flatFrames)? = videoFields["frames"],
       case .array(let attachedSegments)? = videoFields["segments"], attachedSegments.count == 3
@@ -605,6 +476,7 @@ extension MediaPipelineAddonTests {
             "audioSegments": .object(try XCTUnwrap(audioFields))
           ]), context: .init())
     XCTAssertEqual(videoFramesFields(cachedFrames)?["cached"], .bool(true))
+    XCTAssertEqual(videoFramesFields(cachedFrames)?["sourcePath"], .string(clip.standardizedFileURL.path))
 
     for item in attachedSegments {
       guard case .object = item else {
@@ -634,14 +506,21 @@ private func audioSegmentsFields(_ output: AdapterExecutionOutput) -> JSONObject
   return fields
 }
 
-private func mediaDownloadFields(_ output: AdapterExecutionOutput) -> JSONObject? {
-  guard case let .object(fields)? = output.payload["mediaDownload"] else { return nil }
-  return fields
-}
-
 private func videoFramesFields(_ output: AdapterExecutionOutput) -> JSONObject? {
   guard case .object(let fields)? = output.payload["videoFrames"] else { return nil }
   return fields
+}
+
+/// Rewrites a video-frames manifest the way builds before sourcePath existed wrote it.
+private func stripVideoFramesSourcePath(manifest: URL) throws {
+  var wrapper = try XCTUnwrap(
+    JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any])
+  var payload = try XCTUnwrap(wrapper["payload"] as? [String: Any])
+  var frames = try XCTUnwrap(payload["videoFrames"] as? [String: Any])
+  XCTAssertNotNil(frames.removeValue(forKey: "sourcePath"))
+  payload["videoFrames"] = frames
+  wrapper["payload"] = payload
+  try JSONSerialization.data(withJSONObject: wrapper, options: [.sortedKeys]).write(to: manifest)
 }
 
 private func segmentCarried(_ segment: JSONValue) -> Bool {

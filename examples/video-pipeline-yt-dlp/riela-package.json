@@ -8,7 +8,7 @@
   ],
   "registry": "local",
   "checksumAlgorithm": "md5",
-  "checksum": "8debfffad1a789ec0269af26c1c8e1ed",
+  "checksum": "bedb2b1273c84dfc393c5bb503b6a3b8",
   "workflowDirectory": "workflow",
   "addons": [
     {
@@ -20,7 +20,7 @@
         "containerfilePath": "Containerfile",
         "entrypoint": "yt-dlp-download"
       },
-      "contentDigest": "sha256:e7cf1df6c99e88a255d2af96322ac57535d41c3ffa8ab8404c49085bd2b6761d",
+      "contentDigest": "sha256:ce7f37111d19dea8a624f310c06ded706fb162e6380818f29ca02da37d748980",
       "capabilities": [
         {
           "name": "network.egress",

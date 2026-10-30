@@ -1,16 +1,21 @@
 # Composable video pipeline
 
-Install `yt-dlp` and `ffmpeg` with `brew install yt-dlp ffmpeg` on macOS or
-`apt-get install yt-dlp ffmpeg` on Debian and Ubuntu. The download stage needs
-network access. Audio extraction, frame sampling, and speech recognition can
-run in separate stages with only the speech stage allowed to reach its API.
+Install `ffmpeg` with `brew install ffmpeg` on macOS or `apt-get install ffmpeg`
+on Debian and Ubuntu. Riela has no built-in downloader: the download stage is
+an installable package add-on such as `media/yt-dlp-download`, which builds its
+own container image with yt-dlp, Deno and ffmpeg and needs network egress.
+Audio extraction, frame sampling, and speech recognition can run in separate
+stages with only the speech stage allowed to reach its API.
 
 This example shows the data flow as two workflow definitions. The parent
 downloads the video, extracts audio segments, samples frames for those time
 boundaries, and fans each result into the segment workflow. Whole-value
 templates preserve JSON arrays and objects as JSON values.
 
-The `download` step uses deprecated `riela/media-download`, which still runs with a validation warning; see [Migrating from riela/media-download](#migrating-from-rielamedia-download).
+The parent is a workflow package that vendors `addons/yt-dlp-download` from
+[the yt-dlp package example](../../examples/video-pipeline-yt-dlp/README.md) in
+its `riela-package.json` `addons[]`, so `media/yt-dlp-download` resolves during
+validation. Install it with `riela package install` in project or user scope.
 
 ```json
 {
@@ -19,7 +24,7 @@ The `download` step uses deprecated `riela/media-download`, which still runs wit
   "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 1, "fanoutConcurrency": 4 },
   "entryStepId": "download",
   "nodeRegistry": [
-    { "id": "download", "addon": { "name": "riela/media-download", "version": "1", "config": { "options": {
+    { "id": "download", "addon": { "name": "media/yt-dlp-download", "version": "1", "config": { "options": {
       "url": "https://www.youtube.com/watch?v=8QxKwYOyUaE"
     } } } },
     { "id": "audio", "addon": { "name": "riela/audio-segments", "version": "1", "config": { "options": {
@@ -35,7 +40,7 @@ The `download` step uses deprecated `riela/media-download`, which still runs wit
     } } }
   ],
   "nodes": [
-    { "id": "download", "addon": { "name": "riela/media-download", "version": "1", "config": { "options": {
+    { "id": "download", "addon": { "name": "media/yt-dlp-download", "version": "1", "config": { "options": {
       "url": "https://www.youtube.com/watch?v=8QxKwYOyUaE"
     } } } },
     { "id": "audio", "addon": { "name": "riela/audio-segments", "version": "1", "config": { "options": {
@@ -142,13 +147,20 @@ recursively. Keep agents inside the fanout branch or set
 `forwardImageAttachments` to `false` on a directly wired agent.
 
 Each media input gets a separate default artifact directory. An explicit
-`outputDir` must be dedicated to that stage because recomputing a download
-removes stale `video.*` files there, and recomputing frame sampling removes
-stale `frame_*.jpg` files there. `outputDir` cannot be the workflow working
-directory root or the user's home directory. Set `cache` to `false` to
-recompute a stage. Download URLs are canonicalized, local and private hosts
-are rejected, and `allowedHosts` can restrict accepted suffixes.
+`outputDir` must be dedicated to that stage because recomputing frame sampling
+removes stale `frame_*.jpg` files there. `outputDir` cannot be the workflow
+working directory root or the user's home directory. Set `cache` to `false` to
+recompute a stage. `media/yt-dlp-download` always writes under
+`$RIELA_ARTIFACT_DIR/media-download/`, rejects local and private hosts, and
+accepts `allowedHosts` to restrict host suffixes.
 
+`riela/video-frames` reports the input it read as `videoFrames.sourcePath`
+(the resolved absolute media path, also on cached results), next to `status`,
+`intervalSeconds`, `dedupeThreshold`, `sampled`, `kept`, `frames`,
+`outputDir`, `cached` and, when `segments` is given, the per-segment
+attachments. A fanout can carry it into every branch with
+`"contextFrom": "/videoFrames/sourcePath"`, for example to delete the
+downloaded file once the results are published.
 
 ## Media download contract
 
@@ -179,27 +191,10 @@ above. A package container add-on is declared in `addons[]` with
 and can write artifacts under `RIELA_ARTIFACT_DIR`. See
 [the yt-dlp package example](../../examples/video-pipeline-yt-dlp/README.md).
 
-## Migrating from riela/media-download
-
-1. Replace the node's `addon.name` with `media/yt-dlp-download`, version `1`.
-2. Keep `options.url`, `allowedHosts`, `maxFileSizeMB`, `maxDurationSeconds`,
-   `format`, and `cache` as needed.
-3. Drop `ytDlpPath`, `ffmpegPath`, and `outputDir`; the package add-on does not
-   support them.
-4. Make the add-on resolvable during validation: vendor
-   `addons/yt-dlp-download` into the workflow package's `addons[]`, or add a
-   node-addon dependency lock.
-5. Install the package with `riela package install` in project or user scope.
-
-For example, replace the download node with:
-
-```json
-{
-  "id": "download",
-  "addon": {
-    "name": "media/yt-dlp-download",
-    "version": "1",
-    "config": { "options": { "url": "https://example.com/video.mp4" } }
-  }
-}
-```
+A workflow that is not part of a package, such as a project workflow loaded with
+`--workflow-definition-dir`, can reference any container add-on installed in a
+project or user package or in the shared add-on store. Install the downloader once
+with `riela node install video-pipeline-yt-dlp --source examples/video-pipeline-yt-dlp --scope user`;
+`workflow validate` and runs then resolve `media/yt-dlp-download`. Package-owned
+workflows still resolve external add-ons only through their own `addons[]` or a
+dependency lock.

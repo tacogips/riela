@@ -152,10 +152,14 @@ updated runtime in both the host and any private guest.
 ### Fanout step outputs
 
 Set `fanout.includeStepOutputs` to a non-empty array of unique step IDs to add
-`stepOutputs` to each completed branch record, for example
+`stepOutputs` to each branch record, for example
 `"stepOutputs": {"transcribe": {"transcript": "hello"}}`. Each value is the
 latest accepted execution output; steps that never produced one are omitted.
-Failed and cancelled records remain unchanged. For same-workflow branches IDs
+Failed and cancelled records carry the named steps that were accepted before
+the branch stopped, so a `collect-partial` join can fall back to them (for
+example a transcript when the summarizer failed); when none were, the record
+has no `stepOutputs` key. Values come from the durable child session, so a
+resumed join rebuilds the same records. For same-workflow branches IDs
 must exist and cannot name the join step; cross-workflow IDs must name callee
 steps. The combined compact JSON values are bounded to 8,000,000 bytes per join.
 Omitting the field preserves the existing join shape and bytes.

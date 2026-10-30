@@ -35,8 +35,8 @@ riela workflow run <workflow> --variables '{"task": "..."}'
   `mediaDownload` contract (for example the installable `media/yt-dlp-download`
   package add-on) feeds `riela/audio-segments`, `riela/video-frames` and
   `riela/speech-to-text`, which split extraction, frame sampling and
-  transcription into reusable stages. `riela/media-download` still runs but is
-  deprecated; see [the video pipeline guide](docs/workflows/video-pipeline.md#migrating-from-rielamedia-download).
+  transcription into reusable stages; see
+  [the video pipeline guide](docs/workflows/video-pipeline.md).
 - **Edit, share and scale.** Edit workflows as graphs in the app, publish and
   install them as packages, run recurring routines, and spread steps across
   distributed workers.

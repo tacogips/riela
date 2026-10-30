@@ -82,13 +82,13 @@ source/account/query/window identity and pending versions during migration.
 
 ## Composable media pipeline, version `1`
 
-The media workflow is four builtins: `riela/media-download` fetches bounded,
-non-live media with yt-dlp; `riela/audio-segments` extracts mono 16 kHz MP3 and
+The media workflow is three builtins fed by any downloader that emits the
+tool-neutral `mediaDownload` contract (for example the package add-on
+`media/yt-dlp-download`): `riela/audio-segments` extracts mono 16 kHz MP3 and
 chooses silence-aware boundaries; `riela/video-frames` samples and deduplicates
 JPEG frames and can attach them to supplied half-open segments; and
 `riela/speech-to-text` transcribes one audio file with OpenAI. Each addon uses
-only `options` and `context` in its rendered config. Download accepts no
-credentials; speech accepts `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`.
+only `options` and `context` in its rendered config. Speech accepts `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`.
 
 Frame sampling uses a 256-bit difference hash. The flat `frames` output has no
 image forwarding metadata. When segment ranges are provided, each returned
@@ -99,10 +99,12 @@ cache hit. Keep shared stage paths under the workflow working directory when
 running the stages in containers.
 
 Amended 2026-10-30 by `design-youtube-processing-builtins.md` §E.
-`riela/media-download` is deprecated: it still runs, and validation warns.
-The tool-neutral `mediaDownload` contract is documented, and yt-dlp ships as
-the package container add-on `media/yt-dlp-download`. The other three stages
-stay built-in and unchanged.
+The former built-in `riela/media-download` was removed because it was tied to
+one downloader tool; a workflow that still names it fails validation like any
+unknown add-on. The tool-neutral `mediaDownload` contract is documented, and
+yt-dlp ships as the package container add-on `media/yt-dlp-download`. The other
+three stages stay built-in; `riela/video-frames` also reports
+`videoFrames.sourcePath`.
 
 ## Gmail: `riela/gmail-collect`, version `1`
 

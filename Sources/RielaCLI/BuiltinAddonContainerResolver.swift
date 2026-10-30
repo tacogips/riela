@@ -10,7 +10,6 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
   WorkflowAddonTerminalRecording {
   static let guestStateDirectory = "/var/lib/riela/state"
   private static let addonDefaultImages = [
-    "riela/media-download": "riela-video-addons:local",
     "riela/audio-segments": "riela-video-addons:local",
     "riela/video-frames": "riela-video-addons:local",
     "riela/speech-to-text": "riela-video-addons:local",

@@ -10,8 +10,15 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 
+class StageError(Exception):
+    """A failure whose stage and fixed reason are safe to report (no URLs or tool output)."""
+
+    def __init__(self, stage, reason):
+        super().__init__(stage + ': ' + reason)
+
+
 def fail(stage, reason):
-    raise ValueError(stage + ': ' + reason)
+    raise StageError(stage, reason)
 
 
 def main():
@@ -31,11 +38,10 @@ def main():
         fail('url', 'local host is forbidden')
     try:
         ip = ipaddress.ip_address(host)
-        if not ip.is_global:
-            fail('url', 'non-public address is forbidden')
-    except ValueError as error:
-        if str(error).startswith('url:'):
-            raise
+    except ValueError:
+        ip = None
+    if ip is not None and not ip.is_global:
+        fail('url', 'non-public address is forbidden')
     allowed = options.get('allowedHosts')
     if allowed is not None:
         if not isinstance(allowed, list) or any(not isinstance(h, str) or not h for h in allowed):
@@ -70,13 +76,26 @@ def main():
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
         fail('metadata', 'ffmpeg unavailable')
+    cache_dir = output / '.yt-dlp-cache'
+    cache_dir.mkdir(exist_ok=True)
+    deno = shutil.which('deno')
+    base = ['yt-dlp', '--ignore-config'] + (['--js-runtimes', 'deno:' + deno] if deno else []) + ['--cache-dir', str(cache_dir)]
+
     def run(args, stage):
         try:
-            result = subprocess.run(args, capture_output=True, text=True, check=True)
-            return result.stdout
+            result = subprocess.run(base + args, capture_output=True, text=True)
         except (OSError, subprocess.SubprocessError):
-            fail(stage, 'tool failed')
-    metadata = json.loads(run(['yt-dlp', '--no-playlist', '-O', '%(.{id,title,duration,is_live,live_status})j', url], 'metadata'))
+            fail(stage, 'could not run yt-dlp')
+        if result.returncode != 0:
+            # yt-dlp stderr can echo URLs and credentials, so only the exit status is reported.
+            fail(stage, 'yt-dlp exited with status ' + str(result.returncode))
+        return result.stdout
+    try:
+        metadata = json.loads(run(['--no-playlist', '-O', '%(.{id,title,duration,is_live,live_status})j', url], 'metadata'))
+    except ValueError:
+        fail('metadata', 'invalid yt-dlp metadata')
+    if not isinstance(metadata, dict):
+        fail('metadata', 'invalid yt-dlp metadata')
     duration = metadata.get('duration')
     if metadata.get('is_live') or metadata.get('live_status') in ('is_live', 'is_upcoming'):
         fail('metadata', 'live streams are forbidden')
@@ -85,10 +104,10 @@ def main():
     for path in output.glob('video.*'):
         if path.is_file() or path.is_symlink():
             path.unlink()
-    lines = run(['yt-dlp', '--no-playlist', '--max-filesize', str(size) + 'M', '--ffmpeg-location', ffmpeg, '-f', fmt, '--merge-output-format', 'mp4', '-o', str(output / 'video.%(ext)s'), '--print', 'after_move:filepath', '--no-simulate', url], 'download').splitlines()
+    lines = run(['--no-playlist', '--max-filesize', str(size) + 'M', '--ffmpeg-location', ffmpeg, '-f', fmt, '--merge-output-format', 'mp4', '-o', str(output / 'video.%(ext)s'), '--print', 'after_move:filepath', '--no-simulate', url], 'download').splitlines()
     path = Path(lines[-1]) if lines else Path('/')
     if not path.is_absolute() or not path.is_file() or path.resolve().parent != output.resolve():
-        fail('download', 'output file missing or outside artifact directory')
+        fail('download', 'no media file in the artifact directory; it may have exceeded maxFileSizeMB')
     payload = {'mediaDownload': {'status': 'downloaded', 'url': url, 'videoId': metadata.get('id'), 'title': metadata.get('title'), 'durationSeconds': duration, 'path': str(path), 'outputDir': str(output), 'cached': False}}
     manifest.write_text(json.dumps({'fingerprint': fingerprint, 'payload': payload}, separators=(',', ':')))
     print(json.dumps(payload, separators=(',', ':')))
@@ -96,6 +115,9 @@ def main():
 
 try:
     main()
+except StageError as error:
+    print('yt-dlp-download: ' + str(error), file=sys.stderr)
+    sys.exit(1)
 except Exception:
     print('yt-dlp-download: request: invalid input or processing failed', file=sys.stderr)
     sys.exit(1)

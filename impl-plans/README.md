@@ -205,7 +205,9 @@ combined-tree integration reviews (`comm-010664`) accepted them. The work adds
 `limit` / `maxAttempts`, youtube-collect `excludeLive` / `maxDurationSeconds`,
 the tool-neutral `mediaDownload` contract with the `media/yt-dlp-download`
 package container add-on in `examples/video-pipeline-yt-dlp`, and a
-`workflow validate` deprecation warning for `riela/media-download`. The
+`workflow validate` deprecation warning for `riela/media-download` (the
+built-in and its warning were removed later on 2026-10-30; see
+[design §E](../design-docs/specs/design-youtube-processing-builtins.md#removal-of-rielamedia-download)). The
 combined-tree run in `tmp/youtube-processing-builtins/reconcile-wave-004/`
 (`test-combined.log`) passed 184 tests with 0 failures across 25 suites,
 including `RielaExampleParityTests` over 50 mock examples. Strict lint and the

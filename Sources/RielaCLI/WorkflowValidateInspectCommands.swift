@@ -421,8 +421,15 @@ func reachableWorkflowMaps(
 ) async throws -> ReachableWorkflowMaps {
   var workflows = [bundle.workflow.workflowId: bundle.workflow]
   var nodePayloads = [bundle.workflow.workflowId: bundle.nodePayloads]
+  // The runtime resolves container add-ons from installed packages and the shared
+  // add-on store, so workflows outside a package can use them too.
+  let installedContainerAddons = ((try? await installedContainerAddonRegistrations(
+    workingDirectory: URL(fileURLWithPath: resolution.workingDirectory, isDirectory: true)
+  )) ?? []).map { InstalledContainerAddon(name: $0.addonName, version: $0.version) }
   var nodeHostRequirements = [
-    bundle.workflow.workflowId: addonHostRequirements(in: bundle, workingDirectory: resolution.workingDirectory)
+    bundle.workflow.workflowId: addonHostRequirements(
+      in: bundle, workingDirectory: resolution.workingDirectory, installedContainerAddons: installedContainerAddons
+    )
   ]
   var bundles = [bundle.workflow.workflowId: bundle]
   var localAddonExecutables: [String: Bool] = [:]
@@ -440,7 +447,7 @@ func reachableWorkflowMaps(
       workflows[next.workflowId] = callee.workflow
       nodePayloads[next.workflowId] = callee.nodePayloads
       nodeHostRequirements[next.workflowId] = addonHostRequirements(
-        in: callee, workingDirectory: resolution.workingDirectory
+        in: callee, workingDirectory: resolution.workingDirectory, installedContainerAddons: installedContainerAddons
       )
     }
     guard let step = workflows[next.workflowId]?.steps.first(where: { $0.id == next.stepId }) else {
@@ -477,9 +484,15 @@ func reachableWorkflowMaps(
   )
 }
 
+struct InstalledContainerAddon: Equatable, Sendable {
+  let name: String
+  let version: String
+}
+
 private func addonHostRequirements(
   in bundle: ResolvedWorkflowBundle,
-  workingDirectory: String
+  workingDirectory: String,
+  installedContainerAddons: [InstalledContainerAddon] = []
 ) -> [String: WorkflowNodeHostRequirement] {
   var requirements: [String: WorkflowNodeHostRequirement] = [:]
   let packageEnvironment = bundle.packageManifest?.environmentVariables
@@ -504,8 +517,12 @@ private func addonHostRequirements(
       let dependencyAddon = verifiedInstalledAddon(
         reference, in: bundle, workingDirectory: workingDirectory
       )
+      // Package-owned workflows must lock external add-ons; others may use any installed container add-on.
+      let installedContainer = bundle.packageManifest == nil && installedContainerAddons.contains {
+        $0.name == reference.name && (reference.version == nil || $0.version == reference.version)
+      }
       if RielaBuiltinAddonCatalog.supports(name: reference.name, version: reference.version)
-        || dependencyAddon != nil {
+        || dependencyAddon != nil || installedContainer {
         requirements[node.id] = WorkflowNodeHostRequirement(
           addonExecutable: dependencyAddon?.executablePath,
           requiredEnvironment: requiredEnvironment

@@ -84,6 +84,7 @@ final class VideoPipelineYtDlpPackageTests: XCTestCase {
     try FileManager.default.copyItem(at: script, to: copy)
     let fake = """
     #!/bin/sh
+    echo "$*" >> "$ARGS"
     for arg in "$@"; do
       if [ "$arg" = "-O" ]; then
         case "$FAKE_MODE" in
@@ -100,35 +101,39 @@ final class VideoPipelineYtDlpPackageTests: XCTestCase {
     touch "$path"
     echo "$path"
     """
-    for (name, content) in [("yt-dlp", fake), ("ffmpeg", "#!/bin/sh\nexit 0\n")] {
+    for (name, content) in [("yt-dlp", fake), ("ffmpeg", "#!/bin/sh\nexit 0\n"), ("deno", "#!/bin/sh\nexit 0\n")] {
       let file = bin.appendingPathComponent(name)
       try content.write(to: file, atomically: true, encoding: .utf8)
       try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
     }
-    func invoke(_ options: [String: Any], mode: String = "") throws -> (Int32, Data) {
+    func invoke(_ options: [String: Any], mode: String = "") throws -> ScriptResult {
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
       process.arguments = ["python3", copy.path]
       process.environment = ["PATH": "\(bin.path):/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1",
         "RIELA_ARTIFACT_DIR": temp.appendingPathComponent("artifacts").path,
-        "CALLS": temp.appendingPathComponent("calls").path, "FAKE_MODE": mode]
+        "CALLS": temp.appendingPathComponent("calls").path, "FAKE_MODE": mode,
+        "ARGS": temp.appendingPathComponent("args").path]
       let input = Pipe()
       let output = Pipe()
       process.standardInput = input
       process.standardOutput = output
-      process.standardError = Pipe()
+      let errors = Pipe()
+      process.standardError = errors
       try process.run()
       let data = try JSONSerialization.data(withJSONObject: ["nodePayload": ["config": ["options": options]]])
       input.fileHandleForWriting.write(data + Data("\n".utf8))
       try input.fileHandleForWriting.close()
       process.waitUntilExit()
-      return (process.terminationStatus, output.fileHandleForReading.readDataToEndOfFile())
+      let stderr = String(bytes: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+      return ScriptResult(
+        status: process.terminationStatus, stdout: output.fileHandleForReading.readDataToEndOfFile(), stderr: stderr)
     }
     let valid: [String: Any] = ["url": "https://example.com/video"]
     let first = try invoke(valid)
-    XCTAssertEqual(first.0, 0)
-    XCTAssertEqual(try XCTUnwrap(String(data: first.1, encoding: .utf8)).split(separator: "\n").count, 1)
-    let firstJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: first.1) as? [String: [String: Any]])
+    XCTAssertEqual(first.status, 0)
+    XCTAssertEqual(try XCTUnwrap(String(data: first.stdout, encoding: .utf8)).split(separator: "\n").count, 1)
+    let firstJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: first.stdout) as? [String: [String: Any]])
     let media = try XCTUnwrap(firstJSON["mediaDownload"])
     let path = try XCTUnwrap(media["path"] as? String)
     XCTAssertTrue(FileManager.default.fileExists(atPath: path))
@@ -136,21 +141,43 @@ final class VideoPipelineYtDlpPackageTests: XCTestCase {
     XCTAssertEqual(URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent.count, 24)
     XCTAssertEqual(media["cached"] as? Bool, false)
     let second = try invoke(valid)
-    XCTAssertEqual(second.0, 0)
-    let secondJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: second.1) as? [String: [String: Any]])
+    XCTAssertEqual(second.status, 0)
+    let secondJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: second.stdout) as? [String: [String: Any]])
     XCTAssertEqual(secondJSON["mediaDownload"]?["cached"] as? Bool, true)
     let calls = try String(contentsOf: temp.appendingPathComponent("calls"), encoding: .utf8)
     XCTAssertEqual(calls.split(separator: "\n").count, 1)
-    for mode in ["live", "long"] {
+    let invocations = try String(contentsOf: temp.appendingPathComponent("args"), encoding: .utf8)
+      .split(separator: "\n")
+    XCTAssertEqual(invocations.count, 2)
+    let cacheDirectory = URL(fileURLWithPath: path).deletingLastPathComponent()
+      .appendingPathComponent(".yt-dlp-cache").path
+    for invocation in invocations {
+      XCTAssertTrue(invocation.hasPrefix(
+        "--ignore-config --js-runtimes deno:\(bin.appendingPathComponent("deno").path) --cache-dir \(cacheDirectory) "),
+        String(invocation))
+    }
+    for (mode, reason) in [("live", "metadata: live streams are forbidden"),
+      ("long", "metadata: invalid or excessive duration")] {
       let result = try invoke(["url": "https://example.com/\(mode)"], mode: mode)
-      XCTAssertEqual(result.0, 1)
-      XCTAssertTrue(result.1.isEmpty)
+      XCTAssertEqual(result.status, 1)
+      XCTAssertTrue(result.stdout.isEmpty)
+      XCTAssertEqual(result.stderr, "yt-dlp-download: \(reason)\n")
     }
     for options in [["url": "http://127.0.0.1/x"], ["url": "http://10.0.0.1/x"], ["url": "http://localhost/x"],
       ["url": "https://example.com/x", "ytDlpPath": "/tmp/tool"]] {
       let result = try invoke(options)
-      XCTAssertEqual(result.0, 1)
-      XCTAssertTrue(result.1.isEmpty)
+      XCTAssertEqual(result.status, 1)
+      XCTAssertTrue(result.stdout.isEmpty)
+      XCTAssertTrue(result.stderr.hasPrefix("yt-dlp-download: "), result.stderr)
+      XCTAssertFalse(result.stderr.contains("http"), result.stderr)
     }
+    let failing = try invoke(["url": "https://user:secret@example.com/x"])
+    XCTAssertEqual(failing.stderr, "yt-dlp-download: url: invalid URL\n")
   }
+}
+
+private struct ScriptResult {
+  var status: Int32
+  var stdout: Data
+  var stderr: String
 }

@@ -30,7 +30,6 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.gmailCollectionRegistration,
     BuiltinWorkflowAddonResolver.youtubeCollectionRegistration,
     BuiltinWorkflowAddonResolver.youtubeGatewayReadRegistration,
-    BuiltinWorkflowAddonResolver.mediaDownloadRegistration,
     BuiltinWorkflowAddonResolver.audioSegmentsRegistration,
     BuiltinWorkflowAddonResolver.videoFramesRegistration,
     BuiltinWorkflowAddonResolver.speechToTextRegistration,

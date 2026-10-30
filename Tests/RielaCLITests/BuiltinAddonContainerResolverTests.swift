@@ -10,7 +10,7 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
   func testMediaAddonsSelectVideoImageWhenBaseImageIsSelected() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("video-addon-image-selection")
     defer { try? FileManager.default.removeItem(at: root) }
-    let addonNames = ["riela/media-download", "riela/audio-segments", "riela/video-frames", "riela/speech-to-text",
+    let addonNames = ["riela/audio-segments", "riela/video-frames", "riela/speech-to-text",
       "riela/video-transcribe"]
 
     for (index, name) in addonNames.enumerated() {
@@ -76,7 +76,7 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
     let root = try makeRielaCLITestTemporaryDirectory("video-addon-sandbox-image-selection")
     defer { try? FileManager.default.removeItem(at: root) }
 
-    for (name, expectedImage) in [("riela/media-download", "riela-video-addons:local"),
+    for (name, expectedImage) in [("riela/audio-segments", "riela-video-addons:local"),
       ("riela/git-commit", WorkflowAddonContainerExecution.defaultImage)] {
       let runner = BuiltinContainerRecordingRunner(output: testOutput())
       let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

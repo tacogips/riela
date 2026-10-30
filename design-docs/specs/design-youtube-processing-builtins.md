@@ -22,7 +22,7 @@ This document generalizes five workarounds seen in the ART YouTube workflow:
 | B | Opt-in fanout `includeStepOutputs` | `design-bounded-fanout-join-workflow-execution.md` |
 | C | durable-queue `pending` `limit` / `maxAttempts` | `docs/workflows/durable-queue.md` |
 | D | youtube-collect `excludeLive` / `maxDurationSeconds` | `design-native-source-collection.md` §YouTube |
-| E | Tool-neutral `mediaDownload` contract, yt-dlp as a package add-on, `riela/media-download` deprecated | `design-native-source-collection.md` §Composable media pipeline |
+| E | Tool-neutral `mediaDownload` contract, yt-dlp as a package add-on, `riela/media-download` removed | `design-native-source-collection.md` §Composable media pipeline |
 
 The baseline designs stay valid. This document only adds the deltas below.
 
@@ -30,7 +30,8 @@ The baseline designs stay valid. This document only adds the deltas below.
 
 - Backward compatible. Without the new options, workflows, join payloads,
   durable-queue results and youtube-collect outputs stay byte-for-byte
-  unchanged.
+  unchanged. The later removal of `riela/media-download` (§E) is the one
+  deliberate exception.
 - The `YouTubeGatewayCore` pin (`33006f3a`) and the macOS-only
   `condition: .when(platforms: [.macOS])` stay as they are. Its source is not
   vendored. Code that imports it is wrapped in `#if canImport(YouTubeGatewayCore)`,
@@ -230,7 +231,12 @@ When the field is present, each completed branch record gains:
   from `stepOutputs`. Omitted keys are never written as `null`. A completed
   branch always carries a `stepOutputs` object, possibly `{}`.
 - Failed and cancelled branch records, which can reach the join under
-  `collect-partial`, are unchanged and get no `stepOutputs`.
+  `collect-partial`, carry `stepOutputs` for the named steps that had an
+  accepted output before the branch stopped, read from the durable child
+  session (the terminal snapshot when the branch run threw). When no named
+  step was accepted, the record has no `stepOutputs` key. Amended 2026-10-30
+  after implementation: the first release left these records unchanged; the
+  ART join needs the transcript when the per-segment summarizer fails.
 - When the field is absent, no key is added anywhere. The join payload, message
   bytes and durable receipt stay identical to today.
 
@@ -370,7 +376,6 @@ outputs:
 `riela/audio-segments`, `riela/video-frames` and `riela/speech-to-text` are
 unchanged and stay built-in. They take only `options.path`, so a workflow wires
 `{{input.mediaDownload.path}}` from any producer, or any plain local path.
-`riela/media-download` already emits this shape, and its output does not change.
 
 ### Downloader: `media/yt-dlp-download` v1, a package container add-on
 
@@ -397,8 +402,7 @@ The example package is `examples/video-pipeline-yt-dlp/`. It has no top-level
     to `runtime.output`
 - `addons/yt-dlp-download/Containerfile`: a self-contained image. It does not
   extend the riela worker image. It includes `python3`, `ffmpeg`, and yt-dlp
-  plus Deno pinned to the same versions and SHA-256 values as
-  `containers/video-addons/Containerfile`.
+  plus Deno pinned by version and SHA-256.
 - `addons/yt-dlp-download/yt_dlp_download.py`: a Python 3 standard-library
   entrypoint. It reads one `AddonExecutionInput` JSONL line from stdin and takes
   its options from `nodePayload.config.options`:
@@ -406,19 +410,21 @@ The example package is `examples/video-pipeline-yt-dlp/`. It has no top-level
   - `allowedHosts`;
   - `maxFileSizeMB` (1–1,000,000, default 2048);
   - `maxDurationSeconds` (1–172,800, default 7200);
-  - `format` (default identical to the builtin);
+  - `format` (default `bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b`);
   - `cache` (default true).
 
-  The script applies the same safety rules as the builtin: only http/https,
+  The script applies these safety rules: only http/https,
   reject local and private hosts and private IP literals, `allowedHosts` suffix
   match, reject live or upcoming streams, and reject a missing or over-long
   duration. It writes to `$RIELA_ARTIFACT_DIR/media-download/<sha256(url) first
-  24 hex>/`, the same layout as the builtin default. The cache manifest
+  24 hex>/`. The cache manifest
   `media-download-manifest.json` is fingerprinted by `url`, `maxFileSizeMB` and
   `format`, and is reused only when the referenced file exists. On success it
   writes one `{"mediaDownload": {...}}` object. On failure it exits non-zero with
-  a one-line stderr reason that contains no credentials and no raw yt-dlp output
-  beyond that reason. `ytDlpPath`, `ffmpegPath` and `outputDir` are not
+  one stderr line `yt-dlp-download: <stage>: <reason>` built from fixed reasons
+  (for example `yt-dlp-download: metadata: live streams are forbidden`). It never
+  echoes yt-dlp stderr, URLs or credentials; a yt-dlp failure reports only its
+  exit status. `ytDlpPath`, `ffmpegPath` and `outputDir` are not
   supported, because the image owns the tools and output must stay on the
   artifact mount.
 - `workflow/workflow.json` (`workflowId: video-pipeline-yt-dlp`): download
@@ -427,55 +433,57 @@ The example package is `examples/video-pipeline-yt-dlp/`. It has no top-level
   `workflow/mock-scenario.json`.
 - `README.md`: install, run, and how to swap the downloader.
 
-### Deprecation of `riela/media-download`
+### Removal of `riela/media-download`
 
-`riela/media-download` keeps its in-process implementation, catalog entry and
-default container image for this release. It does not delegate to the new
-add-on, so ART and other existing pipelines behave the same. Validation behavior:
+Amended 2026-10-30 after implementation. This release first kept
+`riela/media-download` as a deprecated built-in with a validation warning. The
+user then decided that a downloader tied to one OSS tool must not be a runtime
+built-in, and backward compatibility is not required, so the built-in was
+removed:
 
-- `DefaultWorkflowValidator` emits one `.warning` per node id whose
-  `addon.name == "riela/media-download"`. The path is
-  `workflow.nodes.<nodeId>.addon.name`, and the message is: "riela/media-download
-  is deprecated; install an adaptable downloader add-on such as
-  media/yt-dlp-download and wire its mediaDownload.path (see
-  docs/workflows/video-pipeline.md, Migrating from riela/media-download)".
-- Warnings do not fail `riela workflow validate` or a run.
+- Its catalog entry, handler registration, default container image mapping,
+  in-process implementation, yt-dlp helpers and the deprecation warning were
+  deleted. `containers/video-addons/Containerfile` now adds only ffmpeg.
+- A workflow that still names `riela/media-download` fails `riela workflow
+  validate` like any other unknown `riela/` add-on
+  (`unresolvedAddonExecutable`). There is no migration alias.
+- `media/yt-dlp-download` passes `--ignore-config`, `--js-runtimes deno:<path>`
+  when Deno is on `PATH`, and `--cache-dir <output>/.yt-dlp-cache`, matching
+  the removed built-in's invocation.
+- `riela/video-frames` reports `videoFrames.sourcePath`, so a fanout can carry
+  the downloaded file path (for example to delete it after publishing).
 
 ### Docs and tests
 
 Docs:
 
-- `docs/workflows/video-pipeline.md`: add the contract, "Plugging in a
-  different downloader" (any add-on or step that emits `mediaDownload.path`, or
-  a plain path), and "Migrating from riela/media-download". For the migration,
-  a workflow package vendors the add-on directory into its own `addons[]`, or
-  depends on it through the existing node-addon dependency lock.
-- `docs/container-addons.md`, video section: mark the add-on deprecated and
-  describe the package container add-on and its egress capability.
+- `docs/workflows/video-pipeline.md`: the contract, "Plugging in a different
+  downloader" (any add-on or step that emits `mediaDownload.path`, or a plain
+  path), and a parent example that uses `media/yt-dlp-download` from a workflow
+  package vendoring the add-on in its `addons[]`.
+- `docs/container-addons.md`, video section: no built-in downloader; describe
+  the package container add-on and its egress capability.
 - `design-native-source-collection.md` media section: add a pointer.
 
 `Tests/RielaCLITests/MediaPipelineWorkflowDocumentationTests.swift` asserts
-that `video-pipeline.md` contains exactly three ```` ```json ```` blocks and
-validates the first two as workflows. Keep those three blocks first, in order
-and unchanged. They still use `riela/media-download`, which now validates with
-a warning and still exits successfully. Place a sentence before them that
-points to the migration section. Add new contract and migration snippets as
-`json` blocks after them, and update the expected block count. The test keeps
-validating only the first two.
+that `video-pipeline.md` contains exactly three ```` ```json ```` blocks. It
+validates the parent as an installed project package that vendors
+`addons/yt-dlp-download`, and the segment workflow as a project-scope workflow.
 
 Tests:
 
-- The deprecation warning is emitted once and is not an error, and
-  non-deprecated media add-ons emit none.
+- Validating a workflow that names `riela/media-download` fails as an unknown
+  add-on, and the name is absent from the catalog and handler registry.
 - A `RielaCLITests` package test runs in a temporary project with `HOME` set
   under the test tmp directory. It runs `riela package validate` and a
   project-scope install of `examples/video-pipeline-yt-dlp`. It then validates
   the installed `video-pipeline-yt-dlp` workflow (valid, no unresolved add-on)
   and runs its mock scenario.
 - A script contract test runs only when `python3` is available, and otherwise
-  calls `XCTSkip`. It runs the entrypoint with a fake `yt-dlp`/`ffmpeg` on
-  `PATH` in tmp and asserts: the `mediaDownload` shape, rejection of private
-  URLs, rejection of live streams, and a cache hit.
+  calls `XCTSkip`. It runs the entrypoint with a fake `yt-dlp`/`ffmpeg`/`deno`
+  on `PATH` in tmp and asserts: the `mediaDownload` shape, the yt-dlp base
+  arguments, rejection of private URLs, rejection of live streams with the
+  stage-and-reason stderr line, and a cache hit.
 
 ## Rollout and verification
 
@@ -519,10 +527,9 @@ Logs go under `tmp/youtube-processing-builtins/`.
   `~/.riela/addons/<ns>/<name>/<version>/`). The request allows "an equivalent
   host-provided resolver", so the downloader uses it rather than adding a second
   resolver.
-- **No delegation for the deprecated add-on.** The deprecated
-  `riela/media-download` keeps its own implementation instead of delegating to
-  the container add-on. This avoids requiring a container runtime for existing
-  ART runs.
+- **Built-in removed instead of deprecated.** The plan kept
+  `riela/media-download` as a deprecated built-in; it was then removed without
+  a migration alias (see "Removal of `riela/media-download`").
 - **Cross-workflow validation in the CLI.** Cross-workflow
   `includeStepOutputs` ids are validated in CLI `workflow validate`, where callee
   resolution exists. Core validates only the shape and same-workflow ids.
@@ -534,14 +541,12 @@ Logs go under `tmp/youtube-processing-builtins/`.
 - If a directive construction site misses `includeStepOutputs`, resumed joins
   diverge and the receipt conflicts. All three sites are listed above and
   covered by the resume test.
-- If the deprecation warning appears in examples or tests that assert zero
-  diagnostics, those assertions must be scoped to errors.
 - A Linux compile break from `YouTubeGatewayCore` symbols leaking outside
   `#if canImport`. Keep the parsing layer SDK-free.
 - The container add-on cannot be live-verified without network and a container
   runtime. Verification relies on package install/validate, a mock run and the
   fake-tool script test.
-- Workflows outside the owning package that reference `media/yt-dlp-download`
-  resolve at runtime through the shared store, but `workflow validate` requires
-  package ownership or a dependency lock. This is existing behavior, and the
-  migration doc covers it (see the user-QA file).
+- Workflows outside any package that reference `media/yt-dlp-download` resolve
+  it from installed packages or the shared store in both `workflow validate` and
+  runs. Package-owned workflows still require package ownership or a dependency
+  lock (see the user-QA file).

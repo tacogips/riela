@@ -618,7 +618,13 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
     }
     """.write(to: package.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
 
-    let registrations = try await installedContainerAddonRegistrations(workingDirectory: root)
+    // Isolate HOME so add-ons installed in the developer's shared store are not read.
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let registrations = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "HOME": home.path, "RIELA_WORKFLOW_HOME": home.appendingPathComponent(".riela").path
+    ]) {
+      try await installedContainerAddonRegistrations(workingDirectory: root)
+    }
 
     XCTAssertEqual(registrations.map(\.packageName), ["@tacogips/pdf-to-images-addon"])
     XCTAssertEqual(registrations.map(\.addonName), ["tacogips/pdf-to-images"])

@@ -161,15 +161,6 @@ struct MediaPipelineContext: Sendable {
 }
 
 extension BuiltinWorkflowAddonResolver {
-  static let mediaDownloadRegistration = BuiltinAddonHandlerRegistration(
-    name: "riela/media-download", bindsCLIVariablesAsInputs: false
-  ) { resolver, input, context in
-    try await MediaPipelineContext(resolver: resolver, stage: "media-download").finish(
-      input, context
-    ) { options, _ in
-      try await resolver.mediaDownload(options, deadline: context.deadline)
-    }
-  }
   static let audioSegmentsRegistration = BuiltinAddonHandlerRegistration(
     name: "riela/audio-segments", bindsCLIVariablesAsInputs: false
   ) { resolver, input, context in
@@ -195,114 +186,6 @@ extension BuiltinWorkflowAddonResolver {
       try await resolver.speechToText(
         options, bindings: input.addon.env ?? [:], deadline: context.deadline)
     }
-  }
-
-  func mediaDownload(_ values: JSONObject, deadline: Date?) async throws -> JSONObject {
-    let c = MediaPipelineContext(resolver: self, stage: "media-download")
-    let service = c.service
-    guard let raw = try c.string(values, "url") else { throw MediaPipelineStageError.option("url") }
-    let originalHost = URLComponents(string: raw)?.host?.lowercased()
-    guard let url = MediaPipelineOptions.normalizedURL(raw) else {
-      throw MediaPipelineStageError.option("url")
-    }
-    let hosts: [String]?
-    if let value = values["allowedHosts"] {
-      guard case .array(let items) = value, items.allSatisfy({ $0.stringValue != nil }) else {
-        throw MediaPipelineStageError.option("allowedHosts")
-      }
-      hosts = items.compactMap(\.stringValue)
-    } else {
-      hosts = nil
-    }
-    guard MediaPipelineOptions.isSafeURL(url),
-      hosts?.contains(where: { allowedHost in
-        [originalHost, url.host].compactMap { $0 }.contains {
-          MediaPipelineOptions.host($0, matches: allowedHost)
-        }
-      }) ?? true
-    else { throw MediaPipelineStageError.option("url") }
-    let maxMB = Int(try c.number(values, "maxFileSizeMB", 2048, 1...1_000_000))
-    let maxDuration = try c.number(values, "maxDurationSeconds", 7200, 1...172800)
-    let format = try c.string(
-      values, "format", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b")!
-    let key = url.absoluteString
-    let identity = String(try c.fingerprint(.string(key)).prefix(24))
-    let ytPath = try c.string(values, "ytDlpPath")
-    let ffmpegPath = try c.string(values, "ffmpegPath")
-    let enabled = try c.bool(values, "cache", true)
-    let fp = try c.fingerprint(
-      .object([
-        "url": .string(key), "maxFileSizeMB": .integer(Int64(maxMB)),
-        "format": .string(format)
-      ]))
-    let outputDir =
-      try c.outputDirectory(c.string(values, "outputDir"), stage: "media-download")
-      ?? (self.artifactRootURL ?? workingDirectory.appendingPathComponent(".riela/artifacts"))
-      .appendingPathComponent("media-download/\(identity)")
-    if let cached = c.cached(
-      outputDir: outputDir, manifest: "media-download-manifest.json", fingerprint: fp,
-      enabled: enabled) {
-      return cached
-    }
-    try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
-    let manifest = "media-download-manifest.json"
-    try? FileManager.default.removeItem(at: outputDir.appendingPathComponent(manifest))
-    let ytCache = outputDir.appendingPathComponent(".yt-dlp-cache", isDirectory: true)
-    try FileManager.default.createDirectory(at: ytCache, withIntermediateDirectories: true)
-    let yt = try service.executable(ytPath, name: "yt-dlp", stage: "metadata")
-    let metadata = try await service.run(
-      yt,
-      service.ytDlpArguments([
-        "--no-playlist", "-O", "%(.{id,title,duration,is_live,live_status})j", key
-      ], cacheDirectory: ytCache),
-      stage: "metadata", deadline: deadline)
-    guard let data = metadata.stdout.data(using: .utf8),
-      let info = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-    else { throw MediaPipelineStageError.stage("metadata", "invalid yt-dlp metadata") }
-    guard (info["is_live"] as? Bool) != true,
-      !["is_live", "is_upcoming"].contains(info["live_status"] as? String ?? "")
-    else {
-      throw MediaPipelineStageError.stage("metadata", "live and upcoming streams are not supported")
-    }
-    let duration = (info["duration"] as? NSNumber)?.doubleValue ?? 0
-    guard duration > 0, duration <= maxDuration else {
-      throw MediaPipelineStageError.stage(
-        "metadata", "duration is missing or exceeds maxDurationSeconds")
-    }
-    let id = info["id"] as? String
-    let title = info["title"] as? String ?? "Video"
-    for file in try FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)
-      where file.lastPathComponent.hasPrefix("video.") {
-      try FileManager.default.removeItem(at: file)
-    }
-    let ffmpeg = try service.executable(ffmpegPath, name: "ffmpeg", stage: "download")
-    let template = outputDir.appendingPathComponent("video.%(ext)s").path
-    let result = try await service.run(
-      yt,
-      service.ytDlpArguments([
-        "--no-playlist", "--max-filesize", "\(maxMB)M", "--ffmpeg-location", ffmpeg.path, "-f",
-        format, "--merge-output-format", "mp4", "-o", template, "--print", "after_move:filepath",
-        "--no-simulate", key
-      ], cacheDirectory: ytCache),
-      stage: "download", deadline: deadline)
-    guard let path = result.stdout.split(whereSeparator: \.isNewline).last.map(String.init),
-      FileManager.default.fileExists(atPath: path)
-    else {
-      throw MediaPipelineStageError.stage(
-        "download", service.missingDownloadOutputMessage(maxFileSizeMB: maxMB))
-    }
-    let media = URL(fileURLWithPath: path).standardizedFileURL
-    let payload: JSONObject = [
-      "mediaDownload": .object([
-        "status": .string("downloaded"), "url": .string(key),
-        "videoId": id.map(JSONValue.string) ?? .null, "title": .string(title),
-        "durationSeconds": .number(duration), "path": .string(media.path),
-        "outputDir": .string(outputDir.path), "cached": .bool(false)
-      ])
-    ]
-    try c.save(
-      payload, outputDir: outputDir, manifest: "media-download-manifest.json", fingerprint: fp)
-    return payload
   }
 
   func audioSegments(_ values: JSONObject, deadline: Date?) async throws -> JSONObject {
@@ -433,8 +316,13 @@ extension BuiltinWorkflowAddonResolver {
     fingerprintOptions["ffprobePath"] = values["ffprobePath"] ?? .null
     let fp = try c.fingerprint(.object(fingerprintOptions))
     let enabled = try c.bool(values, "cache", true)
-    if let hit = c.cached(
+    if var hit = c.cached(
       outputDir: out, manifest: "video-frames-manifest.json", fingerprint: fp, enabled: enabled) {
+      // Manifests written before sourcePath existed are upgraded on replay.
+      if case .object(var cachedFrames)? = hit["videoFrames"] {
+        cachedFrames["sourcePath"] = .string(media.path)
+        hit["videoFrames"] = .object(cachedFrames)
+      }
       return hit
     }
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -470,7 +358,7 @@ extension BuiltinWorkflowAddonResolver {
       "status": .string("completed"), "intervalSeconds": .number(interval),
       "dedupeThreshold": .number(threshold), "sampled": .integer(Int64(extraction.sampled)),
       "kept": .integer(Int64(extraction.frames.count)), "frames": .array(frames),
-      "outputDir": .string(out.path), "cached": .bool(false)
+      "outputDir": .string(out.path), "sourcePath": .string(media.path), "cached": .bool(false)
     ]
     if let rawSegments = values["segments"] {
       guard case .array(let inputSegments) = rawSegments else {

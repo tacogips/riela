@@ -51,26 +51,26 @@ final class WorkflowExecutionSandboxTests: XCTestCase {
 
     let addonWorkflow = WorkflowDefinition(workflowId: "encoding-regression",
       defaults: .init(nodeTimeoutMs: 30_000, maxLoopIterations: 20), entryStepId: "start",
-      nodeRegistry: [], steps: [], nodes: [.init(id: "media", addon: .init(name: "riela/media-download", container: .init()))])
+      nodeRegistry: [], steps: [], nodes: [.init(id: "media", addon: .init(name: "riela/audio-segments", container: .init()))])
     let sandboxWorkflow = WorkflowDefinition(workflowId: "encoding-regression",
       defaults: .init(nodeTimeoutMs: 30_000, maxLoopIterations: 20), entryStepId: "start",
-      nodeRegistry: [], steps: [], nodes: [.init(id: "media", addon: .init(name: "riela/media-download",
+      nodeRegistry: [], steps: [], nodes: [.init(id: "media", addon: .init(name: "riela/audio-segments",
         sandbox: .init(backend: .container, container: .init())))])
     let addonBytes = try JSONCanonical.encode(addonWorkflow)
     let sandboxBytes = try JSONCanonical.encode(sandboxWorkflow)
     let expectedAddonBytes = Data([
       #"{"defaults":{"maxLoopIterations":20,"nodeTimeoutMs":30000},"description":"","entryStepId":"start","nodeRegistry":[],"nodes":[{"addon":{"container":{"image":"riela-builtin-addons:local","mounts":[],"#,
-      #""networkPolicy":"egress-allowed","runtime":"auto"},"name":"riela/media-download"},"id":"media"}],"steps":[],"workflowId":"encoding-regression"}"#
+      #""networkPolicy":"egress-allowed","runtime":"auto"},"name":"riela/audio-segments"},"id":"media"}],"steps":[],"workflowId":"encoding-regression"}"#
     ].joined().utf8)
     XCTAssertEqual(addonBytes, expectedAddonBytes)
-    XCTAssertEqual(JSONCanonical.sha256Hex(addonBytes), "2c2f4724c062ff24f5b43dfa0c0884b22f37010fed0fe075b75bf933853ce24b")
+    XCTAssertEqual(JSONCanonical.sha256Hex(addonBytes), "fbd0d1fddcacabe25d4011a4c7faf0aeb582abdb1daf0b381e7f3da30a95d5cc")
     let expectedSandboxBytes = Data([
-      #"{"defaults":{"maxLoopIterations":20,"nodeTimeoutMs":30000},"description":"","entryStepId":"start","nodeRegistry":[],"nodes":[{"addon":{"name":"riela/media-download","sandbox":{"#,
+      #"{"defaults":{"maxLoopIterations":20,"nodeTimeoutMs":30000},"description":"","entryStepId":"start","nodeRegistry":[],"nodes":[{"addon":{"name":"riela/audio-segments","sandbox":{"#,
       #""backend":"container","container":{"#,
       #""image":"riela-builtin-addons:local","mounts":[],"networkPolicy":"egress-allowed","runtime":"auto"},"credentialEnvironment":{},"credentialPaths":[],"credentials":[],"environment":[],"ephemeralHome":false,"#,
       #""networkPolicy":"denied","readPaths":[],"writePaths":[]}},"id":"media"}],"steps":[],"workflowId":"encoding-regression"}"#
     ].joined().utf8)
     XCTAssertEqual(sandboxBytes, expectedSandboxBytes)
-    XCTAssertEqual(JSONCanonical.sha256Hex(sandboxBytes), "ce8f2b2a7797a7b31b99a62712fcc81161de7374c2175fcfef00a3a8cafa0607")
+    XCTAssertEqual(JSONCanonical.sha256Hex(sandboxBytes), "d1c2c3d4fcf24934a73e925dd0e03f86187909e718eff460ef231e053d97f5e3")
   }
 }

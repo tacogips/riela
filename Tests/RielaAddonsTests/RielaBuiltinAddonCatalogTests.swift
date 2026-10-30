@@ -20,7 +20,6 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
     "riela/gmail-gateway-read",
     "riela/x-gateway-read",
     "riela/youtube-gateway-read",
-    "riela/media-download",
     "riela/audio-segments",
     "riela/video-frames",
     "riela/speech-to-text"
@@ -39,7 +38,7 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
   func testCatalogNamesAreUniqueAndUnknownNamesFailClosed() {
     let names = RielaBuiltinAddonCatalog.all.map(\.name)
     XCTAssertEqual(Set(names).count, names.count)
-    for name in ["riela/issue-116-unknown", "example/issue-116-unknown"] {
+    for name in ["riela/issue-116-unknown", "example/issue-116-unknown", "riela/media-download"] {
       XCTAssertNil(RielaBuiltinAddonCatalog.descriptor(named: name))
       XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: nil))
       XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: "1"))

@@ -57,7 +57,6 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     let stepIds = Set(workflow.steps.map(\.id))
     let addonNames = workflow.nodeRegistry.compactMap(\.addon?.name)
     for (index, node) in workflow.nodeRegistry.enumerated() {
-      diagnostics += deprecatedAddonDiagnostics(node.addon, nodeId: node.id)
       diagnostics += validateLiteralAddonTemplates(
         node.addon,
         nodeId: node.id,

@@ -1,5 +1,10 @@
 # ssg2-03-fragment-release-benchmark: cascade release, switch on, ≥5x benchmark
 
+**Archived 2026-10-30 (session 564)**: superseded by
+`impl-plans/active/ssg3-01-release-cascade-benchmark.md`. Its partial,
+unverified changes (default flip and cascade) stay in the tree and are
+reviewed and tested there.
+
 **planId**: ssg2-03-fragment-release-benchmark
 **dependsOn**: ssg2-02-fragment-hydration, ssg2-06-default-retention-review-isolation (wave W3; the 06 edge exists because this plan may make expectation-only edits in `Tests/RielaCLITests/TerminalRetentionTests.swift`, which ssg2-06 isolates first)
 **writePaths**: `Sources/RielaCore/RuntimePayloadFragmentEncoder.swift`, `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift`, `Tests/RielaCoreTests/RuntimePayloadReleaseTests.swift`, `Tests/RielaCoreTests/RuntimePayloadBenchmarkTests.swift`, `Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift`, `Tests/RielaCoreTests/RuntimePersistenceBoundedWriteTests.swift`, `impl-plans/progress/ssg2-03-fragment-release-benchmark.md`

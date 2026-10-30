@@ -1,5 +1,8 @@
 # ssg2-01-fragment-writer: fragment encoder, writer, release guard (switch off)
 
+**Archived 2026-10-30 (session 564)**: accepted in the integration review of
+sessions 562/563. Progress log: `impl-plans/progress/ssg2-01-fragment-writer.md`.
+
 **planId**: ssg2-01-fragment-writer
 **dependsOn**: none (wave W1)
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`

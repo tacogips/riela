@@ -1,5 +1,9 @@
 # ssg2-07-gc-readonly-workremaining: read-only expired snapshot removal + compact workRemaining
 
+**Archived 2026-10-30 (session 564)**: accepted in the integration review of
+sessions 562/563. Progress log:
+`impl-plans/progress/ssg2-07-gc-readonly-workremaining.md`.
+
 **planId**: ssg2-07-gc-readonly-workremaining
 **dependsOn**: ssg2-06-default-retention-review-isolation (wave W2)
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`

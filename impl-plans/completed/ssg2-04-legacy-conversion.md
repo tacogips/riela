@@ -1,5 +1,8 @@
 # ssg2-04-legacy-conversion: bounded, lock-gated, terminal-only legacy conversion
 
+**Archived 2026-10-30 (session 564)**: accepted in the integration review of
+sessions 562/563. Progress log: `impl-plans/progress/ssg2-04-legacy-conversion.md`.
+
 **planId**: ssg2-04-legacy-conversion
 **dependsOn**: none (wave W1)
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`

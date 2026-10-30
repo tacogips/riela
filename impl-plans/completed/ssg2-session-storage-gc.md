@@ -1,5 +1,11 @@
 # ssg2: session store efficiency and default GC — implementation plan index
 
+**Archived 2026-10-30 (session 564)**: `ssg2-01`, `-02` and `-04` … `-07`
+were accepted in sessions 562/563. `ssg2-03` and `ssg2-08` are superseded by
+`ssg3-01` and `ssg3-02` (manifest `impl-plans/active/ssg3-dispatch.json`,
+design §13). The paths below are historical and now under
+`impl-plans/completed/`.
+
 **Status**: Ready
 **Design reference**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`
 (revised and accepted at step 3, 2026-10-30; §12 defines this partition).

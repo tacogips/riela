@@ -92,9 +92,15 @@ Session storage efficiency and default GC (2026-10-30, branch
 `feat/message-log-storage-gc`): the first plan set
 (`completed/session-storage-gc.md`, `completed/session-storage-gc-01..05-*.md`
 and `completed/session-storage-gc-dispatch.json`) is archived as superseded.
-The active replacement is the `ssg2-` set indexed by
-[`active/ssg2-session-storage-gc.md`](active/ssg2-session-storage-gc.md)
-(plans `ssg2-01` … `ssg2-08`, manifest `active/ssg2-dispatch.json`). Design:
+The second set, `ssg2-`, is archived too
+([`completed/ssg2-session-storage-gc.md`](completed/ssg2-session-storage-gc.md),
+plans `completed/ssg2-01..08-*.md`, manifest `completed/ssg2-dispatch.json`).
+`ssg2-01`, `-02` and `-04` … `-07` were accepted in sessions 562/563;
+`ssg2-03` and `ssg2-08` are superseded. The active remainder is two plans:
+[`active/ssg3-01-release-cascade-benchmark.md`](active/ssg3-01-release-cascade-benchmark.md)
+and
+[`active/ssg3-02-doctor-storage-docs.md`](active/ssg3-02-doctor-storage-docs.md)
+(depends on `ssg3-01`), with manifest `active/ssg3-dispatch.json`. Design:
 [`design-session-storage-efficiency-and-default-gc.md`](../design-docs/specs/design-session-storage-efficiency-and-default-gc.md).
 
 ## Active Plans

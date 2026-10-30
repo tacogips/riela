@@ -1,6 +1,13 @@
 # Session store efficiency and default GC
 
-Status: revised 2026-10-30 (replan rerun). The first revision was accepted at
+Status: revised 2026-10-30 (third revision, ssg3 finish). Sessions 562/563
+accepted `ssg2-01`, `-02` and `-04` … `-07` in the working tree. This
+revision records that state (§1.3), pins the remaining release, benchmark and
+default-flip work (§3.2, §3.5, §9), adds fragment/ref statistics to doctor
+(§6), and replaces the remaining `ssg2-03`/`ssg2-08` partition with two `ssg3-`
+plans (§13). Every earlier decision is kept.
+
+Earlier status: revised 2026-10-30 (replan rerun). The first revision was accepted at
 step 3 (comm-010590) and partly implemented as `sgc-01..03`. This revision
 keeps every accepted decision. It adds the three operational fixes (§10), the
 test-isolation rule (§11) and the `ssg2-` implementation partition (§12), and
@@ -120,6 +127,43 @@ This work is preserved and built on. It is not rewritten.
   Neither is conversion or reclamation work that compact can finish, so the
   flag stays `true` forever with 0 converted and 0 reclaimed.
 
+### 1.3 State after sessions 562/563 (HEAD `b38edd01` + working tree)
+
+Accepted and not re-planned: `ssg2-01` writer, `ssg2-02` hydration,
+`ssg2-04` legacy conversion, `ssg2-05` host wiring, `ssg2-06` default retention
+and test isolation, `ssg2-07` gc read-only removal and `workRemaining`. Their
+progress logs are `impl-plans/progress/ssg2-0{1,2,4,5,6,7}-*.md`; evidence is
+under `tmp/ssg2/`.
+
+Remaining, verified against the working tree:
+
+- **Write switch.** It is the task-local
+  `SQLiteWorkflowRuntimePersistenceStore.writesReducedExecutionPayloadsOverride`
+  over the constant `writesReducedExecutionPayloadsByDefault`, both in
+  `Sources/RielaCore/RuntimePayloadFragmentEncoder.swift:148-154` (not in
+  `SQLiteWorkflowRuntimePersistenceStore.swift`). The default is already
+  `true`. Its only reader is `executionPayload`
+  (`+SessionFamily.swift:243-247`).
+- **Cascade.** Implemented, untested. `releasePayloadIfUnreferenced`
+  (`+SessionFamily.swift:136-159`) deletes the payload under the three
+  `NOT EXISTS` guards, then deletes its refs rows by `parent_digest` with
+  `RETURNING digest` and releases each child.
+  `releaseUnreferencedPayloads` (`+SessionFamily.swift:161-197`) deletes
+  unreferenced payloads, then refs rows whose parent payload row is gone,
+  then unreferenced payloads again, and returns the summed `byte_count`.
+- **Tests.** `RuntimePayloadReleaseTests` and `RuntimePayloadBenchmarkTests`
+  do not exist. The operator renamed
+  `testDefaultWritesFullPayloadAndNestedWritesReduced` to
+  `testFullPayloadModeWritesFullPayloadAndNestedWritesReduced` in
+  `Tests/RielaCoreTests/RuntimePayloadFragmentWriterTests.swift:58-88`. It pins
+  the override to `false` for the root save and to `true` for the nested
+  reservation, so its assertions no longer depend on the default.
+- **Doctor and docs.** `StorageDoctorCommand.swift` has no `remainingBytes`,
+  `recovery`, `session.maintenance` or fragment statistics; `reclaimable` is
+  `[String: Int64]` (`StorageDoctorCommand.swift:58,189-190`).
+  `docs/storage-doctor-and-compact.md` and `docs/terminal-retention.md` do not
+  describe fragments, the defaults or automatic maintenance.
+
 ## 2. Scope
 
 In scope:
@@ -209,6 +253,25 @@ value.
     - Fragments never carry their own `_rielaPayloadRefs` (step 4 flattens
       them), so release is one level deep.
     - This closes the leak that the guard alone allows.
+    - `releaseUnreferencedPayloads` (the run-end and compact sweep) also
+      deletes refs rows whose parent payload row no longer exists, then
+      repeats the unreferenced-payload delete once. This removes refs and
+      fragments leaked by a guard-only build. One repeat is enough because
+      fragments are never parents.
+  - **Release invariants** (the `ssg3-01` tests prove them). After any save,
+    truncation, nested-ref replacement, run-end release or sweep, within one
+    root:
+    1. a payload row whose digest is referenced by an execution row, a nested
+       ref row or a payload-refs row is never deleted;
+    2. no payload-refs row lacks its parent payload row or its child payload
+       row;
+    3. after a save of a terminal root or after `releaseUnreferencedPayloads`,
+       no payload row is unreferenced by all three tables;
+    4. a release in one root never changes another root's rows, even when
+       both store the same digest.
+    These invariants hold only for writes through the store. Rows written
+    directly with SQL by tests or by older binaries are covered only by
+    invariant 1 and the sweep.
 - **Retention.**
   - `TerminalRetentionExecutor` deletes `workflow_runtime_payload_refs WHERE
     root_session_id = ?` together with the root's payloads
@@ -294,15 +357,18 @@ Existing generation-11 canonical rows are not rewritten in bulk. They change
 to the reduced form on their session's next save, or they age out under §4.
 The `PersistenceWriteSample.boundBytes` metric reports reduced bytes.
 
-**Write switch.** The store has one internal property,
-`writesReducedExecutionPayloads`. When it is `false`, the writers above
-store full generation-11 payloads exactly as today. Its default stays `false`
-until the full reference-aware release (§3.2 "Release", guard and cascade) is
-in place, and then becomes `true` (§12, `ssg2-03`). Production therefore never
-writes fragments that could leak before the cascade exists. Tests set it to
-`true` before `ssg2-03` to exercise the reduced form, and to `false` to build
-generation-11 fixtures for the parity tests. It is not a user setting, not an
-environment variable and not configuration.
+**Write switch.** The store reads one internal value,
+`writesReducedExecutionPayloads` = the task-local
+`writesReducedExecutionPayloadsOverride` if set, else the constant
+`writesReducedExecutionPayloadsByDefault` (§1.3). When it is `false`, the
+writers above store full generation-11 payloads exactly as today. The default
+is `true` in the final change. It may ship `true` only together with the
+cascade and the release tests (`ssg3-01`); the single commit (§13) guarantees
+that. Tests that need a specific form pin the override: `true` for the reduced
+form, `false` for generation-11 fixtures (parity and benchmark baselines). A
+test whose assertions depend on the form must pin the override instead of
+relying on the default. It is not a user setting, not an environment variable
+and not configuration.
 
 Test safety before `ssg2-03` comes from the §3.2 guard, which ships in
 `ssg2-01`, not from the switch. Tests that save terminal root sessions in the
@@ -650,6 +716,32 @@ The command stays read-only. For each session or definitions database:
   - the hint `run riela storage compact --apply` when `parkedCount > 0`.
 
   When the file is absent, `session.maintenance` is `null`.
+- **`session.payloadFragments`** (session databases that have the
+  `workflow_runtime_payload_refs` table; `null` otherwise). All values come
+  from read-only `SELECT` statements on the open database:
+  - `fragmentRows` and `fragmentBytes`: payload rows whose `(root_session_id,
+    digest)` appears as a child in `workflow_runtime_payload_refs`, and the sum
+    of their `byte_count`;
+  - `reducedPayloadRows`: distinct `(root_session_id, parent_digest)` pairs in
+    the refs table;
+  - `refRows`: the refs row count;
+  - `danglingRefRows`: refs rows whose parent or child payload row is missing
+    (always 0 for a healthy store, §3.2 invariant 2);
+  - `unreferencedPayloadRows` and `unreferencedPayloadBytes`: payload rows that
+    no execution row, nested ref row or refs row references. This is exactly
+    the `releaseUnreferencedPayloads` predicate. These bytes are not added to
+    `remainingBytes`, because the next run-end release or compact removes them
+    without a vacuum decision.
+
+**JSON shape.** `reclaimable` changes from `[String: Int64]` to a typed
+object. The three existing keys (`freePagesBytes`, `compactEstimateBytes`,
+`pruneEstimateBytes`) keep their names and values, so existing consumers keep
+working. The object adds `remainingBytes`, `remainingBytesIsUpperBound` and the
+optional `recovery`. The text output prints `reclaimable: remaining <n> bytes
+(upper bound; free pages <n>, compact <n>, prune <n>)`, one `recovery:` line
+when present, one `fragments:` line when `payloadFragments` is present, and
+one `maintenance:` line when the cursor file exists. The existing test only
+checks for the `reclaimable:` prefix, which stays.
 
 ## 7. Docs
 
@@ -698,6 +790,16 @@ The command stays read-only. For each session or definitions database:
   moved to `impl-plans/completed/` with a short "superseded by ssg2" note, and
   `impl-plans/README.md` is updated to match. The `impl-plans/progress/sgc-0*.md`
   logs stay as history. No `ssg2-` plan reads or continues them (§12).
+- **Archived `ssg2-` plans.** Every `impl-plans/active/ssg2-*.md` file,
+  including the index `ssg2-session-storage-gc.md`, and
+  `impl-plans/active/ssg2-dispatch.json` move to `impl-plans/completed/`. Each
+  gets a short status note: `ssg2-01`, `-02` and `-04` … `-07` accepted in
+  sessions 562/563; `ssg2-03` and `-08` superseded by `ssg3-01` and `ssg3-02`;
+  the index and the manifest archived with the set. `impl-plans/README.md`
+  (the session-storage paragraph, currently lines 95-97) points at the
+  archived set and the new `ssg3-` set. The `impl-plans/progress/sgc-0*.md`
+  and `ssg2-*.md` logs stay in `impl-plans/progress/` and are committed as
+  history.
 - **Concurrent edits on `main`.** Another workflow edits `main`. This change
   never merges or rebases `main` and stays inside the files named in §12.
 
@@ -710,12 +812,7 @@ and never touch `~/.riela` or a project store.
   - **Determinism.** The same execution gives the same text and digests.
   - **Escape rule.** An execution containing `$rielaPayloadRef` is stored
     unreduced.
-  - **Benchmark.** A synthetic loop session has at least 20 iterations, each
-    re-embedding all prior upstream outputs of at least 4 KiB. Stored payload
-    bytes are `SUM(length(bytes))` of the root's payload rows plus the key
-    lengths of its `workflow_runtime_payload_refs` rows. They must be at most
-    one fifth of the sum of the distinct generation-11 full payload texts for
-    the same executions. The test prints both numbers and the ratio.
+  - **Benchmark.** Moved to `RuntimePayloadBenchmarkTests` (below).
   - **Terminal save keeps fragments (`ssg2-01`).** With the switch set to
     `true`, saving a `completed` root session whose `inputSnapshot` has a
     subtree of at least 1 KiB triggers the run-end release. This covers both
@@ -725,11 +822,72 @@ and never touch `~/.riela` or a project store.
     because expansion arrives in `ssg2-02`.
   - **Round-trip.** `load` returns a `WorkflowSession` equal to the input.
   - **Fail closed.** A missing or corrupted fragment throws.
-  - **Release (`ssg2-03`).** Release and truncation leave no orphan fragment
-    or ref row.
+  - **Release.** Moved to `RuntimePayloadReleaseTests` (below).
   - **Nested.** Nested refs hydrate equal and share fragments with the child's
     rows.
   - **Migration.** Generation 11 → 12 migration is DDL-only.
+- **RielaCoreTests `RuntimePayloadReleaseTests`** (new, `ssg3-01`). Every case
+  pins the override to `true`, writes through `SQLiteWorkflowRuntimePersistenceStore`
+  into a temporary root, and after each step checks the §3.2 invariants with
+  SQL: (a) no refs row without its parent payload row, (b) no refs row without
+  its child payload row, (c) after a terminal save or a sweep, no payload row
+  unreferenced by executions, nested refs and refs. Cases:
+  1. **Shared fragment survives.** Two executions share one hoisted subtree
+     and each has one unique subtree. Rewriting the first execution with a
+     different `inputSnapshot` deletes the old parent, its refs rows and its
+     unique fragment; the shared fragment and the second execution's rows
+     stay, and `load` equals the saved session.
+  2. **Truncation.** A session saved with three executions and then with one
+     (the rerun truncation path in `writeExecutionRows`) loses exactly the
+     fragments only the removed executions referenced.
+  3. **Nested sharing.** A nested reservation (`reserveNestedInvocation`)
+     whose child executions share fragments with the root's execution rows is
+     stored. A second `reserveNestedInvocation` with the same reservation
+     returns the existing record and rewrites nothing, so the test replaces the
+     refs by calling the internal `persistNestedReferences` again for the same
+     invocation key and role, with a changed child snapshot, inside one store
+     transaction (`@testable import RielaCore`). This is the path legacy
+     conversion uses. Fragments still referenced by root execution rows stay;
+     fragments only the old nested refs used are deleted.
+  4. **Terminal run-end release.** Saving the root as `completed` keeps every
+     referenced fragment (byte-identical), and `load` round-trips.
+  5. **Leak sweep.** Refs rows whose parent payload is missing, plus a
+     fragment referenced only by them, are inserted with SQL (the guard-only
+     leak shape). `releaseUnreferencedPayloads(rootSessionId:)` removes both
+     and returns a byte count that includes the fragment's `byte_count`; a
+     fragment also referenced by a live parent stays.
+  6. **Root isolation.** Two roots store the same fragment digest. Releasing
+     in one root leaves the other root's payload and refs rows unchanged.
+- **RielaCoreTests `RuntimePayloadBenchmarkTests`** (new, `ssg3-01`). It is
+  deterministic: fixed dates, fixed ids, and no random content.
+  - A synthetic loop root session has 24 executions. Execution *k* has an
+    `inputSnapshot` that embeds the outputs of executions 1 … *k*−1, and each
+    output is a distinct deterministic 16 KiB string (for example the
+    execution index repeated). The session is saved after every execution while
+    `running`, then once as `completed`, so the run-end release runs.
+  - The same sequence is written twice into two temporary roots: once with the
+    override `false` (the baseline: generation-11 full payloads, the
+    pre-change canonical format) and once with the override `true`.
+  - Stored bytes for each root = `SUM(length(bytes))` over the root's
+    `workflow_runtime_payloads` rows plus, for the reduced root only,
+    `SUM(length(root_session_id) + length(parent_digest) + length(digest))`
+    over its `workflow_runtime_payload_refs` rows. Both sides are measured the
+    same way (stored JSONB length), so the ratio does not mix text and JSONB
+    sizes.
+  - The test prints `baselineBytes`, `reducedBytes` and the ratio with
+    `print`, and asserts `baselineBytes >= 5 * reducedBytes`. It also asserts
+    that `load` of both roots returns equal sessions.
+  - Expected margin: about 4.8 MB against about 0.5 MB (about 9x). With 4 KiB
+    outputs the reference overhead (refs rows, reference objects and the
+    hoisted `inputSnapshot` itself) leaves the ratio near 5x, so 16 KiB is
+    required.
+- **Writer test review (`ssg3-01`).**
+  `testFullPayloadModeWritesFullPayloadAndNestedWritesReduced` is kept as the
+  operator wrote it: it pins `false` for the root save and `true` for the
+  nested reservation, so it tests both forms independently of the default.
+  `ssg3-01` adds one assertion-only test that the default is reduced: with no
+  override, a save of an execution with a 2 KiB `inputSnapshot` value writes
+  refs rows.
 - **`RuntimePayloadReadParityTests`** (new; the class name must contain
   `RuntimePayload` so the gate filter selects it; it lives in RielaCLITests,
   or in the GraphQL test target for the GraphQL case). The same session,
@@ -795,15 +953,25 @@ and never touch `~/.riela` or a project store.
   cases.
 - **Isolation:** the §11 rule applies to every test above.
 
-Gate commands. Every command exits 0 when the change is complete. Each
-`ssg2-` plan lists only the subset its own changes make pass (§12).
+Gate commands (third revision). Every command exits 0 when the change is
+complete. `SW` is resolved with `mise which swift` before `HOME` is
+overridden, because mise refuses untrusted config under a temporary `HOME`
+(today `/Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift`).
+Logs go to `tmp/ssg3/<plan>/`.
 
 ```
-HOME=$(mktemp -d) arch -arm64 /bin/zsh -lc 'swift build'
-HOME=$(mktemp -d) arch -arm64 /bin/zsh -lc "swift test --filter 'Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|SessionStore|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration'"
-H=$(mktemp -d) && mkdir -p "$H/.riela" && printf '%s' '{"retention":{"automatic":false,"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"keepForever":true}}}' > "$H/.riela/config.json" && HOME="$H" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -lc "swift test --filter 'Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|SessionStore|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration'"
+SW=$(mise which swift)
+arch -arm64 /bin/zsh -lc "HOME=$(mktemp -d) $SW build"
+arch -arm64 /bin/zsh -lc "HOME=$(mktemp -d) $SW test --filter 'Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows'"
+H=$(mktemp -d) && mkdir -p "$H/.riela" && printf '%s' '{"retention":{"automatic":false,"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"keepForever":true}}}' > "$H/.riela/config.json" && arch -arm64 /bin/zsh -lc "HOME=$H RIELA_RETENTION_AUTOMATIC=0 $SW test --filter 'Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows'"
 arch -arm64 /bin/zsh -lc 'swiftlint lint --strict <touched swift files>'
 ```
+
+The earlier filter's `SessionStore` term is dropped and
+`SQLiteRuntimeExecutionRows` added, matching the accepted intake. Because the
+default write form changes, `ssg3-01` also runs the payload-layout suites that
+the gate filter does not select:
+`--filter 'RuntimePersistenceBoundedWrite|CLIWorkflowSessionEnvelope'`.
 
 The third command is the isolation proof (§11): the same suites must pass
 with a `HOME` whose config, and an ambient environment variable, would
@@ -959,3 +1127,52 @@ four production source files plus their tests. Plan ids are new, so no
   changes are done. No plan lists a command that only a later plan can make
   pass. The full §9 gate, including the isolation proof, belongs to the final
   integration and to `ssg2-08`.
+
+## 13. Remaining partition (`ssg3-` plans)
+
+§12 stays as the record of the `ssg2-` partition. The accepted `ssg2-` plans
+are not re-planned or re-implemented (§1.3). Accepted code is touched again
+only to fix an integration-review finding. The two remaining items are
+replaced by exactly two plans:
+
+| Plan | Scope (design §) | writePaths | dependsOn |
+|---|---|---|---|
+| `ssg3-01` release cascade + benchmark + default flip | review and, only if a §3.2 invariant fails, repair the cascade in `releasePayloadIfUnreferenced` / `releaseUnreferencedPayloads`; keep `writesReducedExecutionPayloadsByDefault = true`; review the operator's writer-test edit and add the default-form assertion; add `RuntimePayloadReleaseTests` and `RuntimePayloadBenchmarkTests` (§3.2, §3.5, §3.6, §9) | `Sources/RielaCore/RuntimePayloadFragmentEncoder.swift`; `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift`; `Tests/RielaCoreTests/RuntimePayloadFragmentWriterTests.swift`; `Tests/RielaCoreTests/RuntimePayloadHydrationTests.swift`; new `Tests/RielaCoreTests/RuntimePayloadReleaseTests.swift`; new `Tests/RielaCoreTests/RuntimePayloadBenchmarkTests.swift`; the default-dependent test files `Tests/RielaCLITests/RuntimePayloadReadParityTests.swift`, `Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift`, `Tests/RielaCoreTests/RuntimePersistenceBoundedWriteTests.swift`; `impl-plans/progress/ssg3-01-*.md` | — |
+| `ssg3-02` doctor storage + docs | `remainingBytes`, `recovery`, `session.maintenance`, `session.payloadFragments` and the text lines (§6); docs (§7) | `Sources/RielaCLI/StorageDoctorCommand.swift`; `Tests/RielaCLITests/StorageDoctorCommandTests.swift`; `docs/storage-doctor-and-compact.md`; `docs/terminal-retention.md`; `README.md` (Runtime Data Retention section only); `impl-plans/progress/ssg3-02-*.md` | `ssg3-01` |
+
+- **Default-dependent tests.** A grep of `Tests/` for payload-layout
+  assertions (`workflow_runtime_payloads` row counts, `byte_count`,
+  `boundBytes`, `json(bytes)`) finds `SQLiteRuntimeExecutionRowsTests`,
+  `RuntimePersistenceBoundedWriteTests`, `RuntimePayloadReadParityTests`,
+  `RuntimePayloadHydrationTests` and `RuntimePayloadFragmentWriterTests`.
+  `TerminalRetentionTests`, `StorageCompactCommandTests` and
+  `CLIWorkflowSessionEnvelopeTests` only build or drop the table directly, so
+  they do not depend on the default. `ssg3-01` may edit a listed file only to
+  pin the override where an assertion depends on the form.
+- **Docs content (`ssg3-02`).** Both docs cover: the fragment representation
+  (1024-byte threshold, `$rielaPayloadRef`, `_rielaPayloadRefs`, readability of
+  every older format, fail-closed reads, downgrade rejection); the built-in
+  defaults (results and logs 30 days, messages follow results, the generated
+  sweep is not defaulted); automatic maintenance (run-end and the periodic
+  `events serve`/`serve`/RielaApp pass, terminal-only and lock-skipping rules,
+  outcome classes with parking, cursor file, budgets, page caps 4,096/65,536,
+  no full `VACUUM`); overrides (`keepForever`, `automatic: false`,
+  `RIELA_RETENTION_AUTOMATIC=0`, `riela gc` flags, precedence); read-only
+  snapshot handling (§10.1); `workRemaining` (§10.2); and the new doctor
+  fields with the `auto_vacuum=NONE` recovery path. Numbers and names are
+  taken from the shipped code. Design supersession notes already exist, so
+  `ssg3-02` edits no design document.
+- **Verification.** `ssg3-01`: build, the §9 gate filter, the extra
+  payload-layout filter, and strict swiftlint on its touched files.
+  `ssg3-02`: build, the §9 gate filter, the isolation proof, and strict
+  swiftlint on its touched files. Each command exits 0 once that plan's own
+  changes are done.
+- **Manifest.** `impl-plans/active/ssg3-dispatch.json` lists the two plans.
+  There is no separate `ssg3-` index plan; the manifest and the
+  `impl-plans/README.md` paragraph serve as the index, so exactly two plan
+  files exist.
+- **Finish.** After `ssg3-02`, a whole-change integration review covers every
+  path changed on the branch since `b38edd01`. Then one local commit is made
+  on `feat/message-log-storage-gc`. It contains the source, test, docs,
+  design and impl-plan changes and the progress logs; it excludes `tmp/` and
+  every scratch file. Nothing is pushed.

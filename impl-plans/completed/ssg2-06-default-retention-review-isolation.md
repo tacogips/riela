@@ -1,5 +1,9 @@
 # ssg2-06-default-retention-review-isolation: review/repair default retention + test isolation
 
+**Archived 2026-10-30 (session 564)**: accepted in the integration review of
+sessions 562/563. Progress log:
+`impl-plans/progress/ssg2-06-default-retention-review-isolation.md`.
+
 **planId**: ssg2-06-default-retention-review-isolation
 **dependsOn**: none (wave W1)
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`

@@ -1,5 +1,8 @@
 # ssg2-08-doctor-docs: doctor storage reporting + documentation (final plan)
 
+**Archived 2026-10-30 (session 564)**: superseded by
+`impl-plans/active/ssg3-02-doctor-storage-docs.md`; never implemented.
+
 **planId**: ssg2-08-doctor-docs
 **dependsOn**: ssg2-03-fragment-release-benchmark, ssg2-05-maintenance-host-wiring, ssg2-07-gc-readonly-workremaining (wave W4; all other plans transitively)
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`

@@ -1,5 +1,8 @@
 # ssg2-02-fragment-hydration: fail-closed expansion and read parity
 
+**Archived 2026-10-30 (session 564)**: accepted in the integration review of
+sessions 562/563. Progress log: `impl-plans/progress/ssg2-02-fragment-hydration.md`.
+
 **planId**: ssg2-02-fragment-hydration
 **dependsOn**: ssg2-01-fragment-writer (wave W2)
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`

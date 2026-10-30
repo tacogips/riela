@@ -6,6 +6,11 @@ it. Answer only to override a recommendation.
 
 ## Q1: What does "session payload retention applies automatically at run end" delete?
 
+Superseded on 2026-10-30. The "built-in default policy" alternative below was
+adopted with these values: results 30 days, messages deleted with their
+results, logs 30 days. See `design-session-storage-efficiency-and-default-gc.md`
+§4 and `qa-session-storage-default-gc.md`.
+
 Recommended decision: at the end of each run, Riela automatically does two
 bounded things:
 

@@ -12,6 +12,10 @@ None of these block implementation. Each question below already has a decided
 default in the design. Implementation follows the default unless the user
 changes it.
 
+Note (2026-10-30): "no config means no deletion" is superseded by the
+built-in default policy in `design-session-storage-efficiency-and-default-gc.md`
+§4.
+
 ## Questions
 
 1. **What happens to messages when `messages` is not configured?**

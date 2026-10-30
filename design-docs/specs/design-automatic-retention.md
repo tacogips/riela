@@ -63,7 +63,7 @@ Validation fails closed. Any error means no deletion in that pass.
 
 | Field | Rule |
 |---|---|
-| `retention` | Optional object. If it is absent, nothing is deleted by any automatic pass. Unknown keys inside `retention` or inside a category are errors, so a typo cannot silently disable a limit. |
+| `retention` | Optional object. If it is absent, the built-in default policy applies (superseded 2026-10-30; see `design-session-storage-efficiency-and-default-gc.md` §4). It was originally "nothing is deleted by any automatic pass". Unknown keys inside `retention` or inside a category are errors, so a typo cannot silently disable a limit. |
 | `automatic` | Bool. Default `true` when `retention` is present. |
 | `minIntervalMinutes` | Integer 1...10080. Default 60. |
 | `<category>.keepForever` | Bool. Default false. If it is true, setting `maxAgeDays` or `maxTotalBytes` in the same category is an error. |
@@ -486,7 +486,11 @@ entry.
 
 These are tested and cannot be negotiated:
 
-1. No config means no deletion, by any automatic path.
+1. Superseded 2026-10-30 by `design-session-storage-efficiency-and-default-gc.md`
+   §4.5. With no config, only the built-in default policy deletes anything: fully
+   terminal, unprotected families older than 30 days with their messages, and
+   log files older than 30 days. The original text was "No config means no
+   deletion, by any automatic path".
 2. `keepForever` categories are untouched by automatic and manual runs, even when
    another category is pruned.
 3. Only families that are fully terminal and unprotected are deleted, after a lock

@@ -572,7 +572,13 @@ workflow_nested_invocation_refs(invocation_key TEXT, role TEXT, ordinal INTEGER,
     `workflow_nested_invocation_refs` together with each deleted
     `workflow_nested_invocations` row, including the `callee` role.
 
-**Run end.** The automatic run-end work is bounded and family-local (QA Q1):
+**Run end.** Superseded 2026-10-30 by
+`design-session-storage-efficiency-and-default-gc.md` §4-§5. Those sections
+add built-in default retention and bounded automatic legacy conversion. They
+also run the automatic maintenance in the scheduler hosts. The original text
+follows.
+
+The automatic run-end work is bounded and family-local (QA Q1):
 
 - release payloads of the finished family that nothing references (normally
   none, because GC is synchronous);

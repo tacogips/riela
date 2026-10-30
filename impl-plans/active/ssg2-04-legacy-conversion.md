@@ -108,6 +108,25 @@ enum StorageMaintenanceConversion {
   exists, else the CLI status. Nested: the parent is terminal and the child is
   terminal or absent. A non-terminal row is `nonTerminal`: skipped
   permanently (never in `busy`/`failed`).
+- **Family guard (amendment round 1; resolves the ssg2-04 blocker
+  "retained-tree eligibility").** The intake constraint "never rewrite ... any
+  member of a retained session tree" means: never convert a row while its
+  session tree still has a non-terminal member. It does NOT mean retention
+  protections such as `keepForever`, `keepWorkflowIds` or not-yet-expired age.
+  Conversion is a lossless representation change, and those protections only
+  govern deletion, so such families are converted normally. Rule: after the
+  row itself is eligible and its locks are held, look up every involved
+  session's `root_session_id` in `workflow_runtime_snapshots` and check
+  whether any row in that tree is non-terminal. Use one indexed read per
+  involved session:
+  `SELECT 1 FROM workflow_runtime_snapshots WHERE root_session_id = (SELECT root_session_id FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?) AND session_status NOT IN ('completed','failed','cancelled') LIMIT 1`
+  (served by `idx_workflow_runtime_snapshots_root`). If such a row exists,
+  the outcome is `busy` (transient, because the tree settles later), with the
+  same 256 cap and `rescanNeeded` rule. It is not `nonTerminal`: a terminal
+  child never saves again, so a permanent skip would leave it legacy forever.
+  When the involved session has no snapshot row (a CLI-only record), the
+  guard is vacuous. Do not load or decode the family; do not take locks on
+  other family members; do not change the per-session rule above.
 - **Locks.** Acquire every involved session (nested: parent and child when
   present) with `acquire(sessionId:allowMessagesRetired: true)`, never
   blocking. `retiredSession` → `retired` (skip permanently, never in
@@ -131,6 +150,9 @@ enum StorageMaintenanceConversion {
 
 - Never take a lock blockingly, never break or delete a held lock.
 - Never convert a non-terminal row ("never rewrite resumable sessions").
+- Never convert a terminal row whose session tree still has a non-terminal
+  member (family guard). Classify it as `busy`, not `nonTerminal`, and do not
+  exclude `keepForever` or unexpired families.
 - Never `load` a row just to learn whether it is legacy; the predicate is in
   the selection query.
 - The retry share is a hard cap; the forward cursor must still advance by at
@@ -173,12 +195,24 @@ embedded nested row (as in the nested conversion tests in
   forward phase still examines ≥ 1 row;
 - corrupt cursor file (`{`) → pass restarts and converts remaining rows;
   stopping after k passes and resuming converts the rest exactly once;
-- `.scheduled` profile → ≤ 64 conversions per pass.
+- `.scheduled` profile → ≤ 64 conversions per pass;
+- family guard (`testCompletedChildOfRunningRootIsNotRewritten`, already in
+  the file): legacy completed child whose root is `running` → not converted,
+  key in the snapshots queue's `busy` list, child still listed by
+  `legacyInlineSessionIds`; then save the root as `completed` → the next pass
+  converts the child and `busy` is empty;
+- `keepForever` is irrelevant: a terminal legacy family whose store config
+  has `{"results":{"keepForever":true}}` still converts. Covered by the
+  mixed-store test, because conversion never reads retention config. Assert
+  that `StorageMaintenanceConversion.swift` does not reference
+  `RielaRetentionConfiguration`.
 
 ## Acceptance criteria
 
 - `rg -n "enum StorageMaintenanceConversion|enum StorageMaintenanceProfile" Sources/RielaCLI` → both present.
 - `rg -n "allowMessagesRetired: true" Sources/RielaCLI/StorageMaintenanceConversion.swift` → present.
+- `rg -n "root_session_id" Sources/RielaCLI/StorageMaintenanceConversion.swift` → present (family guard); `rg -n "RielaRetentionConfiguration" Sources/RielaCLI/StorageMaintenanceConversion.swift` → no match.
+- `testCompletedChildOfRunningRootIsNotRewritten` passes, including the post-root-completion conversion.
 - All tests above pass; progress log records per-pass conversion counts and
   the parked-row warning text from the mixed-store and parking tests.
 

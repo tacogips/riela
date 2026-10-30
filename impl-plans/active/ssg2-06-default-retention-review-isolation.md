@@ -54,7 +54,10 @@ edits), `impl-plans/progress/ssg2-06-default-retention-review-isolation.md`.
 `Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift`,
 `Tests/RielaCLITests/RetentionReclamationTests.swift`,
 `Tests/RielaCLITests/RetentionLogPrunerTests.swift`,
-`Tests/RielaCLITests/RetentionTargetStateTests.swift`.
+`Tests/RielaCLITests/RetentionTargetStateTests.swift`,
+`Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift` (checkpoint
+amendment round 1, IR-SSG2-06-APP-TEST-SCOPE: a required expectation update,
+not isolation-only; see §4 below).
 
 ## Non-goals
 
@@ -125,6 +128,34 @@ Every hit must:
 In `Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift` the helper is
 not available; pass explicit temporary directories and dictionaries.
 
+### 4. `Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift` (amendment round 1)
+
+Finding IR-SSG2-06-APP-TEST-SCOPE: `testMissingConfigurationDoesNotCreateRetentionState`
+(lines ~51-64) asserts `report.targets.isEmpty` and an empty `.riela`
+directory when no config exists. Under the accepted built-in defaults (design
+§4.1-4.4) both assertions are obsolete, and the class is selected by this
+plan's `Retention[A-Za-z]*Tests/` filter (`RielaAppRetentionStartTests/`), so
+the normal and conflicting-HOME runs fail 2 assertions until it is updated.
+This is a stale expectation, not a HOME leak (both runs fail identically).
+
+- Rename it to `testMissingConfigurationAppliesBuiltInDefaults`.
+- Arrange: temporary home with an empty `.riela`, plus one log file under
+  `.riela/logs` whose mtime is 1 day before the injected clock (inject
+  `clock:` as `testConfiguredLogsPolicyPrunesOnlyInjectedHome` does).
+- Assert: exactly one target, `kind == .user`, `root` equals the temporary
+  `.riela` path; the report's effective policy sources for `results` and
+  `logs` are `.builtInDefault` (JSON `"default"`); the 1-day-old log still
+  exists; every `target.root` has the temporary home as prefix. Read the
+  report shape from `Sources/RielaCore/RielaRetentionReport.swift`; do not
+  add report fields.
+- Keep the explicit `environment: ["HOME": home.path]` request argument (the
+  test target does not import the CLI test helper); do not read
+  `ProcessInfo.processInfo.environment`.
+- Leave the other two tests in the file unchanged.
+- Do not change `RielaRetentionService` to skip retention without config, do
+  not skip the test or narrow the filter, and do not edit
+  `Sources/RielaApp/EntryPoint+Retention.swift` (ssg2-05).
+
 ## Pitfalls
 
 - Built-in defaults make no-config tests destructive: every test store must be
@@ -155,13 +186,17 @@ not available; pass explicit temporary directories and dictionaries.
   configured `results.maxAgeDays` → old entry removed;
 - `riela gc --dry-run --output json`, no config → `maxAgeDays: 30`,
   `policySource: default`, no `retention/` state written, nothing deleted;
-- protections (rule 7) as listed in §1 above.
+- protections (rule 7) as listed in §1 above;
+- RielaApp request, no config, 1-day-old log → one user target with
+  `results`/`logs` source `.builtInDefault`, log kept, all roots under the
+  temporary home (`RielaAppRetentionStartTests.testMissingConfigurationAppliesBuiltInDefaults`).
 
 ## Acceptance criteria
 
 - `rg -n "currentDirectory: String = FileManager.default.currentDirectoryPath" Sources/RielaCLI/AutomaticRetentionHook.swift` → one match.
 - `rg -n "CLIRuntimeEnvironment.\$overrides" Tests/RielaCLITests/StorageCompactCommandTests.swift` → no match.
 - Progress log lists §4.6 rules 1-7, each with a passing test name.
+- `rg -n "testMissingConfigurationDoesNotCreateRetentionState" Tests/RielaAppSupportTests` → no match; `rg -n "testMissingConfigurationAppliesBuiltInDefaults" Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift` → one match.
 - The selection check exits 0: `tmp/ssg2/ssg2-06-default-retention-review-isolation/selected.txt` lists the selected tests and contains no `RunEndStorageMaintenance` entry.
 - Both test commands below exit 0 with the same class-anchored filter (the second is the isolation proof).
 
@@ -173,7 +208,7 @@ HOME="$(mktemp -d)" arch -arm64 /bin/zsh -lc 'set -o pipefail; swift build 2>&1 
 HOME="$(mktemp -d)" arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test list 2>/dev/null | grep -E "Retention[A-Za-z]*Tests/|GarbageCollection[A-Za-z]*Tests/|StorageCompact[A-Za-z]*Tests/|StorageDoctor[A-Za-z]*Tests/" > tmp/ssg2/ssg2-06-default-retention-review-isolation/selected.txt; s=$?; [ $s -eq 0 ] || exit $s; ! grep -q RunEndStorageMaintenance tmp/ssg2/ssg2-06-default-retention-review-isolation/selected.txt'
 HOME="$(mktemp -d)" arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter "Retention[A-Za-z]*Tests/|GarbageCollection[A-Za-z]*Tests/|StorageCompact[A-Za-z]*Tests/|StorageDoctor[A-Za-z]*Tests/" 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/test.log; s=$?; echo "exit=$s" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/test.log; exit $s'
 H="$(mktemp -d)" && mkdir -p "$H/.riela" && printf '%s' '{"retention":{"automatic":false,"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"keepForever":true}}}' > "$H/.riela/config.json" && HOME="$H" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter "Retention[A-Za-z]*Tests/|GarbageCollection[A-Za-z]*Tests/|StorageCompact[A-Za-z]*Tests/|StorageDoctor[A-Za-z]*Tests/" 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/isolation-proof.log; s=$?; echo "exit=$s" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/isolation-proof.log; exit $s'
-arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Sources/RielaCLI/RielaRetentionService.swift Sources/RielaCLI/GarbageCollectionCommand.swift Sources/RielaCLI/AutomaticRetentionHook.swift Tests/RielaCLITests/RielaCLIIsolatedEnvironment.swift 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; s=$?; echo "exit=$s" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; exit $s'
+arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Sources/RielaCLI/RielaRetentionService.swift Sources/RielaCLI/GarbageCollectionCommand.swift Sources/RielaCLI/AutomaticRetentionHook.swift Tests/RielaCLITests/RielaCLIIsolatedEnvironment.swift Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; s=$?; echo "exit=$s" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; exit $s'
 ```
 
 Evidence: every log ends with `exit=0`; `selected.txt` is non-empty and
@@ -191,7 +226,8 @@ selects `AutomaticRetentionTests`, `RielaRetentionServiceTests`,
 `RielaRetentionConfigurationTests`, `TerminalRetention*Tests`,
 `WorkflowDefinitionRetentionTests`, `Retention*Tests`,
 `GarbageCollectionCommandTests`, `GitWorkflowAddonGarbageCollectionSafetyTests`,
-`StorageCompactCommandTests` and `StorageDoctorCommandTests`, and excludes
+`StorageCompactCommandTests`, `StorageDoctorCommandTests` and
+`RielaAppSupportTests.RielaAppRetentionStartTests` (amendment round 1), and excludes
 `RunEndStorageMaintenanceTests`, ssg2-04's `RunEndStorageMaintenanceConversionTests`,
 ssg2-07's `RielaDataGarbageCollectorTests`, and method-name-only matches in
 unrelated suites. The `swift test list` check proves the exclusion. Do not
@@ -205,3 +241,9 @@ Record in `impl-plans/progress/ssg2-06-default-retention-review-isolation.md`:
 pre/post sha256, the §4.6 rule table (rule, test, verdict, fix), every
 isolated call site per file, commands with exit codes and log paths, and
 reconciliation items.
+
+Amendment round 1: also record that the earlier build blocker (UF-03,
+`RuntimeReducedPayload` access control in
+`SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift`) is resolved on
+the combined tree (`tmp/ssg2/reconcile-wave-001/build.log`, exit 0), and the
+before/after assertions of the renamed RielaApp test.

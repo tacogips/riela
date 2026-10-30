@@ -155,7 +155,8 @@
       "artifactRoots": [],
       "acceptanceCriteria": [
         "StorageMaintenanceConversion and StorageMaintenanceProfile exist with the pinned signatures.",
-        "RunEndStorageMaintenanceConversionTests pass: budgets, busy retry, non-terminal skip, parking after 3 failures with one warning, retired skip, retry share, rescan, corrupt-cursor restart, fast path."
+        "RunEndStorageMaintenanceConversionTests pass: budgets, busy retry, non-terminal skip, parking after 3 failures with one warning, retired skip, retry share, rescan, corrupt-cursor restart, fast path.",
+        "Family guard (amendment round 1): a terminal legacy row whose session tree (same root_session_id) has a non-terminal member is classified busy, not converted; testCompletedChildOfRunningRootIsNotRewritten passes and converts the child after the root completes. Retention protections (keepForever, age) do not affect conversion; StorageMaintenanceConversion.swift does not reference RielaRetentionConfiguration."
       ],
       "verification": [
         "mkdir -p tmp/ssg2/ssg2-04-legacy-conversion",
@@ -193,14 +194,34 @@
         "Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift",
         "Tests/RielaCLITests/RetentionReclamationTests.swift",
         "Tests/RielaCLITests/RetentionLogPrunerTests.swift",
-        "Tests/RielaCLITests/RetentionTargetStateTests.swift"
+        "Tests/RielaCLITests/RetentionTargetStateTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift"
       ],
       "sharedPathNotes": [
-        {"path": "Tests/RielaCLITests/GitWorkflowAddonGarbageCollectionSafetyTests.swift", "intendedEdit": "Isolation-only edit (temporary HOME/project via RielaCLIIsolatedEnvironment) if the isolation-proof run shows a leak; no assertion changes."},
-        {"path": "Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift", "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."},
-        {"path": "Tests/RielaCLITests/RetentionReclamationTests.swift", "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."},
-        {"path": "Tests/RielaCLITests/RetentionLogPrunerTests.swift", "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."},
-        {"path": "Tests/RielaCLITests/RetentionTargetStateTests.swift", "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."}
+        {
+          "path": "Tests/RielaCLITests/GitWorkflowAddonGarbageCollectionSafetyTests.swift",
+          "intendedEdit": "Isolation-only edit (temporary HOME/project via RielaCLIIsolatedEnvironment) if the isolation-proof run shows a leak; no assertion changes."
+        },
+        {
+          "path": "Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift",
+          "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."
+        },
+        {
+          "path": "Tests/RielaCLITests/RetentionReclamationTests.swift",
+          "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."
+        },
+        {
+          "path": "Tests/RielaCLITests/RetentionLogPrunerTests.swift",
+          "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."
+        },
+        {
+          "path": "Tests/RielaCLITests/RetentionTargetStateTests.swift",
+          "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."
+        },
+        {
+          "path": "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift",
+          "intendedEdit": "Checkpoint amendment round 1 (IR-SSG2-06-APP-TEST-SCOPE): rename testMissingConfigurationDoesNotCreateRetentionState to testMissingConfigurationAppliesBuiltInDefaults and assert built-in defaults (one user target, results/logs policySource .builtInDefault, a 1-day-old log kept, all roots under the temporary home). Other tests in the file are unchanged; no RielaRetentionService or EntryPoint+Retention.swift change."
+        }
       ],
       "artifactRoots": [],
       "acceptanceCriteria": [
@@ -208,7 +229,8 @@
         "No CLIRuntimeEnvironment.$overrides call remains in StorageCompactCommandTests.swift.",
         "Progress log lists design §4.6 rules 1-7 with passing test names.",
         "selected.txt (swift test list filtered by the class-anchored regex) contains no RunEndStorageMaintenance entry.",
-        "Normal and isolation-proof test runs both exit 0 with the same class-anchored filter and the same executed count."
+        "Normal and isolation-proof test runs both exit 0 with the same class-anchored filter and the same executed count.",
+        "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift has testMissingConfigurationAppliesBuiltInDefaults and no testMissingConfigurationDoesNotCreateRetentionState; it passes in both the normal and the conflicting-HOME runs."
       ],
       "verification": [
         "mkdir -p tmp/ssg2/ssg2-06-default-retention-review-isolation",
@@ -216,14 +238,16 @@
         "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test list 2>/dev/null | grep -E \"Retention[A-Za-z]*Tests/|GarbageCollection[A-Za-z]*Tests/|StorageCompact[A-Za-z]*Tests/|StorageDoctor[A-Za-z]*Tests/\" > tmp/ssg2/ssg2-06-default-retention-review-isolation/selected.txt; s=$?; [ $s -eq 0 ] || exit $s; ! grep -q RunEndStorageMaintenance tmp/ssg2/ssg2-06-default-retention-review-isolation/selected.txt'",
         "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter \"Retention[A-Za-z]*Tests/|GarbageCollection[A-Za-z]*Tests/|StorageCompact[A-Za-z]*Tests/|StorageDoctor[A-Za-z]*Tests/\" 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/test.log; s=$?; echo \"exit=$s\" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/test.log; exit $s'",
         "H=\"$(mktemp -d)\" && mkdir -p \"$H/.riela\" && printf '%s' '{\"retention\":{\"automatic\":false,\"results\":{\"keepForever\":true},\"messages\":{\"keepForever\":true},\"logs\":{\"keepForever\":true}}}' > \"$H/.riela/config.json\" && HOME=\"$H\" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter \"Retention[A-Za-z]*Tests/|GarbageCollection[A-Za-z]*Tests/|StorageCompact[A-Za-z]*Tests/|StorageDoctor[A-Za-z]*Tests/\" 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/isolation-proof.log; s=$?; echo \"exit=$s\" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/isolation-proof.log; exit $s'",
-        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Sources/RielaCLI/RielaRetentionService.swift Sources/RielaCLI/GarbageCollectionCommand.swift Sources/RielaCLI/AutomaticRetentionHook.swift Tests/RielaCLITests/RielaCLIIsolatedEnvironment.swift 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; s=$?; echo \"exit=$s\" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; exit $s'"
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Sources/RielaCLI/RielaRetentionService.swift Sources/RielaCLI/GarbageCollectionCommand.swift Sources/RielaCLI/AutomaticRetentionHook.swift Tests/RielaCLITests/RielaCLIIsolatedEnvironment.swift Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift 2>&1 | tee tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; s=$?; echo \"exit=$s\" >> tmp/ssg2/ssg2-06-default-retention-review-isolation/lint.log; exit $s'"
       ]
     },
     {
       "planId": "ssg2-02-fragment-hydration",
       "planPath": "impl-plans/active/ssg2-02-fragment-hydration.md",
       "wave": 2,
-      "dependsOn": ["ssg2-01-fragment-writer"],
+      "dependsOn": [
+        "ssg2-01-fragment-writer"
+      ],
       "writePaths": [
         "Sources/RielaCore/RuntimePayloadFragmentEncoder.swift",
         "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift",
@@ -249,7 +273,10 @@
       "planId": "ssg2-05-maintenance-host-wiring",
       "planPath": "impl-plans/active/ssg2-05-maintenance-host-wiring.md",
       "wave": 2,
-      "dependsOn": ["ssg2-04-legacy-conversion", "ssg2-06-default-retention-review-isolation"],
+      "dependsOn": [
+        "ssg2-04-legacy-conversion",
+        "ssg2-06-default-retention-review-isolation"
+      ],
       "writePaths": [
         "Sources/RielaCLI/RunEndStorageMaintenance.swift",
         "Sources/RielaCLI/AutomaticRetentionHook.swift",
@@ -278,7 +305,9 @@
       "planId": "ssg2-07-gc-readonly-workremaining",
       "planPath": "impl-plans/active/ssg2-07-gc-readonly-workremaining.md",
       "wave": 2,
-      "dependsOn": ["ssg2-06-default-retention-review-isolation"],
+      "dependsOn": [
+        "ssg2-06-default-retention-review-isolation"
+      ],
       "writePaths": [
         "Sources/RielaCore/RielaDataGarbageCollector.swift",
         "Sources/RielaCLI/RielaRetentionService.swift",
@@ -305,7 +334,10 @@
       "planId": "ssg2-03-fragment-release-benchmark",
       "planPath": "impl-plans/active/ssg2-03-fragment-release-benchmark.md",
       "wave": 3,
-      "dependsOn": ["ssg2-02-fragment-hydration", "ssg2-06-default-retention-review-isolation"],
+      "dependsOn": [
+        "ssg2-02-fragment-hydration",
+        "ssg2-06-default-retention-review-isolation"
+      ],
       "writePaths": [
         "Sources/RielaCore/RuntimePayloadFragmentEncoder.swift",
         "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift",
@@ -321,9 +353,18 @@
         "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift"
       ],
       "sharedPathNotes": [
-        {"path": "Tests/RielaCLITests/CLIWorkflowSessionEnvelopeTests.swift", "intendedEdit": "Expectation-only numeric updates (payload row counts/bytes) caused by the reduced-payload default; no assertion removal."},
-        {"path": "Tests/RielaCLITests/TerminalRetentionTests.swift", "intendedEdit": "Expectation-only byte/row count updates caused by fragments; keep ssg2-06 isolation intact."},
-        {"path": "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift", "intendedEdit": "Expectation-only updates if payload counts change; no assertion removal."}
+        {
+          "path": "Tests/RielaCLITests/CLIWorkflowSessionEnvelopeTests.swift",
+          "intendedEdit": "Expectation-only numeric updates (payload row counts/bytes) caused by the reduced-payload default; no assertion removal."
+        },
+        {
+          "path": "Tests/RielaCLITests/TerminalRetentionTests.swift",
+          "intendedEdit": "Expectation-only byte/row count updates caused by fragments; keep ssg2-06 isolation intact."
+        },
+        {
+          "path": "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift",
+          "intendedEdit": "Expectation-only updates if payload counts change; no assertion removal."
+        }
       ],
       "artifactRoots": [],
       "acceptanceCriteria": [
@@ -343,7 +384,11 @@
       "planId": "ssg2-08-doctor-docs",
       "planPath": "impl-plans/active/ssg2-08-doctor-docs.md",
       "wave": 4,
-      "dependsOn": ["ssg2-03-fragment-release-benchmark", "ssg2-05-maintenance-host-wiring", "ssg2-07-gc-readonly-workremaining"],
+      "dependsOn": [
+        "ssg2-03-fragment-release-benchmark",
+        "ssg2-05-maintenance-host-wiring",
+        "ssg2-07-gc-readonly-workremaining"
+      ],
       "writePaths": [
         "Sources/RielaCLI/StorageDoctorCommand.swift",
         "Tests/RielaCLITests/StorageDoctorCommandTests.swift",

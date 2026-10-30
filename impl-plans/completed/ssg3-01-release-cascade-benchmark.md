@@ -1,6 +1,8 @@
 # ssg3-01-release-cascade-benchmark: release cascade tests, ≥5x benchmark, reduced writes by default
 
-**Status**: Ready
+**Status**: Archived. Superseded by ssg4, no implementation performed
+(`impl-plans/active/ssg4-01-release-cascade-benchmark.md`). Session 564 stopped
+before any edit because SwiftPM build-cache writes were not authorized.
 **planId**: ssg3-01-release-cascade-benchmark
 **dependsOn**: none (wave 1). Accepted dependencies already in the tree:
 `ssg2-01` writer, `ssg2-02` hydration, `ssg2-06` test isolation (archived in

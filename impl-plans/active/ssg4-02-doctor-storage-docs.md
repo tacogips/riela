@@ -1,18 +1,21 @@
-# ssg3-02-doctor-storage-docs: `riela doctor storage` reporting and storage/retention docs
+# ssg4-02-doctor-storage-docs: `riela doctor storage` reporting and storage/retention docs
 
 **Status**: Ready
-**planId**: ssg3-02-doctor-storage-docs
-**dependsOn**: ssg3-01-release-cascade-benchmark (wave 2). The docs describe
-the final reduced-by-default behavior and the release rules that ssg3-01
+**planId**: ssg4-02-doctor-storage-docs
+**dependsOn**: ssg4-01-release-cascade-benchmark (wave 2). The docs describe
+the final reduced-by-default behavior and the release rules that ssg4-01
 proves.
 **Design**: `design-docs/specs/design-session-storage-efficiency-and-default-gc.md`
 §3 (representation to document), §4 (defaults), §5 (automatic maintenance),
 §6 (doctor, including `session.payloadFragments` and the JSON shape), §7
 (docs), §8 (upgrade notes), §10 (gc and compact behavior), §11 (isolation),
-§13 row `ssg3-02` and its "Docs content" bullet
-**Supersedes**: `impl-plans/completed/ssg2-08-doctor-docs.md` (never implemented)
-**Progress log**: `impl-plans/progress/ssg3-02-doctor-storage-docs.md` (new)
-**Evidence root**: `tmp/ssg3/ssg3-02-doctor-storage-docs/` (gitignored)
+§13 row `ssg4-02` and its "Docs content" bullet
+**Supersedes**: `impl-plans/completed/ssg3-02-doctor-storage-docs.md` and
+`impl-plans/completed/ssg2-08-doctor-docs.md` (neither was implemented)
+**Progress log**: `impl-plans/progress/ssg4-02-doctor-storage-docs.md` (new)
+**Evidence root**: `tmp/ssg4/ssg4-02-doctor-storage-docs/` (gitignored)
+
+**Build outputs**: SwiftPM/Xcode build products and caches under .build/, .swiftpm/ and the temporary HOME, and evidence logs under tmp/ssg4/<planId>/, are authorized untracked outputs of every plan's verification commands; artifactRoots stays [] and these writes are never an implementation blocker.
 
 **writePaths**:
 - `Sources/RielaCLI/StorageDoctorCommand.swift`
@@ -20,7 +23,7 @@ proves.
 - `docs/storage-doctor-and-compact.md`
 - `docs/terminal-retention.md`
 - `README.md`
-- `impl-plans/progress/ssg3-02-doctor-storage-docs.md`
+- `impl-plans/progress/ssg4-02-doctor-storage-docs.md`
 
 **sharedPaths**: none
 
@@ -89,7 +92,8 @@ Current doctor code, in `Sources/RielaCLI/StorageDoctorCommand.swift`:
   `RunEndStorageMaintenance.swift:12-18`). That is `<store>/retention` for an
   explicit store and `<…/.riela>/retention` for a user or project store
   (`RetentionTargets.swift:20-44`).
-- The text renderer is at ~line 342.
+- The text renderer is `text(_:)` at ~line 329 (the `reclaimable:` line is
+  ~line 343).
 
 Helpers to reuse:
 
@@ -305,7 +309,7 @@ Cover each item in design §13 "Docs content":
 - Every documented number must match the code. Record any design-vs-code
   mismatch in the progress log instead of guessing.
 - Before editing a file, record its sha256 in
-  `tmp/ssg3/ssg3-02-doctor-storage-docs/pre.sha256`. Read it fresh before
+  `tmp/ssg4/ssg4-02-doctor-storage-docs/pre.sha256`. Read it fresh before
   every edit. Record `post.sha256` at the end.
 
 ## Acceptance criteria (mechanically checkable)
@@ -330,12 +334,12 @@ Cover each item in design §13 "Docs content":
 ## Verification (each must exit 0)
 
 ```
-mkdir -p tmp/ssg3/ssg3-02-doctor-storage-docs
+mkdir -p tmp/ssg4/ssg4-02-doctor-storage-docs
 test "$(mise which swift)" = /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift
-HOME="$(mktemp -d)" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/build.log; s=$?; echo "exit=$s" >> tmp/ssg3/ssg3-02-doctor-storage-docs/build.log; exit $s'
-HOME="$(mktemp -d)" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter "Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows" 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/test.log; s=$?; echo "exit=$s" >> tmp/ssg3/ssg3-02-doctor-storage-docs/test.log; exit $s'
-H="$(mktemp -d)" && mkdir -p "$H/.riela" && printf '%s' '{"retention":{"automatic":false,"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"keepForever":true}}}' > "$H/.riela/config.json" && HOME="$H" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter "Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows" 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/isolation-proof.log; s=$?; echo "exit=$s" >> tmp/ssg3/ssg3-02-doctor-storage-docs/isolation-proof.log; exit $s'
-arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCLI/StorageDoctorCommand.swift Tests/RielaCLITests/StorageDoctorCommandTests.swift 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/lint.log; s=$?; echo "exit=$s" >> tmp/ssg3/ssg3-02-doctor-storage-docs/lint.log; exit $s'
+HOME="$(mktemp -d)" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/build.log; s=$?; echo "exit=$s" >> tmp/ssg4/ssg4-02-doctor-storage-docs/build.log; exit $s'
+HOME="$(mktemp -d)" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter "Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows" 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/test.log; s=$?; echo "exit=$s" >> tmp/ssg4/ssg4-02-doctor-storage-docs/test.log; exit $s'
+H="$(mktemp -d)" && mkdir -p "$H/.riela" && printf '%s' '{"retention":{"automatic":false,"results":{"keepForever":true},"messages":{"keepForever":true},"logs":{"keepForever":true}}}' > "$H/.riela/config.json" && HOME="$H" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter "Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows" 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/isolation-proof.log; s=$?; echo "exit=$s" >> tmp/ssg4/ssg4-02-doctor-storage-docs/isolation-proof.log; exit $s'
+arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCLI/StorageDoctorCommand.swift Tests/RielaCLITests/StorageDoctorCommandTests.swift 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/lint.log; s=$?; echo "exit=$s" >> tmp/ssg4/ssg4-02-doctor-storage-docs/lint.log; exit $s'
 /bin/zsh -c '! grep -n "is off when no" README.md'
 /bin/zsh -c 'for f in README.md docs/storage-doctor-and-compact.md docs/terminal-retention.md; do grep -q "built-in default" "$f" || exit 1; done'
 /bin/zsh -c 'for t in storage-maintenance.json parked remainingBytes payloadFragments _rielaPayloadRefs workRemaining auto_vacuum; do grep -q -F "$t" docs/storage-doctor-and-compact.md || exit 1; done; grep -q keepForever docs/terminal-retention.md && grep -q "30 days" docs/terminal-retention.md'
@@ -348,12 +352,12 @@ Evidence each command must establish:
   with 0 failures` count.
 - The three doc checks exit 0.
 - Save `git diff -U0 -- README.md` to
-  `tmp/ssg3/ssg3-02-doctor-storage-docs/readme.diff`. Every hunk must sit
+  `tmp/ssg4/ssg4-02-doctor-storage-docs/readme.diff`. Every hunk must sit
   between `## Runtime Data Retention` and the next `## ` heading.
 
 ## Progress log
 
-Write `impl-plans/progress/ssg3-02-doctor-storage-docs.md` with:
+Write `impl-plans/progress/ssg4-02-doctor-storage-docs.md` with:
 
 - status;
 - pre and post sha256;

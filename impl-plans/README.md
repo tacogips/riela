@@ -96,11 +96,15 @@ The second set, `ssg2-`, is archived too
 ([`completed/ssg2-session-storage-gc.md`](completed/ssg2-session-storage-gc.md),
 plans `completed/ssg2-01..08-*.md`, manifest `completed/ssg2-dispatch.json`).
 `ssg2-01`, `-02` and `-04` … `-07` were accepted in sessions 562/563;
-`ssg2-03` and `ssg2-08` are superseded. The active remainder is two plans:
-[`active/ssg3-01-release-cascade-benchmark.md`](active/ssg3-01-release-cascade-benchmark.md)
+`ssg2-03` and `ssg2-08` are superseded. The third set, `ssg3-`
+(`completed/ssg3-01-release-cascade-benchmark.md`,
+`completed/ssg3-02-doctor-storage-docs.md`, manifest
+`completed/ssg3-dispatch.json`), is archived as superseded by `ssg4-`; no
+implementation was performed. The active remainder is two plans:
+[`active/ssg4-01-release-cascade-benchmark.md`](active/ssg4-01-release-cascade-benchmark.md)
 and
-[`active/ssg3-02-doctor-storage-docs.md`](active/ssg3-02-doctor-storage-docs.md)
-(depends on `ssg3-01`), with manifest `active/ssg3-dispatch.json`. Design:
+[`active/ssg4-02-doctor-storage-docs.md`](active/ssg4-02-doctor-storage-docs.md)
+(depends on `ssg4-01`), with manifest `active/ssg4-dispatch.json`. Design:
 [`design-session-storage-efficiency-and-default-gc.md`](../design-docs/specs/design-session-storage-efficiency-and-default-gc.md).
 
 ## Active Plans

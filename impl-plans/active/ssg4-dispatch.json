@@ -1,20 +1,22 @@
 {
-  "taskId": "ssg3",
+  "taskId": "ssg4",
   "workflowMode": "issue-resolution",
   "implementationBranch": "feat/message-log-storage-gc",
   "baseBranch": "feat/message-log-storage-gc",
   "remote": "origin",
   "gitPush": false,
-  "originalHead": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+  "originalHead": "9514e13d3f09780432e769b97e5b398a4cda889a",
   "designDocPaths": [
     "design-docs/specs/design-session-storage-efficiency-and-default-gc.md",
     "design-docs/user-qa/qa-session-storage-default-gc.md"
   ],
   "indexPlanPath": null,
-  "indexNote": "No separate ssg3 index plan (design section 13): this manifest and the impl-plans/README.md session-storage paragraph are the index, so exactly two ssg3 plan files exist.",
-  "evidenceRoot": "tmp/ssg3",
+  "indexNote": "No separate ssg4 index plan (design section 13): this manifest and the impl-plans/README.md session-storage paragraph are the index, so exactly two ssg4 plan files exist.",
+  "evidenceRoot": "tmp/ssg4",
   "swiftBinary": "/Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift",
   "supersedes": [
+    "impl-plans/completed/ssg3-01-release-cascade-benchmark.md",
+    "impl-plans/completed/ssg3-02-doctor-storage-docs.md",
     "impl-plans/completed/ssg2-03-fragment-release-benchmark.md",
     "impl-plans/completed/ssg2-08-doctor-docs.md"
   ],
@@ -22,51 +24,54 @@
     {
       "planId": "ssg2-01-fragment-writer",
       "planPath": "impl-plans/completed/ssg2-01-fragment-writer.md",
-      "commit": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+      "commit": "9514e13d3f09780432e769b97e5b398a4cda889a",
       "provides": "Content-addressed fragment writer (RuntimePayloadFragmentEncoder, workflow_runtime_payload_refs, generation 12). Accepted in sessions 562/563; the code is in the uncommitted working tree on top of this commit."
     },
     {
       "planId": "ssg2-02-fragment-hydration",
       "planPath": "impl-plans/completed/ssg2-02-fragment-hydration.md",
-      "commit": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+      "commit": "9514e13d3f09780432e769b97e5b398a4cda889a",
       "provides": "Fail-closed hydration of $rielaPayloadRef fragments with backward-compatible reads. Accepted in sessions 562/563; the code is in the uncommitted working tree."
     },
     {
       "planId": "ssg2-04-legacy-conversion",
       "planPath": "impl-plans/completed/ssg2-04-legacy-conversion.md",
-      "commit": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+      "commit": "9514e13d3f09780432e769b97e5b398a4cda889a",
       "provides": "Legacy payload conversion and the family guard. Accepted in sessions 562/563; the code is in the uncommitted working tree."
     },
     {
       "planId": "ssg2-05-maintenance-host-wiring",
       "planPath": "impl-plans/completed/ssg2-05-maintenance-host-wiring.md",
-      "commit": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+      "commit": "9514e13d3f09780432e769b97e5b398a4cda889a",
       "provides": "Run-end and periodic automatic storage maintenance with StorageMaintenanceCursor (storage-maintenance.json). Accepted in sessions 562/563; the code is in the uncommitted working tree."
     },
     {
       "planId": "ssg2-06-default-retention-review-isolation",
       "planPath": "impl-plans/completed/ssg2-06-default-retention-review-isolation.md",
-      "commit": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+      "commit": "9514e13d3f09780432e769b97e5b398a4cda889a",
       "provides": "Built-in default retention (results and logs 30 days) and HOME test isolation. Accepted in sessions 562/563; the code is in the uncommitted working tree."
     },
     {
       "planId": "ssg2-07-gc-readonly-workremaining",
       "planPath": "impl-plans/completed/ssg2-07-gc-readonly-workremaining.md",
-      "commit": "b38edd01ca59525c30b6d52ce97bf7658864098c",
+      "commit": "9514e13d3f09780432e769b97e5b398a4cda889a",
       "provides": "gc removal of read-only expired paths and storage compact workRemaining. Accepted in sessions 562/563; the code is in the uncommitted working tree."
     }
   ],
   "archivedPlanSet": {
-    "index": "impl-plans/completed/ssg2-session-storage-gc.md",
-    "manifest": "impl-plans/completed/ssg2-dispatch.json",
-    "note": "ssg2-01, -02, -04..-07 accepted in sessions 562/563; ssg2-03 and ssg2-08 superseded by ssg3-01 and ssg3-02. The archived plan markdown files move in this checkpoint. The archived manifest copy at impl-plans/completed/ssg2-dispatch.json is staged with the final ssg3 commit, so that this checkpoint adds only one dispatch manifest."
+    "plans": [
+      "impl-plans/completed/ssg3-01-release-cascade-benchmark.md",
+      "impl-plans/completed/ssg3-02-doctor-storage-docs.md"
+    ],
+    "removedManifest": "impl-plans/active/ssg3-dispatch.json",
+    "note": "Superseded by ssg4, no implementation performed. Session 564 stopped before any edit because SwiftPM build-cache writes were not explicitly authorized. The ssg2 set stays archived in impl-plans/completed (moved in 9514e13d). As with ssg2 in 9514e13d, the archived manifest copy impl-plans/completed/ssg3-dispatch.json stays untracked so ssg4-dispatch.json is the only newly added dispatch manifest in this checkpoint."
   },
   "reviewContext": {
-    "issueReference": "none (no GitHub issue); local request on feat/message-log-storage-gc; design accepted at step 3 of opus-terra-design-and-implement-review-loop-session-564 (comm-010812); prior sessions 562/563",
+    "issueReference": "none (no GitHub issue); local request on feat/message-log-storage-gc; design accepted at step 3 of opus-terra-design-and-implement-review-loop-session-565 (comm-010828); prior sessions 562/563/564",
     "userProblem": "The Riela session store grows to many GiB. Every other part of the fix was accepted in sessions 562/563. Two items remain: the reference-aware fragment release with the default reduced write form, proven by release tests and a >=5x benchmark; and doctor storage reporting plus user docs.",
     "requiredOutcomes": [
-      "RuntimePayloadReleaseTests prove the cascade never deletes a referenced fragment and leaves no orphan fragment/ref rows; RuntimePayloadBenchmarkTests show >=5x and print both byte counts; writesReducedExecutionPayloadsByDefault == true; the operator's writer-test rename is reviewed (ssg3-01).",
-      "doctor storage reports remainingBytes (upper bound), auto_vacuum=NONE recovery, session.payloadFragments and session.maintenance, read-only; docs cover representation, defaults, automatic maintenance, overrides/keepForever, read-only snapshot handling and workRemaining (ssg3-02)."
+      "RuntimePayloadReleaseTests prove the cascade never deletes a referenced fragment and leaves no orphan fragment/ref rows; RuntimePayloadBenchmarkTests show >=5x and print both byte counts; writesReducedExecutionPayloadsByDefault == true; the operator's writer-test rename is reviewed (ssg4-01).",
+      "doctor storage reports remainingBytes (upper bound), auto_vacuum=NONE recovery, session.payloadFragments and session.maintenance, read-only; docs cover representation, defaults, automatic maintenance, overrides/keepForever, read-only snapshot handling and workRemaining (ssg4-02)."
     ],
     "nonGoals": [
       "No re-plan or re-implementation of accepted ssg2 work; touch it only for an integration-review finding.",
@@ -74,16 +79,17 @@
       "No GraphQL/SDL/catalog change; no edits to EventLiveServe.swift or ServeHTTPCommand.swift."
     ],
     "constraints": [
+      "SwiftPM/Xcode build products and caches under .build/, .swiftpm/ and the temporary HOME, and evidence logs under tmp/ssg4/<planId>/, are authorized untracked outputs of every plan's verification commands; artifactRoots stays [] and these writes are never an implementation blocker.",
       "Preserve all uncommitted work; never checkout/restore/stash/reset it.",
       "Backward-compatible reads of every existing on-disk format; never delete or rewrite running/resumable sessions or retained-tree members; never take or break a held execution lock; never unlink live SQLite/WAL/SHM files.",
-      "Tests use temporary stores and a temporary HOME only; swift is invoked by the absolute path resolved with `mise which swift` before HOME is overridden.",
-      "Every verification command must exit 0 once that plan's own changes are done; logs go under tmp/ssg3/<planId>/ and end with exit=<code>.",
+      "Tests use temporary stores and a temporary HOME only; swift is invoked by the absolute path resolved with `mise which swift` before HOME is overridden; swift build/test/swiftlint run in an arm64 shell.",
+      "Every verification command must exit 0 once that plan's own changes are done; logs go under tmp/ssg4/<planId>/ and end with exit=<code>.",
       "Another workflow is concurrently editing main; stay within writePaths. README.md hunks stay inside the Runtime Data Retention section.",
       "Do not bump versions, create releases or push."
     ],
     "designDecisionsAndRationale": [
       "Reduced execution payloads (design §3): inputSnapshot subtrees of at least 1024 bytes are stored once per root as sha256 content-addressed fragments ($rielaPayloadRef, _rielaPayloadRefs) and linked by workflow_runtime_payload_refs(root_session_id, parent_digest, digest). This removes the quadratic re-storage of upstream outputs in loop sessions.",
-      "Release cascade (design §3.2): a payload row is deleted only under all three NOT EXISTS guards (executions.payload_digest, nested_invocation_refs.digest, payload_refs.digest). Its refs are removed by parent_digest, and children go through the same guarded release. The sweep runs in two bounded rounds. This ensures a shared fragment survives until its last parent is gone.",
+      "Release cascade (design §3.2, Cascade review): a payload row is deleted only under all three NOT EXISTS guards (executions.payload_digest, nested_invocation_refs.digest, payload_refs.digest under any parent). Its refs are removed by parent_digest, and children go through the same guarded release. writeExecutionRows inserts the new payload and refs before releasing the old digest. The sweep runs in two bounded rounds.",
       "Write switch (design §3.5): writesReducedExecutionPayloadsByDefault = true, with a test-only task-local override and no user setting.",
       "Doctor (design §6): doctor is strictly read-only and uses a retention dry run. Store root and state directory come from one RetentionTargetResolver lookup on the sessionRoot carried from paths(_:), never from the database parent (runtime-records). remainingBytes is an upper bound.",
       "No payload compression (design §3.7, rejected)."
@@ -112,8 +118,8 @@
     "sourcePaths": [
       "design-docs/specs/design-session-storage-efficiency-and-default-gc.md",
       "design-docs/user-qa/qa-session-storage-default-gc.md",
-      "impl-plans/active/ssg3-01-release-cascade-benchmark.md",
-      "impl-plans/active/ssg3-02-doctor-storage-docs.md",
+      "impl-plans/active/ssg4-01-release-cascade-benchmark.md",
+      "impl-plans/active/ssg4-02-doctor-storage-docs.md",
       "Sources/RielaCore/RuntimePayloadFragmentEncoder.swift",
       "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift",
       "Sources/RielaCLI/StorageDoctorCommand.swift",
@@ -129,13 +135,13 @@
       "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c '/Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build'",
       "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c '/Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\"'",
       "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict <every Swift file changed on the branch since b38edd01>'",
-      "Whole-change integration review ACCEPTED, then one local commit on feat/message-log-storage-gc excluding tmp/; no push."
+      "Whole-change integration review ACCEPTED (covering every path changed since b38edd01, including the pre-existing uncommitted files), then one local commit on feat/message-log-storage-gc excluding tmp/, .build/ and .swiftpm/; no push."
     ]
   },
   "plans": [
     {
-      "planId": "ssg3-01-release-cascade-benchmark",
-      "planPath": "impl-plans/active/ssg3-01-release-cascade-benchmark.md",
+      "planId": "ssg4-01-release-cascade-benchmark",
+      "planPath": "impl-plans/active/ssg4-01-release-cascade-benchmark.md",
       "wave": 1,
       "dependsOn": [],
       "writePaths": [
@@ -148,7 +154,8 @@
         "Tests/RielaCLITests/RuntimePayloadReadParityTests.swift",
         "Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift",
         "Tests/RielaCoreTests/RuntimePersistenceBoundedWriteTests.swift",
-        "impl-plans/progress/ssg3-01-release-cascade-benchmark.md"
+        "Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift",
+        "impl-plans/progress/ssg4-01-release-cascade-benchmark.md"
       ],
       "sharedPaths": [],
       "sharedPathNotes": [],
@@ -156,33 +163,33 @@
       "acceptanceCriteria": [
         "grep -n \"writesReducedExecutionPayloadsByDefault = true\" Sources/RielaCore/RuntimePayloadFragmentEncoder.swift prints one line.",
         "RuntimePayloadReleaseTests defines testRewrittenExecutionReleasesOnlyItsUniqueFragment, testTruncationReleasesFragmentsOfRemovedExecutions, testNestedRefReplacementKeepsFragmentsSharedWithRootRows, testTerminalRunEndReleaseKeepsReferencedFragments, testSweepRemovesLeakedRefsAndFragments, testReleaseIsIsolatedPerRoot; all pass.",
-        "RuntimePayloadBenchmarkTests.testReducedPayloadsAreAtLeastFiveTimesSmallerForLoopSession passes and test.log contains 'ssg3 benchmark baselineBytes=<n> reducedBytes=<n> ratio=<x>' with x >= 5.",
+        "RuntimePayloadBenchmarkTests.testReducedPayloadsAreAtLeastFiveTimesSmallerForLoopSession passes and test.log contains 'ssg4 benchmark baselineBytes=<n> reducedBytes=<n> ratio=<x>' with x >= 5.",
         "RuntimePayloadFragmentWriterTests contains testFullPayloadModeWritesFullPayloadAndNestedWritesReduced (unchanged) and new testDefaultWritesReducedPayloads.",
         "Conditional test files are edited only to pin writesReducedExecutionPayloadsOverride; every decision is in the progress log.",
         "build.log, test.log, test-layout.log and lint.log end with exit=0."
       ],
       "verification": [
-        "mkdir -p tmp/ssg3/ssg3-01-release-cascade-benchmark",
+        "mkdir -p tmp/ssg4/ssg4-01-release-cascade-benchmark",
         "test \"$(mise which swift)\" = /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift",
-        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build 2>&1 | tee tmp/ssg3/ssg3-01-release-cascade-benchmark/build.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-01-release-cascade-benchmark/build.log; exit $s'",
-        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\" 2>&1 | tee tmp/ssg3/ssg3-01-release-cascade-benchmark/test.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-01-release-cascade-benchmark/test.log; exit $s'",
-        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"RuntimePersistenceBoundedWrite|CLIWorkflowSessionEnvelope\" 2>&1 | tee tmp/ssg3/ssg3-01-release-cascade-benchmark/test-layout.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-01-release-cascade-benchmark/test-layout.log; exit $s'",
-        "/bin/zsh -c 'grep -E \"ssg3 benchmark baselineBytes=[0-9]+ reducedBytes=[0-9]+ ratio=([5-9]|[1-9][0-9]+)\\.[0-9]+\" tmp/ssg3/ssg3-01-release-cascade-benchmark/test.log'",
-        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCore/RuntimePayloadFragmentEncoder.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift Tests/RielaCoreTests/RuntimePayloadFragmentWriterTests.swift Tests/RielaCoreTests/RuntimePayloadReleaseTests.swift Tests/RielaCoreTests/RuntimePayloadBenchmarkTests.swift 2>&1 | tee tmp/ssg3/ssg3-01-release-cascade-benchmark/lint.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-01-release-cascade-benchmark/lint.log; exit $s'"
+        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build 2>&1 | tee tmp/ssg4/ssg4-01-release-cascade-benchmark/build.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-01-release-cascade-benchmark/build.log; exit $s'",
+        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\" 2>&1 | tee tmp/ssg4/ssg4-01-release-cascade-benchmark/test.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-01-release-cascade-benchmark/test.log; exit $s'",
+        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"RuntimePersistenceBoundedWrite|CLIWorkflowSessionEnvelope\" 2>&1 | tee tmp/ssg4/ssg4-01-release-cascade-benchmark/test-layout.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-01-release-cascade-benchmark/test-layout.log; exit $s'",
+        "/bin/zsh -c 'grep -E \"ssg4 benchmark baselineBytes=[0-9]+ reducedBytes=[0-9]+ ratio=([5-9]|[1-9][0-9]+)\\.[0-9]+\" tmp/ssg4/ssg4-01-release-cascade-benchmark/test.log'",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCore/RuntimePayloadFragmentEncoder.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift Tests/RielaCoreTests/RuntimePayloadFragmentWriterTests.swift Tests/RielaCoreTests/RuntimePayloadReleaseTests.swift Tests/RielaCoreTests/RuntimePayloadBenchmarkTests.swift 2>&1 | tee tmp/ssg4/ssg4-01-release-cascade-benchmark/lint.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-01-release-cascade-benchmark/lint.log; exit $s'"
       ]
     },
     {
-      "planId": "ssg3-02-doctor-storage-docs",
-      "planPath": "impl-plans/active/ssg3-02-doctor-storage-docs.md",
+      "planId": "ssg4-02-doctor-storage-docs",
+      "planPath": "impl-plans/active/ssg4-02-doctor-storage-docs.md",
       "wave": 2,
-      "dependsOn": ["ssg3-01-release-cascade-benchmark"],
+      "dependsOn": ["ssg4-01-release-cascade-benchmark"],
       "writePaths": [
         "Sources/RielaCLI/StorageDoctorCommand.swift",
         "Tests/RielaCLITests/StorageDoctorCommandTests.swift",
         "docs/storage-doctor-and-compact.md",
         "docs/terminal-retention.md",
         "README.md",
-        "impl-plans/progress/ssg3-02-doctor-storage-docs.md"
+        "impl-plans/progress/ssg4-02-doctor-storage-docs.md"
       ],
       "sharedPaths": [],
       "sharedPathNotes": [],
@@ -200,12 +207,12 @@
         "build.log, test.log, isolation-proof.log and lint.log end with exit=0; test.log and isolation-proof.log report the same executed count with 0 failures."
       ],
       "verification": [
-        "mkdir -p tmp/ssg3/ssg3-02-doctor-storage-docs",
+        "mkdir -p tmp/ssg4/ssg4-02-doctor-storage-docs",
         "test \"$(mise which swift)\" = /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift",
-        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/build.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-02-doctor-storage-docs/build.log; exit $s'",
-        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\" 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/test.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-02-doctor-storage-docs/test.log; exit $s'",
-        "H=\"$(mktemp -d)\" && mkdir -p \"$H/.riela\" && printf '%s' '{\"retention\":{\"automatic\":false,\"results\":{\"keepForever\":true},\"messages\":{\"keepForever\":true},\"logs\":{\"keepForever\":true}}}' > \"$H/.riela/config.json\" && HOME=\"$H\" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\" 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/isolation-proof.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-02-doctor-storage-docs/isolation-proof.log; exit $s'",
-        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCLI/StorageDoctorCommand.swift Tests/RielaCLITests/StorageDoctorCommandTests.swift 2>&1 | tee tmp/ssg3/ssg3-02-doctor-storage-docs/lint.log; s=$?; echo \"exit=$s\" >> tmp/ssg3/ssg3-02-doctor-storage-docs/lint.log; exit $s'",
+        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift build 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/build.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-02-doctor-storage-docs/build.log; exit $s'",
+        "HOME=\"$(mktemp -d)\" arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\" 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/test.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-02-doctor-storage-docs/test.log; exit $s'",
+        "H=\"$(mktemp -d)\" && mkdir -p \"$H/.riela\" && printf '%s' '{\"retention\":{\"automatic\":false,\"results\":{\"keepForever\":true},\"messages\":{\"keepForever\":true},\"logs\":{\"keepForever\":true}}}' > \"$H/.riela/config.json\" && HOME=\"$H\" RIELA_RETENTION_AUTOMATIC=0 arch -arm64 /bin/zsh -c 'set -o pipefail; /Users/taco/.local/share/mise/installs/swift/6.3.3/bin/swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|AutomaticRetention|EventLiveServe|RuntimePayload|SchemaMigration|SQLiteRuntimeExecutionRows\" 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/isolation-proof.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-02-doctor-storage-docs/isolation-proof.log; exit $s'",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swiftlint lint --strict Sources/RielaCLI/StorageDoctorCommand.swift Tests/RielaCLITests/StorageDoctorCommandTests.swift 2>&1 | tee tmp/ssg4/ssg4-02-doctor-storage-docs/lint.log; s=$?; echo \"exit=$s\" >> tmp/ssg4/ssg4-02-doctor-storage-docs/lint.log; exit $s'",
         "/bin/zsh -c '! grep -n \"is off when no\" README.md'",
         "/bin/zsh -c 'for f in README.md docs/storage-doctor-and-compact.md docs/terminal-retention.md; do grep -q \"built-in default\" \"$f\" || exit 1; done'",
         "/bin/zsh -c 'for t in storage-maintenance.json parked remainingBytes payloadFragments _rielaPayloadRefs workRemaining auto_vacuum; do grep -q -F \"$t\" docs/storage-doctor-and-compact.md || exit 1; done; grep -q keepForever docs/terminal-retention.md && grep -q \"30 days\" docs/terminal-retention.md'"

@@ -48,16 +48,17 @@ the whole process environment; `$overrides` only adds keys and is not enough.
 `Tests/RielaCLITests/RielaRetentionSchedulerTests.swift`,
 `Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift`,
 `Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift` (preserved
-edits), `impl-plans/progress/ssg2-06-default-retention-review-isolation.md`.
+edits), `Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift`
+(checkpoint amendment rounds 1-2, IR-SSG2-06-APP-TEST-SCOPE: a required
+expectation update, not isolation-only; see §4 below; moved from sharedPaths
+to writePaths in round 2 because dispatch matches integration paths against
+writePaths only), `impl-plans/progress/ssg2-06-default-retention-review-isolation.md`.
 **sharedPaths** (isolation-only edits, only if the proof run shows a leak):
 `Tests/RielaCLITests/GitWorkflowAddonGarbageCollectionSafetyTests.swift`,
 `Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift`,
 `Tests/RielaCLITests/RetentionReclamationTests.swift`,
 `Tests/RielaCLITests/RetentionLogPrunerTests.swift`,
-`Tests/RielaCLITests/RetentionTargetStateTests.swift`,
-`Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift` (checkpoint
-amendment round 1, IR-SSG2-06-APP-TEST-SCOPE: a required expectation update,
-not isolation-only; see §4 below).
+`Tests/RielaCLITests/RetentionTargetStateTests.swift`.
 
 ## Non-goals
 

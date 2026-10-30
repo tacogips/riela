@@ -187,6 +187,7 @@
         "Tests/RielaCLITests/RielaRetentionSchedulerTests.swift",
         "Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift",
         "Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift",
         "impl-plans/progress/ssg2-06-default-retention-review-isolation.md"
       ],
       "sharedPaths": [
@@ -194,8 +195,7 @@
         "Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift",
         "Tests/RielaCLITests/RetentionReclamationTests.swift",
         "Tests/RielaCLITests/RetentionLogPrunerTests.swift",
-        "Tests/RielaCLITests/RetentionTargetStateTests.swift",
-        "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift"
+        "Tests/RielaCLITests/RetentionTargetStateTests.swift"
       ],
       "sharedPathNotes": [
         {
@@ -217,10 +217,6 @@
         {
           "path": "Tests/RielaCLITests/RetentionTargetStateTests.swift",
           "intendedEdit": "Isolation-only edit if the isolation-proof run shows a leak."
-        },
-        {
-          "path": "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift",
-          "intendedEdit": "Checkpoint amendment round 1 (IR-SSG2-06-APP-TEST-SCOPE): rename testMissingConfigurationDoesNotCreateRetentionState to testMissingConfigurationAppliesBuiltInDefaults and assert built-in defaults (one user target, results/logs policySource .builtInDefault, a 1-day-old log kept, all roots under the temporary home). Other tests in the file are unchanged; no RielaRetentionService or EntryPoint+Retention.swift change."
         }
       ],
       "artifactRoots": [],

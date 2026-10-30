@@ -1,6 +1,15 @@
 # Session store efficiency and default GC: implementation plan index
 
-**Status**: Ready
+> **Superseded 2026-10-30 by the `ssg2-` plans**
+> (`impl-plans/active/ssg2-session-storage-gc.md`). Two dispatch runs
+> blocked: sgc-01 was too large for one implementer, and a rerun counted the
+> old progress logs' continuations. This index, `session-storage-gc-01..05-*.md`
+> and `session-storage-gc-dispatch.json` are archived unexecuted as written.
+> The partial work they produced is preserved in the working tree and is
+> reviewed and finished by the ssg2 plans. The `impl-plans/progress/sgc-0*.md`
+> logs are history only; no ssg2 plan continues them.
+
+**Status**: Superseded (archived)
 **Design Reference**: design-docs/specs/design-session-storage-efficiency-and-default-gc.md (accepted at step 3, comm-010590)
 **User QA**: design-docs/user-qa/qa-session-storage-default-gc.md (Q1-Q7 defaults assumed)
 **Created**: 2026-10-30

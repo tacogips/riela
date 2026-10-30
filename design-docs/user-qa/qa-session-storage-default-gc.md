@@ -47,3 +47,16 @@ changes it.
    take more than half of a pass's budget, so parked or busy rows cannot stall
    the conversion of other rows.
    Alternative: retry failing rows forever at a lower rate.
+8. **Does "remove the small incremental-vacuum cap" mean no cap at all?**
+   Default: no. The 128-page cap is replaced by 4,096 pages per run-end pass
+   and 65,536 pages per scheduled pass (design §5.3 Step 2), so one pass never
+   holds the write lock for an unbounded time and a large free list shrinks
+   over consecutive passes.
+   Alternative: vacuum the whole free list in one pass.
+9. **Which `storage compact` results count as remaining work?**
+   Default: only pending conversion or reclamation (design §10.2). A failed
+   or busy retention pass and abandoned-invocation verdicts (`live`,
+   `skipped`) are reported as warnings or in `reconciled`, but do not set
+   `workRemaining`.
+   Alternative: keep abandoned-invocation `skipped` verdicts as remaining
+   work.

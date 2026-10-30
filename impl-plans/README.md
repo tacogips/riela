@@ -88,6 +88,15 @@ verification and review. The dispatch manifest `active/ds179-dispatch.json`
 stays active until the dispatch run closes. The final commit remains a
 workflow step.
 
+Session storage efficiency and default GC (2026-10-30, branch
+`feat/message-log-storage-gc`): the first plan set
+(`completed/session-storage-gc.md`, `completed/session-storage-gc-01..05-*.md`
+and `completed/session-storage-gc-dispatch.json`) is archived as superseded.
+The active replacement is the `ssg2-` set indexed by
+[`active/ssg2-session-storage-gc.md`](active/ssg2-session-storage-gc.md)
+(plans `ssg2-01` … `ssg2-08`, manifest `active/ssg2-dispatch.json`). Design:
+[`design-session-storage-efficiency-and-default-gc.md`](../design-docs/specs/design-session-storage-efficiency-and-default-gc.md).
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

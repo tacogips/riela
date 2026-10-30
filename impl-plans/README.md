@@ -88,6 +88,36 @@ verification and review. The dispatch manifest `active/ds179-dispatch.json`
 stays active until the dispatch run closes. The final commit remains a
 workflow step.
 
+Session storage efficiency and default GC (2026-10-30, branch
+`feat/message-log-storage-gc`): the first plan set
+(`completed/session-storage-gc.md`, `completed/session-storage-gc-01..05-*.md`
+and `completed/session-storage-gc-dispatch.json`) is archived as superseded.
+The second set, `ssg2-`, is archived too
+([`completed/ssg2-session-storage-gc.md`](completed/ssg2-session-storage-gc.md),
+plans `completed/ssg2-01..08-*.md`, manifest `completed/ssg2-dispatch.json`).
+`ssg2-01`, `-02` and `-04` … `-07` were accepted in sessions 562/563;
+`ssg2-03` and `ssg2-08` are superseded. The third set, `ssg3-`
+(`completed/ssg3-01-release-cascade-benchmark.md`,
+`completed/ssg3-02-doctor-storage-docs.md`, manifest
+`completed/ssg3-dispatch.json`), is archived as superseded by `ssg4-`; no
+implementation was performed. The fourth set is implemented and accepted
+(session 566):
+[`completed/ssg4-01-release-cascade-benchmark.md`](completed/ssg4-01-release-cascade-benchmark.md)
+(reference-aware fragment release, reduced writes by default, benchmark
+4,923,178 → 859,707 bytes, ratio 5.73) and
+[`completed/ssg4-02-doctor-storage-docs.md`](completed/ssg4-02-doctor-storage-docs.md)
+(read-only `riela doctor storage` with `remainingBytes`, `recovery`,
+`maintenance` and `payloadFragments`; docs). The focused suites ran 413 tests
+with 1 opt-in skip and 0 failures, in both the temporary-HOME run and the
+isolation proof. Browser E2E was skipped because no browser-facing file changed.
+The dispatch manifest stays at
+[`active/ssg4-dispatch.json`](active/ssg4-dispatch.json); it records the
+original plan paths. Progress logs: `progress/ssg4-0*.md`. User docs:
+README [Runtime Data Retention](../README.md#runtime-data-retention),
+[`docs/storage-doctor-and-compact.md`](../docs/storage-doctor-and-compact.md)
+and [`docs/terminal-retention.md`](../docs/terminal-retention.md). Design:
+[`design-session-storage-efficiency-and-default-gc.md`](../design-docs/specs/design-session-storage-efficiency-and-default-gc.md).
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

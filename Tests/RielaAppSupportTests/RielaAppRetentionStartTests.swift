@@ -48,20 +48,32 @@ final class RielaAppRetentionStartTests: XCTestCase {
     XCTAssertTrue(report.targets.allSatisfy { $0.root.hasPrefix(home.path) })
   }
 
-  func testMissingConfigurationDoesNotCreateRetentionState() throws {
+  func testMissingConfigurationAppliesBuiltInDefaults() throws {
     let home = try makeRoot()
     let rielaRoot = home.appendingPathComponent(".riela", isDirectory: true)
-    try FileManager.default.createDirectory(at: rielaRoot, withIntermediateDirectories: true)
+    let logs = rielaRoot.appendingPathComponent("logs", isDirectory: true)
+    let recentLog = logs.appendingPathComponent("recent.jsonl")
+    let now = Date(timeIntervalSince1970: 2_000_000)
+    try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+    try Data("recent log".utf8).write(to: recentLog)
+    try FileManager.default.setAttributes(
+      [.modificationDate: now.addingTimeInterval(-86_400)], ofItemAtPath: recentLog.path
+    )
     let request = rielaAppRetentionRequest(
       homeDirectory: home,
       projectRoot: nil,
       environment: ["HOME": home.path]
     )
 
-    let report = try RielaRetentionService().run(request)
+    let report = try RielaRetentionService(clock: { now }).run(request)
 
-    XCTAssertTrue(report.targets.isEmpty)
-    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rielaRoot.path), [])
+    XCTAssertEqual(report.targets.count, 1)
+    XCTAssertEqual(report.targets.first?.kind, .user)
+    XCTAssertEqual(report.targets.first?.root, rielaRoot.path)
+    XCTAssertEqual(report.targets.first?.results.policySource, .builtInDefault)
+    XCTAssertEqual(report.targets.first?.logs.policySource, .builtInDefault)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: recentLog.path))
+    XCTAssertTrue(report.targets.allSatisfy { $0.root.hasPrefix(home.path) })
   }
 
   private func makeRoot() throws -> URL {

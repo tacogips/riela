@@ -13,12 +13,61 @@ final class RielaRetentionServiceTests: XCTestCase {
     super.tearDown()
   }
 
-  func testAutomaticWithoutPolicyDoesNotCreateRetentionState() throws {
+  func testAutomaticWithoutPolicyUsesDefaultsAndSkipsGeneratedSweep() throws {
     let home = try makeRoot()
-    let riela = try makeRielaRoot(home)
-    let report = try service(now: Date(timeIntervalSince1970: 2_000_000)).run(request(home: home))
-    XCTAssertTrue(report.targets.isEmpty)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: riela.appendingPathComponent("retention").path))
+    let snapshot = try makeOldSnapshot(home: home)
+    let log = try makeOldLog(home: home)
+    let report = try service(now: Date(timeIntervalSince1970: 4_000_000)).run(request(home: home))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: snapshot.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
+    XCTAssertEqual(report.targets.first?.generated.removedEntryCount, 0)
+    XCTAssertEqual(report.targets.first?.results.policySource, .builtInDefault)
+  }
+
+  func testDefaultAgePrunesOldTerminalAndFollowsMessages() throws {
+    let home = try makeRoot()
+    let database = try makeSessionDatabase(home: home)
+    try insertSession("old", database: database)
+    try insertSession("recent", database: database)
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let recent = ISO8601DateFormatter().string(from: now.addingTimeInterval(-29 * 86_400))
+    try database.execute("UPDATE workflow_runtime_snapshots SET updated_at=? WHERE workflow_execution_id='recent'", bindings: [.text(recent)])
+    let preview = try service(now: now).run(request(home: home, trigger: .manual, dryRun: true))
+    XCTAssertEqual(preview.targets.first?.results.selectedCount, 1)
+    XCTAssertFalse(try database.tableExists("session_retention_tombstones"))
+    let report = try service(now: now).run(request(home: home))
+    XCTAssertEqual(report.targets.first?.results.removedCount, 1)
+    XCTAssertEqual(try database.query("SELECT workflow_execution_id FROM workflow_runtime_snapshots").first?["workflow_execution_id"], "recent")
+    XCTAssertEqual(try database.query("SELECT workflow_execution_id FROM workflow_messages").first?["workflow_execution_id"], "recent")
+  }
+
+  func testDefaultRetentionProtectsResumableAndLockedSessions() throws {
+    let home = try makeRoot()
+    let database = try makeSessionDatabase(home: home)
+    for id in ["old", "running", "suspended", "created", "locked", "tree-root", "tree-child"] {
+      try insertSession(id, database: database)
+    }
+    for status in ["running", "suspended", "created"] {
+      try database.execute("UPDATE workflow_runtime_snapshots SET session_status=? WHERE workflow_execution_id=?",
+        bindings: [.text(status), .text(status)])
+    }
+    try database.execute("""
+      UPDATE workflow_runtime_snapshots SET parent_session_id='tree-root', root_session_id='tree-root',
+        session_status='running' WHERE workflow_execution_id='tree-child'
+      """)
+    let registry = SessionExecutionLockRegistry(sessionStoreRoot: home.appendingPathComponent(".riela/sessions").path)
+    try registry.acquire(sessionId: "locked")
+    defer { registry.release(sessionId: "locked") }
+    let report = try service(now: Date(timeIntervalSince1970: 4_000_000)).run(request(home: home))
+    XCTAssertEqual(report.targets.first?.results.removedCount, 1)
+    let remaining = Set(try database.query("SELECT workflow_execution_id FROM workflow_runtime_snapshots")
+      .compactMap { $0["workflow_execution_id"] })
+    let expected = Set(["running", "suspended", "created", "locked", "tree-root", "tree-child"])
+    XCTAssertEqual(remaining, expected)
+    let messages = Set(try database.query("SELECT workflow_execution_id FROM workflow_messages")
+      .compactMap { $0["workflow_execution_id"] })
+    XCTAssertEqual(messages, expected)
+    XCTAssertGreaterThan(report.targets.first?.results.protected["nonterminalOrConflictingStatus"] ?? 0, 0)
   }
 
   func testAutomaticPrunesOldLogAndWritesCompletedStamp() throws {
@@ -53,6 +102,22 @@ final class RielaRetentionServiceTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".riela/retention").path))
   }
 
+  func testEnvironmentDisablesAutomaticButManualPrunesDefaultAge() throws {
+    let home = try makeRoot()
+    let database = try makeSessionDatabase(home: home)
+    try insertSession("old", database: database)
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let environment = ["HOME": home.path, "RIELA_RETENTION_AUTOMATIC": "0"]
+    let automatic = RielaRetentionRequest(trigger: .automatic, homeDirectory: home, projectDirectory: nil,
+      environment: environment, scope: .user, overrides: .init(), dryRun: false)
+    let manual = RielaRetentionRequest(trigger: .manual, homeDirectory: home, projectDirectory: nil,
+      environment: environment, scope: .user, overrides: .init(), dryRun: false)
+    XCTAssertTrue(try service(now: now).run(automatic).targets.isEmpty)
+    XCTAssertEqual(try database.query("SELECT * FROM workflow_runtime_snapshots").count, 1)
+    XCTAssertEqual(try service(now: now).run(manual).targets.first?.results.removedCount, 1)
+    XCTAssertTrue(try database.query("SELECT * FROM workflow_runtime_snapshots").isEmpty)
+  }
+
   func testKeepForeverOverrideIsRejected() throws {
     let home = try makeRoot()
     try writeConfig(home: home, json: #"{"retention":{"logs":{"keepForever":true}}}"#)
@@ -69,7 +134,7 @@ final class RielaRetentionServiceTests: XCTestCase {
       trigger: .manual, overrides: RielaRetentionOverrides(logsMaxAgeDays: 14)))
     XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
     XCTAssertEqual(report.targets.first?.logs.state, .active)
-    XCTAssertEqual(report.targets.first?.results.state, .notConfigured)
+    XCTAssertEqual(report.targets.first?.results.state, .active)
   }
 
   func testDryRunDoesNotDeleteOrWriteThrottleStamp() throws {
@@ -122,13 +187,13 @@ final class RielaRetentionServiceTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent("retention").path))
   }
 
-  func testManualNoPolicyIncludesInactiveCategoryReports() throws {
+  func testManualNoPolicyIncludesDefaultCategoryReports() throws {
     let home = try makeRoot()
     _ = try makeRielaRoot(home)
     let report = try service(now: Date()).run(request(home: home, trigger: .manual))
-    XCTAssertEqual(report.targets.first?.results.state, .notConfigured)
+    XCTAssertEqual(report.targets.first?.results.state, .active)
     XCTAssertEqual(report.targets.first?.messages.state, .notConfigured)
-    XCTAssertEqual(report.targets.first?.logs.state, .notConfigured)
+    XCTAssertEqual(report.targets.first?.logs.state, .active)
   }
 
   func testHeldTargetLockSkipsAutomaticAndFailsManual() throws {
@@ -244,18 +309,15 @@ final class RielaRetentionServiceTests: XCTestCase {
     XCTAssertFalse(report.hasFailure)
   }
 
-  func testManualWithoutPolicyLeavesSessionStoreUntouched() throws {
+  func testManualWithoutPolicyReportsDefaults() throws {
     let home = try makeRoot()
-    let database = try makeSessionDatabase(home: home)
-    try insertSession("kept", database: database)
-    let lock = try makeOrphanLock(home: home)
-    let report = try untouchedStoreService().run(request(home: home, trigger: .manual))
+    _ = try makeRielaRoot(home)
+    let report = try untouchedStoreService().run(request(home: home, trigger: .manual, dryRun: true))
     let target = try XCTUnwrap(report.targets.first)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: lock.path))
-    try assertSessionStoreUntouched(database, target: target)
-    XCTAssertEqual(target.results.state, .notConfigured)
+    XCTAssertEqual(target.results.policy?.maxAgeDays, 30)
+    XCTAssertEqual(target.results.policySource, .builtInDefault)
     XCTAssertEqual(target.messages.state, .notConfigured)
-    XCTAssertEqual(target.logs.state, .notConfigured)
+    XCTAssertEqual(target.logs.policy?.maxAgeDays, 30)
   }
 
   func testLogsOnlyPolicyDoesNotTouchSessionStore() throws {

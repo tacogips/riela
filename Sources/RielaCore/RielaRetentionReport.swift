@@ -22,6 +22,7 @@ public struct RetentionProtectedFamily: Codable, Equatable, Sendable {
 
 public struct RetentionCategoryReport: Codable, Equatable, Sendable {
   public var state: RielaRetentionCategoryState
+  public var policySource: RielaRetentionPolicySource?
   public var policy: RetentionPolicySnapshot?
   public var selectedCount: Int
   public var removedCount: Int
@@ -39,6 +40,7 @@ public struct RetentionCategoryReport: Codable, Equatable, Sendable {
   public init(
     state: RielaRetentionCategoryState,
     policy: RetentionPolicySnapshot?,
+    policySource: RielaRetentionPolicySource? = nil,
     selectedCount: Int,
     removedCount: Int,
     selectedBytes: Int64,
@@ -53,6 +55,7 @@ public struct RetentionCategoryReport: Codable, Equatable, Sendable {
     orphanSessionCount: Int
   ) {
     self.state = state
+    self.policySource = policySource
     self.policy = policy
     self.selectedCount = selectedCount
     self.removedCount = removedCount

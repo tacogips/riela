@@ -328,10 +328,14 @@ final class TerminalRetentionPolicyTests: XCTestCase {
     let fixture = try fixture(); defer { try? FileManager.default.removeItem(at: fixture.root) }
     try insert(fixture, "old")
     let runner = SessionPruneCommandRunner()
-    let output = runner.run(["--session-store", fixture.paths.sessionRoot,
-      "--artifact-root", fixture.root.appendingPathComponent("artifacts").path,
-      "--memory-root", fixture.root.appendingPathComponent("memory").path,
-      "--workflow-id", "news"])
+    let isolation = try RielaCLIIsolatedEnvironment.make("terminal-policy-prune")
+    defer { isolation.remove() }
+    let output = isolation.run {
+      runner.run(["--session-store", fixture.paths.sessionRoot,
+        "--artifact-root", fixture.root.appendingPathComponent("artifacts").path,
+        "--memory-root", fixture.root.appendingPathComponent("memory").path,
+        "--workflow-id", "news"])
+    }
     XCTAssertEqual(output.exitCode, .success, output.stdout)
     XCTAssertTrue(output.stdout.contains("\"reclamation\""), output.stdout)
     XCTAssertFalse(output.stdout.contains("\"action\":\"failed\""), output.stdout)

@@ -25,6 +25,33 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     try assertUpgrade(startingAt: 3)
   }
 
+  func testGeneration11UpgradesTo12AddsPayloadRefsTable() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let execution = WorkflowStepExecution(
+      executionId: "exec", stepId: "step", nodeId: "node", attempt: 1,
+      inputSnapshot: [:], status: .completed, createdAt: date, updatedAt: date
+    )
+    let session = WorkflowSession(
+      workflowId: "workflow", sessionId: "session", status: .running,
+      entryStepId: "step", createdAt: date, updatedAt: date, executions: [execution]
+    )
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
+    let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    let db = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
+    let before = try db.query("SELECT digest FROM workflow_runtime_payloads ORDER BY digest").compactMap { $0["digest"] }
+    XCTAssertFalse(before.isEmpty)
+    try db.execute("DROP TABLE workflow_runtime_payload_refs")
+    try db.execute("PRAGMA user_version = 11")
+    try store.prepareSchema(in: db)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: db), 12)
+    XCTAssertTrue(try db.tableExists("workflow_runtime_payload_refs"))
+    XCTAssertEqual(try db.query("SELECT digest FROM workflow_runtime_payloads ORDER BY digest").compactMap { $0["digest"] }, before)
+    XCTAssertEqual(try db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='workflow_runtime_payload_refs_root_digest'").count, 1)
+  }
+
   func testGeneration10UpgradesTo11WithoutLosingSnapshot() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -51,7 +78,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
     try store.prepareSchema(in: database)
 
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 11)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 12)
     XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
   }
 
@@ -113,7 +140,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     XCTAssertEqual(try store.legacyEmbeddedNestedInvocationKeys(limit: 10), ["generation-ten-invocation"])
     XCTAssertTrue(try store.convertLegacyNestedInvocation(invocationKey: "generation-ten-invocation"))
     let migrated = try SQLiteDatabase.open(path: path, mode: .readOnly)
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: migrated), 11)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: migrated), 12)
     XCTAssertEqual(
       try store.nestedInvocationRecord(key: "generation-ten-invocation", in: migrated)?.reservation,
       reservation
@@ -139,7 +166,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
     try store.prepareSchema(in: database)
 
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 11)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 12)
     XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
   }
 

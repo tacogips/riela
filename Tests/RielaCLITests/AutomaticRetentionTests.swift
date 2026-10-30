@@ -10,6 +10,7 @@ final class AutomaticRetentionTests: XCTestCase {
     var home: URL
     var project: URL
     var store: URL
+    var isolation: RielaCLIIsolatedEnvironment
   }
 
   func testAppliesOnlySupportedSuccessfulCommands() {
@@ -71,15 +72,18 @@ final class AutomaticRetentionTests: XCTestCase {
 
     let originalExitCode = firstResult.exitCode
     let originalStdout = firstResult.stdout
-    let warnings = AutomaticRetentionHook.runIfApplicable(
-      arguments: ["workflow", "run", "worker-only-single-step", "--workflow-definition-dir", workflowRoot.path,
-                  "--mock-scenario", mockScenario.path, "--session-store", roots.store.path,
-                  "--working-dir", roots.project.path, "--output", "json"],
-      exitCode: originalExitCode,
-      cancelled: false,
-      environment: ["HOME": roots.home.path],
-      service: RielaRetentionService(clock: { fixedNow })
-    )
+    let warnings = roots.isolation.run {
+      AutomaticRetentionHook.runIfApplicable(
+        arguments: ["workflow", "run", "worker-only-single-step", "--workflow-definition-dir", workflowRoot.path,
+                    "--mock-scenario", mockScenario.path, "--session-store", roots.store.path,
+                    "--working-dir", roots.project.path, "--output", "json"],
+        exitCode: originalExitCode,
+        cancelled: false,
+        environment: ["HOME": roots.home.path],
+        service: RielaRetentionService(clock: { fixedNow }),
+        currentDirectory: roots.project.path
+      )
+    }
 
     XCTAssertTrue(warnings.isEmpty)
     XCTAssertEqual(firstResult.exitCode, originalExitCode)
@@ -133,14 +137,17 @@ final class AutomaticRetentionTests: XCTestCase {
     ).map { $0.string("root_session_id") }
     XCTAssertEqual(Set(rootIds), [completed, running])
 
-    let warnings = AutomaticRetentionHook.runIfApplicable(
-      arguments: ["workflow", "run", "worker-only-single-step", "--session-store", roots.store.path,
-                  "--working-dir", roots.project.path],
-      exitCode: .success,
-      cancelled: false,
-      environment: ["HOME": roots.home.path],
-      service: RielaRetentionService(clock: { fixedNow })
-    )
+    let warnings = roots.isolation.run {
+      AutomaticRetentionHook.runIfApplicable(
+        arguments: ["workflow", "run", "worker-only-single-step", "--session-store", roots.store.path,
+                    "--working-dir", roots.project.path],
+        exitCode: .success,
+        cancelled: false,
+        environment: ["HOME": roots.home.path],
+        service: RielaRetentionService(clock: { fixedNow }),
+        currentDirectory: roots.project.path
+      )
+    }
 
     XCTAssertTrue(warnings.isEmpty, "\(warnings)")
     let remainingIds = try SQLiteWorkflowRuntimePersistenceStore(
@@ -150,31 +157,37 @@ final class AutomaticRetentionTests: XCTestCase {
     XCTAssertTrue(remainingIds.contains(running), "running session must survive the byte cap")
   }
 
-  func testNoConfigDoesNotDeleteOrCreateRetentionState() throws {
+  func testNoConfigRunsDefaultRetention() throws {
     let roots = try makeRoots()
     defer { try? FileManager.default.removeItem(at: roots.root) }
-    let warnings = AutomaticRetentionHook.runIfApplicable(
-      arguments: ["workflow", "run", "demo", "--working-dir", roots.project.path, "--session-store", roots.store.path],
-      exitCode: .success,
-      cancelled: false,
-      environment: ["HOME": roots.home.path]
-    )
+    let warnings = roots.isolation.run {
+      AutomaticRetentionHook.runIfApplicable(
+        arguments: ["workflow", "run", "demo", "--working-dir", roots.project.path, "--session-store", roots.store.path],
+        exitCode: .success,
+        cancelled: false,
+        environment: ["HOME": roots.home.path],
+        currentDirectory: roots.project.path
+      )
+    }
     XCTAssertTrue(warnings.isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: roots.home.appendingPathComponent(".riela/retention").path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: roots.store.appendingPathComponent("retention").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: roots.store.appendingPathComponent("retention").path))
   }
 
   func testCorruptConfigWarnsAndDoesNotCreateRetentionState() throws {
     let roots = try makeRoots()
     defer { try? FileManager.default.removeItem(at: roots.root) }
     try writeConfig(#"{"retention":{"results":{"bogus":1}}}"#, home: roots.home)
-    let warnings = AutomaticRetentionHook.runIfApplicable(
-      arguments: ["session", "continue", "session-id", "--working-dir", roots.project.path,
-                  "--session-store", roots.store.path],
-      exitCode: .success,
-      cancelled: false,
-      environment: ["HOME": roots.home.path]
-    )
+    let warnings = roots.isolation.run {
+      AutomaticRetentionHook.runIfApplicable(
+        arguments: ["session", "continue", "session-id", "--working-dir", roots.project.path,
+                    "--session-store", roots.store.path],
+        exitCode: .success,
+        cancelled: false,
+        environment: ["HOME": roots.home.path],
+        currentDirectory: roots.project.path
+      )
+    }
     XCTAssertEqual(warnings.count, 1)
     XCTAssertTrue(warnings[0].hasPrefix("riela retention warning: "))
     XCTAssertFalse(FileManager.default.fileExists(atPath: roots.store.appendingPathComponent("retention").path))
@@ -184,14 +197,69 @@ final class AutomaticRetentionTests: XCTestCase {
     let roots = try makeRoots()
     defer { try? FileManager.default.removeItem(at: roots.root) }
     try writeConfig(#"{"retention":{"automatic":false,"results":{"maxAgeDays":1}}}"#, home: roots.home)
-    let warnings = AutomaticRetentionHook.runIfApplicable(
-      arguments: ["workflow", "run", "demo", "--working-dir", roots.project.path],
-      exitCode: .success,
-      cancelled: false,
-      environment: ["HOME": roots.home.path]
-    )
+    let warnings = roots.isolation.run {
+      AutomaticRetentionHook.runIfApplicable(
+        arguments: ["workflow", "run", "demo", "--working-dir", roots.project.path],
+        exitCode: .success,
+        cancelled: false,
+        environment: ["HOME": roots.home.path],
+        currentDirectory: roots.project.path
+      )
+    }
     XCTAssertTrue(warnings.isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: roots.home.appendingPathComponent(".riela/retention").path))
+  }
+
+  func testSessionResumeMaintainsProjectStore() throws {
+    try assertSelectedStore(arguments: ["session", "resume", "id"], selected: .project)
+  }
+
+  func testSessionResumeUserScopeMaintainsUserStore() throws {
+    try assertSelectedStore(arguments: ["session", "resume", "id", "--scope", "user"], selected: .user)
+  }
+
+  func testExplicitProjectStoreMaintainsDeduplicatedTarget() throws {
+    try assertSelectedStore(arguments: ["session", "resume", "id", "--session-store", "project"], selected: .project)
+  }
+
+  func testExplicitOtherStoreIsMaintained() throws {
+    try assertSelectedStore(arguments: ["session", "resume", "id", "--session-store", "other"], selected: .explicit)
+  }
+
+  private func assertSelectedStore(arguments: [String], selected: RielaRetentionTargetKind) throws {
+    let roots = try makeRoots()
+    defer { roots.isolation.remove() }
+    let stores: [(RielaRetentionTargetKind, URL)] = [
+      (.user, roots.home.appendingPathComponent(".riela/sessions")),
+      (.project, roots.project.appendingPathComponent(".riela/sessions")),
+      (.explicit, roots.store)
+    ]
+    for (kind, store) in stores {
+      let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: store.path))
+      let session = WorkflowSession(workflowId: "flow", sessionId: "legacy", status: .completed,
+        entryStepId: "start", createdAt: Date(), updatedAt: Date())
+      try runtime.save(WorkflowRuntimePersistenceSnapshot(session: session))
+      let database = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: store.path))
+      let encoder = JSONEncoder()
+      encoder.dateEncodingStrategy = .iso8601
+      let json = try XCTUnwrap(String(data: encoder.encode(session), encoding: .utf8))
+      try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
+        bindings: [.text(json), .text(session.sessionId)])
+      XCTAssertEqual(try runtime.legacyInlineSessionIds(limit: 10), [session.sessionId], "fixture \(kind)")
+    }
+    var actualArguments = arguments
+    if let index = actualArguments.firstIndex(of: "--session-store") {
+      actualArguments[index + 1] = selected == .project ? stores[1].1.path : stores[2].1.path
+    }
+    let warnings = roots.isolation.run {
+      AutomaticRetentionHook.runIfApplicable(arguments: actualArguments, exitCode: .success, cancelled: false,
+        environment: roots.isolation.environment, currentDirectory: roots.project.path)
+    }
+    XCTAssertTrue(warnings.isEmpty, "\(warnings)")
+    for (kind, store) in stores {
+      let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: store.path))
+      XCTAssertEqual(try runtime.legacyInlineSessionIds(limit: 10), kind == selected ? [] : ["legacy"], "store \(kind)")
+    }
   }
 
   /// Flips the session status to `running` in both stores. The status columns are generated from the JSON
@@ -231,7 +299,13 @@ final class AutomaticRetentionTests: XCTestCase {
     for directory in [home, project, store] {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
-    return TestRoots(root: root, home: home, project: project, store: store)
+    let process = ProcessInfo.processInfo.environment
+    var environment = ["HOME": home.path]
+    for key in ["PATH", "TMPDIR"] {
+      if let value = process[key] { environment[key] = value }
+    }
+    let isolation = RielaCLIIsolatedEnvironment(root: root, home: home, project: project, environment: environment)
+    return TestRoots(root: root, home: home, project: project, store: store, isolation: isolation)
   }
 
   private func writeConfig(_ contents: String, home: URL) throws {
@@ -242,14 +316,16 @@ final class AutomaticRetentionTests: XCTestCase {
 
   private func runWorkflow(roots: TestRoots, workflowRoot: URL,
                            mockScenario: URL) async -> CLICommandResult {
-    await RielaCLIApplication().run([
-      "workflow", "run", "worker-only-single-step",
-      "--workflow-definition-dir", workflowRoot.path,
-      "--mock-scenario", mockScenario.path,
-      "--session-store", roots.store.path,
-      "--working-dir", roots.project.path,
-      "--output", "json"
-    ], environment: ["HOME": roots.home.path])
+    await roots.isolation.run {
+      await RielaCLIApplication().run([
+        "workflow", "run", "worker-only-single-step",
+        "--workflow-definition-dir", workflowRoot.path,
+        "--mock-scenario", mockScenario.path,
+        "--session-store", roots.store.path,
+        "--working-dir", roots.project.path,
+        "--output", "json"
+      ], environment: roots.isolation.environment)
+    }
   }
 
   private func decodeJSON<T: Decodable>(_ type: T.Type, from output: String) throws -> T {

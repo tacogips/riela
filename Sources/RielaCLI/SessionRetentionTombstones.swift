@@ -32,6 +32,16 @@ func ensureSessionRetentionTriggers(_ db: SQLiteDatabase) throws {
         """)
     }
   }
+  if try db.tableExists("session_retention_tombstones"), try db.tableExists("workflow_runtime_payload_refs") {
+    for operation in ["INSERT", "UPDATE"] {
+      try db.execute("""
+        CREATE TRIGGER IF NOT EXISTS retention_guard_workflow_runtime_payload_refs_\(operation.lowercased())
+        BEFORE \(operation) ON workflow_runtime_payload_refs
+        WHEN EXISTS(SELECT 1 FROM session_retention_tombstones WHERE session_id=NEW.root_session_id)
+        BEGIN SELECT RAISE(ABORT,'session payloads expired under terminal retention'); END
+        """)
+    }
+  }
   if try db.tableExists("session_retention_tombstones"), try db.tableExists("workflow_nested_invocations") {
     for operation in ["INSERT", "UPDATE"] {
       try db.execute("""

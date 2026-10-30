@@ -677,7 +677,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let rows = try db.query(
       """
-      SELECT r.ordinal, json(p.bytes) AS payload
+      SELECT r.ordinal, r.root_session_id, json(p.bytes) AS payload
       FROM workflow_nested_invocation_refs AS r
       JOIN workflow_runtime_payloads AS p ON p.root_session_id=r.root_session_id AND p.digest=r.digest
       WHERE r.invocation_key=? AND r.role=?
@@ -685,8 +685,12 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       bindings: [.text(key), .text(role)]
     )
     var payloads: [Int: String] = [:]
+    var roots: [Int: String] = [:]
     for row in rows {
-      if let ordinal = row["ordinal"].flatMap(Int.init), let payload = row["payload"] { payloads[ordinal] = payload }
+      if let ordinal = row["ordinal"].flatMap(Int.init), let payload = row["payload"] {
+        payloads[ordinal] = payload
+        roots[ordinal] = row["root_session_id"]
+      }
     }
     guard let headerJSON = payloads[-1], nestedDigest(headerJSON) == headerDigest else {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested snapshot header payload is missing")
@@ -702,7 +706,15 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
             let data = payload.data(using: .utf8) else {
         throw WorkflowRuntimePersistenceStoreError.sqliteFailed("nested execution payload is missing")
       }
-      executions.append(try JSONDecoder().decode(JSONValue.self, from: data))
+      var execution = try JSONDecoder().decode(JSONValue.self, from: data)
+      if let digests = try RuntimePayloadFragmentEncoder.fragmentDigests(execution) {
+        guard let root = roots[ordinal] else {
+          throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime payload fragment missing or corrupt: root")
+        }
+        let fragments = try RuntimePayloadFragmentEncoder.fetchFragments(digests, root: root, db: db)
+        try RuntimePayloadFragmentEncoder.expand(&execution, fragments: fragments)
+      }
+      executions.append(execution)
     }
     session["executions"] = .array(executions)
     snapshot["session"] = .object(session)

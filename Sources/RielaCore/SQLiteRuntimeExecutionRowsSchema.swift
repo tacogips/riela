@@ -2,6 +2,10 @@ import RielaSQLite
 
 /// Generation-11 execution-row schema seam owned by eh-05.
 enum SQLiteRuntimeExecutionRowsSchema {
+  static func migrateToGeneration12(in db: SQLiteDatabase) throws {
+    try createTables(in: db)
+  }
+
   static func migrateToGeneration11(in db: SQLiteDatabase) throws {
     try createTables(in: db)
     let columns = try db.query("PRAGMA table_info(workflow_nested_invocations)")
@@ -30,6 +34,19 @@ enum SQLiteRuntimeExecutionRowsSchema {
         UNIQUE(root_session_id, digest)
       )
       """
+    )
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS workflow_runtime_payload_refs (
+        root_session_id TEXT NOT NULL,
+        parent_digest TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        PRIMARY KEY(root_session_id, parent_digest, digest)
+      ) WITHOUT ROWID
+      """
+    )
+    try db.execute(
+      "CREATE INDEX IF NOT EXISTS workflow_runtime_payload_refs_root_digest ON workflow_runtime_payload_refs(root_session_id, digest)"
     )
     try db.execute(
       """

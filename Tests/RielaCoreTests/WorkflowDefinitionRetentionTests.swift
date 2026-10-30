@@ -421,7 +421,8 @@ final class WorkflowDefinitionRetentionTests: XCTestCase {
     try db.execute("PRAGMA user_version = 10")
 
     _ = try WorkflowDefinitionStore(rootDirectory: root.path).head(workflowName: "migration-flow")
-    XCTAssertEqual(try db.query("PRAGMA user_version").first?["user_version"], "11")
+    XCTAssertEqual(try db.query("PRAGMA user_version").first?["user_version"],
+      "\(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)")
     XCTAssertFalse(try db.tableExists("definition_blobs"))
     let ids = try db.query("SELECT version_id FROM definition_versions ORDER BY history_version").map { $0.string("version_id") }
     XCTAssertEqual(Set(ids), Set(["defv-1", "defv-2"] + (6...15).map { "defv-\($0)" }))

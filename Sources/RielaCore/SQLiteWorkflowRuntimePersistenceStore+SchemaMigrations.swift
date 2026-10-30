@@ -120,7 +120,8 @@ extension SQLiteWorkflowRuntimePersistenceStore {
   /// is registered for either shape: the Work Runtime design forbids backward
   /// compatibility, so `discardIncompatibleStoreIfNeeded` recreates them.
   /// Generation 11 adds shared definition history, definition pins and runtime execution rows.
-  public static let schemaGeneration: Int64 = 11
+  /// Generation 12 adds runtime payload fragment references.
+  public static let schemaGeneration: Int64 = 12
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
@@ -147,6 +148,9 @@ extension SQLiteWorkflowRuntimePersistenceStore {
     SQLiteSchemaMigration(fromGeneration: 10) { database in
       try WorkflowDefinitionHistorySchema.migrateToGeneration11(in: database)
       try SQLiteRuntimeExecutionRowsSchema.migrateToGeneration11(in: database)
+    },
+    SQLiteSchemaMigration(fromGeneration: 11) { database in
+      try SQLiteRuntimeExecutionRowsSchema.migrateToGeneration12(in: database)
     }
   ]
 

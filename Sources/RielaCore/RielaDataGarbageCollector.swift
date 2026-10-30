@@ -39,6 +39,7 @@ public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
   public var removedEntryCount: Int
   public var reclaimedBytes: Int64
   public var diagnostics: [String]
+  public var warnings: [String]
   public var handoverFiles: [RielaGarbageCollectionItem]
   public var handoverRefs: [RielaGarbageCollectionItem]
 
@@ -52,6 +53,7 @@ public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
     removedEntryCount: Int = 0,
     reclaimedBytes: Int64 = 0,
     diagnostics: [String] = [],
+    warnings: [String] = [],
     handoverFiles: [RielaGarbageCollectionItem] = [],
     handoverRefs: [RielaGarbageCollectionItem] = []
   ) {
@@ -64,6 +66,7 @@ public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
     self.removedEntryCount = removedEntryCount
     self.reclaimedBytes = reclaimedBytes
     self.diagnostics = diagnostics
+    self.warnings = warnings
     self.handoverFiles = handoverFiles
     self.handoverRefs = handoverRefs
   }
@@ -177,12 +180,14 @@ public struct RielaDataGarbageCollector {
     // Payload retention is handled by the explicitly scoped `session prune` command.
     collectWorkflowHistory(
       at: root.appendingPathComponent("workflow-history", isDirectory: true),
+      collectionRoot: root,
       cutoff: cutoff,
       dryRun: dryRun,
       report: &report
     )
     collectDirectAgedChildren(
       at: root.appendingPathComponent("events/receipts", isDirectory: true),
+      collectionRoot: root,
       cutoff: cutoff,
       dryRun: dryRun,
       report: &report
@@ -258,7 +263,7 @@ public struct RielaDataGarbageCollector {
         report.handoverFiles.append(.init(path: taskDirectory.path, decision: .kept))
         continue
       }
-      if remove(taskDirectory, dryRun: dryRun, report: &report) {
+      if remove(taskDirectory, root: root, dryRun: dryRun, report: &report) {
         report.handoverFiles.append(.init(
           path: taskDirectory.path,
           decision: dryRun ? .wouldRemove : .removed
@@ -439,6 +444,7 @@ public struct RielaDataGarbageCollector {
 
   private func collectWorkflowHistory(
     at root: URL,
+    collectionRoot: URL,
     cutoff: Date,
     dryRun: Bool,
     report: inout RielaGarbageCollectionReport
@@ -454,12 +460,13 @@ public struct RielaDataGarbageCollector {
       enumerator.skipDescendants()
     }
     for snapshots in snapshotRoots {
-      collectDirectAgedChildren(at: snapshots, cutoff: cutoff, dryRun: dryRun, report: &report)
+      collectDirectAgedChildren(at: snapshots, collectionRoot: collectionRoot, cutoff: cutoff, dryRun: dryRun, report: &report)
     }
   }
 
   private func collectDirectAgedChildren(
     at root: URL,
+    collectionRoot: URL,
     cutoff: Date,
     dryRun: Bool,
     report: inout RielaGarbageCollectionReport
@@ -471,7 +478,7 @@ public struct RielaDataGarbageCollector {
     ) else { return }
     for entry in entries where isOlderThanCutoff(entry, cutoff: cutoff) {
       guard !isSymbolicLink(entry) else { continue }
-      remove(entry, dryRun: dryRun, report: &report)
+      remove(entry, root: collectionRoot, dryRun: dryRun, report: &report)
     }
   }
 
@@ -510,6 +517,7 @@ public struct RielaDataGarbageCollector {
   @discardableResult
   private func remove(
     _ url: URL,
+    root: URL,
     dryRun: Bool,
     report: inout RielaGarbageCollectionReport,
     countsAsSession: Bool = false
@@ -517,7 +525,18 @@ public struct RielaDataGarbageCollector {
     let bytes = allocatedSize(of: url)
     do {
       if !dryRun {
-        try fileManager.removeItem(at: url)
+        do {
+          try fileManager.removeItem(at: url)
+        } catch {
+          let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().path
+          let resolvedRoot = root.resolvingSymlinksInPath().path
+          let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+          guard parent == resolvedRoot || parent.hasPrefix(resolvedRoot + "/"),
+                attributes?[.type] as? FileAttributeType != .typeSymbolicLink,
+                (attributes?[.ownerAccountID] as? NSNumber)?.uint32Value == geteuid() else { throw error }
+          restoreDirectoryPermissions(url)
+          try fileManager.removeItem(at: url)
+        }
       }
       report.removedEntryCount += 1
       report.reclaimedBytes += bytes
@@ -526,9 +545,19 @@ public struct RielaDataGarbageCollector {
       }
       return true
     } catch {
-      report.diagnostics.append("\(url.path): \(error.localizedDescription)")
+      report.warnings.append("\(url.path): \(error.localizedDescription)")
       return false
     }
+  }
+
+  private func restoreDirectoryPermissions(_ url: URL) {
+    guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+          attributes[.type] as? FileAttributeType == .typeDirectory,
+          (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == geteuid(),
+          let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue else { return }
+    try? fileManager.setAttributes([.posixPermissions: permissions | 0o700], ofItemAtPath: url.path)
+    guard let children = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return }
+    for child in children { restoreDirectoryPermissions(child) }
   }
 
   private func allocatedSize(of url: URL) -> Int64 {

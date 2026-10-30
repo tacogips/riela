@@ -25,7 +25,21 @@ legacy inline snapshots and CLI copies, nested embedded bytes, prune blockers,
 abandoned invocation candidates, and largest sessions. Definition details
 include workflow/version counts, versions outside the retention window, pins,
 and retention state. Reclaimable estimates separate free pages, compaction,
-and terminal pruning.
+and terminal pruning. `remainingBytes` is the sum of compaction and pruning
+estimates and is an upper bound, since they may overlap. `session.payloadFragments`
+reports fragment and reduced-payload rows, bytes, references, dangling references
+and unreferenced payloads; unreferenced payload bytes are not added to the
+remaining estimate. `session.maintenance` reports parked, busy and failed rows,
+queue completion and examples when a cursor exists. For session and definition
+databases with `auto_vacuum=NONE`, `recovery` reports required and available
+free space and the recovery path.
+
+New execution payloads use root-scoped SHA-256 content-addressed fragments for
+input snapshot subtrees of at least 1024 bytes, with `$rielaPayloadRef` and
+`_rielaPayloadRefs` markers. Fragments are released only when no references
+remain. Older formats remain readable; reads fail closed for missing or corrupt
+fragments. Schema generation 12 makes older binaries reject the store. Fragments
+are not compressed.
 
 `riela storage compact` converts old representations and applies configured
 maintenance. It is a dry run unless `--apply` is supplied:
@@ -47,10 +61,15 @@ applies the configured retention policy, and reclaims SQLite space. Session
 conversion holds a non-blocking per-session execution lock; a busy session is
 reported and left for a later run.
 
-The process is resumable. Partial batches leave a mixture of old and new rows;
-both formats remain readable. `workRemaining: true` means run compact again.
-Dry-run reports planned work without writing or taking/creating execution
-locks.
+The prune step uses the effective policy, including the built-in default of
+30 days for results and logs; messages follow results and there is no default
+byte cap. The process is resumable and older formats remain readable.
+`workRemaining` indicates pending conversion or reclamation: a batch limit,
+locked or failed legacy conversion, pending or failed memory conversion or
+definition-pin backfill, a dry-run estimate of convertible rows, or deferred,
+busy, failed or incomplete SQLite reclamation. Retention warnings or busy
+retention targets and abandoned-invocation verdicts alone do not set it.
+Dry-run reports planned work without writing or taking/creating execution locks.
 
 Full `VACUUM` on an existing `auto_vacuum=NONE` database needs free space of at
 least 2 times the combined database and WAL size, plus 256 MiB. Below that
@@ -66,8 +85,25 @@ only; use it only after coordinating writers. Incremental vacuum remains
 bounded. A held-reader checkpoint can leave a warning and make apply fail, so
 inspect the report and retry after the reader exits.
 
-After an applicable workflow run ends, Riela also releases any unreferenced
-payloads in that run's family and runs a bounded incremental vacuum of at most
-4,096 free pages on incremental-auto-vacuum session stores. This run-end pass is
-family-local and does not perform a full vacuum or change terminal-session
-retention policy.
+Automatic maintenance runs after workflow run, resume, rerun and continue, and
+periodically in `events serve`, `serve` and RielaApp. It converts only terminal
+legacy rows and skips held execution locks. Rows can be converted, busy, failed,
+retired or parked; after three conversion failures a row is parked with a
+warning and can be addressed with `riela storage compact --apply`. The cursor
+is `storage-maintenance.json` in the target retention state directory: for an
+explicit store this is `<store>/retention`, and for a project store it is
+`<project>/.riela/retention`. Doctor reads it without creating or changing it.
+
+Run-end conversion is bounded to 16 conversions, 256 examined rows and 2 seconds;
+scheduled conversion allows 64, 1024 and 10 seconds. Retries use at most half
+each budget, leaving room for forward progress. Incremental vacuum is capped
+at 4,096 pages at run end and 65,536 on scheduled passes; automatic maintenance
+never performs a full `VACUUM`. Set `automatic: false` or
+`RIELA_RETENTION_AUTOMATIC=0` to disable automatic passes.
+
+`keepForever` disables limits for a category; `RIELA_RETENTION` takes precedence
+over project and user configuration, and gc flags override limits. The generated
+sweep runs only with an explicitly configured or flag-provided results age.
+Expired read-only snapshot directories inside the store can be made
+owner-writable and removed; unremovable paths produce warnings, not failures.
+See [terminal retention](terminal-retention.md) for policy and upgrade details.

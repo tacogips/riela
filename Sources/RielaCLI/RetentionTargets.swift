@@ -56,6 +56,10 @@ enum RetentionTargetResolver {
   private static func standardized(_ url: URL) -> String { standardizedPath(url.path) }
 
   private static func standardizedPath(_ path: String) -> String {
-    URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+    let standardized = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+    // Foundation drops a leading /private on macOS, turning a real path such as
+    // /private/var/folders into the /var symlink that the no-follow check rejects.
+    if path.hasPrefix("/private/"), !standardized.hasPrefix("/private/") { return "/private" + standardized }
+    return standardized
   }
 }

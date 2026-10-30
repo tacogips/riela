@@ -99,14 +99,11 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         bindings: [.text(sessionId), .int(Int64(ordinal))]
       ).first?["payload_digest"]
       let execution = snapshot.session.executions[ordinal]
-      let payload = try payloadJSON(execution)
-      let digest = Self.sha256(payload)
-      bytes += payload.utf8.count
-      try db.execute(
-        "INSERT OR IGNORE INTO workflow_runtime_payloads(root_session_id,digest,bytes,byte_count) VALUES(?,?,jsonb(?),?)",
-        bindings: [.text(rootId), .text(digest), .text(payload), .int(Int64(payload.utf8.count))]
-      )
-      statements += 1
+      let reduced = try executionPayload(execution)
+      let digest = reduced.digest
+      bytes += reduced.json.utf8.count + reduced.fragments.reduce(0) { $0 + $1.json.utf8.count }
+      try insertExecutionPayload(reduced, rootId: rootId, in: db)
+      statements += 1 + reduced.fragments.count * 2
       try db.execute(
         """
         INSERT INTO workflow_runtime_executions(
@@ -137,50 +134,66 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   }
 
   func releasePayloadIfUnreferenced(rootId: String, digest: String, in db: SQLiteDatabase) throws {
-    try db.execute(
+    let deleted = try db.query(
       """
       DELETE FROM workflow_runtime_payloads
       WHERE root_session_id=? AND digest=?
         AND NOT EXISTS (SELECT 1 FROM workflow_runtime_executions WHERE root_session_id=? AND payload_digest=?)
         AND NOT EXISTS (SELECT 1 FROM workflow_nested_invocation_refs WHERE root_session_id=? AND digest=?)
+        AND NOT EXISTS (SELECT 1 FROM workflow_runtime_payload_refs WHERE root_session_id=? AND digest=?)
+      RETURNING digest
       """,
-      bindings: [.text(rootId), .text(digest), .text(rootId), .text(digest), .text(rootId), .text(digest)]
+      bindings: [.text(rootId), .text(digest), .text(rootId), .text(digest), .text(rootId), .text(digest),
+                 .text(rootId), .text(digest)]
     )
+    guard !deleted.isEmpty else { return }
+    let children = try db.query(
+      "DELETE FROM workflow_runtime_payload_refs WHERE root_session_id=? AND parent_digest=? RETURNING digest",
+      bindings: [.text(rootId), .text(digest)]
+    )
+    for child in children {
+      if let childDigest = child["digest"] {
+        try releasePayloadIfUnreferenced(rootId: rootId, digest: childDigest, in: db)
+      }
+    }
   }
 
   func releaseUnreferencedPayloads(rootSessionId: String, in db: SQLiteDatabase) throws -> Int64 {
-    let count = try db.query(
-      """
-      SELECT COALESCE(SUM(byte_count), 0) AS bytes
-      FROM workflow_runtime_payloads AS p
-      WHERE p.root_session_id = ?
-        AND NOT EXISTS (
-          SELECT 1 FROM workflow_runtime_executions AS e
-          WHERE e.root_session_id = p.root_session_id AND e.payload_digest = p.digest
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM workflow_nested_invocation_refs AS r
-          WHERE r.root_session_id = p.root_session_id AND r.digest = p.digest
-        )
-      """,
-      bindings: [.text(rootSessionId)]
-    ).first?["bytes"].flatMap(Int64.init) ?? 0
+    func deleteUnreferenced() throws -> Int64 {
+      let rows = try db.query(
+        """
+        DELETE FROM workflow_runtime_payloads AS p
+        WHERE p.root_session_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM workflow_runtime_executions AS e
+            WHERE e.root_session_id = p.root_session_id AND e.payload_digest = p.digest
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM workflow_nested_invocation_refs AS r
+            WHERE r.root_session_id = p.root_session_id AND r.digest = p.digest
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM workflow_runtime_payload_refs AS f
+            WHERE f.root_session_id = p.root_session_id AND f.digest = p.digest
+          )
+        RETURNING byte_count
+        """,
+        bindings: [.text(rootSessionId)]
+      )
+      return rows.reduce(Int64(0)) { $0 + ($1["byte_count"].flatMap(Int64.init) ?? 0) }
+    }
+    let parentBytes = try deleteUnreferenced()
     try db.execute(
       """
-      DELETE FROM workflow_runtime_payloads AS p
-      WHERE p.root_session_id = ?
-        AND NOT EXISTS (
-          SELECT 1 FROM workflow_runtime_executions AS e
-          WHERE e.root_session_id = p.root_session_id AND e.payload_digest = p.digest
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM workflow_nested_invocation_refs AS r
-          WHERE r.root_session_id = p.root_session_id AND r.digest = p.digest
-        )
+      DELETE FROM workflow_runtime_payload_refs AS f
+      WHERE f.root_session_id = ? AND NOT EXISTS (
+        SELECT 1 FROM workflow_runtime_payloads AS p
+        WHERE p.root_session_id = f.root_session_id AND p.digest = f.parent_digest
+      )
       """,
       bindings: [.text(rootSessionId)]
     )
-    return count
+    return try parentBytes + deleteUnreferenced()
   }
 
   func persistNestedReferences(
@@ -206,8 +219,13 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     let headerDigest = try insertNestedPayload(try payloadJSON(header), ordinal: -1, rootId: rootId, invocationKey: invocationKey, role: role, in: db)
     var executionDigests: [JSONValue] = []
     for (ordinal, execution) in snapshot.session.executions.enumerated() {
-      let digest = try insertNestedPayload(try payloadJSON(execution), ordinal: ordinal, rootId: rootId, invocationKey: invocationKey, role: role, in: db)
-      executionDigests.append(.string(digest))
+      let reduced = try executionPayload(execution)
+      try insertExecutionPayload(reduced, rootId: rootId, in: db)
+      try db.execute(
+        "INSERT INTO workflow_nested_invocation_refs(invocation_key,role,ordinal,root_session_id,digest) VALUES(?,?,?,?,?)",
+        bindings: [.text(invocationKey), .text(role), .int(Int64(ordinal)), .text(rootId), .text(reduced.digest)]
+      )
+      executionDigests.append(.string(reduced.digest))
     }
     var references: JSONObject = ["headerDigest": .string(headerDigest), "executionDigests": .array(executionDigests)]
     if let output = snapshot.rootOutput {
@@ -220,6 +238,31 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       references["loopEvidenceDigest"] = .string(try insertNestedPayload(try payloadJSON(workflow), ordinal: snapshot.session.executions.count + 2, rootId: rootId, invocationKey: invocationKey, role: role, in: db))
     }
     return references
+  }
+
+  internal func executionPayload(_ execution: WorkflowStepExecution) throws -> RuntimeReducedPayload {
+    let json = try payloadJSON(execution)
+    if Self.writesReducedExecutionPayloads { return try RuntimePayloadFragmentEncoder.reduce(fullJSON: json) }
+    return RuntimeReducedPayload(json: json, digest: Self.sha256(json), fragments: [])
+  }
+
+  internal func insertExecutionPayload(_ payload: RuntimeReducedPayload, rootId: String, in db: SQLiteDatabase) throws {
+    for fragment in payload.fragments {
+      try db.execute(
+        "INSERT OR IGNORE INTO workflow_runtime_payloads(root_session_id,digest,bytes,byte_count) VALUES(?,?,jsonb(?),?)",
+        bindings: [.text(rootId), .text(fragment.digest), .text(fragment.json), .int(Int64(fragment.json.utf8.count))]
+      )
+    }
+    try db.execute(
+      "INSERT OR IGNORE INTO workflow_runtime_payloads(root_session_id,digest,bytes,byte_count) VALUES(?,?,jsonb(?),?)",
+      bindings: [.text(rootId), .text(payload.digest), .text(payload.json), .int(Int64(payload.json.utf8.count))]
+    )
+    for fragment in payload.fragments {
+      try db.execute(
+        "INSERT OR IGNORE INTO workflow_runtime_payload_refs(root_session_id,parent_digest,digest) VALUES(?,?,?)",
+        bindings: [.text(rootId), .text(payload.digest), .text(fragment.digest)]
+      )
+    }
   }
 
   func insertNestedPayload(
@@ -255,7 +298,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
   ) {
     guard let persistenceWriteObserver else { return }
     let bytes = selected.reduce(headerJSON.utf8.count) { total, index in
-      total + ((try? payloadJSON(executions[index]))?.utf8.count ?? 0)
+      guard let payload = try? executionPayload(executions[index]) else { return total }
+      return total + payload.json.utf8.count + payload.fragments.reduce(0) { $0 + $1.json.utf8.count }
     }
     persistenceWriteObserver(SQLiteWorkflowRuntimePersistenceStore.PersistenceWriteSample(
       boundBytes: bytes,
@@ -388,7 +432,39 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     guard let assembled = rows.first?["session_json"]?.data(using: .utf8) else {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime session assembly failed")
     }
-    return assembled
+    guard let text = String(bytes: assembled, encoding: .utf8),
+          text.contains(RuntimePayloadFragmentEncoder.markerKey) else {
+      return assembled
+    }
+    guard case var .object(session) = try JSONDecoder().decode(JSONValue.self, from: assembled),
+          case var .array(executions)? = session["executions"] else { return assembled }
+    let marked = try executions.map { try RuntimePayloadFragmentEncoder.fragmentDigests($0) }
+    guard marked.contains(where: { $0 != nil }) else { return assembled }
+    let payloadRows = try db.query(
+      """
+      SELECT e.root_session_id, e.payload_digest, json(p.bytes) AS payload
+      FROM workflow_runtime_executions e
+      JOIN workflow_runtime_payloads p ON p.root_session_id=e.root_session_id AND p.digest=e.payload_digest
+      WHERE e.workflow_execution_id=? ORDER BY e.ordinal
+      """, bindings: [.text(sessionId)]
+    )
+    guard payloadRows.count == executions.count, let root = payloadRows.first?["root_session_id"] else {
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime payload fragment missing or corrupt: execution")
+    }
+    for (index, digests) in marked.enumerated() where digests != nil {
+      guard let digest = payloadRows[index]["payload_digest"], let payload = payloadRows[index]["payload"],
+            Self.sha256(payload) == digest else {
+        throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime payload fragment missing or corrupt: execution")
+      }
+    }
+    let fragments = try RuntimePayloadFragmentEncoder.fetchFragments(marked.compactMap { $0 }.flatMap { $0 }, root: root, db: db)
+    for index in executions.indices where marked[index] != nil {
+      try RuntimePayloadFragmentEncoder.expand(&executions[index], fragments: fragments)
+    }
+    session["executions"] = .array(executions)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return try encoder.encode(JSONValue.object(session))
   }
 
   func summaryColumnOverview(from row: SQLiteRow) throws -> LoopSessionOverview? {

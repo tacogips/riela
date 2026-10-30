@@ -57,13 +57,13 @@ enum AutomaticRetentionHook {
     _ request: RielaRetentionRequest,
     service: RielaRetentionService = .init()
   ) -> [String] {
-    runAutomaticPassWithReport(request, service: service).warnings
+    RielaAutomaticStoragePass.runScheduled(request, service: service)
   }
 
-  private static func runAutomaticPassWithReport(
+  fileprivate static func runAutomaticPassWithReport(
     _ request: RielaRetentionRequest,
     service: RielaRetentionService
-  ) -> (warnings: [String], completedRoots: Set<String>) {
+  ) -> [String] {
     do {
       let report = try service.run(request)
       let warnings: [String] = report.targets.compactMap { target in
@@ -71,9 +71,9 @@ enum AutomaticRetentionHook {
         let detail = target.warnings.first ?? "retention pass failed for \(target.root)"
         return warning(detail)
       }
-      return (warnings, Set(report.targets.filter { $0.status == "completed" }.map(\.root)))
+      return warnings
     } catch {
-      return ([warning(error.localizedDescription)], [])
+      return [warning(error.localizedDescription)]
     }
   }
 
@@ -82,26 +82,27 @@ enum AutomaticRetentionHook {
     exitCode: CLIExitCode,
     cancelled: Bool,
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-    service: RielaRetentionService = .init()
+    service: RielaRetentionService = .init(),
+    currentDirectory: String = FileManager.default.currentDirectoryPath
   ) -> [String] {
     guard applies(arguments: arguments, exitCode: exitCode, cancelled: cancelled) else { return [] }
     let retentionRequest = request(
       arguments: arguments,
       environment: environment,
-      currentDirectory: FileManager.default.currentDirectoryPath
+      currentDirectory: currentDirectory
     )
     let targets = RetentionTargetResolver.resolve(scope: retentionRequest.scope,
       homeDirectory: retentionRequest.homeDirectory, projectDirectory: retentionRequest.projectDirectory,
       explicitSessionStore: retentionRequest.explicitSessionStore, environment: retentionRequest.environment)
-    let hasExplicitStore = retentionRequest.explicitSessionStore != nil
-      || retentionRequest.environment["RIELA_SESSION_STORE"] != nil
+    let explicit = [retentionRequest.explicitSessionStore, retentionRequest.environment["RIELA_SESSION_STORE"]]
+      .compactMap { $0 }.first { !$0.isEmpty }
     let selectedTarget = selectedSessionStoreRoot(arguments: arguments, targets: targets,
-      hasExplicitStore: hasExplicitStore)
-    let retention = runAutomaticPassWithReport(retentionRequest, service: service)
-    let roots = selectedTarget.flatMap { target in
-      retention.completedRoots.contains(target.root) ? target.sessionStoreRoot : nil
-    }.map { [$0] } ?? []
-    return retention.warnings + RunEndStorageMaintenance.run(sessionStoreRoots: roots)
+      explicitStore: explicit, projectDirectory: retentionRequest.projectDirectory)
+    let warnings = runAutomaticPassWithReport(retentionRequest, service: service)
+    guard let config = try? RielaRetentionConfiguration.load(homeDirectory: retentionRequest.homeDirectory,
+      projectDirectory: retentionRequest.projectDirectory, environment: retentionRequest.environment),
+      let target = selectedTarget, config.effectivePolicy(for: target.kind).policy.automatic else { return warnings }
+    return warnings + RunEndStorageMaintenance.run(targets: [target], profile: .runEnd)
   }
 
   private static func splitOption(_ argument: String) -> (String, String)? {
@@ -124,9 +125,18 @@ enum AutomaticRetentionHook {
   private static func selectedSessionStoreRoot(
     arguments: [String],
     targets: [RetentionTarget],
-    hasExplicitStore: Bool
+    explicitStore: String?,
+    projectDirectory: URL?
   ) -> RetentionTarget? {
-    if hasExplicitStore { return targets.first(where: { $0.kind == .explicit }) }
+    if let explicitStore {
+      let base = projectDirectory ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      let path = URL(fileURLWithPath: explicitStore, relativeTo: base).standardizedFileURL.path
+      return targets.first { $0.sessionStoreRoot.map { URL(fileURLWithPath: $0).standardizedFileURL.path } == path }
+    }
+    if arguments.count >= 2, arguments[0] == "session", sessionCommands.contains(arguments[1]) {
+      let kind: RielaRetentionTargetKind = optionValue("--scope", in: arguments) == "user" ? .user : .project
+      return targets.first(where: { $0.kind == kind })
+    }
     guard arguments.starts(with: workflowRunArguments), arguments.count > 2 else { return nil }
     let workingDirectory = optionValue("--working-dir", in: arguments)
       ?? optionValue("--working-directory", in: arguments)
@@ -147,5 +157,21 @@ enum AutomaticRetentionHook {
     }
     let kind: RielaRetentionTargetKind = scope == .user ? .user : .project
     return targets.first(where: { $0.kind == kind })
+  }
+}
+
+public enum RielaAutomaticStoragePass {
+  public static func runScheduled(_ request: RielaRetentionRequest) -> [String] {
+    runScheduled(request, service: .init())
+  }
+
+  static func runScheduled(_ request: RielaRetentionRequest, service: RielaRetentionService) -> [String] {
+    let warnings = AutomaticRetentionHook.runAutomaticPassWithReport(request, service: service)
+    guard let config = try? RielaRetentionConfiguration.load(homeDirectory: request.homeDirectory,
+      projectDirectory: request.projectDirectory, environment: request.environment) else { return warnings }
+    let targets = RetentionTargetResolver.resolve(scope: request.scope, homeDirectory: request.homeDirectory,
+      projectDirectory: request.projectDirectory, explicitSessionStore: request.explicitSessionStore,
+      environment: request.environment).filter { config.effectivePolicy(for: $0.kind).policy.automatic }
+    return warnings + RunEndStorageMaintenance.run(targets: targets, profile: .scheduled)
   }
 }

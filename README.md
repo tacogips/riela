@@ -776,10 +776,12 @@ For `update-prompt` and other definition value options, values beginning with
 
 ## Runtime Data Retention
 
-Retention for results, workflow messages and logs is off when no `retention`
-policy is configured. Configure those categories
-independently in `~/.riela/config.json` (project
-`.riela/config.json` can override the user policy for project data):
+The built-in default retains results and logs for 30 days with no byte cap;
+messages follow the results policy. Unspecified categories receive these
+defaults, including after upgrading an existing installation. Only fully
+terminal, unprotected session families are eligible for deletion. Configure
+categories in `~/.riela/config.json` (project `.riela/config.json` can
+override the user policy for project data):
 
 ```json
 {
@@ -839,6 +841,14 @@ category on the command line is a usage error.
 The legacy `gc.retentionDays` and `RIELA_GC_RETENTION_DAYS` keys were removed.
 Using them returns `gc.retentionDays was removed; configure "retention" (see
 riela gc --help)`.
+
+Use `automatic: false` or `RIELA_RETENTION_AUTOMATIC=0` to disable automatic
+passes; `keepForever` disables limits for that category. Command-line flags
+override limits, and `riela gc --dry-run` reports each `policySource`. The
+generated sweep runs only when a results age is explicitly configured or
+provided by flag, not from the built-in default. Expired read-only snapshot
+directories inside the store can be made owner-writable for removal; paths
+that cannot be removed are reported as warnings rather than failures.
 
 Preview and apply the same configured policy with `riela gc`:
 

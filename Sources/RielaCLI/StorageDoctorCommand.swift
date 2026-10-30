@@ -2,6 +2,17 @@ import Foundation
 import RielaCore
 import RielaMemory
 import RielaSQLite
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
+private struct StorageDoctorPath {
+  var path: String
+  var kind: String
+  var sessionRoot: String?
+}
 
 private struct StorageDoctorTable: Codable {
   var name: String
@@ -21,6 +32,46 @@ private struct StorageDoctorMemory: Codable {
   var largestRecords: [[String: String]]
 }
 
+private struct StorageDoctorRecovery: Codable {
+  var requiredFreeBytes: Int64
+  var availableFreeBytes: Int64?
+  var steps: String
+}
+
+private struct StorageDoctorReclaimable: Codable {
+  var freePagesBytes: Int64
+  var compactEstimateBytes: Int64
+  var pruneEstimateBytes: Int64
+  var remainingBytes: Int64
+  var remainingBytesIsUpperBound: Bool
+  var recovery: StorageDoctorRecovery?
+}
+
+private struct StorageDoctorParkedRow: Codable {
+  var queue: String
+  var key: String
+  var error: String
+}
+
+private struct StorageDoctorMaintenance: Codable {
+  var parkedCount: Int
+  var parkedExamples: [StorageDoctorParkedRow]
+  var busyCount: Int
+  var failedCount: Int
+  var queuesComplete: Bool
+  var hint: String?
+}
+
+private struct StorageDoctorPayloadFragments: Codable {
+  var fragmentRows: Int64
+  var fragmentBytes: Int64
+  var reducedPayloadRows: Int64
+  var refRows: Int64
+  var danglingRefRows: Int64
+  var unreferencedPayloadRows: Int64
+  var unreferencedPayloadBytes: Int64
+}
+
 private struct StorageDoctorSession: Codable {
   var sessions: Int64
   var legacyInlineSnapshots: Int64
@@ -30,6 +81,8 @@ private struct StorageDoctorSession: Codable {
   var pruneBlocked: [String: Int]
   var abandonedCandidates: Int
   var largestSessions: [[String: String]]
+  var maintenance: StorageDoctorMaintenance?
+  var payloadFragments: StorageDoctorPayloadFragments?
 }
 
 private struct StorageDoctorDefinitions: Codable {
@@ -55,7 +108,7 @@ private struct StorageDoctorFile: Codable {
   var memory: StorageDoctorMemory?
   var session: StorageDoctorSession?
   var definitions: StorageDoctorDefinitions?
-  var reclaimable: [String: Int64]
+  var reclaimable: StorageDoctorReclaimable
 }
 
 struct StorageDoctorCommandRunner {
@@ -64,12 +117,12 @@ struct StorageDoctorCommandRunner {
       let parsed = try ParsedStorageCommandArguments.parse(arguments)
       try parsed.validate(doctor: true, tokens: arguments)
       var warnings: [String] = []
-      let files = try paths(parsed).compactMap { path, kind -> StorageDoctorFile? in
+      let files = try paths(parsed).compactMap { item -> StorageDoctorFile? in
         do {
-          return try inspect(path: path, kind: kind, top: parsed.top,
+          return try inspect(path: item.path, kind: item.kind, sessionRoot: item.sessionRoot, top: parsed.top,
             workingDirectory: parsed.workingDir ?? FileManager.default.currentDirectoryPath)
         } catch {
-          warnings.append("\(path): \(error)")
+          warnings.append("\(item.path): \(error)")
           return nil
         }
       }
@@ -87,10 +140,10 @@ struct StorageDoctorCommandRunner {
     }
   }
 
-  private func paths(_ options: ParsedStorageCommandArguments) throws -> [(String, String)] {
+  private func paths(_ options: ParsedStorageCommandArguments) throws -> [StorageDoctorPath] {
     let fm = FileManager.default
     let working = options.workingDir ?? fm.currentDirectoryPath
-    var values: [(String, String)] = []
+    var values: [StorageDoctorPath] = []
     let sessionRoots: [String]
     if let explicit = options.sessionStore {
       sessionRoots = [explicit]
@@ -105,9 +158,9 @@ struct StorageDoctorCommandRunner {
     }
     for root in sessionRoots {
       let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root)
-      if fm.fileExists(atPath: path) { values.append((path, "session")) }
+      if fm.fileExists(atPath: path) { values.append(.init(path: path, kind: "session", sessionRoot: root)) }
       let definitions = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)
-      if definitions != path, fm.fileExists(atPath: definitions) { values.append((definitions, "definitions")) }
+      if definitions != path, fm.fileExists(atPath: definitions) { values.append(.init(path: definitions, kind: "definitions", sessionRoot: root)) }
     }
     let memoryRoots: [String]
     if let explicit = options.memoryRoot {
@@ -123,17 +176,17 @@ struct StorageDoctorCommandRunner {
     }
     for memoryRoot in memoryRoots where fm.fileExists(atPath: memoryRoot) {
       if let items = try? fm.contentsOfDirectory(atPath: memoryRoot) {
-        values += items.filter { $0.hasSuffix(".sqlite") }.map { (memoryRoot + "/" + $0, "memory") }
+        values += items.filter { $0.hasSuffix(".sqlite") }.map { StorageDoctorPath(path: memoryRoot + "/" + $0, kind: "memory", sessionRoot: nil) }
       }
     }
     for (root, kind) in [(options.cacheRoot, "cache"), (options.kvRoot, "kv")] {
       guard let root, let items = try? fm.contentsOfDirectory(atPath: root) else { continue }
-      values += items.filter { $0.hasSuffix(".sqlite") }.map { (root + "/" + $0, kind) }
+      values += items.filter { $0.hasSuffix(".sqlite") }.map { StorageDoctorPath(path: root + "/" + $0, kind: kind, sessionRoot: nil) }
     }
     return values
   }
 
-  private func inspect(path: String, kind: String, top: Int, workingDirectory: String) throws -> StorageDoctorFile? {
+  private func inspect(path: String, kind: String, sessionRoot: String?, top: Int, workingDirectory: String) throws -> StorageDoctorFile? {
     let mode: SQLiteOpenMode = kind == "memory" || kind == "cache" || kind == "kv"
       ? .strictReadOnly : .strictReadOnlyWithImmutableFallback
     let db = try SQLiteDatabase.open(path: path, mode: mode, options: .readOnlyDefault)
@@ -171,9 +224,12 @@ struct StorageDoctorCommandRunner {
       }
     }
     let memory = kind == "memory" ? try memoryReport(db, databasePath: path, top: top) : nil
-    let retention = kind == "session" ? try retentionReport(path: path) : nil
-    let session = kind == "session" ? try sessionReport(db, path: path, top: top,
-      pruneBlocked: retention?.results.protected ?? [:]) : nil
+    let target = sessionRoot.flatMap { retentionTarget(sessionRoot: $0, workingDirectory: workingDirectory) }
+    let retention = try target.flatMap { target in
+      try retentionReport(target: target, sessionRoot: sessionRoot ?? "", workingDirectory: workingDirectory)
+    }
+    let session = kind == "session" ? try sessionReport(db, root: sessionRoot ?? "", top: top,
+      pruneBlocked: retention?.results.protected ?? [:], target: target) : nil
     let definitions = kind == "definitions" ? try definitionReport(db, workingDirectory: workingDirectory) : nil
     let file = fileSize(path), wal = fileSize(path + "-wal")
     let generation = kind == "session" ? try? scalar("PRAGMA user_version", "user_version") : nil
@@ -181,13 +237,20 @@ struct StorageDoctorCommandRunner {
       ? (session?.legacyCLICopyBytes ?? 0) + (session?.legacyNestedEmbeddedBytes ?? 0)
       : kind == "memory" ? try legacyMemoryBytes(db) : 0)
     let pruneEstimate = (retention?.results.selectedBytes ?? 0) + (retention?.messages.selectedBytes ?? 0)
+    let recovery: StorageDoctorRecovery? = (kind == "session" || kind == "definitions") && vacuumValue == 0
+      ? StorageDoctorRecovery(requiredFreeBytes: 2 * (file + wal) + 268_435_456,
+        availableFreeBytes: RetentionSQLiteReclaimer().freeSpace(URL(fileURLWithPath: path).deletingLastPathComponent().path),
+        steps: "Freed pages are reused but the file cannot shrink; stop writers and run riela storage compact --apply " +
+          "(or riela gc) once free space is at least requiredFreeBytes; otherwise follow the VACUUM INTO sequence " +
+          "in docs/storage-doctor-and-compact.md.") : nil
     return StorageDoctorFile(path: path, kind: kind, fileBytes: file, walBytes: wal, pageSize: pageSize,
       pageCount: pageCount, freePages: freePages, freeBytes: freePages * pageSize,
       autoVacuum: ["none", "full", "incremental"][safe: Int(vacuumValue)] ?? "unknown",
       schemaGeneration: generation, tables: tableReports,
       memory: memory, session: session, definitions: definitions,
-      reclaimable: ["freePagesBytes": freePages * pageSize, "compactEstimateBytes": compactEstimate,
-        "pruneEstimateBytes": pruneEstimate])
+      reclaimable: .init(freePagesBytes: freePages * pageSize, compactEstimateBytes: compactEstimate,
+        pruneEstimateBytes: pruneEstimate, remainingBytes: compactEstimate + pruneEstimate,
+        remainingBytesIsUpperBound: true, recovery: recovery))
   }
 
   private func memoryReport(_ db: SQLiteDatabase, databasePath: String, top: Int) throws -> StorageDoctorMemory? {
@@ -228,8 +291,8 @@ struct StorageDoctorCommandRunner {
       legacyRecords: legacy, unreferencedAttachmentBytes: attachmentBytes, largestRecords: largest)
   }
 
-  private func sessionReport(_ db: SQLiteDatabase, path: String, top: Int,
-                             pruneBlocked: [String: Int]) throws -> StorageDoctorSession? {
+  private func sessionReport(_ db: SQLiteDatabase, root: String, top: Int,
+                             pruneBlocked: [String: Int], target: RetentionTarget?) throws -> StorageDoctorSession? {
     guard try db.tableExists("workflow_runtime_snapshots") || db.tableExists("cli_workflow_sessions") else { return nil }
     let inline = try db.tableExists("workflow_runtime_snapshots")
       ? value(db, "SELECT count(*) AS value FROM workflow_runtime_snapshots WHERE json_type(session_json,'$.executions')='array'") : 0
@@ -240,8 +303,8 @@ struct StorageDoctorCommandRunner {
     let nested = try db.tableExists("workflow_nested_invocations")
       ? value(db, "SELECT coalesce(sum(length(reservation_json)),0) AS value FROM workflow_nested_invocations WHERE coalesce(json_extract(reservation_json,'$.childSnapshotStorage'),'')!='refs'") : 0
     let nestedUnsettled = try SessionAbandonedInvocationReconciler(
-      registry: SessionExecutionLockRegistry(sessionStoreRoot: pathRoot(path)))
-      .run(sessionStoreRoot: pathRoot(path), abandonedAfter: 24 * 3600, apply: false)
+      registry: SessionExecutionLockRegistry(sessionStoreRoot: root))
+      .run(sessionStoreRoot: root, abandonedAfter: 24 * 3600, apply: false)
       .filter { $0.verdict == "abandoned" }.count
     let largest: [[String: String]]
     if try db.tableExists("workflow_runtime_snapshots") {
@@ -251,11 +314,9 @@ struct StorageDoctorCommandRunner {
     return StorageDoctorSession(sessions: try db.tableExists("workflow_runtime_snapshots")
       ? value(db, "SELECT count(*) AS value FROM workflow_runtime_snapshots") : copies,
       legacyInlineSnapshots: inline, legacyCLICopies: copies, legacyCLICopyBytes: bytes,
-      legacyNestedEmbeddedBytes: nested, pruneBlocked: pruneBlocked, abandonedCandidates: nestedUnsettled, largestSessions: largest)
-  }
-
-  private func pathRoot(_ path: String) -> String {
-    URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent().path
+      legacyNestedEmbeddedBytes: nested, pruneBlocked: pruneBlocked, abandonedCandidates: nestedUnsettled, largestSessions: largest,
+      maintenance: target.flatMap { maintenanceReport(stateDirectory: $0.stateDirectory) },
+      payloadFragments: try fragmentReport(db))
   }
 
   private func definitionReport(_ db: SQLiteDatabase, workingDirectory: String) throws -> StorageDoctorDefinitions? {
@@ -276,14 +337,65 @@ struct StorageDoctorCommandRunner {
       pins: pins, retentionState: state)
   }
 
-  private func retentionReport(path: String) throws -> RielaRetentionTargetReport? {
-    let root = URL(fileURLWithPath: path).deletingLastPathComponent().path
+  private func retentionTarget(sessionRoot: String, workingDirectory: String) -> RetentionTarget? {
+    RetentionTargetResolver.resolve(scope: .all,
+      homeDirectory: URL(fileURLWithPath: normalizedFilePath(CLIRuntimeEnvironment.homeDirectory())),
+      projectDirectory: URL(fileURLWithPath: normalizedFilePath(workingDirectory)), explicitSessionStore: normalizedFilePath(sessionRoot),
+      environment: CLIRuntimeEnvironment.mergedProcessEnvironment()).first {
+        $0.sessionStoreRoot.map(normalizedFilePath) == normalizedFilePath(sessionRoot)
+      }
+  }
+
+  private func retentionReport(target: RetentionTarget, sessionRoot: String,
+                               workingDirectory: String) throws -> RielaRetentionTargetReport? {
+    let scope: RielaGarbageCollectionScope
+    switch target.kind {
+    case .user: scope = .user
+    case .project: scope = .project
+    case .explicit: scope = .all
+    }
     let request = RielaRetentionRequest(trigger: .manual,
-      homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()),
-      explicitSessionStore: root, environment: CLIRuntimeEnvironment.mergedProcessEnvironment(), scope: .project,
-      dryRun: true)
-    let report = try RielaRetentionService().run(request)
-    return report.targets.first
+      homeDirectory: URL(fileURLWithPath: normalizedFilePath(CLIRuntimeEnvironment.homeDirectory())),
+      projectDirectory: URL(fileURLWithPath: normalizedFilePath(workingDirectory)), explicitSessionStore: normalizedFilePath(sessionRoot),
+      environment: CLIRuntimeEnvironment.mergedProcessEnvironment(), scope: scope, dryRun: true)
+    return try RielaRetentionService().run(request).targets.first {
+      normalizedFilePath($0.root) == normalizedFilePath(target.root)
+    }
+  }
+
+  private func maintenanceReport(stateDirectory: String) -> StorageDoctorMaintenance? {
+    guard let cursor = StorageMaintenanceCursor.read(stateDirectory: stateDirectory) else { return nil }
+    let names = ["snapshots", "cliRecords", "nested"]
+    let queues = names.compactMap { cursor.queues[$0] }
+    let parked = queues.reduce(0) { $0 + $1.parked.count + $1.parkedOverflow }
+    let examples = names.flatMap { name in
+      (cursor.queues[name]?.parked ?? []).map { StorageDoctorParkedRow(queue: name, key: $0.key, error: $0.error) }
+    }
+    return .init(parkedCount: parked, parkedExamples: Array(examples.prefix(5)),
+      busyCount: queues.reduce(0) { $0 + $1.busy.count }, failedCount: queues.reduce(0) { $0 + $1.failed.count },
+      queuesComplete: queues.allSatisfy(\.complete), hint: parked > 0 ? "run riela storage compact --apply" : nil)
+  }
+
+  private func fragmentReport(_ db: SQLiteDatabase) throws -> StorageDoctorPayloadFragments? {
+    guard try db.tableExists("workflow_runtime_payload_refs") else { return nil }
+    let child = "EXISTS (SELECT 1 FROM workflow_runtime_payload_refs f WHERE f.root_session_id=p.root_session_id AND f.digest=p.digest)"
+    let unreferenced = """
+      NOT EXISTS (SELECT 1 FROM workflow_runtime_executions e WHERE e.root_session_id=p.root_session_id AND e.payload_digest=p.digest)
+      AND NOT EXISTS (SELECT 1 FROM workflow_nested_invocation_refs n WHERE n.root_session_id=p.root_session_id AND n.digest=p.digest)
+      AND NOT EXISTS (SELECT 1 FROM workflow_runtime_payload_refs f WHERE f.root_session_id=p.root_session_id AND f.digest=p.digest)
+      """
+    return try .init(
+      fragmentRows: value(db, "SELECT count(*) AS value FROM workflow_runtime_payloads p WHERE " + child),
+      fragmentBytes: value(db, "SELECT coalesce(sum(byte_count),0) AS value FROM workflow_runtime_payloads p WHERE " + child),
+      reducedPayloadRows: value(db, "SELECT count(*) AS value FROM (SELECT DISTINCT root_session_id,parent_digest FROM workflow_runtime_payload_refs)"),
+      refRows: value(db, "SELECT count(*) AS value FROM workflow_runtime_payload_refs"),
+      danglingRefRows: value(db, """
+        SELECT count(*) AS value FROM workflow_runtime_payload_refs f WHERE
+        NOT EXISTS (SELECT 1 FROM workflow_runtime_payloads p WHERE p.root_session_id=f.root_session_id AND p.digest=f.parent_digest)
+        OR NOT EXISTS (SELECT 1 FROM workflow_runtime_payloads p WHERE p.root_session_id=f.root_session_id AND p.digest=f.digest)
+        """),
+      unreferencedPayloadRows: value(db, "SELECT count(*) AS value FROM workflow_runtime_payloads p WHERE " + unreferenced),
+      unreferencedPayloadBytes: value(db, "SELECT coalesce(sum(byte_count),0) AS value FROM workflow_runtime_payloads p WHERE " + unreferenced))
   }
 
   private func legacyMemoryBytes(_ db: SQLiteDatabase) throws -> Int64 {
@@ -323,7 +435,10 @@ struct StorageDoctorCommandRunner {
   }
 
   private func normalizedFilePath(_ path: String) -> String {
-    URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+    guard let resolved = realpath(standardized, nil) else { return standardized }
+    defer { free(resolved) }
+    return String(cString: resolved)
   }
 
   private func text(_ file: StorageDoctorFile) -> String {
@@ -339,8 +454,24 @@ struct StorageDoctorCommandRunner {
         "nested embedded \(session.legacyNestedEmbeddedBytes) bytes, " +
         "abandoned candidates \(session.abandonedCandidates), prune blocked \(session.pruneBlocked), largest sessions \(session.largestSessions)\n"
     } else { details = "" }
+    let reclaimable = file.reclaimable
+    var extra = "  reclaimable: remaining \(reclaimable.remainingBytes) bytes (upper bound; " +
+      "free pages \(reclaimable.freePagesBytes), compact \(reclaimable.compactEstimateBytes), prune \(reclaimable.pruneEstimateBytes))\n"
+    if let recovery = reclaimable.recovery {
+      extra += "  recovery: auto_vacuum=NONE; need \(recovery.requiredFreeBytes) free bytes, available \(recovery.availableFreeBytes.map(String.init) ?? "unknown"); \(recovery.steps)\n"
+    }
+    if let fragments = file.session?.payloadFragments {
+      extra += "  fragments: \(fragments.fragmentRows) rows (\(fragments.fragmentBytes) bytes), refs \(fragments.refRows), " +
+        "dangling refs \(fragments.danglingRefRows), unreferenced payloads \(fragments.unreferencedPayloadRows) " +
+        "(\(fragments.unreferencedPayloadBytes) bytes)\n"
+    }
+    if let maintenance = file.session?.maintenance {
+      extra += "  maintenance: parked \(maintenance.parkedCount), busy \(maintenance.busyCount), " +
+        "failed \(maintenance.failedCount), complete \(maintenance.queuesComplete)" +
+        (maintenance.hint.map { "; " + $0 } ?? "") + "\n"
+    }
     return "\(file.kind): \(file.path)\n  bytes: \(file.fileBytes) (WAL \(file.walBytes))\n  pages: \(file.pageCount), free: \(file.freePages) (\(file.freeBytes) bytes), autoVacuum: \(file.autoVacuum)\n" + details +
-      "  reclaimable: \(file.reclaimable)\n" + file.tables.map { "  table \($0.name): \($0.rows) rows, \($0.bytes) bytes\($0.estimated ? " estimated" : "")" }.joined(separator: "\n") + "\n"
+      extra + file.tables.map { "  table \($0.name): \($0.rows) rows, \($0.bytes) bytes\($0.estimated ? " estimated" : "")" }.joined(separator: "\n") + "\n"
   }
 
   private func value(_ db: SQLiteDatabase, _ sql: String, bindings: [SQLiteValue] = []) throws -> Int64 {

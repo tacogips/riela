@@ -1,6 +1,6 @@
 # ssg4-02-doctor-storage-docs: `riela doctor storage` reporting and storage/retention docs
 
-**Status**: Ready
+**Status**: Completed (2026-10-30; accepted by the session-566 test-integrity, adversarial and integration reviews; progress `impl-plans/progress/ssg4-02-doctor-storage-docs.md`)
 **planId**: ssg4-02-doctor-storage-docs
 **dependsOn**: ssg4-01-release-cascade-benchmark (wave 2). The docs describe
 the final reduced-by-default behavior and the release rules that ssg4-01

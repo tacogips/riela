@@ -626,6 +626,9 @@ struct TerminalRetentionExecutor {
   }
 
   private func deleteFamilyPayloads(rootId: String, db: SQLiteDatabase) throws {
+    if try db.tableExists("workflow_runtime_payload_refs") {
+      try db.execute("DELETE FROM workflow_runtime_payload_refs WHERE root_session_id=?", bindings: [.text(rootId)])
+    }
     if try db.tableExists("workflow_runtime_payloads") {
       try db.execute("DELETE FROM workflow_runtime_payloads WHERE root_session_id=?", bindings: [.text(rootId)])
     }

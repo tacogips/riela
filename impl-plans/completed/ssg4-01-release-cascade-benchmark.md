@@ -1,6 +1,6 @@
 # ssg4-01-release-cascade-benchmark: release cascade tests, ≥5x benchmark, reduced writes by default
 
-**Status**: Ready
+**Status**: Completed (2026-10-30; accepted by the session-566 test-integrity, adversarial and integration reviews; progress `impl-plans/progress/ssg4-01-release-cascade-benchmark.md`)
 **planId**: ssg4-01-release-cascade-benchmark
 **dependsOn**: none (wave 1). Accepted dependencies already in the tree:
 `ssg2-01` writer, `ssg2-02` hydration, `ssg2-06` test isolation (archived in

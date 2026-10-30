@@ -73,13 +73,41 @@ public struct RielaRetentionPolicy: Codable, Equatable, Sendable {
   }
 }
 
+public enum RielaRetentionPolicySource: String, Codable, Equatable, Sendable {
+  case configured, builtInDefault = "default", override
+}
+
+public struct RielaRetentionPolicySources: Codable, Equatable, Sendable {
+  public var results: RielaRetentionPolicySource
+  public var messages: RielaRetentionPolicySource
+  public var logs: RielaRetentionPolicySource
+
+  public init(results: RielaRetentionPolicySource, messages: RielaRetentionPolicySource, logs: RielaRetentionPolicySource) {
+    self.results = results
+    self.messages = messages
+    self.logs = logs
+  }
+}
+
+public struct RielaEffectiveRetentionPolicy: Equatable, Sendable {
+  public var policy: RielaRetentionPolicy
+  public var sources: RielaRetentionPolicySources
+}
+
+extension RielaRetentionPolicy {
+  public static let builtInDefault = RielaRetentionPolicy(
+    results: RielaRetentionCategory(maxAgeDays: 30), logs: RielaRetentionCategory(maxAgeDays: 30))
+}
+
 public struct RielaRetentionConfiguration: Equatable, Sendable {
   public var userPolicy: RielaRetentionPolicy?
   public var projectPolicy: RielaRetentionPolicy?
+  public var automaticOverride: Bool?
 
-  public init(userPolicy: RielaRetentionPolicy? = nil, projectPolicy: RielaRetentionPolicy? = nil) {
+  public init(userPolicy: RielaRetentionPolicy? = nil, projectPolicy: RielaRetentionPolicy? = nil, automaticOverride: Bool? = nil) {
     self.userPolicy = userPolicy
     self.projectPolicy = projectPolicy
+    self.automaticOverride = automaticOverride
   }
 
   public func policy(for kind: RielaRetentionTargetKind) -> RielaRetentionPolicy? {
@@ -89,6 +117,26 @@ public struct RielaRetentionConfiguration: Equatable, Sendable {
     case .project:
       projectPolicy
     }
+  }
+
+  public func effectivePolicy(for kind: RielaRetentionTargetKind) -> RielaEffectiveRetentionPolicy {
+    var policy = policy(for: kind) ?? .builtInDefault
+    var sources = RielaRetentionPolicySources(results: .configured, messages: .configured, logs: .configured)
+    if self.policy(for: kind) == nil {
+      sources = RielaRetentionPolicySources(results: .builtInDefault, messages: .builtInDefault, logs: .builtInDefault)
+    } else {
+      if policy.results.state == .notConfigured {
+        policy.results.maxAgeDays = 30
+        sources.results = .builtInDefault
+      }
+      if policy.messages.state == .notConfigured { sources.messages = .builtInDefault }
+      if policy.logs.state == .notConfigured {
+        policy.logs.maxAgeDays = 30
+        sources.logs = .builtInDefault
+      }
+    }
+    if let automaticOverride { policy.automatic = automaticOverride }
+    return RielaEffectiveRetentionPolicy(policy: policy, sources: sources)
   }
 
   public static func load(homeDirectory: URL, projectDirectory: URL?,
@@ -129,6 +177,7 @@ public struct RielaRetentionConfiguration: Equatable, Sendable {
       }
     }
 
+    var automaticOverride: Bool?
     if let rawAutomatic = environment["RIELA_RETENTION_AUTOMATIC"] {
       let automatic: Bool
       switch rawAutomatic.lowercased() {
@@ -140,10 +189,11 @@ public struct RielaRetentionConfiguration: Equatable, Sendable {
           reason: "expected true, false, 1, or 0"
         )
       }
+      automaticOverride = automatic
       userPolicy?.automatic = automatic
       projectPolicy?.automatic = automatic
     }
-    return RielaRetentionConfiguration(userPolicy: userPolicy, projectPolicy: projectPolicy)
+    return RielaRetentionConfiguration(userPolicy: userPolicy, projectPolicy: projectPolicy, automaticOverride: automaticOverride)
   }
 }
 

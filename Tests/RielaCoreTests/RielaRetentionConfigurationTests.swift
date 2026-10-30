@@ -13,6 +13,43 @@ final class RielaRetentionConfigurationTests: XCTestCase {
     XCTAssertNil(config.projectPolicy)
   }
 
+  func testEffectiveDefaultsAndPartialPolicies() throws {
+    let home = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let empty = try load(home: home).effectivePolicy(for: .user)
+    XCTAssertEqual(empty.policy, .builtInDefault)
+    XCTAssertEqual(empty.sources.results, .builtInDefault)
+    XCTAssertEqual(empty.sources.messages, .builtInDefault)
+    XCTAssertEqual(empty.sources.logs, .builtInDefault)
+    XCTAssertFalse(try load(home: home, environment: ["RIELA_RETENTION_AUTOMATIC": "0"])
+      .effectivePolicy(for: .user).policy.automatic)
+
+    try writeConfiguration(#"{"retention":{"results":{"keepWorkflowIds":["a"]},"logs":{"maxAgeDays":7}}}"#, in: home)
+    let partial = try load(home: home).effectivePolicy(for: .user)
+    XCTAssertEqual(partial.policy.results.maxAgeDays, 30)
+    XCTAssertEqual(partial.policy.results.keepWorkflowIds, ["a"])
+    XCTAssertEqual(partial.policy.messages.state, .notConfigured)
+    XCTAssertEqual(partial.policy.logs.maxAgeDays, 7)
+    XCTAssertEqual(partial.sources.results, .builtInDefault)
+    XCTAssertEqual(partial.sources.messages, .builtInDefault)
+    XCTAssertEqual(partial.sources.logs, .configured)
+
+    try writeConfiguration(#"{"retention":{"messages":{"maxAgeDays":7},"results":{"keepWorkflowIds":["w"]}}}"#, in: home)
+    let mixed = try load(home: home).effectivePolicy(for: .user)
+    XCTAssertEqual(mixed.policy.results.maxAgeDays, 30)
+    XCTAssertEqual(mixed.policy.results.keepWorkflowIds, ["w"])
+    XCTAssertEqual(mixed.policy.messages.maxAgeDays, 7)
+    XCTAssertEqual(mixed.policy.logs.maxAgeDays, 30)
+    XCTAssertEqual(mixed.sources.messages, .configured)
+    XCTAssertEqual(mixed.sources.logs, .builtInDefault)
+
+    try writeConfiguration(#"{"retention":{"results":{"keepForever":true}}}"#, in: home)
+    let forever = try load(home: home).effectivePolicy(for: .user)
+    XCTAssertEqual(forever.policy.results.state, .keepForever)
+    XCTAssertEqual(forever.sources.results, .configured)
+    XCTAssertEqual(forever.policy.logs.maxAgeDays, 30)
+  }
+
   func testRetentionDefaultsAndCategoryStates() throws {
     let home = try makeRoot(configuration: #"{"retention":{"results":{"maxAgeDays":30}}}"#)
     defer { try? FileManager.default.removeItem(at: home) }

@@ -65,14 +65,28 @@ public struct GarbageCollectionCommand: Sendable {
     let verb = dryRun ? "would remove" : "removed"
     let count = dryRun ? category.selectedCount : category.removedCount
     let bytes = dryRun ? category.selectedBytes : category.removedBytes
-    let cap = category.capAchieved.map { $0 ? "cap achieved" : "cap not achieved" } ?? "no cap"
+    let cap: String
+    if category.policySource == .builtInDefault {
+      if let days = category.policy?.maxAgeDays {
+        cap = "older than \(days) days (built-in default)"
+      } else {
+        cap = "follow results (built-in default)"
+      }
+    } else if category.state == .active {
+      cap = category.capAchieved.map { $0 ? "cap achieved" : "cap not achieved" } ?? "no cap"
+    } else {
+      cap = category.state.rawValue
+    }
     let protected = category.protected.keys.sorted().map { "\($0)=\(category.protected[$0] ?? 0)" }.joined(separator: ",")
     return "\(name): \(verb) \(count) (\(bytes) bytes); \(cap); protected: \(protected)"
   }
 }
 
 private struct ParsedGarbageCollectionOptions: ParsableCommand {
-  static let configuration = CommandConfiguration(commandName: "riela gc", abstract: "Apply Riela runtime retention policy.")
+  static let configuration = CommandConfiguration(commandName: "riela gc", abstract: "Apply Riela runtime retention policy.",
+    discussion: "Defaults: results and logs older than 30 days; messages follow results; no byte cap. " +
+      "Set keepForever to true per category to retain it. Set automatic to false or " +
+      "RIELA_RETENTION_AUTOMATIC=0 to disable automatic passes.")
 
   @Option(help: "Storage scope: user, project, or all.")
   var scope: RielaGarbageCollectionScope = .all

@@ -77,7 +77,9 @@ struct StorageCompactCommandRunner {
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
       let json = String(data: try encoder.encode(report), encoding: .utf8) ?? "{}"
       if parsed.output == "json" {
-        let failed = !report.skipped.isEmpty || report.warnings.contains(where: { $0.hasPrefix("retention pass") || $0.hasPrefix("definition pins") }) || report.stores.flatMap(\.reclamation).contains {
+        let failed = !report.skipped.isEmpty || report.warnings.contains(where: {
+          $0.hasPrefix("retention pass") || $0 == "retention target busy" || $0.hasPrefix("definition pins")
+        }) || report.stores.flatMap(\.reclamation).contains {
           [.busy, .failed, .diskFull, .checkpointPending, .deferredLiveSessions].contains($0.action)
         }
         return CLICommandResult(exitCode: failed ? .failure : .success, stdout: json + "\n")
@@ -87,7 +89,9 @@ struct StorageCompactCommandRunner {
         let reclaimed = store.reclamation.reduce(0) { $0 + $1.reclaimedBytes }
         return "\(store.kind): \(store.path), converted \(converted), reclaimed \(reclaimed) bytes"
       }
-      let failed = !report.skipped.isEmpty || report.warnings.contains(where: { $0.hasPrefix("retention pass") || $0.hasPrefix("definition pins") }) || report.stores.flatMap(\.reclamation).contains {
+      let failed = !report.skipped.isEmpty || report.warnings.contains(where: {
+          $0.hasPrefix("retention pass") || $0 == "retention target busy" || $0.hasPrefix("definition pins")
+        }) || report.stores.flatMap(\.reclamation).contains {
         [.busy, .failed, .diskFull, .checkpointPending, .deferredLiveSessions].contains($0.action)
       }
       return CLICommandResult(exitCode: failed ? .failure : .success,
@@ -262,7 +266,6 @@ struct StorageCompactCommandRunner {
     }
     state.reconciled = try SessionAbandonedInvocationReconciler(registry: lock).run(sessionStoreRoot: root,
       abandonedAfter: TimeInterval(options.abandonedAfterHours * 3600), apply: true)
-    if state.reconciled.contains(where: { $0.verdict == "live" || $0.verdict == "skipped" }) { state.workRemaining = true }
     let defaultRetention = try WorkflowDefinitionHistoryConfiguration.resolve(
       homeDirectory: CLIRuntimeEnvironment.homeDirectory(), projectDirectory: working,
       environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
@@ -298,7 +301,15 @@ struct StorageCompactCommandRunner {
           warning: report.warning)
       })
     }
-    if retention.hasFailure { state.workRemaining = true; state.warnings.append("retention pass reported failure") }
+    for target in retention.targets {
+      if target.status == "busy" {
+        state.warnings.append("retention target busy")
+      } else if target.status == "failed" {
+        state.warnings.append("retention pass reported failure: \(target.warnings.first ?? "unknown error")")
+      } else {
+        state.warnings.append(contentsOf: target.warnings)
+      }
+    }
   }
 
   private func dryRunEstimate(path: String, kind: String, runtimeRoot: String,

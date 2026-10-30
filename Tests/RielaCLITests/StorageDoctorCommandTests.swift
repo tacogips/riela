@@ -7,6 +7,12 @@ import RielaSQLite
 @testable import RielaMemory
 
 final class StorageDoctorCommandTests: XCTestCase {
+  private func runIsolated(_ arguments: [String]) async throws -> CLICommandResult {
+    let isolation = try RielaCLIIsolatedEnvironment.make("storage-doctor")
+    defer { isolation.remove() }
+    return await isolation.run { await RielaCLIApplication().run(arguments) }
+  }
+
   func testDoctorMemoryReadsStayConsistentWithConcurrentDeleteJournalWriter() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let memoryRoot = root.appendingPathComponent("memory", isDirectory: true)
@@ -29,7 +35,7 @@ final class StorageDoctorCommandTests: XCTestCase {
       }
     }
     for _ in 0..<50 {
-      let result = await RielaCLIApplication().run([
+      let result = try await runIsolated([
         "doctor", "storage", "--session-store", emptySessionRoot.path, "--memory-root", memoryRoot.path, "--output", "json"
       ])
       XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
@@ -60,7 +66,7 @@ final class StorageDoctorCommandTests: XCTestCase {
       let memoryDatabase = try SQLiteDatabase.open(path: memoryRoot.appendingPathComponent(name).path)
       try memoryDatabase.execute("CREATE TABLE example(value TEXT)")
     }
-    let result = await RielaCLIApplication().run([
+    let result = try await runIsolated([
       "doctor", "storage", "--session-store", root.path, "--memory-root", memoryRoot.path, "--output", "json"
     ])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -97,7 +103,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: databasePath + "-wal"))
     XCTAssertFalse(FileManager.default.fileExists(atPath: databasePath + "-shm"))
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path, "--output", "json"])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     let files = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
@@ -124,7 +130,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     try? FileManager.default.removeItem(atPath: databasePath + "-shm")
     let before = try treeSnapshot(root)
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path, "--output", "json"])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     XCTAssertEqual(try treeSnapshot(root), before)
@@ -156,7 +162,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     let orphan = root.appendingPathComponent("files/alpha/\(alpha.recordId)/orphan.bin")
     try Data(repeating: 3, count: 3_000).write(to: orphan)
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path,
       "--memory-root", root.path, "--output", "json"])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -189,7 +195,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
     let database = try SQLiteDatabase.open(path: path)
     try database.execute("CREATE TABLE example(value TEXT)")
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path])
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     XCTAssertEqual(result.stdout.components(separatedBy: "session: ").count - 1, 1)
     XCTAssertTrue(result.stdout.contains("reclaimable:"))
@@ -235,7 +241,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     let before = try Data(contentsOf: URL(fileURLWithPath: databasePath))
     let beforeDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: databasePath)[.modificationDate] as? Date)
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path,
       "--memory-root", root.path, "--output", "json"])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -265,7 +271,7 @@ final class StorageDoctorCommandTests: XCTestCase {
       return
     }
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path, "--output", "json"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
     let definitionFile = try XCTUnwrap(files.first { $0["kind"] as? String == "definitions" })
@@ -291,7 +297,7 @@ final class StorageDoctorCommandTests: XCTestCase {
       bindings: [.text(String(data: payload, encoding: .utf8) ?? "{}")])
     try database.execute("INSERT INTO memory_evolution_attachments(path,content_sha256) VALUES(?, 'hash')", bindings: [.text(referenced.path)])
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path,
       "--memory-root", root.path, "--output", "json"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
@@ -309,7 +315,7 @@ final class StorageDoctorCommandTests: XCTestCase {
     let memoryPath = root.appendingPathComponent("broken.sqlite")
     try Data("not sqlite".utf8).write(to: memoryPath)
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path,
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path,
       "--memory-root", root.path, "--output", "json"])
 
     XCTAssertEqual(result.exitCode, .success)
@@ -342,14 +348,179 @@ final class StorageDoctorCommandTests: XCTestCase {
     try database.execute("UPDATE workflow_runtime_snapshots SET session_json=jsonb(?) WHERE workflow_execution_id=?",
       bindings: [.text(legacyJSON), .text(legacySession.sessionId)])
 
-    let result = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path, "--output", "json"])
+    let result = try await runIsolated(["doctor", "storage", "--session-store", root.path, "--output", "json"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let files = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
     let session = try XCTUnwrap(files.first { $0["kind"] as? String == "session" }?["session"] as? [String: Any])
     XCTAssertEqual(session["sessions"] as? Int, 2)
     XCTAssertEqual(session["legacyInlineSnapshots"] as? Int, 1)
     XCTAssertEqual(session["legacyCLICopies"] as? Int, 0)
-    let textResult = await RielaCLIApplication().run(["doctor", "storage", "--session-store", root.path])
+    let textResult = try await runIsolated(["doctor", "storage", "--session-store", root.path])
     XCTAssertTrue(textResult.stdout.contains("largest sessions"))
   }
+
+  private func seedDoctorStore(_ root: URL, old: Bool = false, reduced: Bool = false) throws {
+    let date = old ? Date().addingTimeInterval(-40 * 24 * 3600) : Date()
+    let executions = reduced ? [WorkflowStepExecution(executionId: "execution", stepId: "step", nodeId: "node",
+      attempt: 1, inputSnapshot: ["large": .string(String(repeating: "x", count: 2048))],
+      status: .completed, createdAt: date, updatedAt: date)] : []
+    let session = WorkflowSession(workflowId: "workflow", sessionId: "session", status: .completed,
+      entryStepId: "step", createdAt: date, updatedAt: date, executions: executions)
+    let cli = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let record = PersistedCLIWorkflowSession(workflowName: "workflow", session: session,
+      resolution: WorkflowResolutionOptions(workflowName: "workflow", workingDirectory: root.path))
+    try cli.save(record, runtimeSnapshot: WorkflowRuntimePersistenceSnapshot(session: session))
+  }
+
+  private func doctorFile(_ isolation: RielaCLIIsolatedEnvironment, arguments: [String]) async throws -> [String: Any] {
+    let result = await isolation.run { await RielaCLIApplication().run(["doctor", "storage"] + arguments + ["--output", "json"]) }
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let files = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [[String: Any]])
+    return try XCTUnwrap(files.first { $0["kind"] as? String == "session" }, result.stderr + result.stdout)
+  }
+
+  private func writeDoctorCursor(_ path: URL) throws -> Data {
+    let queue = StorageMaintenanceCursor.Queue(complete: true, busy: ["busy"], failed: ["failed": 1],
+      parked: [.init(key: "one", error: "first"), .init(key: "two", error: "second")], parkedOverflow: 1)
+    let cursor = StorageMaintenanceCursor(queues: ["snapshots": queue, "cliRecords": .init(complete: true),
+      "nested": .init(complete: true)])
+    try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let data = try JSONEncoder().encode(cursor)
+    try data.write(to: path)
+    return data
+  }
+
+  func testDoctorExplicitCursorIsReadOnlyAndCountsParked() async throws {
+    let isolation = try RielaCLIIsolatedEnvironment.make("doctor-cursor")
+    defer { isolation.remove() }
+    let root = isolation.root.appendingPathComponent("store")
+    try seedDoctorStore(root)
+    let cursor = root.appendingPathComponent("retention/storage-maintenance.json")
+    let before = try writeDoctorCursor(cursor)
+    let date = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: cursor.path)[.modificationDate] as? Date)
+    let file = try await doctorFile(isolation, arguments: ["--session-store", root.path, "--working-dir", isolation.project.path])
+    let session = try XCTUnwrap(file["session"] as? [String: Any])
+    let maintenance = try XCTUnwrap(session["maintenance"] as? [String: Any])
+    XCTAssertEqual(maintenance["parkedCount"] as? Int, 3)
+    XCTAssertEqual(maintenance["busyCount"] as? Int, 1)
+    XCTAssertEqual(maintenance["failedCount"] as? Int, 1)
+    XCTAssertEqual(maintenance["queuesComplete"] as? Bool, true)
+    XCTAssertEqual(maintenance["hint"] as? String, "run riela storage compact --apply")
+    let examples = try XCTUnwrap(maintenance["parkedExamples"] as? [[String: Any]])
+    XCTAssertEqual(examples.compactMap { $0["key"] as? String }, ["one", "two"])
+    XCTAssertEqual(try Data(contentsOf: cursor), before)
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: cursor.path)[.modificationDate] as? Date, date)
+  }
+
+  func testDoctorProjectCursorUsesProjectStateDirectory() async throws {
+    let isolation = try RielaCLIIsolatedEnvironment.make("doctor-project")
+    defer { isolation.remove() }
+    let root = isolation.project.appendingPathComponent(".riela/sessions")
+    try seedDoctorStore(root)
+    let wrong = root.appendingPathComponent("retention/storage-maintenance.json")
+    _ = try writeDoctorCursor(wrong)
+    let arguments = ["--working-dir", isolation.project.path]
+    let without = try await doctorFile(isolation, arguments: arguments)
+    XCTAssertNil((without["session"] as? [String: Any])?["maintenance"])
+    let correct = isolation.project.appendingPathComponent(".riela/retention/storage-maintenance.json")
+    _ = try writeDoctorCursor(correct)
+    let with = try await doctorFile(isolation, arguments: arguments)
+    let maintenance = try XCTUnwrap((with["session"] as? [String: Any])?["maintenance"] as? [String: Any])
+    XCTAssertEqual(maintenance["parkedCount"] as? Int, 3)
+  }
+
+  func testDoctorNoCursorCreatesNoRetentionDirectories() async throws {
+    let isolation = try RielaCLIIsolatedEnvironment.make("doctor-no-cursor")
+    defer { isolation.remove() }
+    let root = isolation.root.appendingPathComponent("store")
+    try seedDoctorStore(root)
+    let file = try await doctorFile(isolation, arguments: ["--session-store", root.path, "--working-dir", isolation.project.path])
+    XCTAssertNil((file["session"] as? [String: Any])?["maintenance"])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("retention").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: isolation.project.appendingPathComponent(".riela/retention").path))
+  }
+
+  func testDoctorDefaultPruneEstimateIsReadOnly() async throws {
+    let isolation = try RielaCLIIsolatedEnvironment.make("doctor-default")
+    defer { isolation.remove() }
+    let root = isolation.root.resolvingSymlinksInPath().appendingPathComponent("store")
+    try seedDoctorStore(root, old: true, reduced: true)
+    let fixture = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path), mode: .strictReadOnly)
+    let metadata = try TerminalRetentionMetadata.sessions(fixture)
+    XCTAssertEqual(metadata.count, 1)
+    XCTAssertEqual(metadata.first?.statuses, ["completed"])
+    XCTAssertLessThan(try XCTUnwrap(metadata.first?.updatedAt), Date().addingTimeInterval(-30 * 86_400))
+    XCTAssertGreaterThan(metadata.first?.payloadBytes ?? 0, 0)
+    let report = try isolation.run {
+      try RielaRetentionService().run(RielaRetentionRequest(trigger: .manual,
+        homeDirectory: isolation.home.resolvingSymlinksInPath(), projectDirectory: isolation.project.resolvingSymlinksInPath(),
+        explicitSessionStore: root.path, environment: isolation.environment, scope: .all, dryRun: true))
+    }
+    let file = try await doctorFile(isolation, arguments: ["--session-store", root.path, "--working-dir", isolation.project.path])
+    let reclaimable = try XCTUnwrap(file["reclaimable"] as? [String: Any])
+    let compact = try XCTUnwrap(reclaimable["compactEstimateBytes"] as? Int)
+    let prune = try XCTUnwrap(reclaimable["pruneEstimateBytes"] as? Int)
+    XCTAssertGreaterThan(prune, 0, "doctor file: \(file); metadata: \(metadata); retention: \(report)")
+    XCTAssertEqual(reclaimable["remainingBytes"] as? Int, compact + prune)
+    XCTAssertEqual(reclaimable["remainingBytesIsUpperBound"] as? Bool, true)
+    XCTAssertNotNil(reclaimable["freePagesBytes"])
+    let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path), mode: .strictReadOnly)
+    XCTAssertEqual(try db.query("SELECT workflow_execution_id FROM workflow_runtime_snapshots WHERE workflow_execution_id='session'").count, 1)
+  }
+
+  func testDoctorRecoveryAndIncrementalReclaimable() async throws {
+    let isolation = try RielaCLIIsolatedEnvironment.make("doctor-vacuum")
+    defer { isolation.remove() }
+    for incremental in [false, true] {
+      let root = isolation.root.appendingPathComponent(incremental ? "incremental" : "none")
+      let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+      try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
+      do {
+        let db = try SQLiteDatabase.open(path: path, options: incremental ? .writableRuntimeStoreDefault : .writableDefault)
+        try db.execute("CREATE TABLE example(value TEXT)")
+        XCTAssertEqual(try db.query("PRAGMA auto_vacuum").first?["auto_vacuum"], incremental ? "2" : "0")
+      }
+      let file = try await doctorFile(isolation, arguments: ["--session-store", root.path, "--working-dir", isolation.project.path])
+      let reclaimable = try XCTUnwrap(file["reclaimable"] as? [String: Any])
+      XCTAssertEqual(reclaimable["remainingBytesIsUpperBound"] as? Bool, true)
+      XCTAssertEqual(reclaimable["remainingBytes"] as? Int,
+        (reclaimable["compactEstimateBytes"] as? Int ?? 0) + (reclaimable["pruneEstimateBytes"] as? Int ?? 0))
+      XCTAssertNotNil(reclaimable["freePagesBytes"])
+      if incremental {
+        XCTAssertNil(reclaimable["recovery"])
+      } else {
+        let recovery = try XCTUnwrap(reclaimable["recovery"] as? [String: Any])
+        XCTAssertEqual(recovery["requiredFreeBytes"] as? Int,
+          2 * ((file["fileBytes"] as? Int ?? 0) + (file["walBytes"] as? Int ?? 0)) + 268_435_456)
+        let steps = try XCTUnwrap(recovery["steps"] as? String)
+        XCTAssertTrue(steps.contains("riela storage compact --apply"))
+        XCTAssertTrue(steps.contains("VACUUM INTO"))
+      }
+    }
+  }
+
+  func testDoctorReportsPayloadFragmentsAndDanglingRefs() async throws {
+    let isolation = try RielaCLIIsolatedEnvironment.make("doctor-fragments")
+    defer { isolation.remove() }
+    let root = isolation.root.appendingPathComponent("store")
+    try seedDoctorStore(root, reduced: true)
+    let arguments = ["--session-store", root.path, "--working-dir", isolation.project.path]
+    let file = try await doctorFile(isolation, arguments: arguments)
+    let fragments = try XCTUnwrap((file["session"] as? [String: Any])?["payloadFragments"] as? [String: Any])
+    XCTAssertGreaterThan(fragments["fragmentRows"] as? Int ?? 0, 0)
+    XCTAssertGreaterThan(fragments["refRows"] as? Int ?? 0, 0)
+    XCTAssertEqual(fragments["danglingRefRows"] as? Int, 0)
+    XCTAssertEqual(fragments["unreferencedPayloadRows"] as? Int, 0)
+    let text = await isolation.run { await RielaCLIApplication().run(["doctor", "storage"] + arguments) }
+    XCTAssertTrue(text.stdout.contains("reclaimable: remaining"))
+    XCTAssertTrue(text.stdout.contains("fragments:"))
+    do {
+      let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
+      try db.execute("INSERT INTO workflow_runtime_payload_refs(root_session_id,parent_digest,digest) VALUES('session','missing-parent','missing-child')")
+    }
+    let dangling = try await doctorFile(isolation, arguments: arguments)
+    let report = try XCTUnwrap((dangling["session"] as? [String: Any])?["payloadFragments"] as? [String: Any])
+    XCTAssertEqual(report["danglingRefRows"] as? Int, 1)
+  }
+
 }

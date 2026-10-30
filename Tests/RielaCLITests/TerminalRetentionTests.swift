@@ -620,15 +620,17 @@ final class TerminalRetentionTests: XCTestCase {
 
   func testPruneCLIValidationAndHelp() throws {
     let runner = SessionPruneCommandRunner()
-    XCTAssertEqual(runner.run(["--help"]).exitCode, .success)
-    XCTAssertEqual(runner.run([]).exitCode, .usage)
+    let isolation = try RielaCLIIsolatedEnvironment.make("terminal-prune")
+    defer { isolation.remove() }
+    XCTAssertEqual(isolation.run { runner.run(["--help"]) }.exitCode, .success)
+    XCTAssertEqual(isolation.run { runner.run([]) }.exitCode, .usage)
     let fixture = try fixture()
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
     let arguments = ["--session-store", paths.sessionRoot, "--artifact-root", paths.artifactRoot!,
       "--memory-root", paths.memoryRoot!, "--workflow-id", "news", "--dry-run"]
-    XCTAssertEqual(runner.run(arguments + ["--retention-hours", "0"]).exitCode, .failure)
+    XCTAssertEqual(isolation.run { runner.run(arguments + ["--retention-hours", "0"]) }.exitCode, .failure)
     XCTAssertFalse(try db.tableExists("session_retention_tombstones"))
   }
 

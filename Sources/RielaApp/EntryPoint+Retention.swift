@@ -27,14 +27,10 @@ extension RielaApp {
       environment: launchOptions.environment
     )
     retentionScheduler = RielaRetentionScheduler(runImmediately: true) {
-      do {
-        let report = try RielaRetentionService().run(request)
-        for target in report.targets where target.status == "failed" && !target.warnings.isEmpty {
-          let message = "RielaApp retention warning: \(target.warnings[0])\n"
-          FileHandle.standardError.write(Data(message.utf8))
-        }
-      } catch {
-        let message = "RielaApp retention warning: \(error.localizedDescription)\n"
+      for warning in RielaAutomaticStoragePass.runScheduled(request) {
+        let prefix = "riela retention warning: "
+        let detail = warning.hasPrefix(prefix) ? String(warning.dropFirst(prefix.count)) : warning
+        let message = "RielaApp retention warning: \(detail)\n"
         FileHandle.standardError.write(Data(message.utf8))
       }
     }

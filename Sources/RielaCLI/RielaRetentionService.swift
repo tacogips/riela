@@ -148,15 +148,24 @@ public struct RielaRetentionService: Sendable {
     let targets = RetentionTargetResolver.resolve(scope: request.scope, homeDirectory: request.homeDirectory,
       projectDirectory: request.projectDirectory, explicitSessionStore: request.explicitSessionStore,
       environment: request.environment)
-    let work = try targets.compactMap { target -> (RetentionTarget, RielaRetentionPolicy)? in
-      let configured = configuration.policy(for: target.kind)
-      if request.trigger == .automatic && (configured == nil || configured?.automatic == false) { return nil }
-      var policy = configured ?? RielaRetentionPolicy()
-      try apply(request.overrides, to: &policy)
-      return (target, policy)
+    let work = try targets.compactMap { target -> (RetentionTarget, RielaEffectiveRetentionPolicy)? in
+      var effective = configuration.effectivePolicy(for: target.kind)
+      if request.trigger == .automatic && !effective.policy.automatic { return nil }
+      try apply(request.overrides, to: &effective.policy)
+      if request.overrides.resultsMaxAgeDays != nil || request.overrides.resultsMaxTotalBytes != nil {
+        effective.sources.results = .override
+      }
+      if request.overrides.messagesMaxAgeDays != nil || request.overrides.messagesMaxTotalBytes != nil {
+        effective.sources.messages = .override
+      }
+      if request.overrides.logsMaxAgeDays != nil || request.overrides.logsMaxTotalBytes != nil {
+        effective.sources.logs = .override
+      }
+      return (target, effective)
     }
     var reports: [RielaRetentionTargetReport] = []
-    for (target, policy) in work {
+    for (target, effective) in work {
+      let policy = effective.policy
       if let unsafeReason = target.unsafeReason {
         reports.append(emptyReport(target: target, status: "skippedUnsafePath", warning: unsafeReason))
         continue
@@ -195,11 +204,16 @@ public struct RielaRetentionService: Sendable {
       }
       var report = emptyReport(target: target, status: "completed")
       do {
-        try runTarget(target, policy: policy, request: request, now: now, report: &report)
+        try runTarget(target, policy: policy, sources: effective.sources, request: request, now: now, report: &report)
       } catch {
         report.status = "failed"
         report.warnings.append(error.localizedDescription)
       }
+      if report.results.policy == nil && policy.results.state == .active { report.results.policy = snapshot(policy.results) }
+      if report.logs.policy == nil && policy.logs.state == .active { report.logs.policy = snapshot(policy.logs) }
+      report.results.policySource = effective.sources.results
+      report.messages.policySource = effective.sources.messages
+      report.logs.policySource = effective.sources.logs
       if !request.dryRun {
         if let stamp = RetentionRunStamp.read(stateDirectory: target.stateDirectory) {
           try? RetentionRunStamp(lastAttemptAt: stamp.lastAttemptAt, lastCompletedAt: clock(),
@@ -225,6 +239,7 @@ public struct RielaRetentionService: Sendable {
   private func runTarget(
     _ target: RetentionTarget,
     policy: RielaRetentionPolicy,
+    sources: RielaRetentionPolicySources,
     request: RielaRetentionRequest,
     now: Date,
     report: inout RielaRetentionTargetReport
@@ -274,7 +289,8 @@ public struct RielaRetentionService: Sendable {
     } else {
       report.logs = .inactive(policy.logs.state)
     }
-    if results.state == .active, let maxAgeDays = results.maxAgeDays, target.kind != .explicit {
+    if results.state == .active, let maxAgeDays = results.maxAgeDays,
+       sources.results != .builtInDefault, target.kind != .explicit {
       let scope: RielaGarbageCollectionScope = target.kind == .user ? .user : .project
       let project = request.projectDirectory ?? request.homeDirectory
       let generated = RielaDataGarbageCollector().collect(retentionDays: maxAgeDays, scope: scope,
@@ -284,6 +300,7 @@ public struct RielaRetentionService: Sendable {
       // The collector always notes that sessions, artifacts and logs are preserved; that is informational, not a failure.
       let diagnostics = generated.diagnostics.filter { !$0.hasPrefix("runtime sessions, artifacts and logs preserved") }
       report.warnings.append(contentsOf: diagnostics)
+      report.warnings.append(contentsOf: generated.warnings)
       if !diagnostics.isEmpty { report.status = "failed" }
     }
     if let sessionRoot = target.sessionStoreRoot {

@@ -124,6 +124,57 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
     XCTAssertEqual(try store.load(sessionId: newSession.sessionId).session, newSession)
   }
 
+  func testReadOnlySnapshotAndExternalSymlink() throws {
+    let home = try makeRoot()
+    let snapshot = home.appendingPathComponent(".riela/workflow-history/demo/snapshots/registry-before-x")
+    let subdirectory = snapshot.appendingPathComponent("nested")
+    let outside = home.appendingPathComponent("outside")
+    let manager = FileManager.default
+    try manager.createDirectory(at: subdirectory, withIntermediateDirectories: true)
+    try manager.createDirectory(at: outside, withIntermediateDirectories: true)
+    let file = subdirectory.appendingPathComponent("file")
+    let outsideFile = outside.appendingPathComponent("keep")
+    try Data("test".utf8).write(to: file)
+    try Data("keep".utf8).write(to: outsideFile)
+    try manager.createSymbolicLink(at: snapshot.appendingPathComponent("link"), withDestinationURL: outside)
+    for url in [file, subdirectory, snapshot] { try setModificationDate(Date(timeIntervalSince1970: 1_000), for: url) }
+    for url in [snapshot, subdirectory, outside] { try manager.setAttributes([.posixPermissions: 0o555], ofItemAtPath: url.path) }
+    try manager.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)
+    defer { try? manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: outside.path) }
+    let collector = RielaDataGarbageCollector()
+    let dry = collector.collect(retentionDays: 1, scope: .user, homeDirectory: home, projectDirectory: home,
+      dryRun: true, now: Date(timeIntervalSince1970: 2_000_000))
+    XCTAssertTrue(dry.warnings.isEmpty)
+    XCTAssertEqual((try manager.attributesOfItem(atPath: snapshot.path)[.posixPermissions] as? NSNumber)?.intValue, 0o555)
+    let report = collector.collect(retentionDays: 1, scope: .user, homeDirectory: home, projectDirectory: home,
+      now: Date(timeIntervalSince1970: 2_000_000))
+    XCTAssertTrue(report.warnings.isEmpty)
+    XCTAssertTrue(report.diagnostics.isEmpty)
+    XCTAssertFalse(manager.fileExists(atPath: snapshot.path))
+    XCTAssertTrue(manager.fileExists(atPath: outsideFile.path))
+    XCTAssertEqual((try manager.attributesOfItem(atPath: outside.path)[.posixPermissions] as? NSNumber)?.intValue, 0o555)
+  }
+
+  func testUnremovableSnapshotIsWarningAndOtherEntriesAreRemoved() throws {
+    let home = try makeRoot()
+    let manager = FileManager.default
+    let parent = home.appendingPathComponent(".riela/workflow-history/one/snapshots")
+    let blocked = parent.appendingPathComponent("old")
+    let other = home.appendingPathComponent(".riela/workflow-history/two/snapshots/old")
+    for url in [blocked, other] {
+      try manager.createDirectory(at: url, withIntermediateDirectories: true)
+      try setModificationDate(Date(timeIntervalSince1970: 1_000), for: url)
+    }
+    try manager.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parent.path)
+    defer { try? manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: parent.path) }
+    let report = RielaDataGarbageCollector().collect(retentionDays: 1, scope: .user, homeDirectory: home,
+      projectDirectory: home, now: Date(timeIntervalSince1970: 2_000_000))
+    XCTAssertEqual(report.warnings.count, 1)
+    XCTAssertTrue(report.warnings.first?.contains(blocked.path) == true)
+    XCTAssertTrue(report.diagnostics.isEmpty)
+    XCTAssertFalse(manager.fileExists(atPath: other.path))
+  }
+
   private var roots: [URL] = []
 
   override func tearDown() {

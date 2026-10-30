@@ -100,11 +100,22 @@ plans `completed/ssg2-01..08-*.md`, manifest `completed/ssg2-dispatch.json`).
 (`completed/ssg3-01-release-cascade-benchmark.md`,
 `completed/ssg3-02-doctor-storage-docs.md`, manifest
 `completed/ssg3-dispatch.json`), is archived as superseded by `ssg4-`; no
-implementation was performed. The active remainder is two plans:
-[`active/ssg4-01-release-cascade-benchmark.md`](active/ssg4-01-release-cascade-benchmark.md)
-and
-[`active/ssg4-02-doctor-storage-docs.md`](active/ssg4-02-doctor-storage-docs.md)
-(depends on `ssg4-01`), with manifest `active/ssg4-dispatch.json`. Design:
+implementation was performed. The fourth set is implemented and accepted
+(session 566):
+[`completed/ssg4-01-release-cascade-benchmark.md`](completed/ssg4-01-release-cascade-benchmark.md)
+(reference-aware fragment release, reduced writes by default, benchmark
+4,923,178 → 859,707 bytes, ratio 5.73) and
+[`completed/ssg4-02-doctor-storage-docs.md`](completed/ssg4-02-doctor-storage-docs.md)
+(read-only `riela doctor storage` with `remainingBytes`, `recovery`,
+`maintenance` and `payloadFragments`; docs). The focused suites ran 413 tests
+with 1 opt-in skip and 0 failures, in both the temporary-HOME run and the
+isolation proof. Browser E2E was skipped because no browser-facing file changed.
+The dispatch manifest stays at
+[`active/ssg4-dispatch.json`](active/ssg4-dispatch.json); it records the
+original plan paths. Progress logs: `progress/ssg4-0*.md`. User docs:
+README [Runtime Data Retention](../README.md#runtime-data-retention),
+[`docs/storage-doctor-and-compact.md`](../docs/storage-doctor-and-compact.md)
+and [`docs/terminal-retention.md`](../docs/terminal-retention.md). Design:
 [`design-session-storage-efficiency-and-default-gc.md`](../design-docs/specs/design-session-storage-efficiency-and-default-gc.md).
 
 ## Active Plans

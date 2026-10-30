@@ -117,4 +117,81 @@ final class DurableQueueTests: XCTestCase {
     } catch {}
     XCTAssertEqual(try Data(contentsOf: file), original)
   }
+  func testPendingOptionsOrderingAndExhaustion() throws {
+    func row(_ attempts: Int64, _ attempted: String? = nil, status: String = "pending") -> JSONValue {
+      var value: JSONObject = ["request": .object([:]), "status": .string(status), "attempts": .integer(attempts),
+        "registered_at": .string("2026-01-01T00:00:00Z")]
+      if let attempted { value["last_attempt_at"] = .string(attempted) }
+      return .object(value)
+    }
+    let state: JSONObject = ["version": .integer(1), "requests": .object([
+      "z": row(2, "2026-01-02T00:00:00Z"), "a": row(5, "2026-01-03T00:00:00Z"),
+      "b": row(0), "done": row(5, status: "completed")])]
+    func pending(_ options: JSONObject = [:]) throws -> JSONObject {
+      let pair = try DurableQueue.apply(config("pending", options), state: state, date: Date())
+      XCTAssertEqual(pair.0, state)
+      return pair.1
+    }
+    let plain = try pending()
+    XCTAssertEqual(Set(plain.keys), Set(["found", "identity", "request"]))
+    XCTAssertEqual(plain["identity"], .string("b"))
+    let limited = try pending(["limit": .integer(2)])
+    XCTAssertEqual(limited["items"], .array([
+      .object(["identity": .string("b"), "request": .object([:]), "attempts": .integer(0)]),
+      .object(["identity": .string("z"), "request": .object([:]), "attempts": .integer(2)])]))
+    XCTAssertEqual(limited["itemsTruncated"], .bool(false))
+    guard case let .array(all)? = try pending(["limit": .integer(10)])["items"] else { return XCTFail("items") }
+    XCTAssertEqual(all.count, 3)
+    let capped = try pending(["maxAttempts": .integer(2), "limit": .integer(10)])
+    XCTAssertEqual(capped["identity"], .string("b"))
+    XCTAssertEqual(capped["items"], .array([.object(["identity": .string("b"), "request": .object([:]), "attempts": .integer(0)])]))
+    XCTAssertEqual(capped["exhausted"], .array([.object(["identity": .string("a"), "attempts": .integer(5)]),
+      .object(["identity": .string("z"), "attempts": .integer(2)])]))
+    XCTAssertEqual(capped["exhaustedCount"], .integer(2))
+    let exhaustedState: JSONObject = ["version": .integer(1), "requests": .object(["a": row(2)])]
+    let empty = try DurableQueue.apply(config("pending", ["maxAttempts": .integer(2)]), state: exhaustedState, date: Date()).1
+    XCTAssertEqual(empty["found"], .bool(false)); XCTAssertEqual(empty["identity"], .null); XCTAssertEqual(empty["request"], .null)
+    XCTAssertEqual(empty["exhaustedCount"], .integer(1))
+  }
+
+  func testPendingOptionValidationAndSizeBound() throws {
+    for options: JSONObject in [["limit": .integer(0)], ["limit": .integer(101)], ["limit": .string("2")],
+      ["limit": .number(2.0)], ["maxAttempts": .integer(0)], ["maxAttempts": .integer(1_000_000_001)],
+      ["maxAttempts": .string("2")]] {
+      XCTAssertThrowsError(try DurableQueue.validateOperation(config("pending", options)))
+    }
+    for action in ["admit", "attempted", "finish"] {
+      var values: JSONObject = ["identity": .string("a"), "limit": .integer(1), "maxAttempts": .integer(1)]
+      if action == "admit" { values["request"] = .object([:]) }
+      if action == "finish" { values["complete"] = .bool(true); values["status"] = .string("ok") }
+      XCTAssertThrowsError(try DurableQueue.validateOperation(config(action, values)))
+      values.removeValue(forKey: "limit")
+      XCTAssertThrowsError(try DurableQueue.validateOperation(config(action, values)))
+    }
+    var rows: JSONObject = [:]
+    for index in 0..<40 {
+      rows[String(format: "%02d", index)] = .object(["request": .object(["data": .string(String(repeating: "x", count: 260_000))]),
+        "status": .string("pending"), "attempts": .integer(0), "registered_at": .string("2026-01-01T00:00:00Z")])
+    }
+    let result = try DurableQueue.apply(config("pending", ["limit": .integer(40)]),
+      state: ["version": .integer(1), "requests": .object(rows)], date: Date()).1
+    guard case let .array(items)? = result["items"] else { return XCTFail("items") }
+    XCTAssertGreaterThan(items.count, 0); XCTAssertLessThan(items.count, 40)
+    XCTAssertEqual(result["itemsTruncated"], .bool(true))
+    XCTAssertLessThanOrEqual(try JSONEncoder().encode(result).count, DurableQueueJournal.maximumBytes)
+  }
+
+  func testPendingOptionsOnAbsentDirectoryThroughResolver() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp/queue-absent-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:], workingDirectory: root)
+    let value: JSONObject = ["storage": .object(["directory": .string(root.path), "name": .string("queue")]),
+      "action": .string("pending"), "limit": .integer(2)]
+    let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "queue", nodeId: "queue",
+      addon: .init(name: "riela/durable-queue", version: "1", config: value), variables: [:])
+    let result = try await resolver.execute(input, context: .init())
+    XCTAssertEqual(result.payload["found"], .bool(false)); XCTAssertEqual(result.payload["items"], .array([]))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+  }
+
 }

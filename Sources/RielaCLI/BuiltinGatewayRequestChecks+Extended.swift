@@ -9,6 +9,8 @@ extension BuiltinGatewayRequestChecks {
       return xReaderIssues(addon.name, leaf: leaf)
     case "riela/gmail-gateway-read":
       return gmailReaderIssues(addon.name, leaf: leaf)
+    case "riela/youtube-gateway-read":
+      return youtubeGatewayIssues(leaf: leaf, inputs: addon.inputs)
     case "riela/google-service-gateway-read", "riela/google-service-gateway-write":
       return googleServiceIssues(addon.name, leaf: leaf, inputs: addon.inputs)
     default:
@@ -111,6 +113,27 @@ extension BuiltinGatewayRequestChecks {
       return [issue("", error.message)]
     } catch {
       return [issue("", "\(addonName) JSON operation is invalid")]
+    }
+  }
+
+  private static func youtubeGatewayIssues(leaf: JSONObject, inputs: JSONObject?) -> [WorkflowGatewayRequestIssue] {
+    do {
+      try YouTubeGatewayReadEngine.requestShapeIssue(config: leaf, inputs: inputs)
+    } catch let error as AdapterExecutionError {
+      return [issue("", error.message)]
+    } catch {
+      return [issue("", "YouTube gateway request shape is invalid")]
+    }
+    do {
+      guard !containsTemplate(leaf["arguments"]), !isExactPlaceholder(leaf["arguments"]),
+        let operation = stringValue(leaf["operation"]) else { return [] }
+      let arguments = try renderGatewayJSONArguments(leaf["arguments"], variables: [:], addonName: YouTubeGatewayReadEngine.addonName)
+      _ = try YouTubeGatewayReadEngine.parse(operation: operation, arguments: arguments)
+      return []
+    } catch let error as AdapterExecutionError {
+      return [issue("arguments", error.message)]
+    } catch {
+      return [issue("arguments", "YouTube gateway request is invalid")]
     }
   }
 

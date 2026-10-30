@@ -1,0 +1,17 @@
+{
+  "workflowId": "youtube-gateway-read",
+  "description": "Read a page of YouTube subscriptions and summarize it.",
+  "defaults": {"nodeTimeoutMs": 30000, "maxLoopIterations": 1},
+  "entryStepId": "list",
+  "nodes": [
+    {"id": "list", "addon": {"name": "riela/youtube-gateway-read", "version": "1",
+      "env": {"YOUTUBE_GATEWAY_TOKEN_STORE_JSON": {"fromEnv": "YOUTUBE_GATEWAY_TOKEN_STORE_JSON", "required": false}},
+      "config": {"operation": "subscriptions.list", "arguments": {"mine": true, "maxResults": 25}}}},
+    {"id": "summary", "addon": {"name": "riela/json-compose", "version": "1",
+      "config": {"payload": {"items": "{{input.data.items}}", "nextPageToken": "{{input.data.nextPageToken}}"}}}}
+  ],
+  "steps": [
+    {"id": "list", "nodeId": "list", "transitions": [{"toStepId": "summary"}]},
+    {"id": "summary", "nodeId": "summary"}
+  ]
+}

@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 48
+    static let expectedMockScenarioCount = 50
     static let expectedNodeMockScenarioCount = 0
     static let expectedSuspendedMockScenarioExamples: Set<String> = [
       "task-handover-answer",

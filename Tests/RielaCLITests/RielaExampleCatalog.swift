@@ -30,6 +30,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "enterprise-matrix-customer-escalation",
     "enterprise-matrix-security-incident",
     "enterprise-matrix-vendor-onboarding",
+    "fanout-include-step-outputs",
     "file-markdown-convert",
     "first-four-arithmetic-pipeline",
     "gemini-ocr-worker",
@@ -86,6 +87,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "x-follower-ai-business-digest",
     "x-gateway-json-search",
     "x-incremental-posts-kv",
-    "x-window-checkpoint"
+    "x-window-checkpoint",
+    "youtube-gateway-read"
   ]
 }

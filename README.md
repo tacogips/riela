@@ -31,9 +31,12 @@ riela workflow run <workflow> --variables '{"task": "..."}'
 - **Connect your tools.** Built-in add-ons for Gmail, Google Docs / Sheets /
   Analytics, Wrike, X, YouTube, Apple Notes and notifications, document-to-Markdown
   conversion, key-value state, workflow memory and kaiba long-term notes.
-- **Compose media workflows.** `riela/media-download`, `riela/audio-segments`,
-  `riela/video-frames` and `riela/speech-to-text` split fetching, extraction,
-  frame sampling and transcription into reusable stages.
+- **Compose media workflows.** Any downloader that emits the tool-neutral
+  `mediaDownload` contract (for example the installable `media/yt-dlp-download`
+  package add-on) feeds `riela/audio-segments`, `riela/video-frames` and
+  `riela/speech-to-text`, which split extraction, frame sampling and
+  transcription into reusable stages. `riela/media-download` still runs but is
+  deprecated; see [the video pipeline guide](docs/workflows/video-pipeline.md#migrating-from-rielamedia-download).
 - **Edit, share and scale.** Edit workflows as graphs in the app, publish and
   install them as packages, run recurring routines, and spread steps across
   distributed workers.
@@ -521,6 +524,31 @@ matrix, the cases that remain runtime-only, and the script-free
 [X](examples/x-gateway-json-search/README.md),
 [Notion](examples/notion-gateway-json-sync/README.md) and
 [Gmail](examples/builtin-gateway-json/README.md) examples.
+
+### YouTube reads
+
+`riela/youtube-gateway-read@1` calls the linked YouTubeGatewayCore SDK
+(macOS only; Linux builds compile and fail with a policy error). It supports the
+read-only `subscriptions.list`, `videos.list`, `channels.list` and
+`playlistItems.list` operations with `config.operation` and
+`config.arguments`. Paging is manual: pass `data.nextPageToken` as the next
+request's `arguments.pageToken`. Bind credentials through `addon.env` with
+`fromEnv` targets `YOUTUBE_GATEWAY_TOKEN_STORE_JSON` or
+`YOUTUBE_GATEWAY_ACCESS_TOKEN`. See
+[built-in gateway JSON requests](docs/builtin-gateway-json.md#youtube-read-gateway)
+and the [YouTube read example](examples/youtube-gateway-read/README.md).
+
+`riela/youtube-collect` now accepts `excludeLive` and `maxDurationSeconds` and
+reports the dropped video IDs under `excluded`
+([YouTube collection](docs/workflows/youtube-collection.md)). The
+`riela/durable-queue` `pending` action accepts `limit` (ordered `items`) and
+`maxAttempts` (`exhausted` identities)
+([durable queue](docs/workflows/durable-queue.md)). A fanout can set
+`includeStepOutputs` to add `stepOutputs` for named branch steps to each
+completed join record
+([fanout step outputs](docs/workflows/json-data-processing.md#fanout-step-outputs),
+[example](examples/fanout-include-step-outputs/README.md)). Without the new
+options, all outputs are unchanged.
 
 ### Native command outcomes
 

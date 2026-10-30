@@ -12,7 +12,7 @@ final class MediaPipelineWorkflowDocumentationTests: XCTestCase {
       contentsOf: repositoryRoot.appendingPathComponent("docs/workflows/video-pipeline.md"),
       encoding: .utf8)
     let blocks = try jsonBlocks(in: document)
-    XCTAssertEqual(blocks.count, 3)
+    XCTAssertEqual(blocks.count, 4)
 
     let root = try makeRielaCLITestTemporaryDirectory("media-pipeline-doc-workflows")
     defer { try? FileManager.default.removeItem(at: root) }

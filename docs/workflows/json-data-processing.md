@@ -149,6 +149,17 @@ wave, then reconstructs the zero-selected join from the accepted source without
 re-running the provider. Untaken conditional routes are not reconstructed. These additions require the
 updated runtime in both the host and any private guest.
 
+### Fanout step outputs
+
+Set `fanout.includeStepOutputs` to a non-empty array of unique step IDs to add
+`stepOutputs` to each completed branch record, for example
+`"stepOutputs": {"transcribe": {"transcript": "hello"}}`. Each value is the
+latest accepted execution output; steps that never produced one are omitted.
+Failed and cancelled records remain unchanged. For same-workflow branches IDs
+must exist and cannot name the join step; cross-workflow IDs must name callee
+steps. The combined compact JSON values are bounded to 8,000,000 bytes per join.
+Omitting the field preserves the existing join shape and bytes.
+
 `array-batch.bindItems: true` requires `uniqueBy`. It emits a native `receipt`
 containing the identity key, canonical digest of each original batch and the
 caller context. Context is carried once inside the receipt. Set the fanout's

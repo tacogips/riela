@@ -461,6 +461,7 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
   public var writeOwnership: WorkflowFanoutWriteOwnership?
   public var dependencies: WorkflowFanoutDependencies?
   public var changeTracking: WorkflowFanoutChangeTracking?
+  public var includeStepOutputs: [String]?
 
   public init(
     groupId: String,
@@ -473,8 +474,10 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
     writeOwnership: WorkflowFanoutWriteOwnership? = nil,
     dependencies: WorkflowFanoutDependencies? = nil,
     changeTracking: WorkflowFanoutChangeTracking? = nil,
-    contextFrom: String? = nil
+    contextFrom: String? = nil,
+    includeStepOutputs: [String]? = nil
   ) {
+    self.includeStepOutputs = includeStepOutputs
     self.groupId = groupId
     self.itemsFrom = itemsFrom
     self.contextFrom = contextFrom

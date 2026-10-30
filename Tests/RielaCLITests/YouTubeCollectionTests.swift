@@ -11,13 +11,15 @@ private actor YouTubeFixtureTransport: HTTPTransport {
   private let failureStatus: Int
   private let failureBody: String
   private let omitMaxres: Bool
+  private let filterFixture: Bool
   private(set) var urls: [URL] = []
 
-  init(failingResource: String? = nil, failureStatus: Int = 503, failureBody: String = #"{"error":{"errors":[{"reason":"backendError"}]}}"#, omitMaxres: Bool = false) {
+  init(failingResource: String? = nil, failureStatus: Int = 503, failureBody: String = #"{"error":{"errors":[{"reason":"backendError"}]}}"#, omitMaxres: Bool = false, filterFixture: Bool = false) {
     self.failingResource = failingResource
     self.failureStatus = failureStatus
     self.failureBody = failureBody
     self.omitMaxres = omitMaxres
+    self.filterFixture = filterFixture
   }
 
   func send(_ request: URLRequest) async throws -> HTTPResult {
@@ -67,11 +69,27 @@ private actor YouTubeFixtureTransport: HTTPTransport {
       """#
     default: body = #"{"items":[]}"#
     }
+    if filterFixture && resource == "videos" {
+      body = #"""
+      {"items":[
+        {"id":"8QxKwYOyUaE","snippet":{"liveBroadcastContent":"live"},"contentDetails":{"duration":"PT9999S"}},
+        {"id":"oldVideo123","snippet":{"liveBroadcastContent":"upcoming"},"contentDetails":{"duration":"PT300S"}},
+        {"id":"videonew001","snippet":{"liveBroadcastContent":"none","publishedAt":"2026-10-28T00:00:00Z"},"contentDetails":{"duration":"PT900S"}},
+        {"id":"videoold001","snippet":{"liveBroadcastContent":"none","publishedAt":"2026-10-20T00:00:00Z"}}
+      ]}
+      """#
+    }
     if omitMaxres { body = body.replacingOccurrences(of: #""maxres":{"url":"https://img/max.jpg"},"#, with: "") }
     return HTTPResult(data: Data(body.utf8), status: 200)
   }
 
   func recordedURLs() -> [URL] { urls }
+}
+
+private struct YouTubeFilterCase {
+  let filters: JSONObject
+  let expectedIDs: [String]
+  let excluded: JSONObject?
 }
 
 private struct YouTubeGatewayFailureFixture {
@@ -121,6 +139,7 @@ final class YouTubeCollectionTests: XCTestCase {
       try YouTubeClient.fromEnvironment(environment, transport: transport)
     }
     let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    XCTAssertEqual(Set(result.keys), Set(["videos", "failures", "requests"]))
     XCTAssertEqual(result["requests"], .integer(4))
     guard case let .array(videos)? = result["videos"], case let .object(video)? = videos.first else {
       return XCTFail("expected video payload")
@@ -147,6 +166,61 @@ final class YouTubeCollectionTests: XCTestCase {
     XCTAssertEqual(URLComponents(url: urls[1], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "maxResults" })?.value, "5")
     guard let lastURL = urls.last else { return XCTFail("expected videos.list request") }
     XCTAssertTrue(URLComponents(url: lastURL, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "part" })?.value?.contains("liveStreamingDetails") == true)
+  }
+
+  func testFilterOptionValidation() throws {
+    let base: JSONObject = ["videos": .array([.string("8QxKwYOyUaE")])]
+    for value: JSONValue in [.integer(0), .integer(604_801), .string("600"), .number(600.5), .null, .bool(true)] {
+      var input = base
+      input["maxDurationSeconds"] = value
+      XCTAssertThrowsError(try YouTubeCollectionOptions(input)) {
+        XCTAssertEqual(($0 as? AdapterExecutionError)?.code, .invalidInput)
+      }
+    }
+    for value: JSONValue in [.string("true"), .null, .integer(1)] {
+      var input = base
+      input["excludeLive"] = value
+      XCTAssertThrowsError(try YouTubeCollectionOptions(input)) {
+        XCTAssertEqual(($0 as? AdapterExecutionError)?.code, .invalidInput)
+      }
+    }
+    for value: Int64 in [1, 604_800] {
+      var input = base
+      input["maxDurationSeconds"] = .integer(value)
+      XCTAssertNoThrow(try YouTubeCollectionOptions(input))
+    }
+  }
+
+  func testOrderedFiltersAndDefaultOutput() async throws {
+    let base: JSONObject = ["videos": .array([.string("8QxKwYOyUaE"), .string("oldVideo123")]),
+      "channels": .array([.string("@newer"), .string("@older")])]
+    let cases: [YouTubeFilterCase] = [
+      .init(filters: [:], expectedIDs: ["8QxKwYOyUaE", "oldVideo123", "videonew001", "videoold001"], excluded: nil),
+      .init(filters: ["excludeLive": .bool(false)], expectedIDs: ["8QxKwYOyUaE", "oldVideo123", "videonew001", "videoold001"], excluded: nil),
+      .init(filters: ["excludeLive": .bool(true)], expectedIDs: ["videonew001", "videoold001"],
+        excluded: ["count": .integer(2), "live": .array([.string("8QxKwYOyUaE"), .string("oldVideo123")]), "duration": .array([])]),
+      .init(filters: ["maxDurationSeconds": .integer(600)], expectedIDs: ["oldVideo123", "videoold001"],
+        excluded: ["count": .integer(2), "live": .array([]), "duration": .array([.string("8QxKwYOyUaE"), .string("videonew001")])]),
+      .init(filters: ["excludeLive": .bool(true), "maxDurationSeconds": .integer(600)], expectedIDs: ["videoold001"],
+        excluded: ["count": .integer(3), "live": .array([.string("8QxKwYOyUaE"), .string("oldVideo123")]), "duration": .array([.string("videonew001")])]),
+      .init(filters: ["maxDurationSeconds": .integer(604_800)], expectedIDs: ["8QxKwYOyUaE", "oldVideo123", "videonew001", "videoold001"],
+        excluded: ["count": .integer(0), "live": .array([]), "duration": .array([])])
+    ]
+    for fixture in cases {
+      let options = try YouTubeCollectionOptions(base.merging(fixture.filters) { _, new in new })
+      let transport = YouTubeFixtureTransport(filterFixture: true)
+      let collector = YouTubeCollection(options: options) { environment in
+        try YouTubeClient.fromEnvironment(environment, transport: transport)
+      }
+      let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+      guard case let .array(videos)? = result["videos"] else { return XCTFail("expected videos") }
+      XCTAssertEqual(videos.compactMap { value -> String? in
+        guard case let .object(record) = value, case let .string(id)? = record["id"] else { return nil }
+        return id
+      }, fixture.expectedIDs)
+      XCTAssertEqual(result["excluded"], fixture.excluded.map(JSONValue.object))
+      XCTAssertEqual(result["requests"], .integer(5))
+    }
   }
 
   func testDurationParsingTable() {

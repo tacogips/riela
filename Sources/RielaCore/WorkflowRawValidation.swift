@@ -343,6 +343,13 @@ private func validateFanout(_ raw: Any, path: String, diagnostics: inout [Workfl
   validateNonEmptyString(fanout["groupId"], path: "\(path).groupId", diagnostics: &diagnostics)
   validateNonEmptyString(fanout["itemsFrom"], path: "\(path).itemsFrom", diagnostics: &diagnostics)
   validateNonEmptyString(fanout["joinStepId"], path: "\(path).joinStepId", diagnostics: &diagnostics)
+  if let raw = fanout["includeStepOutputs"] {
+    if let ids = raw as? [String], !ids.isEmpty, !ids.contains(where: { $0.isEmpty }), Set(ids).count == ids.count {
+      // Valid output selection.
+    } else {
+      diagnostics.append(error("\(path).includeStepOutputs", "must be a non-empty array of unique non-empty strings"))
+    }
+  }
   if let value = fanout["contextFrom"] {
     if let pointer = value as? String, pointer.hasPrefix("/"), pointer.utf8.count <= 1_024 {
       // A supplied null is invalid; an absent field preserves existing joins.

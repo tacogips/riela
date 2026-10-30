@@ -57,6 +57,7 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     let stepIds = Set(workflow.steps.map(\.id))
     let addonNames = workflow.nodeRegistry.compactMap(\.addon?.name)
     for (index, node) in workflow.nodeRegistry.enumerated() {
+      diagnostics += deprecatedAddonDiagnostics(node.addon, nodeId: node.id)
       diagnostics += validateLiteralAddonTemplates(
         node.addon,
         nodeId: node.id,
@@ -172,6 +173,8 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
             ))
           }
         }
+        diagnostics.append(contentsOf: fanoutOutputReferenceDiagnostics(transition, stepId: step.id,
+          transitionIndex: transitionIndex, stepIds: stepIds))
         if let joinStepId = transition.fanout?.joinStepId, !stepIds.contains(joinStepId) {
           diagnostics.append(
             error("workflow.steps.\(step.id).transitions.fanout.joinStepId", "must reference workflow.steps[] entry '\(joinStepId)'")
@@ -608,6 +611,27 @@ private func validateTypedTransitions(
   }
 }
 
+private func fanoutOutputReferenceDiagnostics(
+  _ transition: WorkflowStepTransition, stepId: String, transitionIndex: Int, stepIds: Set<String>
+) -> [WorkflowValidationDiagnostic] {
+  guard let fanout = transition.fanout, let ids = fanout.includeStepOutputs else { return [] }
+  let selectionPath = "workflow.steps.\(stepId).transitions[\(transitionIndex)].fanout.includeStepOutputs"
+  var diagnostics: [WorkflowValidationDiagnostic] = []
+  if ids.isEmpty || ids.contains(where: { $0.isEmpty }) || Set(ids).count != ids.count {
+    diagnostics.append(error(selectionPath, "must be a non-empty array of unique non-empty strings"))
+  }
+  guard transition.toWorkflowId == nil else { return diagnostics }
+  for (index, id) in ids.enumerated() {
+    let path = "workflow.steps.\(stepId).transitions[\(transitionIndex)].fanout.includeStepOutputs[\(index)]"
+    if id == fanout.joinStepId {
+      diagnostics.append(error(path, "must not name the join step '\(fanout.joinStepId)'; local branches stop before the join"))
+    } else if !stepIds.contains(id) {
+      diagnostics.append(error(path, "must reference workflow.steps[] entry '\(id)'"))
+    }
+  }
+  return diagnostics
+}
+
 private func validateTypedFanout(
   _ fanout: WorkflowStepFanout,
   path: String,
@@ -616,6 +640,10 @@ private func validateTypedFanout(
   validateNonEmptyString(fanout.groupId, path: "\(path).groupId", diagnostics: &diagnostics)
   validateNonEmptyString(fanout.itemsFrom, path: "\(path).itemsFrom", diagnostics: &diagnostics)
   validateNonEmptyString(fanout.joinStepId, path: "\(path).joinStepId", diagnostics: &diagnostics)
+  if let ids = fanout.includeStepOutputs,
+     ids.isEmpty || ids.contains(where: { $0.isEmpty }) || Set(ids).count != ids.count {
+    diagnostics.append(error("\(path).includeStepOutputs", "must be a non-empty array of unique non-empty strings"))
+  }
   if !fanout.itemsFrom.isEmpty, !fanout.itemsFrom.hasPrefix("/") {
     diagnostics.append(error("\(path).itemsFrom", "must be a JSON Pointer"))
   }

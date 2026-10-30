@@ -217,6 +217,8 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/google-analytics-gateway-admin", version: "1")
   ]
 
+  public static let youtubeGatewayAddons: [RielaAddonDescriptor] = [.init(name: "riela/youtube-gateway-read", version: "1")]
+
   public static let notionGatewayAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/notion-gateway-read", version: "1"),
     .init(name: "riela/notion-gateway-write", version: "1")
@@ -267,6 +269,7 @@ public enum RielaBuiltinAddonCatalog {
     + googleAnalyticsGatewayAddons
     + googleDocumentsGatewayAddons
     + notionGatewayAddons
+    + youtubeGatewayAddons
 
   public static func descriptor(named name: String) -> RielaAddonDescriptor? {
     all.first { $0.name == name }

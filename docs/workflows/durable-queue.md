@@ -24,13 +24,15 @@ Actions have closed fields, in addition to `storage` and `action`:
 | Action | Inputs | Result |
 | --- | --- | --- |
 | `admit` | `identity`, object `request` | `identity` |
-| `pending` | none | `found`, nullable `identity` and `request` |
+| `pending` | optional `limit` (1–100), `maxAttempts` (1–1,000,000,000) | `found`, nullable `identity` and `request`; `items` and `itemsTruncated` with `limit`; `exhausted` and `exhaustedCount` with `maxAttempts` |
 | `attempted` | `identity` | `identity` |
 | `finish` | `identity`, boolean `complete`, finite ASCII `status`, optional `completionField` | `identity` |
 
 Admission reopens an existing identity only if its request is unchanged. It does
 not reset its registration or attempt history. Selection chooses an unattempted
 pending request first, then the oldest attempt, registration instant and identity.
+With `limit`, `items` follow the same selection order and `itemsTruncated` indicates the output byte bound stopped the list. `maxAttempts` excludes rows at or above the cap and reports their identities and attempt counts in `exhausted`. Exhausted rows remain pending and are reported on every call until `finish` completes them. Without either option the output remains unchanged.
+
 Selection is an observation, not a lease: callers retain their existing cycle
 admission or otherwise coordinate worker ownership. `attempted` records an attempt
 without completing it. Only explicit `complete: true` makes `finish` terminal;

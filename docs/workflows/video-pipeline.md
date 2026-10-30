@@ -10,6 +10,8 @@ downloads the video, extracts audio segments, samples frames for those time
 boundaries, and fans each result into the segment workflow. Whole-value
 templates preserve JSON arrays and objects as JSON values.
 
+The `download` step uses deprecated `riela/media-download`, which still runs with a validation warning; see [Migrating from riela/media-download](#migrating-from-rielamedia-download).
+
 ```json
 {
   "workflowId": "video-pipeline",
@@ -146,3 +148,58 @@ stale `frame_*.jpg` files there. `outputDir` cannot be the workflow working
 directory root or the user's home directory. Set `cache` to `false` to
 recompute a stage. Download URLs are canonicalized, local and private hosts
 are rejected, and `allowedHosts` can restrict accepted suffixes.
+
+
+## Media download contract
+
+A downloader produces a `mediaDownload` object with this tool-neutral v1 contract:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `status` | Yes | `downloaded` |
+| `path` | Yes | Absolute path to a regular media file |
+| `url` | No | Source URL |
+| `videoId` | No | Video identifier, string or null |
+| `title` | No | Media title |
+| `durationSeconds` | No | Duration in seconds |
+| `outputDir` | No | Output directory |
+| `cached` | No | Whether the result was cached |
+
+The file must be readable where the consumer runs. For container stages, place
+it under the workflow working directory or the artifact root.
+`riela/audio-segments`, `riela/video-frames`, and `riela/speech-to-text` read
+only `options.path`: wire `{{input.mediaDownload.path}}` from any producer, or
+provide a plain local path.
+
+## Plugging in a different downloader
+
+Use any add-on or step that emits `mediaDownload.path` and meets the contract
+above. A package container add-on is declared in `addons[]` with
+`execution.kind: container`; it communicates over JSONL on stdin and stdout
+and can write artifacts under `RIELA_ARTIFACT_DIR`. See
+[the yt-dlp package example](../../examples/video-pipeline-yt-dlp/README.md).
+
+## Migrating from riela/media-download
+
+1. Replace the node's `addon.name` with `media/yt-dlp-download`, version `1`.
+2. Keep `options.url`, `allowedHosts`, `maxFileSizeMB`, `maxDurationSeconds`,
+   `format`, and `cache` as needed.
+3. Drop `ytDlpPath`, `ffmpegPath`, and `outputDir`; the package add-on does not
+   support them.
+4. Make the add-on resolvable during validation: vendor
+   `addons/yt-dlp-download` into the workflow package's `addons[]`, or add a
+   node-addon dependency lock.
+5. Install the package with `riela package install` in project or user scope.
+
+For example, replace the download node with:
+
+```json
+{
+  "id": "download",
+  "addon": {
+    "name": "media/yt-dlp-download",
+    "version": "1",
+    "config": { "options": { "url": "https://example.com/video.mp4" } }
+  }
+}
+```

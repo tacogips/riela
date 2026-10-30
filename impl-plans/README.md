@@ -184,6 +184,42 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+YouTube processing built-ins (workflow-input issue, no GitHub number; runtime
+session `opus-terra-design-and-implement-review-loop-session-558`; design
+[YouTube processing built-ins](../design-docs/specs/design-youtube-processing-builtins.md),
+QA [qa-youtube-processing-builtins](../design-docs/user-qa/qa-youtube-processing-builtins.md)):
+[`youtube-processing-builtins-01-durable-queue-pending`](completed/youtube-processing-builtins-01-durable-queue-pending.md),
+[`youtube-processing-builtins-02-youtube-collect-filters`](completed/youtube-processing-builtins-02-youtube-collect-filters.md),
+[`youtube-processing-builtins-03-fanout-step-outputs-core`](completed/youtube-processing-builtins-03-fanout-step-outputs-core.md),
+[`youtube-processing-builtins-04-yt-dlp-download-package`](completed/youtube-processing-builtins-04-yt-dlp-download-package.md),
+[`youtube-processing-builtins-05-video-pipeline-docs`](completed/youtube-processing-builtins-05-video-pipeline-docs.md),
+[`youtube-processing-builtins-06-media-download-deprecation`](completed/youtube-processing-builtins-06-media-download-deprecation.md),
+[`youtube-processing-builtins-07-fanout-cli-validation-example`](completed/youtube-processing-builtins-07-fanout-cli-validation-example.md),
+[`youtube-processing-builtins-08-youtube-gateway-read`](completed/youtube-processing-builtins-08-youtube-gateway-read.md)
+and [`youtube-processing-builtins-09-example-catalog-finalize`](completed/youtube-processing-builtins-09-example-catalog-finalize.md)
+were archived on 2026-10-30 after the test-integrity, adversarial and
+combined-tree integration reviews (`comm-010664`) accepted them. The work adds
+`riela/youtube-gateway-read@1` (four read-only list operations, manual
+`pageToken` paging, macOS only), `fanout.includeStepOutputs` (bounded to
+8,000,000 bytes, join bytes unchanged when absent), durable-queue `pending`
+`limit` / `maxAttempts`, youtube-collect `excludeLive` / `maxDurationSeconds`,
+the tool-neutral `mediaDownload` contract with the `media/yt-dlp-download`
+package container add-on in `examples/video-pipeline-yt-dlp`, and a
+`workflow validate` deprecation warning for `riela/media-download`. The
+combined-tree run in `tmp/youtube-processing-builtins/reconcile-wave-004/`
+(`test-combined.log`) passed 184 tests with 0 failures across 25 suites,
+including `RielaExampleParityTests` over 50 mock examples. Strict lint and the
+catalog diff were empty. Browser E2E was skipped because no browser-facing file
+changed. Live YouTube API calls and live yt-dlp container downloads were not
+run. User docs: [built-in gateway JSON](../docs/builtin-gateway-json.md#youtube-read-gateway),
+[video pipeline](../docs/workflows/video-pipeline.md),
+[durable queue](../docs/workflows/durable-queue.md),
+[YouTube collection](../docs/workflows/youtube-collection.md) and
+[fanout step outputs](../docs/workflows/json-data-processing.md#fanout-step-outputs).
+The dispatch manifest stays at
+[`active/youtube-processing-builtins-dispatch.json`](active/youtube-processing-builtins-dispatch.json);
+it records the original plan paths. Progress logs: `progress/ypb-0*.md`.
+
 swift-crypto 5.x refresh and cron previous tick (workflow-input issue, no
 GitHub number; design
 [crypto5 dependency refresh and cron previous tick](../design-docs/specs/design-crypto5-dependency-refresh-and-cron-previous-tick.md),

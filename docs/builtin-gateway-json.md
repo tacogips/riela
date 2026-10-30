@@ -22,10 +22,36 @@ concurrency and per-item failure handling.
 | `riela/notion-gateway-read`, `-write` | literal `operation`, object `arguments`; catalog includes `findChildPage` for reader and writer, plus `ensurePagePath` for writer; writer also supports riela-side `uploadLocalFile` and `publishPage` | optional fields, literal selection set, or catalog default; composite publish creates a page and appends oversized block lists | catalog checks plus local file path, argument and 20 MiB checks | upload failures become placeholders; append failures report an incomplete created page; upload sends are never retried | [Notion sync](../examples/notion-gateway-json-sync/README.md) | fixed-role SDK, macOS build |
 | `riela/google-docs-gateway-read`, `-write`; `google-sheet-gateway-read`, `-write`; `google-drive-gateway-read`, `-write` | literal catalog command in `operation`, object `arguments` | no selection; shape the result with postprocess | command and typed argument checks, rendered key checks, forbidden-command check | thrown error, unchanged | — | fixed-role SDK argv construction and existing command runner, macOS build |
 | `riela/google-service-gateway-read`, `-write` | literal operation such as `services.get`, object `arguments` | no selection; shape the result with postprocess | tier allowlist, nested keys, required values and runtime-matching JSON types | thrown error, unchanged | — | existing typed service client |
+| `riela/youtube-gateway-read` | literal `operation`, object `arguments` | no selection; page under `data`, shape with postprocess | operation, argument names, types, ranges and exactly one filter | thrown error, unchanged | [YouTube read](../examples/youtube-gateway-read/README.md) | linked SDK, macOS build |
 | `riela/apple-gateway-graphql` (`full`) | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | Apple catalog checks when `addon.inputs` is absent; inputs override the config at runtime | thrown error, unchanged | — | macOS SDK; container requests are prepared on the host and use its existing exact-argv bridge |
 | Apple Notes, Mail, Calendar, Reminders, notifications and clock product nodes | operation fixed by add-on name; existing JSON `config`/`inputs` | fixed SDK query and output projection | context-free; fixed product-node input rules remain runtime-owned | thrown error, unchanged | — | existing native boundary and scoped host bridge |
 | named `kaiba/*` nodes | operation fixed by add-on name; object `arguments` | existing typed result projection | nested object/config and forbidden connection keys; argument names/types stay runtime-only (no catalog) | thrown error, unchanged | — | preflight-captured HTTP client; host or worker |
 | Kaiba GraphQL compatibility nodes | `arguments` containing `query` and optional `variables` | authored GraphQL document | query/document/operationName must be literal strings; variables remain data | thrown error, unchanged | — | same preflight-captured HTTP client |
+
+### YouTube read gateway
+
+`riela/youtube-gateway-read` version 1 supports `subscriptions.list`, `videos.list`,
+`channels.list`, and `playlistItems.list`. Supply a selector and optional `parts`;
+`subscriptions.list` and `playlistItems.list` accept `maxResults` and `pageToken`,
+while `videos.list` accepts `pageToken`. For another page, pass
+`data.nextPageToken` as the next request's `arguments.pageToken`. Channels have
+no pagination arguments in the linked SDK. No automatic pagination or writes
+are performed.
+
+| Operation | Selector | Pagination |
+| --- | --- | --- |
+| `subscriptions.list` | Exactly one of `mine`, `channelId`, `ids`, `mySubscribers`, `myRecentSubscribers` | `maxResults`, `pageToken` |
+| `videos.list` | `ids` | `pageToken` |
+| `channels.list` | Exactly one of `ids`, `forHandle`, `mine` | None |
+| `playlistItems.list` | Exactly one of `playlistId`, `ids` | `maxResults`, `pageToken` |
+
+Bind credentials through `addon.env` using `fromEnv` with targets
+`YOUTUBE_GATEWAY_TOKEN_STORE_JSON` or `YOUTUBE_GATEWAY_ACCESS_TOKEN`; do not
+inline credential values in workflow definitions.
+
+```json
+{"YOUTUBE_GATEWAY_TOKEN_STORE_JSON": {"fromEnv": "YOUTUBE_GATEWAY_TOKEN_STORE_JSON", "required": false}}
+```
 
 ### Notion `publishPage`
 

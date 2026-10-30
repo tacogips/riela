@@ -571,6 +571,43 @@ func runtimeCapabilityDiagnostics(
     resolution: resolution,
     resolver: resolver
   ))
+  diagnostics.append(contentsOf: await fanoutIncludeStepOutputsCalleeDiagnostics(
+    workflow: bundle.workflow, resolution: resolution, resolver: resolver
+  ))
+  return diagnostics
+}
+
+private func fanoutIncludeStepOutputsCalleeDiagnostics(
+  workflow: WorkflowDefinition,
+  resolution: WorkflowResolutionOptions,
+  resolver: any WorkflowBundleResolving
+) async -> [WorkflowValidationDiagnostic] {
+  let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+  var stepIds: [String: Set<String>] = [:]
+  var failed: Set<String> = []
+  var diagnostics: [WorkflowValidationDiagnostic] = []
+  for step in workflow.steps {
+    for (index, transition) in (step.transitions ?? []).enumerated() {
+      guard let workflowId = transition.toWorkflowId,
+        let included = transition.fanout?.includeStepOutputs, !included.isEmpty else { continue }
+      if stepIds[workflowId] == nil && !failed.contains(workflowId) {
+        do {
+          let callee = try await calleeResolver.resolveCallee(workflowId: workflowId)
+          stepIds[workflowId] = Set(callee.workflow.steps.map(\.id))
+        } catch {
+          failed.insert(workflowId)
+        }
+      }
+      guard let ids = stepIds[workflowId] else { continue }
+      for (outputIndex, id) in included.enumerated() where !ids.contains(id) {
+        diagnostics.append(WorkflowValidationDiagnostic(
+          severity: .error,
+          path: "workflow.steps.\(step.id).transitions[\(index)].fanout.includeStepOutputs[\(outputIndex)]",
+          message: "must reference a step of callee workflow '\(workflowId)'; '\(id)' does not exist"
+        ))
+      }
+    }
+  }
   return diagnostics
 }
 

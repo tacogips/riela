@@ -87,6 +87,23 @@ extension DeterministicWorkflowRunner {
       record["branchId"] = .string(wave.branchIds[outcome.index])
       return record
     }
+    if let stepIds = directive.includeStepOutputs {
+      var total = 0
+      for branch in orderedBranches {
+        guard case let .integer(index)? = branch["index"],
+              case let .object(outputs)? = branch["stepOutputs"] else { continue }
+        for stepId in stepIds {
+          guard let value = outputs[stepId] else { continue }
+          total += try JSONEncoder().encode(value).count
+          if total > 8_000_000 {
+            throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
+              groupId: directive.groupId,
+              reason: "includeStepOutputs exceeded 8000000 bytes at branch \(index) step '\(stepId)'"
+            )
+          }
+        }
+      }
+    }
     var join = fanoutJoinPayload(
       directive: directive,
       fanoutGroupRunId: fanoutGroupRunId,
@@ -349,7 +366,8 @@ extension DeterministicWorkflowRunner {
         index: index,
         item: item,
         output: result.rootOutput ?? [:],
-        sessionId: result.session.sessionId
+        sessionId: result.session.sessionId,
+        stepOutputs: directive.includeStepOutputs.map { fanoutStepOutputs($0, session: result.session) }
       )
     } catch {
       if error is NestedRecoveryInterruption {
@@ -609,6 +627,16 @@ extension DeterministicWorkflowRunner {
   }
 }
 
+private func fanoutStepOutputs(_ stepIds: [String], session: WorkflowSession) -> JSONObject {
+  var outputs: JSONObject = [:]
+  for stepId in stepIds {
+    if let payload = session.executions.last(where: { $0.stepId == stepId && $0.acceptedOutput != nil })?.acceptedOutput?.payload {
+      outputs[stepId] = .object(payload)
+    }
+  }
+  return outputs
+}
+
 private struct FanoutBranchOutcome: Sendable {
   var index: Int
   var record: JSONObject
@@ -629,14 +657,18 @@ private struct FanoutBranchOutcome: Sendable {
     return nil
   }
 
-  static func success(index: Int, item: JSONValue, output: JSONObject, sessionId: String) -> FanoutBranchOutcome {
-    FanoutBranchOutcome(index: index, record: [
+  static func success(
+    index: Int, item: JSONValue, output: JSONObject, sessionId: String, stepOutputs: JSONObject? = nil
+  ) -> FanoutBranchOutcome {
+    var record: JSONObject = [
       "index": .integer(Int64(index)),
       "item": item,
       "status": .string("completed"),
       "output": .object(output),
       "sessionId": .string(sessionId)
-    ])
+    ]
+    if let stepOutputs { record["stepOutputs"] = .object(stepOutputs) }
+    return FanoutBranchOutcome(index: index, record: record)
   }
 
   /// `cancelled` is the real cancellation signal observed by the caller; the

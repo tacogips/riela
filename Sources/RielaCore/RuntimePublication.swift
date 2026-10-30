@@ -205,6 +205,7 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
   public var sourcePayload: JSONObject
   public var dependencies: WorkflowFanoutDependencies?
   public var changeTracking: WorkflowFanoutChangeTracking?
+  public var includeStepOutputs: [String]?
 
   public init(
     groupId: String,
@@ -223,8 +224,10 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
     sourcePayload: JSONObject,
     dependencies: WorkflowFanoutDependencies? = nil,
     changeTracking: WorkflowFanoutChangeTracking? = nil,
-    contextFrom: String? = nil
+    contextFrom: String? = nil,
+    includeStepOutputs: [String]? = nil
   ) {
+    self.includeStepOutputs = includeStepOutputs
     self.groupId = groupId
     self.workflowId = workflowId
     self.sourceStepId = sourceStepId
@@ -985,7 +988,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       return "step selected more than one nested callee"
     }
     for transition in transitions {
-      if transition.toWorkflowId != nil && transition.resumeStepId == nil {
+      if transition.toWorkflowId != nil && transition.resumeStepId == nil && transition.fanout == nil {
         return "cross-workflow transitions are not supported by this in-memory publisher"
       }
       if transition.toWorkflowId != nil &&
@@ -1091,7 +1094,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       sourcePayload: sourcePayload,
       dependencies: fanout.dependencies,
       changeTracking: fanout.changeTracking,
-      contextFrom: fanout.contextFrom
+      contextFrom: fanout.contextFrom,
+      includeStepOutputs: fanout.includeStepOutputs
     )
   }
 }

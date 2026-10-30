@@ -146,7 +146,8 @@ extension DeterministicWorkflowRunner {
         sourceStepExecutionId: execution.executionId, itemsFrom: fanout.itemsFrom, itemVariable: fanout.itemVariable,
         concurrency: fanout.concurrency, failurePolicy: fanout.failurePolicy ?? .failFast,
         resultOrder: fanout.resultOrder ?? .input, writeOwnership: fanout.writeOwnership, sourcePayload: accepted.payload,
-        dependencies: fanout.dependencies, changeTracking: fanout.changeTracking, contextFrom: fanout.contextFrom),
+        dependencies: fanout.dependencies, changeTracking: fanout.changeTracking, contextFrom: fanout.contextFrom,
+        includeStepOutputs: fanout.includeStepOutputs),
         parentSessionId: session.sessionId, parentStepId: parentStep.id, request: request)
       break
     }
@@ -218,7 +219,8 @@ extension DeterministicWorkflowRunner {
           sourcePayload: payload,
           dependencies: fanout.dependencies,
           changeTracking: fanout.changeTracking,
-          contextFrom: fanout.contextFrom
+          contextFrom: fanout.contextFrom,
+          includeStepOutputs: fanout.includeStepOutputs
         ),
         parentSessionId: session.sessionId,
         parentStepId: record.reservation.parentStepId,

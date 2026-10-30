@@ -11,7 +11,7 @@ extension BuiltinWorkflowAddonResolver {
     try checkSnapshotWork(context)
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
-      Set(config.keys).isSubset(of: ["storage", "action", "identity", "request", "complete", "status", "completionField"]),
+      Set(config.keys).isSubset(of: ["storage", "action", "identity", "request", "complete", "status", "completionField", "limit", "maxAttempts"]),
       case let .object(storage)? = config["storage"], Set(storage.keys) == ["directory", "name"],
       case let .string(directory)? = storage["directory"], !directory.isEmpty, directory.utf8.count <= 4096,
       case let .string(name)? = storage["name"], name.range(of: #"\A[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\z"#, options: .regularExpression) != nil,
@@ -48,8 +48,13 @@ enum DurableQueue {
         !status.isEmpty, status.utf8.count <= 64, status.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value < 127 }) else { throw durableQueueInvalid() }
     default: throw durableQueueInvalid()
     }
-    let optional: Set<String> = action == "finish" ? ["completionField"] : []
+    let optional: Set<String> = action == "finish" ? ["completionField"] : (action == "pending" ? ["limit", "maxAttempts"] : [])
     guard fields.isSubset(of: Set(config.keys)), Set(config.keys).isSubset(of: fields.union(optional)) else { throw durableQueueInvalid() }
+    for (key, maximum) in [("limit", Int64(100)), ("maxAttempts", Int64(1_000_000_000))] {
+      if let value = config[key] {
+        guard case let .integer(number) = value, (1...maximum).contains(number) else { throw durableQueueInvalid() }
+      }
+    }
     if let field = config["completionField"] {
       guard case let .string(key) = field,
         key.range(of: #"\A[a-zA-Z_][a-zA-Z0-9_]{0,127}\z"#, options: .regularExpression) != nil,
@@ -79,12 +84,37 @@ enum DurableQueue {
     var result: JSONObject = [:]
     switch config["action"] {
     case .string("pending"):
-      let pending = candidates.min { lhs, rhs in
-        if lhs.attempted != rhs.attempted { return lhs.attempted < rhs.attempted }
-        if lhs.registered != rhs.registered { return lhs.registered < rhs.registered }
-        return Data(lhs.identity.utf8).lexicographicallyPrecedes(Data(rhs.identity.utf8))
+      let ordered = candidates.sorted(by: precedes)
+      let maximum: Int64?
+      if case let .integer(value)? = config["maxAttempts"] { maximum = value } else { maximum = nil }
+      let eligible = ordered.filter { candidate in
+        guard let maximum, case let .integer(attempts)? = candidate.row["attempts"] else { return true }
+        return attempts < maximum
       }
+      let pending = eligible.first
       result = ["found": .bool(pending != nil), "identity": pending.map { .string($0.identity) } ?? .null, "request": pending?.row["request"] ?? .null]
+      if let maximum {
+        let exhausted = candidates.filter { candidate in
+          guard case let .integer(attempts)? = candidate.row["attempts"] else { return false }
+          return attempts >= maximum
+        }.sorted { Data($0.identity.utf8).lexicographicallyPrecedes(Data($1.identity.utf8)) }
+        result["exhausted"] = .array(exhausted.map { .object(["identity": .string($0.identity), "attempts": $0.row["attempts"] ?? .null]) })
+        result["exhaustedCount"] = .integer(Int64(exhausted.count))
+      }
+      if case let .integer(limit)? = config["limit"] {
+        var items: [JSONValue] = []
+        result["items"] = .array(items); result["itemsTruncated"] = .bool(false)
+        for candidate in eligible.prefix(Int(limit)) {
+          let item: JSONValue = .object(["identity": .string(candidate.identity), "request": candidate.row["request"] ?? .null,
+            "attempts": candidate.row["attempts"] ?? .null])
+          result["items"] = .array(items + [item])
+          if try JSONEncoder().encode(result).count > DurableQueueJournal.maximumBytes {
+            result["items"] = .array(items); result["itemsTruncated"] = .bool(true)
+            break
+          }
+          items.append(item)
+        }
+      }
     case .string("admit"):
       guard case let .string(key)? = config["identity"], let request = config["request"] else { throw durableQueueInvalid() }
       var row: JSONObject
@@ -111,6 +141,12 @@ enum DurableQueue {
     default: throw durableQueueInvalid()
     }
     return (["version": .integer(1), "requests": .object(rows)], result)
+  }
+
+  private static func precedes(_ lhs: Candidate, _ rhs: Candidate) -> Bool {
+    if lhs.attempted != rhs.attempted { return lhs.attempted < rhs.attempted }
+    if lhs.registered != rhs.registered { return lhs.registered < rhs.registered }
+    return Data(lhs.identity.utf8).lexicographicallyPrecedes(Data(rhs.identity.utf8))
   }
 
   private static func exactRequest(_ lhs: JSONValue?, _ rhs: JSONValue) throws -> Bool {

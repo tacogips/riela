@@ -26,15 +26,24 @@ struct YouTubeCollectionOptions {
   let channels: [String]
   let publishedAfter: Date?
   let maxPerChannel: Int
+  let excludeLive: Bool
+  let maxDurationSeconds: Int?
 
   init(_ value: JSONObject) throws {
-    guard Set(value.keys).isSubset(of: ["videos", "channels", "publishedAfter", "maxPerChannel"]),
+    guard Set(value.keys).isSubset(of: ["videos", "channels", "publishedAfter", "maxPerChannel", "excludeLive", "maxDurationSeconds"]),
       case let .array(videos) = value["videos"] ?? .array([]),
       videos.allSatisfy({ if case let .string(text) = $0 { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }; return false }),
       case let .array(channels) = value["channels"] ?? .array([]),
       channels.allSatisfy({ if case let .string(text) = $0 { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }; return false }),
       case let .integer(maximum) = value["maxPerChannel"] ?? .integer(10), (1...50).contains(maximum)
     else { throw youtubeCollectionInvalid() }
+    guard case let .bool(excludeLive) = value["excludeLive"] ?? .bool(false) else { throw youtubeCollectionInvalid() }
+    let maxDurationSeconds: Int?
+    switch value["maxDurationSeconds"] {
+    case nil: maxDurationSeconds = nil
+    case let .integer(seconds)? where (1...604_800).contains(seconds): maxDurationSeconds = Int(seconds)
+    default: throw youtubeCollectionInvalid()
+    }
     let after: Date?
     switch value["publishedAfter"] {
     case nil, .null?: after = nil
@@ -48,6 +57,8 @@ struct YouTubeCollectionOptions {
     self.channels = channels.compactMap { if case let .string(text) = $0 { return text.trimmingCharacters(in: .whitespacesAndNewlines) }; return nil }
     self.publishedAfter = after
     self.maxPerChannel = Int(maximum)
+    self.excludeLive = excludeLive
+    self.maxDurationSeconds = maxDurationSeconds
   }
 }
 
@@ -199,17 +210,40 @@ struct YouTubeCollection {
       } ?? .distantPast
       return leftDate == rightDate ? lhs.offset < rhs.offset : leftDate > rightDate
     }.map(\.element)
-    return ["videos": .array((explicitOrder + orderedChannelIDs).compactMap { records[$0].map(JSONValue.object) }),
-      "failures": .array(failures), "requests": .integer(Int64(requests))]
+    return filteredResult(ids: explicitOrder + orderedChannelIDs, records: records, failures: failures, requests: requests)
     #else
     _ = environment
     throw AdapterExecutionError(.policyBlocked, "youtube-gateway requires macOS")
     #endif
   }
+  private func filteredResult(ids: [String], records: [String: JSONObject], failures: [JSONValue], requests: Int) -> JSONObject {
+    var videos: [JSONValue] = []
+    var liveExcluded: [JSONValue] = []
+    var durationExcluded: [JSONValue] = []
+    for id in ids {
+      guard let record = records[id] else { continue }
+      if options.excludeLive, case let .string(status)? = record["liveBroadcastContent"],
+        status == "live" || status == "upcoming" {
+        liveExcluded.append(.string(id))
+      } else if let maximum = options.maxDurationSeconds, case let .integer(duration)? = record["durationSeconds"],
+        duration > maximum {
+        durationExcluded.append(.string(id))
+      } else {
+        videos.append(.object(record))
+      }
+    }
+    var result: JSONObject = ["videos": .array(videos), "failures": .array(failures), "requests": .integer(Int64(requests))]
+    if options.excludeLive || options.maxDurationSeconds != nil {
+      result["excluded"] = .object(["count": .integer(Int64(liveExcluded.count + durationExcluded.count)),
+        "live": .array(liveExcluded), "duration": .array(durationExcluded)])
+    }
+    return result
+  }
+
 }
 
 #if canImport(YouTubeGatewayCore)
-private func handleYouTubeRequestError(_ error: Error) throws {
+func handleYouTubeRequestError(_ error: Error) throws {
   if error is CancellationError || Task.isCancelled { throw CancellationError() }
   guard let error = error as? GatewayError else { return }
   switch error.kind {
@@ -221,7 +255,7 @@ private func handleYouTubeRequestError(_ error: Error) throws {
   }
 }
 
-private func youtubeFailureMessage(_ message: String, _ error: Error) -> String {
+func youtubeFailureMessage(_ message: String, _ error: Error) -> String {
   guard let error = error as? GatewayError else { return message }
   let status = error.status.map(String.init) ?? "unknown status"
   return "\(message) (\(error.kind.rawValue), \(status))"

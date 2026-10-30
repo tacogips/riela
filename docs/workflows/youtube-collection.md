@@ -44,3 +44,16 @@ and API failures appear in `failures`; successful partial metadata is returned.
 The gateway is linked on macOS. Linux executions fail with a clear policy
 error. Use the collector inside a private workflow when collected metadata
 needs inspection before publication.
+
+Optional `excludeLive` (boolean, default `false`) excludes videos marked `live`
+or `upcoming`. Optional `maxDurationSeconds` is an integer from 1 to 604800;
+it excludes longer videos and keeps videos with unknown duration. Both filters
+apply to explicit videos and channel uploads after metadata collection, so a
+channel may yield fewer than `maxPerChannel` videos. A video matching both
+filters is attributed to live only.
+
+When `excludeLive` is true or `maxDurationSeconds` is supplied, the result also
+contains `excluded: {"count": 0, "live": [], "duration": []}`. The arrays hold
+excluded video IDs in output order, and `count` is their combined length. With
+neither filter enabled, including `excludeLive: false` alone, the output remains
+unchanged and contains only `videos`, `failures`, and `requests`.

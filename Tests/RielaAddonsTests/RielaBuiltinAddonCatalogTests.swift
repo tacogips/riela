@@ -19,6 +19,7 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
     "riela/time-signal",
     "riela/gmail-gateway-read",
     "riela/x-gateway-read",
+    "riela/youtube-gateway-read",
     "riela/media-download",
     "riela/audio-segments",
     "riela/video-frames",

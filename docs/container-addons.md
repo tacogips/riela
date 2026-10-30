@@ -73,6 +73,11 @@ the built-in HTTP SDK workers: those workers use the linked Swift SDKs.
 
 ## Video media add-ons
 
+`riela/media-download` is deprecated and remains available. The package
+container add-on `media/yt-dlp-download` builds its self-contained image from
+its `Containerfile`, requires the `network.egress` capability, and writes under
+the same-path artifact root. See [migration guidance](workflows/video-pipeline.md#migrating-from-rielamedia-download).
+
 The `riela/media-download`, `riela/audio-segments`, `riela/video-frames`, and
 `riela/speech-to-text` add-ons select `riela-video-addons:local` when their
 container options omit `image`. The compatibility name

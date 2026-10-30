@@ -7,6 +7,13 @@ comes from runtime session `opus-terra-design-and-implement-review-loop-session-
 (`comm-010583`, intake `comm-010584`). Workflow mode: `issue-resolution`.
 No Codex-agent reference or Cursor adapter is involved.
 
+Implementation accepted 2026-10-30 after the integration review (`comm-010664`).
+The plans `youtube-processing-builtins-01` … `09` are archived under
+[`impl-plans/completed/`](../../impl-plans/completed/), with progress logs in
+`impl-plans/progress/ypb-0*.md`. The dispatch manifest
+`impl-plans/active/youtube-processing-builtins-dispatch.json` records the
+original plan paths.
+
 This document generalizes five workarounds seen in the ART YouTube workflow:
 
 | Part | Change | Baseline it amends |

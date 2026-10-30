@@ -274,3 +274,11 @@ help text should describe it as a fanout concurrency cap.
   deterministic.
 - Capability-gap removal could hide unsupported fanout combinations unless
   ownership and cross-workflow fanout diagnostics remain specific.
+
+## Amendment 2026-10-30: `includeStepOutputs`
+
+`design-youtube-processing-builtins.md` §B adds the opt-in
+`fanout.includeStepOutputs`. Completed branch records gain
+`stepOutputs{stepId: acceptedPayload}`, taken from the durable child session,
+for both same-workflow and `toWorkflowId` fanouts. The join is limited to
+8,000,000 bytes. When the field is absent, the join stays byte-identical.

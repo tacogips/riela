@@ -98,6 +98,12 @@ its own options fingerprinted manifest and verifies referenced files before a
 cache hit. Keep shared stage paths under the workflow working directory when
 running the stages in containers.
 
+Amended 2026-10-30 by `design-youtube-processing-builtins.md` §E.
+`riela/media-download` is deprecated: it still runs, and validation warns.
+The tool-neutral `mediaDownload` contract is documented, and yt-dlp ships as
+the package container add-on `media/yt-dlp-download`. The other three stages
+stay built-in and unchanged.
+
 ## Gmail: `riela/gmail-collect`, version `1`
 
 ```json
@@ -620,3 +626,8 @@ channel uploads newest first. Duplicate IDs merge their `sources` entries.
 Partial channel and video API failures return alongside successful metadata;
 failure messages never include provider responses or credentials. The complete
 configuration and output are capped at 8 MB.
+
+Amended 2026-10-30 by `design-youtube-processing-builtins.md` §D.
+`excludeLive` and `maxDurationSeconds` filter enriched records and report them
+under `excluded`. The default output is unchanged. §A adds the
+`riela/youtube-gateway-read` request-level reader.

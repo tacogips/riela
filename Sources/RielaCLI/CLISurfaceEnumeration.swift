@@ -74,6 +74,8 @@ public enum CLISurfaceEnumerator {
       return KaibaInstanceClientAction.allRawValues.map { CLICommandDescriptor([route, "instance", $0]) }
     case "environment":
       return nested(["status", "reload"])
+    case "voice":
+      return nested(VoiceClientAction.allRawValues)
     case "memory":
       return nested(MemoryCommandKind.allRawValues)
     case "doctor":
@@ -132,7 +134,7 @@ public enum CLISurfaceEnumerator {
   }
 
   /// Routes `expand(route:)` knows how to walk into subcommands.
-  static let expandedRoutes: Set<String> = ["environment",
+  static let expandedRoutes: Set<String> = ["environment", "voice",
     "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
     "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve", "storage", "doctor"
   ]
@@ -149,6 +151,7 @@ public enum CLISurfaceEnumerator {
       ParsedMemoryOptions.helpMessage(),
       ParsedCacheArguments.helpMessage(),
       ParsedRoutineOptions.helpMessage(),
+      ParsedVoiceListenOptions.helpMessage(),
       ParsedWorkflowManifestOptions.helpMessage(),
       ParsedWorkflowRegisterArguments.helpMessage(),
       ParsedLoopBaselineDiffRoute.helpMessage(),

@@ -54,6 +54,7 @@ enum CLISubcommandHelp {
     if path.first == "auth" { return PasskeyCommand.help + "\n" }
     if path.first == "worker" { return DistributedWorkerCommand.helpText }
     if path.first == "sandbox" { return SandboxCommand.helpText }
+    if path.first == "voice" { return VoiceCommand.helpText }
     if path == ["gateway"] || path == ["gateway", "list"] { return GatewayCommand.help }
     return nil
   }

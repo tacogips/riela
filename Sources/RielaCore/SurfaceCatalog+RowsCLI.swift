@@ -71,7 +71,18 @@ extension SurfaceCatalog {
   static let registryClientRows: [SurfaceOperation] =
     packageRows + nodeRows + memoryRows + cacheRows + instanceRows + specialistRows
       + localToolRows + eventRows + routineCLIRows + serveRows + graphQLClientRows + operatorRows
-      + taskMutationRows + gatewayRows + environmentRows
+      + taskMutationRows + gatewayRows + environmentRows + voiceRows
+
+  private static var voiceRows: [SurfaceOperation] {
+    [
+      surfaceRow(localToolDefaults, id: "voice.listen", family: "voice", kind: .process, cli: "voice listen",
+        cliOptions: [
+          "--inbox", "--device", "--threshold-db", "--min-speech-ms", "--silence-ms",
+          "--max-utterance-ms", "--pre-roll-ms", "--retain-seconds", "--voice-processing"
+        ]),
+      surfaceRow(localToolDefaults, id: "voice.devices", family: "voice", kind: .query, cli: "voice devices")
+    ]
+  }
 
   private static var environmentRows: [SurfaceOperation] {
     ["status", "reload"].map {

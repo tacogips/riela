@@ -142,6 +142,8 @@ public struct RielaCLIApplication: Sendable {
         return await setupContainerCommand.run(options)
       case let .environment(arguments):
         return await EnvironmentCommand().run(arguments)
+      case let .voice(arguments):
+        return await VoiceCommand().run(arguments)
       case let .cache(arguments):
         return CacheCommandRunner().run(arguments)
       case let .memory(command):
@@ -370,6 +372,8 @@ Usage:
   riela gateway list [--json]
   riela gateway <name> [--role ROLE] <gateway-command> [gateway-options...]
   riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
+  riela voice listen --inbox <dir> [--device <uid>] [--threshold-db -45] [--silence-ms 700] [--retain-seconds 600]  # macOS only
+  riela voice devices
   riela cache configure|put|get|delete|prune <cache-id> [--cache-root <dir>] [--scope <scope>] [--entries-file <path|->] [--keys-file <path|->]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--history-retention <n>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--history-retention <n>] [--memory-root <dir>]

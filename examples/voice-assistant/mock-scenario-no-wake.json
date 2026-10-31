@@ -1,0 +1,3 @@
+{
+  "transcribe": {"provider":"scenario-mock","when":{"always":true},"payload":{"speechToText":{"status":"completed","provider":"openai","model":"gpt-4o-transcribe","language":"ja","text":"今日はエアコン消して寝ようかな","path":"/tmp/voice/office/20261031T000000Z-a1.wav","cached":false}}}
+}

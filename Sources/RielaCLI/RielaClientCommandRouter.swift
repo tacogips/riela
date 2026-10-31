@@ -16,6 +16,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       MemoryRoute.self,
       CacheRoute.self,
       EnvironmentRoute.self,
+      VoiceRoute.self,
       InstanceRoute.self,
       DoctorRoute.self,
       StorageRoute.self,
@@ -185,6 +186,11 @@ struct GatewayRoute: RielaClientPassthroughRoute {
 
 struct CacheRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("cache", abstract: "Manage temporary TTL/LRU retrieval caches.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct VoiceRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("voice", abstract: "Record microphone utterances into a file-change inbox (macOS).")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

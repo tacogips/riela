@@ -87,8 +87,13 @@ tool-neutral `mediaDownload` contract (for example the package add-on
 `media/yt-dlp-download`): `riela/audio-segments` extracts mono 16 kHz MP3 and
 chooses silence-aware boundaries; `riela/video-frames` samples and deduplicates
 JPEG frames and can attach them to supplied half-open segments; and
-`riela/speech-to-text` transcribes one audio file with OpenAI. Each addon uses
-only `options` and `context` in its rendered config. Speech accepts `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`.
+`riela/speech-to-text` transcribes one audio file. Each addon uses
+only `options` and `context` in its rendered config. Speech selects a vendor
+with `options.provider` (default `openai`, also used for OpenAI-compatible
+servers; plus `deepgram`, `elevenlabs`, `google`, `apple` on-device on macOS,
+and `command` for a local CLI). Each provider allowlists its own `addon.env`
+keys (for `openai`, `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`); see
+`design-voice-assistant.md` for the provider table.
 
 Frame sampling uses a 256-bit difference hash. The flat `frames` output has no
 image forwarding metadata. When segment ranges are provided, each returned

@@ -1,0 +1,5 @@
+{
+  "transcribe": {"provider":"scenario-mock","when":{"always":true},"payload":{"speechToText":{"status":"completed","provider":"openai","model":"gpt-4o-transcribe","language":"ja","text":"ねえリエラ、エアコン消して","path":"/tmp/voice/office/20261031T000000Z-a1.wav","cached":false}}},
+  "aircon-off": {"provider":"scenario-mock","when":{"always":true},"payload":{"request":{"domain":"climate","service":"turn_off","body":{"entity_id":"climate.office"}},"changedStates":[{"entity_id":"climate.office","state":"off"}],"changedCount":1}},
+  "ack": {"provider":"scenario-mock","when":{"always":true,"spoken":true},"payload":{"textToSpeech":{"status":"spoken","provider":"apple","path":"/tmp/voice/out/a.aiff","played":true,"cached":false}}}
+}

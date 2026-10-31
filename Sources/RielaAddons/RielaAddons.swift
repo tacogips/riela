@@ -118,6 +118,15 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/time-signal", version: "1")
   ]
 
+  public static let voiceAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/utterance-match", version: "1")
+  ]
+
+  public static let homeAssistantAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/home-assistant-read", version: "1"),
+    .init(name: "riela/home-assistant-write", version: "1")
+  ]
+
   public static let dataAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/x-collect", version: "1"),
     .init(name: "riela/gmail-collect", version: "1"),
@@ -125,6 +134,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/audio-segments", version: "1"),
     .init(name: "riela/video-frames", version: "1"),
     .init(name: "riela/speech-to-text", version: "1"),
+    .init(name: "riela/text-to-speech", version: "1"),
     .init(name: "riela/json-route", version: "1"),
     .init(name: "riela/page-state", version: "1"),
     .init(name: "riela/collection-checkpoint", version: "1"),
@@ -255,6 +265,8 @@ public enum RielaBuiltinAddonCatalog {
     + digestAddons
     + workerAddons
     + timeAddons
+    + voiceAddons
+    + homeAssistantAddons
     + dataAddons
     + deferredContainerGatewayAddons
     + documentAddons

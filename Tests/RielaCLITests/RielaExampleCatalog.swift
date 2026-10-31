@@ -1,5 +1,6 @@
 func rielaExampleWorkflowNames() -> [String] {
   [
+    "announcement-deliver",
     "apple-calendar-fetch",
     "apple-clock-alarms-list",
     "apple-gateway-admin",
@@ -77,6 +78,8 @@ func rielaExampleWorkflowNames() -> [String] {
     "telegram-agent-trio-chat",
     "telegram-agent-trio-time-signal",
     "telegram-sdk-trio-chat",
+    "voice-assistant",
+    "voice-routine-runner",
     "worker-only-single-step",
     "workflow-call-live-echo",
     "workflow-call-live-echo-callee",

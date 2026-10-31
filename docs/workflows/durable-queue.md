@@ -33,6 +33,9 @@ not reset its registration or attempt history. Selection chooses an unattempted
 pending request first, then the oldest attempt, registration instant and identity.
 With `limit`, `items` follow the same selection order and `itemsTruncated` indicates the output byte bound stopped the list. `maxAttempts` excludes rows at or above the cap and reports their identities and attempt counts in `exhausted`. Exhausted rows remain pending and are reported on every call until `finish` completes them. Without either option the output remains unchanged.
 
+`pending` also returns the branch label `found` (alongside `always`), so a
+workflow can drain a queue in a loop without another routing node.
+
 Selection is an observation, not a lease: callers retain their existing cycle
 admission or otherwise coordinate worker ownership. `attempted` records an attempt
 without completing it. Only explicit `complete: true` makes `finish` terminal;

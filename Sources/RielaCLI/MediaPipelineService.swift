@@ -28,13 +28,16 @@ struct MediaPipelineService: Sendable {
   var resolverEnvironment: [String: String] = ProcessInfo.processInfo.environment
   private var fileManager: FileManager { .default }
 
-  func run(_ executable: URL, _ arguments: [String], stage: String, deadline: Date?) async throws
-    -> LocalProcessResult {
+  func run(
+    _ executable: URL, _ arguments: [String], stage: String, deadline: Date?,
+    environmentOverlay: [String: String] = [:]
+  ) async throws -> LocalProcessResult {
     do {
       let result = try await runner.run(
         configuration: .init(
           executableURL: executable, arguments: arguments,
-          environment: processEnvironment, workingDirectoryURL: workingDirectory,
+          environment: processEnvironment.merging(environmentOverlay) { _, overlay in overlay },
+          workingDirectoryURL: workingDirectory,
           stdoutCaptureByteLimit: 2_000_000, stderrCaptureByteLimit: 2_000_000), stdin: "",
         deadline: deadline)
       guard result.terminationStatus == 0 else {
@@ -65,6 +68,21 @@ struct MediaPipelineService: Sendable {
       stage,
       "\(name) is missing; macOS: brew install ffmpeg; Linux: apt-get install ffmpeg (or use the media add-on image)"
     )
+  }
+
+  /// Resolves a user-supplied command name: absolute paths are used as-is,
+  /// bare names are searched on the resolved PATH.
+  func command(_ name: String, stage: String) throws -> URL {
+    if name.hasPrefix("/") { return URL(fileURLWithPath: name) }
+    guard !name.isEmpty, !name.contains("/") else {
+      throw MediaPipelineError.invalidOption("command")
+    }
+    if let path = resolvedSearchPath.split(separator: ":")
+      .map({ URL(fileURLWithPath: String($0)).appendingPathComponent(name) })
+      .first(where: { fileManager.isExecutableFile(atPath: $0.path) }) {
+      return path
+    }
+    throw MediaPipelineError.stage(stage, "\(name) is not installed or not on PATH")
   }
 
   var resolvedSearchPath: String {

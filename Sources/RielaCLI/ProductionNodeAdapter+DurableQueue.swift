@@ -21,7 +21,10 @@ extension BuiltinWorkflowAddonResolver {
     let payload = try DurableQueueJournal.transaction(directory: root, name: name, readOnly: config["action"] == .string("pending"), context: context) {
       try DurableQueue.apply(config, state: $0, date: Date())
     }
-    return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true, payload: payload)
+    // `pending` exposes `found` as a branch label so a workflow can drain the queue in a loop.
+    var when = ["always": true]
+    if config["action"] == .string("pending") { when["found"] = payload["found"] == .bool(true) }
+    return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true, when: when, payload: payload)
   }
 }
 

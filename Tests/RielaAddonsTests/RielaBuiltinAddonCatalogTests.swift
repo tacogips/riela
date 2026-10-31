@@ -22,7 +22,11 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
     "riela/youtube-gateway-read",
     "riela/audio-segments",
     "riela/video-frames",
-    "riela/speech-to-text"
+    "riela/speech-to-text",
+    "riela/utterance-match",
+    "riela/home-assistant-read",
+    "riela/home-assistant-write",
+    "riela/text-to-speech"
   ]
 
   func testIssue116BuiltinsHaveVersionOneDescriptors() {

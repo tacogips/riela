@@ -102,8 +102,11 @@ if its service is not running. The video build script discovers Apple Container,
 then Docker, then Podman, and accepts a runtime name and base image as its first
 two arguments.
 
-The downloader add-on and speech-to-text require network egress. Set
-`networkPolicy` to `egress-allowed` for those stages. Audio segmentation and
+The downloader add-on and speech-to-text with a remote provider (`openai`,
+`deepgram`, `elevenlabs`, `google`) require network egress. Set
+`networkPolicy` to `egress-allowed` for those stages. The speech-to-text
+`apple` provider is macOS-only and cannot run in a container, and
+`riela/text-to-speech` runs on the host with no default image. Audio segmentation and
 video frame extraction can use `networkPolicy: "denied"` when their input files
 are already present. The workflow working directory is the only directory
 shared at the same path, so keep each stage's `outputDir` beneath that directory

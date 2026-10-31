@@ -52,6 +52,7 @@ public enum RielaCommand: Equatable, Sendable {
   case memory(MemoryCommand)
   case cache([String])
   case environment([String])
+  case voice([String])
   case kaiba(CLICommandOptions)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
@@ -512,6 +513,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .loop(try parseLoop(route.passthroughArguments))
     case let route as TaskRoute:
       return .task(try parseTask(route.passthroughArguments))
+    case let route as VoiceRoute:
+      return .voice(route.passthroughArguments)
     default:
       return nil
     }

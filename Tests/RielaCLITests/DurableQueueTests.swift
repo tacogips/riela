@@ -102,6 +102,13 @@ final class DurableQueueTests: XCTestCase {
     let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "queue", nodeId: "queue", addon: .init(name: "riela/durable-queue", version: "1", config: value), variables: ["requestValue": request])
     let result = try await resolver.execute(input, context: .init())
     XCTAssertEqual(result.payload["identity"], .string("a"))
+    XCTAssertNil(result.when["found"])
+    var pendingConfig = value
+    pendingConfig["action"] = .string("pending")
+    pendingConfig.removeValue(forKey: "identity"); pendingConfig.removeValue(forKey: "request")
+    let pending = try await resolver.execute(WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "queue", nodeId: "queue",
+      addon: .init(name: "riela/durable-queue", version: "1", config: pendingConfig), variables: [:]), context: .init())
+    XCTAssertEqual(pending.when["found"], true)
     let file = root.appendingPathComponent("queue.json")
     let original = try Data(contentsOf: file)
     let state = try JSONDecoder().decode(JSONObject.self, from: original)

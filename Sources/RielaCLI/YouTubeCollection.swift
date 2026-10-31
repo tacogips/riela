@@ -28,9 +28,13 @@ struct YouTubeCollectionOptions {
   let maxPerChannel: Int
   let excludeLive: Bool
   let maxDurationSeconds: Int?
+  /// Collects the authorized account's likes made at or after this instant.
+  let likedAfter: Date?
+  let maxLiked: Int
 
   init(_ value: JSONObject) throws {
-    guard Set(value.keys).isSubset(of: ["videos", "channels", "publishedAfter", "maxPerChannel", "excludeLive", "maxDurationSeconds"]),
+    guard Set(value.keys).isSubset(of: ["videos", "channels", "publishedAfter", "maxPerChannel", "excludeLive", "maxDurationSeconds",
+      "likedAfter", "maxLiked"]),
       case let .array(videos) = value["videos"] ?? .array([]),
       videos.allSatisfy({ if case let .string(text) = $0 { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }; return false }),
       case let .array(channels) = value["channels"] ?? .array([]),
@@ -52,13 +56,26 @@ struct YouTubeCollectionOptions {
       after = parsed
     default: throw youtubeCollectionInvalid()
     }
-    guard !videos.isEmpty || !channels.isEmpty else { throw youtubeCollectionInvalid() }
+    let likedAfter: Date?
+    switch value["likedAfter"] {
+    case nil: likedAfter = nil
+    case let .string(text)?:
+      guard let parsed = youtubeInstant(text) else { throw youtubeCollectionInvalid() }
+      likedAfter = parsed
+    default: throw youtubeCollectionInvalid()
+    }
+    guard case let .integer(maxLiked) = value["maxLiked"] ?? .integer(50), (1...500).contains(maxLiked) else {
+      throw youtubeCollectionInvalid()
+    }
+    guard !videos.isEmpty || !channels.isEmpty || likedAfter != nil else { throw youtubeCollectionInvalid() }
     self.videos = videos.compactMap { if case let .string(text) = $0 { return text.trimmingCharacters(in: .whitespacesAndNewlines) }; return nil }
     self.channels = channels.compactMap { if case let .string(text) = $0 { return text.trimmingCharacters(in: .whitespacesAndNewlines) }; return nil }
     self.publishedAfter = after
     self.maxPerChannel = Int(maximum)
     self.excludeLive = excludeLive
     self.maxDurationSeconds = maxDurationSeconds
+    self.likedAfter = likedAfter
+    self.maxLiked = Int(maxLiked)
   }
 }
 
@@ -110,6 +127,10 @@ struct YouTubeCollection {
       selected.append((id, "video"))
       if explicitIDs.insert(id).inserted { explicitOrder.append(id) }
     }
+    let liked = try await collectLiked(client: client, requests: &requests, successfulRequests: &successfulRequests,
+      failures: &failures)
+    let likedAt = liked.likedAt
+    selected.append(contentsOf: liked.order.map { ($0, "liked") })
     let after = options.publishedAfter
     var resolvedChannelIDs = Set<String>()
     for target in options.channels {
@@ -200,7 +221,7 @@ struct YouTubeCollection {
     if requests > 0 && successfulRequests == 0 {
       throw AdapterExecutionError(.policyBlocked, "All attempted YouTube requests failed")
     }
-    let channelIDs = orderedIDs.filter { !explicitIDs.contains($0) }
+    let channelIDs = orderedIDs.filter { !explicitIDs.contains($0) && likedAt[$0] == nil }
     let orderedChannelIDs = channelIDs.enumerated().sorted { lhs, rhs in
       let leftDate = records[lhs.element]?["publishedAt"].flatMap { value -> Date? in
         if case let .string(text) = value { return youtubeInstant(text) }; return nil
@@ -210,18 +231,56 @@ struct YouTubeCollection {
       } ?? .distantPast
       return leftDate == rightDate ? lhs.offset < rhs.offset : leftDate > rightDate
     }.map(\.element)
-    return filteredResult(ids: explicitOrder + orderedChannelIDs, records: records, failures: failures, requests: requests)
+    let likedIDs = liked.order.filter { !explicitIDs.contains($0) }
+    return filteredResult(ids: explicitOrder + likedIDs + orderedChannelIDs, records: records, likedAt: likedAt,
+      failures: failures, requests: requests)
     #else
     _ = environment
     throw AdapterExecutionError(.policyBlocked, "youtube-gateway requires macOS")
     #endif
   }
-  private func filteredResult(ids: [String], records: [String: JSONObject], failures: [JSONValue], requests: Int) -> JSONObject {
+  #if canImport(YouTubeGatewayCore)
+  /// Reads the liked-videos playlist, newest like first; an item's date there is the like time.
+  private func collectLiked(client: any YouTubeCollectionClient, requests: inout Int, successfulRequests: inout Int,
+                            failures: inout [JSONValue]) async throws -> (order: [String], likedAt: [String: String]) {
+    guard let likedAfter = options.likedAfter else { return ([], [:]) }
+    var order: [String] = []
+    var likedAt: [String: String] = [:]
+    var pageToken: String?
+    repeat {
+      let page: PlaylistItemsPage
+      do {
+        requests += 1
+        page = try await client.playlistItemsList(.init(playlistID: "LL", maxResults: min(50, options.maxLiked),
+          pageToken: pageToken, parts: ["snippet", "contentDetails"]))
+      } catch {
+        try handleYouTubeRequestError(error)
+        failures.append(youtubeFailure("LL", "liked", youtubeFailureMessage("YouTube liked videos lookup failed", error)))
+        return (order, likedAt)
+      }
+      successfulRequests += 1
+      for item in page.items {
+        guard let text = item.snippet?.publishedAt, let liked = youtubeInstant(text) else { continue }
+        guard liked >= likedAfter else { return (order, likedAt) }
+        guard let id = item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId, likedAt[id] == nil else { continue }
+        likedAt[id] = text
+        order.append(id)
+        if order.count >= options.maxLiked { return (order, likedAt) }
+      }
+      pageToken = page.nextPageToken
+    } while pageToken != nil
+    return (order, likedAt)
+  }
+  #endif
+
+  private func filteredResult(ids: [String], records: [String: JSONObject], likedAt: [String: String],
+                              failures: [JSONValue], requests: Int) -> JSONObject {
     var videos: [JSONValue] = []
     var liveExcluded: [JSONValue] = []
     var durationExcluded: [JSONValue] = []
     for id in ids {
-      guard let record = records[id] else { continue }
+      guard var record = records[id] else { continue }
+      if let liked = likedAt[id] { record["likedAt"] = .string(liked) }
       if options.excludeLive, case let .string(status)? = record["liveBroadcastContent"],
         status == "live" || status == "upcoming" {
         liveExcluded.append(.string(id))

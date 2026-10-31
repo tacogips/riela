@@ -41,6 +41,16 @@ contains its canonical watch URL, metadata, duration in seconds, best available
 thumbnail and `sources`. Duplicates merge their source list. Invalid references
 and API failures appear in `failures`; successful partial metadata is returned.
 
+Optional `likedAfter` (RFC 3339 instant) also collects the authorized account's
+liked videos whose like time is at or after that instant. It reads the account's
+liked-videos playlist, newest like first, and stops at the first older like, so
+earlier likes are never listed. Optional `maxLiked` (1 to 500, default 50) caps
+the number of liked videos. This needs an OAuth token store or access token for
+the account; an API key alone cannot read likes. Liked videos carry `liked` in
+`sources` and their like time in `likedAt`, follow explicit videos in the output,
+and are not filtered by `publishedAt`. `videos`, `channels` or `likedAfter` must
+be supplied.
+
 The gateway is linked on macOS. Linux executions fail with a clear policy
 error. Use the collector inside a private workflow when collected metadata
 needs inspection before publication.

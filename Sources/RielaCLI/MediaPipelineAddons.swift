@@ -412,7 +412,8 @@ extension BuiltinWorkflowAddonResolver {
       throw MediaPipelineStageError.option("provider")
     }
     let model = try c.string(values, "model", "gpt-4o-transcribe")!
-    let language = try c.string(values, "language")
+    // A blank language (for example an unset template value) lets the provider detect it.
+    let language = try c.string(values, "language").flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
     let prompt = try c.string(values, "prompt")
     let attempts = Int(try c.number(values, "maxAttempts", 3, 1...8))
     let timeout = try c.number(values, "timeoutSeconds", 300, 1...3600)

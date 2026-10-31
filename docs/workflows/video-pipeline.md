@@ -182,6 +182,8 @@ it under the workflow working directory or the artifact root.
 `riela/audio-segments`, `riela/video-frames`, and `riela/speech-to-text` read
 only `options.path`: wire `{{input.mediaDownload.path}}` from any producer, or
 provide a plain local path.
+`riela/speech-to-text` sends `options.language` to the provider when it is set;
+a missing or blank value lets the provider detect the spoken language.
 
 ## Plugging in a different downloader
 

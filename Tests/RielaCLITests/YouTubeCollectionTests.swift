@@ -38,7 +38,16 @@ private actor YouTubeFixtureTransport: HTTPTransport {
       }
     case "playlistItems":
       let playlist = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "playlistId" })?.value
+      let pageToken = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pageToken" })?.value
       switch playlist {
+      case "LL" where pageToken == nil:
+        body = #"{"nextPageToken":"page2","items":["# +
+          #"{"snippet":{"publishedAt":"2026-10-31T01:00:00Z"},"contentDetails":{"videoId":"8QxKwYOyUaE","videoPublishedAt":"2026-10-28T15:02:55Z"}},"# +
+          #"{"snippet":{"publishedAt":"2026-10-31T00:30:00Z"},"contentDetails":{"videoId":"8QxKwYOyUaE"}}]}"#
+      case "LL":
+        body = #"{"nextPageToken":"page3","items":["# +
+          #"{"snippet":{"publishedAt":"2026-10-30T23:00:00Z"},"contentDetails":{"videoId":"oldVideo123","videoPublishedAt":"2026-10-01T00:00:00Z"}},"# +
+          #"{"snippet":{"publishedAt":"2026-10-29T00:00:00Z"},"contentDetails":{"videoId":"videoold001"}}]}"#
       case "UUolder": body = #"{"items":[{"contentDetails":{"videoId":"videoold001","videoPublishedAt":"2026-10-20T00:00:00Z"}}]}"#
       case "UUnewer": body = #"{"items":[{"contentDetails":{"videoId":"videonew001","videoPublishedAt":"2026-10-28T00:00:00Z"}}]}"#
       default: body = #"{"items":[{"contentDetails":{"videoId":"8QxKwYOyUaE","videoPublishedAt":"2026-10-28T15:02:55Z"}},{"contentDetails":{"videoId":"oldVideo123","videoPublishedAt":"2026-10-01T00:00:00Z"}}]}"#
@@ -166,6 +175,60 @@ final class YouTubeCollectionTests: XCTestCase {
     XCTAssertEqual(URLComponents(url: urls[1], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "maxResults" })?.value, "5")
     guard let lastURL = urls.last else { return XCTFail("expected videos.list request") }
     XCTAssertTrue(URLComponents(url: lastURL, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "part" })?.value?.contains("liveStreamingDetails") == true)
+  }
+
+  func testLikedOptionValidation() throws {
+    XCTAssertNoThrow(try YouTubeCollectionOptions(["likedAfter": .string("2026-10-30T15:00:00Z")]))
+    XCTAssertNoThrow(try YouTubeCollectionOptions(["likedAfter": .string("2026-10-30T15:00:00Z"), "maxLiked": .integer(500)]))
+    for input: JSONObject in [
+      ["likedAfter": .string("2026-10-30")], ["likedAfter": .null], ["likedAfter": .integer(1)],
+      ["likedAfter": .string("2026-10-30T15:00:00Z"), "maxLiked": .integer(0)],
+      ["likedAfter": .string("2026-10-30T15:00:00Z"), "maxLiked": .integer(501)],
+      ["maxLiked": .integer(10)]
+    ] {
+      XCTAssertThrowsError(try YouTubeCollectionOptions(input)) {
+        XCTAssertEqual(($0 as? AdapterExecutionError)?.code, .invalidInput)
+      }
+    }
+  }
+
+  func testLikedVideosStopAtLikedAfterAcrossPagesAndMergeSources() async throws {
+    let options = try YouTubeCollectionOptions([
+      "channels": .array([.string("@newer")]), "publishedAfter": .string("2026-10-20T00:00:00Z"),
+      "likedAfter": .string("2026-10-30T15:00:00Z")
+    ])
+    let transport = YouTubeFixtureTransport()
+    let collector = YouTubeCollection(options: options) { environment in
+      try YouTubeClient.fromEnvironment(environment, transport: transport)
+    }
+    let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    guard case let .array(videos)? = result["videos"] else { return XCTFail("expected videos") }
+    let records = videos.compactMap { if case let .object(video) = $0 { return video }; return nil }
+    XCTAssertEqual(records.map { $0["id"] }, [.string("8QxKwYOyUaE"), .string("oldVideo123"), .string("videonew001")])
+    XCTAssertEqual(records[0]["likedAt"], .string("2026-10-31T01:00:00Z"))
+    XCTAssertEqual(records[0]["sources"], .array([.string("liked")]))
+    XCTAssertEqual(records[1]["likedAt"], .string("2026-10-30T23:00:00Z"))
+    XCTAssertNil(records[2]["likedAt"])
+    let urls = await transport.recordedURLs()
+    let likedPages = urls.filter {
+      URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "playlistId" })?.value == "LL"
+    }
+    XCTAssertEqual(likedPages.count, 2)
+    XCTAssertEqual(URLComponents(url: likedPages[1], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pageToken" })?.value, "page2")
+  }
+
+  func testMaxLikedCapsCollection() async throws {
+    let options = try YouTubeCollectionOptions(["likedAfter": .string("2026-10-01T00:00:00Z"), "maxLiked": .integer(1)])
+    let transport = YouTubeFixtureTransport()
+    let collector = YouTubeCollection(options: options) { environment in
+      try YouTubeClient.fromEnvironment(environment, transport: transport)
+    }
+    let result = try await collector.collect(environment: ["YOUTUBE_GATEWAY_ACCESS_TOKEN": "fake-token"])
+    guard case let .array(videos)? = result["videos"] else { return XCTFail("expected videos") }
+    XCTAssertEqual(videos.count, 1)
+    let urls = await transport.recordedURLs()
+    XCTAssertEqual(urls.map(\.pathComponents.last), ["playlistItems", "videos"])
+    XCTAssertEqual(URLComponents(url: urls[0], resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "maxResults" })?.value, "1")
   }
 
   func testFilterOptionValidation() throws {

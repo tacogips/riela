@@ -145,6 +145,26 @@ extension MediaPipelineAddonTests {
     XCTAssertEqual(requestTimeouts, [12, 12])
   }
 
+  func testSpeechToTextBlankLanguageLetsProviderDetectIt() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "riela-media-stt-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let audio = root.appendingPathComponent("segment.mp3")
+    try Data("fixture audio bytes".utf8).write(to: audio)
+    let transport = MediaPipelineHTTPFixture()
+    let resolver = BuiltinWorkflowAddonResolver(
+      environment: ["OPENAI_API_KEY": "fake-key"], workingDirectory: root,
+      mediaPipelineHTTP: { request in await transport.send(request) })
+    let output = try await resolver.execute(
+      mediaSpeechInput(config: ["options": .object(["path": .string(audio.path), "language": .string(" ")])]),
+      context: .init())
+    XCTAssertEqual(speechToTextFields(output)?["language"], .null)
+    let bodies = await transport.bodies
+    XCTAssertEqual(bodies.count, 1)
+    XCTAssertFalse(bodies[0].contains("name=\"language\""))
+  }
+
   func testSpeechToTextNamesUnsupportedProviderOption() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "riela-media-provider-\(UUID().uuidString)", isDirectory: true)
@@ -314,9 +334,11 @@ private func speechToTextFields(_ output: AdapterExecutionOutput) -> JSONObject?
 private actor MediaPipelineHTTPFixture {
   private(set) var count = 0
   private(set) var timeouts: [Double] = []
+  private(set) var bodies: [String] = []
   func send(_ request: URLRequest) -> MediaPipelineHTTPResponse {
     count += 1
     timeouts.append(request.timeoutInterval)
+    bodies.append(request.httpBody.flatMap { String(bytes: $0, encoding: .utf8) } ?? "")
     XCTAssertEqual(request.httpMethod, "POST")
     return .init(status: 200, body: Data("{\"text\":\"fixture transcript\"}".utf8), retryAfter: nil)
   }

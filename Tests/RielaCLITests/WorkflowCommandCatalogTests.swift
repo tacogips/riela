@@ -114,13 +114,23 @@ extension WorkflowCommandTests {
     }
     """.write(to: workflowDir.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
+    // Installed user-scope packages and shared add-ons (for example container
+    // add-ons under ~/.riela) join the resolver chain and change the failure
+    // message, so resolve user storage under an empty temporary home.
+    let home = tempDir.appendingPathComponent("home", isDirectory: true)
+    let isolatedEnvironment = [
+      "HOME": home.path,
+      CLIRuntimeEnvironment.workflowHomeEnvironmentName: home.appendingPathComponent(".riela").path
+    ]
 
-    let validate = await RielaCLIApplication().run([
-      "workflow", "validate", "addon-demo",
-      "--workflow-definition-dir", tempDir.path,
-      "--executable",
-      "--output", "json"
-    ])
+    let validate = await CLIRuntimeEnvironment.$overrides.withValue(isolatedEnvironment) {
+      await RielaCLIApplication().run([
+        "workflow", "validate", "addon-demo",
+        "--workflow-definition-dir", tempDir.path,
+        "--executable",
+        "--output", "json"
+      ])
+    }
     XCTAssertEqual(validate.exitCode, .failure)
     XCTAssertTrue(validate.stderr.isEmpty)
     let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: validate.stdout)
@@ -130,12 +140,14 @@ extension WorkflowCommandTests {
     XCTAssertEqual(validation.nodeValidationResults.first?.valid, false)
     XCTAssertTrue(validation.nodeValidationResults.first?.message.contains("require an add-on resolver") == true)
 
-    let run = await RielaCLIApplication().run([
-      "workflow", "run", "addon-demo",
-      "--workflow-definition-dir", tempDir.path,
-      "--session-store", sessionStore.path,
-      "--output", "json"
-    ])
+    let run = await CLIRuntimeEnvironment.$overrides.withValue(isolatedEnvironment) {
+      await RielaCLIApplication().run([
+        "workflow", "run", "addon-demo",
+        "--workflow-definition-dir", tempDir.path,
+        "--session-store", sessionStore.path,
+        "--output", "json"
+      ])
+    }
     XCTAssertEqual(run.exitCode, .failure)
     XCTAssertTrue(run.stderr.isEmpty)
     let failure = try decodeJSON(WorkflowRunFailureResult.self, from: run.stdout)

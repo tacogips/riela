@@ -63,7 +63,10 @@ final class RuntimePayloadReadParityTests: XCTestCase {
               "--session-store", path, "--output", "json"])
           }
           XCTAssertEqual(result.exitCode, .success, "\(command): \(result.stderr)")
-          outputs.append(result.stdout.replacingOccurrences(of: path, with: "<store>"))
+          // `observedAt` is the read's wall clock, so runs that straddle a second
+          // boundary differ there even when the stored representations agree.
+          outputs.append(result.stdout.replacingOccurrences(of: path, with: "<store>")
+            .replacingOccurrences(of: #""observedAt":"[^"]*""#, with: #""observedAt":"<now>""#, options: .regularExpression))
         }
         XCTAssertEqual(outputs[0], outputs[1], command)
         XCTAssertEqual(outputs[0], outputs[2], command)

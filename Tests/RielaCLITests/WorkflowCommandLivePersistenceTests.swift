@@ -45,7 +45,9 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     }
 
     var liveRecord: PersistedCLIWorkflowSession?
-    let deadline = Date().addingTimeInterval(3)
+    // The record persists past completion, so a generous bound only absorbs slow
+    // startup under full-suite load; the loop exits as soon as it appears.
+    let deadline = Date().addingTimeInterval(30)
     while Date() < deadline {
       liveRecord = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().first
       if liveRecord != nil {
@@ -289,9 +291,15 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       ])
     }
 
+    // The command blocks until released, so a generous bound only matters when
+    // the machine is loaded (full-suite runs); the loop exits as soon as the
+    // running evidence is visible. Release on every exit so a failed wait never
+    // leaves the child polling forever.
+    var released = false
+    defer { if !released { try? Data().write(to: releaseFile) } }
     var liveSnapshot: WorkflowRuntimePersistenceSnapshot?
     var liveArtifactSnapshot: WorkflowRuntimePersistenceSnapshot?
-    let deadline = Date().addingTimeInterval(3)
+    let deadline = Date().addingTimeInterval(30)
     while Date() < deadline {
       if let record = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().first {
         liveSnapshot = try? SQLiteWorkflowRuntimePersistenceStore(
@@ -316,6 +324,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     XCTAssertNotNil(liveArtifactSnapshot?.loopEvidence)
 
     try Data().write(to: releaseFile)
+    released = true
     let result = await task.value
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)

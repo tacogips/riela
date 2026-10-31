@@ -123,6 +123,8 @@ final class SpeechProviderAddonTests: XCTestCase {
       (json["audio"] as? [String: Any])?["content"] as? String,
       try Data(contentsOf: audio).base64EncodedString())
     XCTAssertEqual(try SpeechToTextResponse.google(Data("{}".utf8)), "")
+    let japanese = #"{"results":[{"alternatives":[{"transcript":"エアコンを"}]},{"alternatives":[{"transcript":"消して"}]}]}"#
+    XCTAssertEqual(try SpeechToTextResponse.google(Data(japanese.utf8)), "エアコンを消して")
   }
 
   func testGoogleRejectsNonLinearAudio() async throws {

@@ -107,7 +107,12 @@ fingerprint includes the provider. Output stays
 
 `play: true` plays the produced file with `/usr/bin/afplay` (macOS) and waits
 for completion; elsewhere `play` is rejected. Empty text is a no-op success
-(`status: "skipped"`). Output: `{"textToSpeech": {status, provider, path, played}}`.
+(`status: "skipped"`). Optional `notAfter` (ISO-8601 instant, fractional
+seconds and offsets accepted): when now is past it, nothing is synthesized or
+played and the status is `expired`. Output:
+`{"textToSpeech": {status, provider, path, played, cached}}`; `when` carries
+`always` plus exactly one of `spoken`, `skipped`, `expired`. Identical requests
+reuse the produced file unless `cache: false`.
 
 ## `riela/utterance-match`
 

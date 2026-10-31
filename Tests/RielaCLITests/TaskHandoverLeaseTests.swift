@@ -92,7 +92,9 @@ final class TaskHandoverLeaseTests: XCTestCase {
     let lease = try XCTUnwrap(leaseCapture.value)
     let attempt = try XCTUnwrap(harness.store.loadAttempt(id: lease.attemptId))
     let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
-    while try persistence.load(sessionId: attempt.sessionId).session.status != .running, Date() < deadline {
+    // Polling races the dispatch writer creating and initializing the store, so a
+    // transient read failure means "not running yet" rather than a test failure.
+    while (try? persistence.load(sessionId: attempt.sessionId))?.session.status != .running, Date() < deadline {
       try await Task.sleep(for: .milliseconds(10))
     }
     let runtime = TaskHandoverRuntime(
@@ -102,7 +104,10 @@ final class TaskHandoverLeaseTests: XCTestCase {
       options: TaskStoreOptions(
         scope: .project, workingDirectory: harness.repository.path, sessionStore: harness.sessionStore.path
       ),
-      now: { lease.expiresAt.addingTimeInterval(0.001) }
+      // The revived owner keeps heartbeating (every 50 ms, 10 s TTL), so the
+      // stored expiry moves past the lease captured above. Judge from a clock
+      // beyond any expiry a heartbeat can reach during the test.
+      now: { Date().addingTimeInterval(10 + 5) }
     )
     let earlyRuntime = TaskHandoverRuntime(
       located: runtime.located, options: runtime.options, now: { Date() }
@@ -156,7 +161,9 @@ final class TaskHandoverLeaseTests: XCTestCase {
     let lease = try XCTUnwrap(leaseCapture.value)
     let attempt = try XCTUnwrap(harness.store.loadAttempt(id: lease.attemptId))
     let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
-    while try persistence.load(sessionId: attempt.sessionId).session.status != .running, Date() < deadline {
+    // Polling races the dispatch writer creating and initializing the store, so a
+    // transient read failure means "not running yet" rather than a test failure.
+    while (try? persistence.load(sessionId: attempt.sessionId))?.session.status != .running, Date() < deadline {
       try await Task.sleep(for: .milliseconds(10))
     }
     XCTAssertEqual(try persistence.load(sessionId: attempt.sessionId).session.status, .running)

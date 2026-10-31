@@ -170,9 +170,9 @@ rest_command:
     headers: { Authorization: "Bearer !secret riela_api_key" }
     content_type: application/json
     payload: >-
-      {"query":"mutation($i:ExecuteWorkflowInput!){executeWorkflow(input:$i){sessionId}}",
+      {"query":"mutation($i:ExecuteWorkflowInput!){executeWorkflow(input:$i){sessionId status}}",
        "variables":{"i":{"workflowName":"announcement-deliver",
-       "input":{"room":"{{ room }}","entityId":"{{ entity }}"}}}}
+       "runtimeVariables":{"room":"{{ room }}","entityId":"{{ entity }}"}}}}
 ```
 
 HA keeps owning sensor timing (`for: "00:05:00"` absence) so simple automations

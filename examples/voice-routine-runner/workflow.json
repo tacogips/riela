@@ -1,0 +1,191 @@
+{
+  "workflowId": "voice-routine-runner",
+  "description": "Cron target for presence-gated voice routines: read the routine's delivery policy from its origin, produce the announcement, check the room's presence sensor in Home Assistant, then speak it when someone is there or defer it to the room's announcement queue (riela/durable-queue) for announcement-deliver to speak on the next entry.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 300000
+  },
+  "entryStepId": "get-routine",
+  "nodes": [
+    {
+      "id": "get-routine",
+      "addon": {
+        "name": "riela/routine-get",
+        "version": "1",
+        "inputs": {
+          "routineId": "{{workflowInput.routineId}}"
+        }
+      }
+    },
+    {
+      "id": "run-task",
+      "nodeFile": "nodes/node-run-task.json"
+    },
+    {
+      "id": "presence-defer",
+      "addon": {
+        "name": "riela/home-assistant-read",
+        "version": "1",
+        "config": {
+          "options": {
+            "operation": "state",
+            "entityId": "{{inbox.latest.output.payload.presenceEntity}}"
+          },
+          "context": "{{inbox.latest.output.payload}}"
+        },
+        "env": {
+          "HOME_ASSISTANT_URL": {
+            "fromEnv": "HOME_ASSISTANT_URL",
+            "required": true
+          },
+          "HOME_ASSISTANT_TOKEN": {
+            "fromEnv": "HOME_ASSISTANT_TOKEN",
+            "required": true
+          }
+        }
+      }
+    },
+    {
+      "id": "presence-skip",
+      "addon": {
+        "name": "riela/home-assistant-read",
+        "version": "1",
+        "config": {
+          "options": {
+            "operation": "state",
+            "entityId": "{{inbox.latest.output.payload.presenceEntity}}"
+          },
+          "context": "{{inbox.latest.output.payload}}"
+        },
+        "env": {
+          "HOME_ASSISTANT_URL": {
+            "fromEnv": "HOME_ASSISTANT_URL",
+            "required": true
+          },
+          "HOME_ASSISTANT_TOKEN": {
+            "fromEnv": "HOME_ASSISTANT_TOKEN",
+            "required": true
+          }
+        }
+      }
+    },
+    {
+      "id": "speak",
+      "addon": {
+        "name": "riela/text-to-speech",
+        "version": "1",
+        "config": {
+          "options": {
+            "provider": "apple",
+            "text": "{{inbox.latest.output.payload.context.announcement}}",
+            "voice": "Kyoko",
+            "play": true
+          }
+        }
+      }
+    },
+    {
+      "id": "speak-direct",
+      "addon": {
+        "name": "riela/text-to-speech",
+        "version": "1",
+        "config": {
+          "options": {
+            "provider": "apple",
+            "text": "{{inbox.latest.output.payload.announcement}}",
+            "voice": "Kyoko",
+            "play": true
+          }
+        }
+      }
+    },
+    {
+      "id": "defer",
+      "addon": {
+        "name": "riela/durable-queue",
+        "version": "1",
+        "config": {
+          "storage": {
+            "directory": ".riela/voice/announcements",
+            "name": "{{inbox.latest.output.payload.context.room}}"
+          },
+          "action": "admit",
+          "identity": "{{workflowInput.routineId}}:{{workflowInput.scheduledAt}}",
+          "request": "{{inbox.latest.output.payload.context}}"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "get-routine",
+      "nodeId": "get-routine",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "run-task"
+        }
+      ]
+    },
+    {
+      "id": "run-task",
+      "nodeId": "run-task",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "presence-defer",
+          "label": "defer_when_absent"
+        },
+        {
+          "toStepId": "presence-skip",
+          "label": "skip_when_absent"
+        },
+        {
+          "toStepId": "speak-direct",
+          "label": "always_speak"
+        }
+      ]
+    },
+    {
+      "id": "presence-defer",
+      "nodeId": "presence-defer",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "speak",
+          "label": "state_on"
+        },
+        {
+          "toStepId": "defer",
+          "label": "!(state_on)"
+        }
+      ]
+    },
+    {
+      "id": "presence-skip",
+      "nodeId": "presence-skip",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "speak",
+          "label": "state_on"
+        }
+      ]
+    },
+    {
+      "id": "speak",
+      "nodeId": "speak",
+      "role": "worker"
+    },
+    {
+      "id": "speak-direct",
+      "nodeId": "speak-direct",
+      "role": "worker"
+    },
+    {
+      "id": "defer",
+      "nodeId": "defer",
+      "role": "worker"
+    }
+  ]
+}

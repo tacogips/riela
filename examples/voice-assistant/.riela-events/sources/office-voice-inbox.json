@@ -1,0 +1,11 @@
+{
+  "id": "office-voice-inbox",
+  "kind": "file-change",
+  "directory": "../../inbox/office",
+  "changeTypes": ["create"],
+  "recursive": false,
+  "stabilityWindowMs": 0,
+  "filters": {
+    "suffixes": [".wav"]
+  }
+}

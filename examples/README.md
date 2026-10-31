@@ -40,3 +40,14 @@ This document was split into topic files so each tracked text file stays below 1
 - [Workflow Composition and Coding Examples](catalog/workflow-composition-and-coding.md)
 - [Showcase and Utility Examples](catalog/showcase-and-utility-examples.md)
 - `definition-store-self-improvement` demonstrates a bounded previous-run digest and audited prompt update through the builtin improvement node.
+
+## Voice assistant (issue #185)
+
+- `voice-assistant/` — `riela voice listen` WAV inbox → `file-change` source →
+  multi-vendor `riela/speech-to-text` → `riela/utterance-match` wake phrase and
+  intent table → allowlisted `riela/home-assistant-write` fast path or an agent
+  that answers / registers a routine → `riela/text-to-speech`.
+- `voice-routine-runner/` — presence-gated routine tick: speak, defer to a
+  per-room `riela/durable-queue`, or skip.
+- `announcement-deliver/` — Home Assistant presence trigger drains a room's
+  deferred announcements, skipping expired ones.

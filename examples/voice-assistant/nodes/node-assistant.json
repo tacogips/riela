@@ -1,0 +1,37 @@
+{
+  "id": "assistant",
+  "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
+  "model": "claude-haiku-4-5",
+  "modelFreeze": false,
+  "description": "Answer an addressed spoken request in one or two short spoken Japanese sentences, or turn a scheduling request into a presence-gated routine definition.",
+  "promptTemplateFile": "prompts/assistant.md",
+  "variables": {},
+  "output": {
+    "description": "Return {\"when\": {\"answer\": bool, \"schedule\": bool}, \"payload\": {...}} with exactly one label true.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "reply": { "type": "string", "minLength": 1 },
+        "routine": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "task": { "type": "string" },
+            "schedule": { "type": "string" },
+            "timezone": { "type": "string" },
+            "completionCriteria": { "type": "string" }
+          }
+        },
+        "origin": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "delivery": { "type": "object" }
+          }
+        }
+      },
+      "required": ["reply", "routine", "origin"]
+    }
+  }
+}

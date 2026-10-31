@@ -1,0 +1,5 @@
+{
+  "transcribe": {"provider":"scenario-mock","when":{"always":true},"payload":{"speechToText":{"status":"completed","provider":"openai","model":"gpt-4o-transcribe","language":"ja","text":"ねえリエラ、明日の東京の天気は？","path":"/tmp/voice/office/20261031T000000Z-a1.wav","cached":false}}},
+  "assistant": {"provider":"scenario-mock","model":"claude-haiku-4-5","when":{"always":true,"answer":true,"schedule":false},"payload":{"reply":"明日の東京は晴れの予報です。","routine":{},"origin":{}}},
+  "speak-reply": {"provider":"scenario-mock","when":{"always":true,"spoken":true},"payload":{"textToSpeech":{"status":"spoken","provider":"apple","path":"/tmp/voice/out/a.aiff","played":true,"cached":false}}}
+}

@@ -1,0 +1,79 @@
+{
+  "workflowId": "announcement-deliver",
+  "description": "Speak the deferred announcements of one room when Home Assistant reports someone entered it (HA rest_command → riela serve executeWorkflow with runtimeVariables {room}). Drains the room's riela/durable-queue one item at a time: unexpired items are spoken, expired ones are closed without speaking.",
+  "defaults": {
+    "maxLoopIterations": 20,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "next",
+  "nodes": [
+    {
+      "id": "next",
+      "addon": {
+        "name": "riela/durable-queue",
+        "version": "1",
+        "config": {
+          "storage": { "directory": ".riela/voice/announcements", "name": "{{workflowInput.room}}" },
+          "action": "pending"
+        }
+      }
+    },
+    {
+      "id": "speak",
+      "addon": {
+        "name": "riela/text-to-speech",
+        "version": "1",
+        "config": {
+          "options": {
+            "provider": "apple",
+            "text": "{{inbox.latest.output.payload.request.announcement}}",
+            "notAfter": "{{inbox.latest.output.payload.request.notAfter}}",
+            "voice": "Kyoko",
+            "play": true
+          },
+          "context": { "identity": "{{inbox.latest.output.payload.identity}}" }
+        }
+      }
+    },
+    {
+      "id": "finish-spoken",
+      "addon": {
+        "name": "riela/durable-queue",
+        "version": "1",
+        "config": {
+          "storage": { "directory": ".riela/voice/announcements", "name": "{{workflowInput.room}}" },
+          "action": "finish",
+          "identity": "{{inbox.latest.output.payload.context.identity}}",
+          "complete": true,
+          "status": "spoken"
+        }
+      }
+    },
+    {
+      "id": "finish-expired",
+      "addon": {
+        "name": "riela/durable-queue",
+        "version": "1",
+        "config": {
+          "storage": { "directory": ".riela/voice/announcements", "name": "{{workflowInput.room}}" },
+          "action": "finish",
+          "identity": "{{inbox.latest.output.payload.context.identity}}",
+          "complete": true,
+          "status": "expired"
+        }
+      }
+    }
+  ],
+  "steps": [
+    { "id": "next", "nodeId": "next", "role": "worker", "transitions": [{ "toStepId": "speak", "label": "found" }] },
+    {
+      "id": "speak", "nodeId": "speak", "role": "worker",
+      "transitions": [
+        { "toStepId": "finish-expired", "label": "expired" },
+        { "toStepId": "finish-spoken", "label": "!(expired)" }
+      ]
+    },
+    { "id": "finish-spoken", "nodeId": "finish-spoken", "role": "worker", "transitions": [{ "toStepId": "next" }] },
+    { "id": "finish-expired", "nodeId": "finish-expired", "role": "worker", "transitions": [{ "toStepId": "next" }] }
+  ]
+}

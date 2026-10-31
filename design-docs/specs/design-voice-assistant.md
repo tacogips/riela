@@ -186,27 +186,39 @@ keep working while riela or the LLM is down.
 
 ## Presence-gated routines and deferred announcements
 
-- `voice-routine-manager` (voice version of `routine-chat-manager`) parses an
-  utterance into `name/task/schedule/timezone/completionCriteria` plus
-  `delivery {room, presenceEntity, whenAbsent: defer|skip|speak, deferTtlMinutes}`,
-  reads the summary back with `riela/text-to-speech`, and on a confirmed reply
-  calls `riela/routine-create` with `origin: {delivery}` and
-  `workflowName: voice-routine-runner`.
-- `voice-routine-runner` (cron target): agent node runs the task →
-  `riela/routine-get` reads `origin.delivery` → `riela/home-assistant-read`
-  presence state → speak, or `riela/durable-queue admit` (identity
-  `<routineId>:<tick>`, request `{room, text, expiresAt}`), or skip.
-- `announcement-deliver` (HA presence-on target): `durable-queue pending` →
-  speak unexpired items for the room → `finish complete:true status:spoken`;
-  expired → `finish status:expired`.
+- Routine registration lives in `voice-assistant` itself: the freeform agent
+  returns the `schedule` label with `routine {name, task, schedule, timezone,
+  completionCriteria}` and `origin {source: "voice", delivery {room,
+  presenceEntity, whenAbsent: defer|skip|speak, deferTtlMinutes}}`, then
+  `riela/routine-create` (`workflowName: voice-routine-runner`) and a spoken
+  confirmation. The first version confirms after creation (single turn); a
+  two-turn "read back, then create on yes" flow is a follow-up because it needs
+  cross-session pending state.
+- `voice-routine-runner` (cron target): `riela/routine-get` → agent produces
+  `announcement`, copies `room`/`presenceEntity`, computes `notAfter` and routes
+  with `defer_when_absent` / `skip_when_absent` / `always_speak` →
+  `riela/home-assistant-read` (`state_on` label) → speak, or
+  `riela/durable-queue admit` into `.riela/voice/announcements/<room>.json`
+  (identity `<routineId>:<scheduledAt>`, request = the agent payload).
+- `announcement-deliver` (HA presence-on target): `durable-queue pending`
+  (new `found` branch label) → `riela/text-to-speech` with `notAfter` →
+  `finish status:spoken` or `status:expired` → loop until `found` is false.
+
+Note: static output-contract validation treats every add-on as forwarding its
+input, so a field an add-on adds (for example `context` from
+`home-assistant-read`) and that a later step references must also be declared
+(optional) in the upstream agent's `output.jsonSchema`.
 
 ## Examples
 
-- `examples/voice-assistant` — file-change source + binding, STT (`openai`
-  default, vendor switchable), utterance-match, HA fast path, LLM fallback, TTS.
-  Mock scenario covers wake / no-wake / intent / freeform.
-- `examples/voice-routine` — `voice-routine-runner` + `announcement-deliver`
-  with mock scenarios for present / absent-defer / expired.
+- `examples/voice-assistant` — file-change source + binding
+  (`.riela-events/`), STT (`openai` default, vendor switchable),
+  utterance-match, HA fast path, agent fallback (answer / schedule), TTS. Mock
+  scenarios: intent, freeform, schedule, no-wake.
+- `examples/voice-routine-runner` — present (default mock) and absent-defer
+  (`mock-scenario-absent.json`, writes a real queue row).
+- `examples/announcement-deliver` — fully mocked drain loop; expired items
+  verified unmocked against the real TTS add-on.
 
 ## Testing
 

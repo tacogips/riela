@@ -61,7 +61,8 @@ riela voice listen --inbox .riela/voice/inbox/office \
   synthetic buffers on any platform.
 - Each utterance is written to `<inbox>/.tmp-<id>.wav` and renamed to
   `<inbox>/<UTC timestamp>-<id>.wav`; the dot-prefixed temp name is ignored by
-  file-change sources (`*.wav` pattern), so the watcher never sees partial files.
+  file-change sources (`filters.suffixes: [".wav"]`, hidden files skipped), so the
+  watcher never sees partial files.
 - `--retain-seconds` deletes old WAVs in the inbox (audio is not kept as a
   record; transcripts are kept in the session like any node output).
 - Microphone permission: the CLI's embedded `Resources/RielaInfo.plist` gains

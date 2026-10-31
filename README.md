@@ -39,7 +39,10 @@ riela workflow run <workflow> --variables '{"task": "..."}'
   package add-on) feeds `riela/audio-segments`, `riela/video-frames` and
   `riela/speech-to-text`, which split extraction, frame sampling and
   transcription into reusable stages; see
-  [the video pipeline guide](docs/workflows/video-pipeline.md).
+  [the video pipeline guide](docs/workflows/video-pipeline.md). Speech-to-text
+  and `riela/text-to-speech` switch between OpenAI, Deepgram, ElevenLabs,
+  Google, VOICEVOX, Apple on-device speech and local commands; see
+  [speech add-ons](docs/workflows/speech.md).
 - **Edit, share and scale.** Edit workflows as graphs in the app, publish and
   install them as packages, run recurring routines, and spread steps across
   distributed workers.

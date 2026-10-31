@@ -184,6 +184,10 @@ only `options.path`: wire `{{input.mediaDownload.path}}` from any producer, or
 provide a plain local path.
 `riela/speech-to-text` sends `options.language` to the provider when it is set;
 a missing or blank value lets the provider detect the spoken language.
+It uses OpenAI (or an OpenAI-compatible server) by default; set
+`options.provider` to `deepgram`, `elevenlabs`, `google`, `apple` or `command`
+to use another vendor or a local recognizer. See
+[speech add-ons](speech.md) for each provider's options and `addon.env` keys.
 
 ## Plugging in a different downloader
 

@@ -25,7 +25,8 @@ final class RielaBuiltinAddonCatalogTests: XCTestCase {
     "riela/speech-to-text",
     "riela/utterance-match",
     "riela/home-assistant-read",
-    "riela/home-assistant-write"
+    "riela/home-assistant-write",
+    "riela/text-to-speech"
   ]
 
   func testIssue116BuiltinsHaveVersionOneDescriptors() {

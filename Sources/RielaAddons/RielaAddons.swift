@@ -125,6 +125,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/audio-segments", version: "1"),
     .init(name: "riela/video-frames", version: "1"),
     .init(name: "riela/speech-to-text", version: "1"),
+    .init(name: "riela/text-to-speech", version: "1"),
     .init(name: "riela/json-route", version: "1"),
     .init(name: "riela/page-state", version: "1"),
     .init(name: "riela/collection-checkpoint", version: "1"),

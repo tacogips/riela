@@ -17,6 +17,8 @@
   <string>Riela needs calendar access so workflow steps can read the calendar data they request.</string>
   <key>NSRemindersFullAccessUsageDescription</key>
   <string>Riela needs full reminders access so workflow steps can read and manage the reminders they request.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Riela needs speech recognition access so workflow steps can transcribe audio files with the on-device Apple speech recognizer.</string>
   <key>NSRemindersUsageDescription</key>
   <string>Riela needs reminders access so workflow steps can read the reminders they request.</string>
 </dict>

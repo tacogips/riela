@@ -33,6 +33,7 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.audioSegmentsRegistration,
     BuiltinWorkflowAddonResolver.videoFramesRegistration,
     BuiltinWorkflowAddonResolver.speechToTextRegistration,
+    BuiltinWorkflowAddonResolver.textToSpeechRegistration,
     BuiltinWorkflowAddonResolver.jsonRouteRegistration,
     BuiltinWorkflowAddonResolver.pageStateRegistration,
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,

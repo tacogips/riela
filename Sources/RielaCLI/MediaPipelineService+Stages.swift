@@ -24,74 +24,66 @@ extension MediaPipelineService {
     _ file: URL, options: MediaPipelineSTTOptions, apiKey: String, baseURL: String,
     deadline: Date?, timeoutSeconds: Double
   ) async throws -> String {
-    let fileSize = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue
-    guard let fileSize, fileSize <= 25_000_000,
-      let fileData = try? Data(contentsOf: file), fileData.count <= 25_000_000 else {
-      throw MediaPipelineError.stage("stt", "audio file exceeds the 25 MB upload limit")
-    }
-    let boundary = "RielaBoundary-\(UUID().uuidString)"
-    var body = Data()
-    func field(_ name: String, _ value: String) {
-      body.append(
-        Data(
-          "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n"
-            .utf8))
-    }
-    field("model", options.model)
-    field("response_format", "json")
-    if let language = options.language { field("language", language) }
-    if let prompt = options.prompt { field("prompt", prompt) }
-    body.append(
-      Data(
-        "--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.mp3\"\r\nContent-Type: audio/mpeg\r\n\r\n"
-          .utf8))
-    body.append(fileData)
-    body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+    let fileData = try SpeechAudioUpload.read(file)
+    let upload = SpeechAudioUpload(file)
+    var form = MultipartFormBody()
+    form.field("model", options.model)
+    form.field("response_format", "json")
+    if let language = options.language { form.field("language", language) }
+    if let prompt = options.prompt { form.field("prompt", prompt) }
+    form.file("file", filename: upload.filename, contentType: upload.contentType, data: fileData)
     let normalizedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
       .replacingOccurrences(of: "/v1", with: "", options: [.backwards, .anchored])
     guard let endpoint = URL(string: normalizedBase + "/v1/audio/transcriptions") else {
       throw MediaPipelineError.stage("stt", "invalid OpenAI base URL")
     }
+    var request = URLRequest(url: endpoint)
+    request.timeoutInterval = timeoutSeconds
+    request.httpMethod = "POST"
+    request.httpBody = form.finalized()
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+    let body = try await send(
+      request, maxAttempts: options.maxAttempts, stage: "stt", label: "transcription service",
+      deadline: deadline)
+    guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+      let text = json["text"] as? String
+    else {
+      throw MediaPipelineError.stage("stt", "invalid transcription response")
+    }
+    return text
+  }
+
+  /// Sends a request with bounded retries on 429/5xx and transport failures,
+  /// returning the body of the first 2xx response.
+  func send(
+    _ request: URLRequest, maxAttempts: Int, stage: String, label: String, deadline: Date?
+  ) async throws -> Data {
     var attempt = 0
-    while attempt < options.maxAttempts {
+    while attempt < maxAttempts {
       if let deadline, Date() >= deadline {
-        throw MediaPipelineError.stage("stt", "execution deadline exceeded")
+        throw MediaPipelineError.stage(stage, "execution deadline exceeded")
       }
       attempt += 1
-      var request = URLRequest(url: endpoint)
-      request.timeoutInterval = timeoutSeconds
-      request.httpMethod = "POST"
-      request.httpBody = body
-      request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-      request.setValue(
-        "multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
       do {
         let response = try await http(request)
-        if response.status == 200 {
-          guard let json = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
-            let text = json["text"] as? String
-          else {
-            throw MediaPipelineError.stage("stt", "invalid transcription response")
-          }
-          return text
-        }
+        if (200..<300).contains(response.status) { return response.body }
         guard response.status == 429 || (500..<600).contains(response.status),
-          attempt < options.maxAttempts
+          attempt < maxAttempts
         else {
-          throw MediaPipelineError.stage(
-            "stt", "transcription service returned HTTP \(response.status)")
+          throw MediaPipelineError.stage(stage, "\(label) returned HTTP \(response.status)")
         }
         try await Task.sleep(
           for: .seconds(min(max(response.retryAfter ?? pow(2, Double(attempt - 1)), 0), 60)))
       } catch is CancellationError { throw CancellationError() } catch let error
         as MediaPipelineError { throw error } catch {
-        guard attempt < options.maxAttempts else {
-          throw MediaPipelineError.stage("stt", "transcription request failed")
+        guard attempt < maxAttempts else {
+          throw MediaPipelineError.stage(stage, "\(label) request failed")
         }
         try await Task.sleep(for: .seconds(pow(2, Double(attempt - 1))))
       }
     }
-    throw MediaPipelineError.stage("stt", "transcription attempts exhausted")
+    throw MediaPipelineError.stage(stage, "\(label) attempts exhausted")
   }
 
   func extractFrames(

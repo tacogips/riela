@@ -745,18 +745,25 @@ Optional inline step fields:
 - `description: string`
 - `role: "manager" | "worker"`
 - `promptVariant: string`
-- `timeoutMs: number`
+- `timeoutMs: number` (per-attempt adapter timeout; unchanged)
 - `stallTimeoutMs: number`
+- `deadlineMs: integer` (add-on steps only; whole-step deadline anchored at step ready time, covering waits, attempts and backoff)
+- `retry: { maxAttempts, initialDelayMs?, multiplier?, maxDelayMs?, jitter? }` (add-on steps only; requires `deadlineMs`)
 - `failurePolicy: "fail" | "advisory"`
 - `sessionPolicy`
 - `transitions`
+
+`deadlineMs` and `retry` semantics, defaults, validation and diagnostics are
+specified in [design-step-deadline-and-retry-policy.md](./design-step-deadline-and-retry-policy.md).
+When neither field is authored, step execution is unchanged.
 
 Validation rules:
 
 - `id` values are unique within the workflow
 - a file-backed authored step contains `id` and `stepFile`; an inline authored step contains `id`, `nodeId`, and optional inline fields
-- only `id`, `stepFile`, `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `stallTimeoutMs`, `failurePolicy`, `sessionPolicy`, `transitions`, and `loop` are accepted on authored step entries
-- when `stepFile` is used in source authoring, the inline step fields `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `stallTimeoutMs`, `failurePolicy`, `sessionPolicy`, `transitions`, and `loop` must not be authored on the same entry; loading resolves the file into a complete step before validation
+- only `id`, `stepFile`, `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `stallTimeoutMs`, `deadlineMs`, `retry`, `failurePolicy`, `sessionPolicy`, `placement`, `transitions`, and `loop` are accepted on authored step entries
+- when `stepFile` is used in source authoring, the inline step fields `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `stallTimeoutMs`, `deadlineMs`, `retry`, `failurePolicy`, `sessionPolicy`, `transitions`, and `loop` must not be authored on the same entry; loading resolves the file into a complete step before validation
+- `deadlineMs`/`retry` validation (ranges, `retry` requires `deadlineMs`, step `timeoutMs <= deadlineMs`, add-on steps only, no `config.writeRetry` with `retry`, no `placement`) follows design-step-deadline-and-retry-policy.md §6
 - when `stepFile` is used, the loaded step definition must resolve to the same `id`
 - `nodeId` must resolve through `workflow.json.nodes[]`
 - when `role` is omitted, the step named by `managerStepId` is treated as the manager execution site and all other steps default to worker execution sites

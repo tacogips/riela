@@ -1,6 +1,6 @@
 # Instance control 03: honour persisted web-server isEnabled at App launch
 
-**Status**: Implementation verified; review pending
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-03-webserver-autostart
 **dependsOn**: none (wave 1)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md §2 row 1, D2; design-docs/specs/design-rielaapp-web-server-lifecycle-packaging.md §2.2

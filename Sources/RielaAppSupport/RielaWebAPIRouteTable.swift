@@ -100,6 +100,7 @@ public enum RielaWebAPIRouteTable {
   public static let instanceEnvironmentMarker = #"parts[4] == "environment""#
 
   public static let desktopOnly: [RielaWebAPIRoute] = [
+    .init(method: "POST", path: "/api/v1/instances/{identity}/reload", owner: "Sources/RielaApp/RielaAppInstanceReloadAPI.swift", ownerMarker: #"parts[4] == "reload""#),
     .init(method: "POST", path: "/api/v1/instances/{identity}/runs",
           owner: "Sources/RielaApp/RielaAppConfiguredRunAPI.swift", ownerMarker: #"parts[4] == "runs""#),
     .init(method: "GET", path: "/api/v1/settings/workers", owner: desktopWorkerSettings),

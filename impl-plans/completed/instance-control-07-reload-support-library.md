@@ -1,6 +1,6 @@
 # Instance control 07: RielaCLI reload support (validation, head-aware import, installed fingerprint)
 
-**Status**: Planned
+**Status**: Completed; accepted by Step 6 test-integrity and Step 7 adversarial review (2026-11-10, Amendment A3). Combined-tree re-verification after the rebase onto main is a finalization step
 **planId**: instance-control-07-reload-support-library
 **dependsOn**: instance-control-01-contracts (`RielaAppInstanceReloadFingerprint`, `RielaAppInstanceStartRecord`, `RielaAppInstanceReloadError`/`Code`, `RielaAppInstanceReloadResponse.Definition`); instance-control-05-child-admission-gate (resource ordering only: lane A `.build` ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 3, 4, 5 (fingerprint source), 7.1 (head-aware import, DR-002); §5
@@ -134,10 +134,10 @@ public static func installedTriggerDefaultsFingerprint(
 
 ## Completion criteria
 
-- [ ] All three functions are implemented with these exact names.
-- [ ] All tests pass.
-- [ ] Lint exits 0.
-- [ ] Progress log written.
+- [x] All three functions are implemented with these exact names.
+- [x] All tests pass.
+- [x] Lint exits 0.
+- [x] Progress log written.
 
 
 ## Amendment A3 (operator, after wave-006/007 blockers; supersedes conflicting text above)
@@ -217,3 +217,7 @@ Added assertions for matching and mismatched IDs, valid and unknown-node patches
 Replaced the injected stale-head error with an actual SQLite `WorkflowDefinitionStore.commit` using an outdated version, invoked through the library retry seam. The test verifies `definition_conflict`, unchanged competing head and unchanged audit count. `continuation2/test-final.log` exits 0: 16 tests, 0 failures. `continuation2/lint-final.log` exits 0 with a large-tuple warning; `continuation2/strict-final.log` exits 1 for the exact tuple required by this plan. A typealias remains subject to the same rule. Resolving this requires an approved plan contract amendment to use a named result or an explicit exception to the no-suppression rule.
 
 The actual service-level concurrent-seed interleaving requires a hook between `WorkflowDefinitionService` head lookup and commit; that service is outside this plan's write scope and its contract is explicitly unchanged. Existing retry coverage uses a real differing head, not that interleaving. A scope/contract amendment or accepted equivalent test strategy is needed. Completion criteria remain unchecked.
+
+### A3 implementation continuation
+
+Replaced the tuple with public `InstanceReloadCandidateValidation`, retaining the same fields and validation behavior. Added explicit nonempty fingerprint assertions; existing retry and real SQLite stale-commit coverage satisfy the accepted A3 equivalent race strategy. The focused test command exited 0 with 16 tests and 0 failures (`tmp/instance-control/instance-control-07-reload-support-library/test.log`). Normal and strict scoped lint both exited 0 (`lint.log`, `strict.log`); the NUL-manifest strict no-cache gate also exited 0 (`strict-manifest.log`), all under the same evidence directory. Formal review and downstream route integration remain pending.

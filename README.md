@@ -83,6 +83,8 @@ control-plane commands, direct `call-step`/`workflow-call` execution,
 task-backed Work Runtime dispatch, and reviewed `workflow self-improve`
 mutation flows.
 
+For resident RielaApp instances, see the [instance control guide](docs/app-instance-control.md) for `instance reload`, `instance run`, and `instance executions`.
+
 Client command routing, subcommand validation, positional arguments, and typed
 option parsing use Apple's `swift-argument-parser`. Existing command names,
 aliases, defaults, and output contracts remain stable behind the typed routes.

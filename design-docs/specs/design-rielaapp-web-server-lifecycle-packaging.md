@@ -62,6 +62,7 @@ Start publishes `Running` only after the socket is bound and the asset root pass
 - Valid ports are `1...65535`. Bind failures are surfaced without rewriting the setting.
 - `Start` persists `isEnabled: true` before attempting startup so an intended autostart remains visible after a failed launch. `Stop` persists `false` before stopping.
 - On app launch, `isEnabled: true` triggers startup after profile/store initialization.
+  Implemented 2026-11-10 by design-instance-reload-run-cli.md D2 (previously only `--start-web-server` was honoured).
 - A running port change is transactional: bind and validate the replacement first, persist the new port, publish the new endpoint, then stop the old listener. Failure leaves the old listener and old persisted port intact.
 
 ### 2.3 Browser journey

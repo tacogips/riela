@@ -1,6 +1,6 @@
 # Instance control 10: documentation
 
-**Status**: Planned
+**Status**: Completed; accepted by Step 6 test-integrity and Step 7 adversarial review (2026-11-10). Combined-tree re-verification after the rebase onto main is a finalization step
 **planId**: instance-control-10-docs
 **dependsOn**: instance-control-04-cli-commands, instance-control-09-app-reload-route (so flags and codes are final)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D7, D2 rollout, D5, §6
@@ -57,14 +57,21 @@ Operators and agents need one page that explains how to control resident RielaAp
 
 ## Completion criteria
 
-- [ ] The doc exists and is accurate against the code.
-- [ ] Pointers have been added.
-- [ ] Verification recorded.
+- [x] The doc exists and is accurate against the code.
+- [x] Pointers have been added.
+- [x] Verification recorded.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+### Session: 2026-11-11 — implementation
+- Added the operator guide, README and skill pointers, and the lifecycle §2.2 note; skill frontmatter is unchanged.
+- Grep exit 0 with all three files present: `tmp/instance-control/instance-control-10-docs/grep.log` and `grep-check.log`.
+- Compared `RielaAppInstanceReloadCode` raw values against the guide table: 15 contract codes, 15 table rows, no missing or extra codes; exit 0, `tmp/instance-control/instance-control-10-docs/code-cross-check.log`.
+- `arch -arm64 /bin/zsh -lc` with isolated HOME and RIELA_APP_ROOT, `swift test --filter SurfaceParitySkillTests`: exit 0, 7 tests, 0 failures; `tmp/instance-control/instance-control-10-docs/skill-test.log`.
+- `git diff --check`: exit 0; `tmp/instance-control/instance-control-10-docs/diff-check.log`. Formal integrity and adversarial review remain downstream.
 
 ## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
 

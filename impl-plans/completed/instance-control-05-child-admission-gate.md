@@ -1,6 +1,6 @@
 # Instance control 05: events-serve admission gate and control frames (child side)
 
-**Status**: Planned
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-05-child-admission-gate
 **dependsOn**: instance-control-01-contracts (`WorkflowServeAdmissionFrame`, `WorkflowServeAdmissionAcknowledgement`, `WorkflowServeAdmissionState`, `WorkflowServeAdmissionWire`); instance-control-04-cli-commands (resource ordering only: lane A `.build` ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 step 6 (child gate, wire contract, closed-gate behaviour, lease), step 8.1; §5 gate tests; §6

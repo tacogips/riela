@@ -4,6 +4,18 @@ import RielaCore
 import RielaEvents
 import RielaWorkflowRegistry
 
+public struct InstanceReloadCandidateValidation: Sendable {
+  public let bundle: ResolvedWorkflowBundle
+  public let triggerDefaultsFingerprint: String
+  public let eventRootDigest: String
+
+  public init(bundle: ResolvedWorkflowBundle, triggerDefaultsFingerprint: String, eventRootDigest: String) {
+    self.bundle = bundle
+    self.triggerDefaultsFingerprint = triggerDefaultsFingerprint
+    self.eventRootDigest = eventRootDigest
+  }
+}
+
 public enum InstanceReloadSupport {
   private struct EventConfig: Decodable {
     var sources: [EventSourceContract]
@@ -13,7 +25,7 @@ public enum InstanceReloadSupport {
   public static func validateCandidate(
     workflowDirectory: String, eventRoot: String?, expectedWorkflowId: String,
     nodePatches: [String: WorkflowInstanceNodePatch], workingDirectory: String
-  ) throws -> (bundle: ResolvedWorkflowBundle, triggerDefaultsFingerprint: String, eventRootDigest: String) {
+  ) throws -> InstanceReloadCandidateValidation {
     let options = WorkflowResolutionOptions(workflowName: expectedWorkflowId, workflowDefinitionDir: workflowDirectory, workingDirectory: workingDirectory)
     var bundle: ResolvedWorkflowBundle
     do {
@@ -53,8 +65,11 @@ public enum InstanceReloadSupport {
           + fileChangeSourceDiagnostics(eventRoot: root)
         guard diagnostics.isEmpty else { throw RielaAppInstanceReloadError(code: .invalidEventBindings) }
       }
-      return (bundle, RielaAppInstanceReloadFingerprint.triggerDefaultsFingerprint(bundle.workflow.triggerDefaults),
-              try RielaAppInstanceReloadFingerprint.eventRootDigest(eventRoot: eventRoot))
+      return InstanceReloadCandidateValidation(
+        bundle: bundle,
+        triggerDefaultsFingerprint: RielaAppInstanceReloadFingerprint.triggerDefaultsFingerprint(bundle.workflow.triggerDefaults),
+        eventRootDigest: try RielaAppInstanceReloadFingerprint.eventRootDigest(eventRoot: eventRoot)
+      )
     } catch {
       throw RielaAppInstanceReloadError(code: .invalidEventBindings, message: "Invalid event bindings")
     }

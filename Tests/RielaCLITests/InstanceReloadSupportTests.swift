@@ -27,6 +27,8 @@ final class InstanceReloadSupportTests: XCTestCase {
     let validated = try InstanceReloadSupport.validateCandidate(workflowDirectory: directory.path, eventRoot: nil,
       expectedWorkflowId: "flow", nodePatches: [:], workingDirectory: root.path)
     XCTAssertEqual(validated.bundle.workflow.workflowId, "flow")
+    XCTAssertFalse(validated.triggerDefaultsFingerprint.isEmpty)
+    XCTAssertFalse(validated.eventRootDigest.isEmpty)
     let patched = try InstanceReloadSupport.validateCandidate(workflowDirectory: directory.path, eventRoot: nil,
       expectedWorkflowId: "flow", nodePatches: ["worker": .init(model: "other")], workingDirectory: root.path)
     XCTAssertEqual(patched.bundle.nodePayloads["worker"]?.model, "other")

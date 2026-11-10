@@ -139,6 +139,29 @@ README [Runtime Data Retention](../README.md#runtime-data-retention),
 and [`docs/terminal-retention.md`](../docs/terminal-retention.md). Design:
 [`design-session-storage-efficiency-and-default-gc.md`](../design-docs/specs/design-session-storage-efficiency-and-default-gc.md).
 
+Resident RielaApp instance control (2026-11-10) is implemented and accepted on
+`feat/instance-reload-run-cli`. It has no GitHub issue. Its plans
+`instance-control-01` … `instance-control-10` are archived under
+[`completed/instance-control-*.md`](completed/). The feature adds
+`riela instance reload|run|executions`. It auto-discovers the App endpoint and
+profile, makes `riela instance list` identities usable by `show`, adds a
+desktop-only `POST /api/v1/instances/{identity}/reload` behind a child
+admission gate, adds `startedAt`/`endedAt` to the executions projection, and
+autostarts the App listener when the persisted `isEnabled` is true. The design
+is
+[`design-instance-reload-run-cli`](../design-docs/specs/design-instance-reload-run-cli.md);
+user docs are in
+[`docs/app-instance-control.md`](../docs/app-instance-control.md). Plans 01–06
+and 08 were accepted at checkpoint `ca369733`. Plans 07, 09 and 10 were
+accepted by the Step 6 test-integrity and Step 7 adversarial reviews. Their
+focused suites ran 37 + 7 tests with 0 failures
+(`tmp/instance-control/reconcile-wave-009/`, `-010/`). Browser E2E was skipped
+because no browser-facing file changed. Live reload needs a one-time App
+upgrade. The dispatch manifest `active/instance-control-dispatch.json` stays
+active until the dispatch run closes; it records the original plan paths.
+Combined-tree re-verification after the rebase onto main, the final commit and
+the push remain workflow steps.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

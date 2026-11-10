@@ -1,6 +1,6 @@
 # Instance control 06: parent admission port, installed start record, child replacement primitives
 
-**Status**: Planned
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-06-parent-admission-runtime
 **dependsOn**: instance-control-01-contracts (admission wire types, `WorkflowServingController.admissionControl`, `RielaAppInstanceStartRecord`, `RielaAppInstanceReloadFingerprint`); instance-control-08-reload-coordinator (resource ordering only: lane B scratch ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 5 (installed start record, record-advance rule), 6 (parent sequence), 8 (confirm, replace)

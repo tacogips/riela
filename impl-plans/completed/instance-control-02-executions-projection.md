@@ -1,6 +1,6 @@
 # Instance control 02: startedAt/endedAt on the instance executions projection
 
-**Status**: Implemented; review pending
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-02-executions-projection
 **dependsOn**: none (wave 1)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D6, D5 (executions)

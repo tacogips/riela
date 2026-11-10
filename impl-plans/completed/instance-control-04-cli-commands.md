@@ -1,6 +1,6 @@
 # Instance control 04: CLI identity normalization, App endpoint discovery, reload/run/executions commands
 
-**Status**: Planned
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-04-cli-commands
 **dependsOn**: none (wave 1). The CLI decodes App responses with its own closed structs, so it needs no shared types.
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D1, D3, D5, §4

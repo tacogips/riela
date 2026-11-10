@@ -1,6 +1,6 @@
 # Instance control 09: RielaApp /reload route, port implementation and start-record provider wiring
 
-**Status**: Planned
+**Status**: Completed; accepted by Step 6 test-integrity and Step 7 adversarial review (2026-11-10). Combined-tree re-verification after the rebase onto main is a finalization step
 **planId**: instance-control-09-app-reload-route
 **dependsOn**: instance-control-01-contracts, instance-control-06-parent-admission-runtime, instance-control-07-reload-support-library, instance-control-08-reload-coordinator
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 (route, request, algorithm, response, errors), §4 security
@@ -128,11 +128,11 @@ Running-child respawn paths are covered by plan 08 (coordinator) and plan 06 (ru
 
 ## Completion criteria
 
-- [ ] Route live.
-- [ ] Ports implemented.
-- [ ] Provider wired.
-- [ ] Tests, build and lint exit 0.
-- [ ] Progress log written.
+- [x] Route live.
+- [x] Ports implemented.
+- [x] Provider wired.
+- [x] Tests, build and lint exit 0.
+- [x] Progress log written.
 
 ## Progress Log
 
@@ -154,3 +154,11 @@ Plan authored (Opus). Not started.
 - Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
 - If dependency resolution fails, record `dependency-resolution` and stop.
 - Wait on a held `.build` lock.
+
+
+### Implementation: 2026-11-11
+
+- Added the desktop reload route through the existing web router, strict input/profile checks, serialized coordinator, safe error envelope and App state ports. Fresh source discovery and relink preserve existing preference state; the start-record provider is installed before launch-time starts.
+- `test.log`: focused route, web API and configured-launch suites passed, 21 tests, 0 failures, exit 0. Test execution used HOME and RIELA_APP_ROOT under this plan's evidence directory. The route test checks CSRF rejection, 400/405/409/404, seed/unchanged, persisted relink and revision, byte-identical config and unchanged SQLite version count on workflow ID mismatch, and fake runtime provider wiring.
+- `build.log`: `arch -arm64 /bin/zsh -lc 'swift build ...'` exit 0. `lint-final.log`: required scoped SwiftLint exit 0. `strict-final.log`: NUL-manifest scoped `swiftlint lint --strict --quiet --no-cache` exit 0.
+- Earlier test and lint attempts are retained under this evidence directory. Test attempts 4 and 5 exposed a provider fixture rooted directly at its working directory; the corrected separate source directory passes. Review and serial integration remain pending.

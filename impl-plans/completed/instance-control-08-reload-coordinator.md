@@ -1,6 +1,6 @@
 # Instance control 08: reload coordinator (validate → barrier → commit → replace), port-driven
 
-**Status**: Planned
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-08-reload-coordinator
 **dependsOn**: instance-control-01-contracts (`RielaAppInstanceReloadPorts`, request/response/error types, `respawnRequired`, admission wire types); instance-control-03-webserver-autostart (resource ordering only: lane B scratch ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 1–9 and the response; §5 orchestration cases

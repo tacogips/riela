@@ -67,6 +67,10 @@ and returns its actual exit code, including failure. A client timeout can leave
 the run continuing; retrying can start another run. Remote runs reject
 `--from-registry`, `--mock-scenario`, and `--supervisor-mode`.
 
+## Resident RielaApp instances
+
+Use `riela instance reload`, `riela instance run`, and `riela instance executions` for resident App workflows. See the [instance control guide](../../../docs/app-instance-control.md) for discovery, prerequisites, and options.
+
 ## Follow and control a session
 
 <!-- surface-catalog:begin session -->

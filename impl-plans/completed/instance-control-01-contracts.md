@@ -1,6 +1,6 @@
 # Instance control 01: shared contracts (admission wire, reload DTOs, start record)
 
-**Status**: Implemented; independent review pending
+**Status**: Completed; accepted (code in checkpoint ca369733, recorded as acceptedDependency in `instance-control-dispatch.json`)
 **planId**: instance-control-01-contracts
 **dependsOn**: none (wave 1)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 5, 6, 8 and the response shape; §5

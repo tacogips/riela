@@ -1,6 +1,8 @@
 import Foundation
 
 public struct WorkflowStepRef: Codable, Equatable, Sendable {
+  public var deadlineMs: Int?
+  public var retry: WorkflowStepRetryPolicy?
   public var placement: DistributedExecutionPlacement?
   public var id: String
   public var stepFile: String?
@@ -28,8 +30,12 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
     sessionPolicy: WorkflowStepSessionPolicy? = nil,
     transitions: [WorkflowStepTransition]? = nil,
     loop: WorkflowStepLoopMetadata? = nil,
-    placement: DistributedExecutionPlacement? = nil
+    placement: DistributedExecutionPlacement? = nil,
+    deadlineMs: Int? = nil,
+    retry: WorkflowStepRetryPolicy? = nil
   ) {
+    self.deadlineMs = deadlineMs
+    self.retry = retry
     self.placement = placement
     self.id = id
     self.stepFile = stepFile

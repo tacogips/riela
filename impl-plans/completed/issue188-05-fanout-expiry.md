@@ -1,6 +1,6 @@
 # Issue 188 Plan 05: Fanout dispatch anchor and expiry of unscheduled branches
 
-**Status**: Ready
+**Status**: Completed (2026-11-10; accepted by step7 adversarial review comm-000100 and combined-tree integration, issue #188)
 **planId**: issue188-05-fanout-expiry
 **dependsOn**: issue188-01-core-contract (needs `DeterministicWorkflowRunRequest.runStartedAt`, `retryClock`, `StepRetryDiagnostics`)
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md §3.1 (anchor, fanout slot wait), §5.3, §10 case 14
@@ -87,13 +87,26 @@ This plan does two things:
 
 ## Completion criteria
 
-- [ ] Dispatch anchor and expiry timer implemented, scoped to local fanout with an entry `deadlineMs`.
-- [ ] All non-anchor tests pass in 3 consecutive runs. The anchor test passes, or is logged `integration-pending` when plan 04 is absent, and must pass at integration.
-- [ ] Verification 1–3 exit 0, with log paths recorded.
-- [ ] Cross-workflow limitation noted in the progress log.
+- [x] Dispatch anchor and expiry timer implemented, scoped to local fanout with an entry `deadlineMs`.
+- [x] All non-anchor tests pass in 3 consecutive runs. The anchor test passes, or is logged `integration-pending` when plan 04 is absent, and must pass at integration.
+- [x] Verification 1–3 exit 0, with log paths recorded.
+- [x] Cross-workflow limitation noted in the progress log.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 **Tasks Completed**: Plan authored (Opus).
 **Blockers**: Waits for issue188-01.
+
+### Implementation progress: 2026-11-10
+
+- Captured one retry-clock dispatch instant and passed it into each branch request. Local entry deadlines expire unscheduled indices; running branches are left alone. Timer cancellation is absorbed by the timer child.
+- Cross-workflow fanouts do not actively expire queued branches; they receive the dispatch anchor for elapsed accounting when started.
+- `StepDeadlineFanoutExpiryTests` covers queued expiry, session count, original items and unique indices, no-deadline join equivalence, timer cleanup and fail-fast. The two-item dispatch-anchor assertion is written without skipping and is integration-pending on plan 04; the fake retry and runtime-store clocks share the same start.
+- Final focused runs `tmp/issue-188/issue188-05-fanout-expiry/clock-test-{1,2,3}.log` each passed 3 tests. `clock-regression.log` passed 66 tests including `FanoutResumeTests`. `clock-lint.log` (strict changed-file gate) and `plan-lint.log` exited 0. Earlier build interruptions from concurrent sibling edits and an intermediate test failure remain in the evidence directory; both were rerun successfully. All tests ran on a moving shared tree; serial integration must rerun the union filter, including the anchor test, full build and lint.
+
+### Current implementation verification: 2026-11-10
+
+- Fresh non-anchor runs `current-test-1.log`, `current-test-2.log`, and `current-test-3-retry.log` each passed 3 tests; `current-anchor.log` passed the unskipped dispatch-anchor test. Logs are under `tmp/issue-188/issue188-05-fanout-expiry/`.
+- `current-regression.log` passed 66 tests, including `FanoutResumeTests`; `current-strict-lint.log` and `current-plan-lint.log` exited 0. A sibling-owned test temporarily failed compilation in `current-test-3.log`; the sibling correction preceded the successful retry. These runs used the moving shared tree.
+- Formal review and serial integration remain downstream; integration must rerun the full build, union filter including the anchor, and lint. Queued cross-workflow branches remain elapsed-accounted only.

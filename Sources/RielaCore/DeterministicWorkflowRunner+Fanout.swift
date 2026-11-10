@@ -7,6 +7,7 @@ extension DeterministicWorkflowRunner {
     parentStepId: String,
     request: DeterministicWorkflowRunRequest
   ) async throws -> JSONObject {
+    let fanoutDispatchAt = retryClock.now()
     try validateFanoutWriteOwnership(directive)
     let items = try fanoutItems(from: directive)
     let joinContext = try fanoutContext(from: directive)
@@ -74,7 +75,8 @@ extension DeterministicWorkflowRunner {
       concurrency: bound,
       indices: wave.selectedIndices,
       changeEvidence: changeEvidence,
-      parentSessionId: parentSessionId
+      parentSessionId: parentSessionId,
+      fanoutDispatchAt: fanoutDispatchAt
     )
     // Drain siblings before stopping. A resumable child is neither a failed
     // item nor permission to cancel another child's in-flight operation.
@@ -183,41 +185,74 @@ extension DeterministicWorkflowRunner {
     concurrency: Int,
     indices: [Int],
     changeEvidence: WorkflowFanoutChangeEvidence?,
-    parentSessionId: String
+    parentSessionId: String,
+    fanoutDispatchAt: Date
   ) async throws -> [FanoutBranchOutcome] {
-    try await withThrowingTaskGroup(of: FanoutBranchOutcome.self) { group in
+    let deadlineMs = directive.workflowId == nil
+      ? request.workflow.steps.first(where: { $0.id == directive.targetStepId })?.deadlineMs : nil
+    let expiresAt = deadlineMs.map { fanoutDispatchAt.addingTimeInterval(Double($0) / 1_000) }
+    return try await withThrowingTaskGroup(of: FanoutGroupEvent.self) { group in
       var nextIndex = 0
+      var running = 0
       var outcomes: [FanoutBranchOutcome] = []
       var shouldScheduleMore = true
+
+      func expire(_ index: Int) {
+        let elapsed = max(0, Int(retryClock.now().timeIntervalSince(fanoutDispatchAt) * 1_000))
+        let suffix = StepRetryDiagnostics.suffix(attempts: 0, stopReason: .stepDeadline, elapsedMs: elapsed,
+          timeoutKind: .stepDeadline, effectOutcome: nil, queueWaitMs: elapsed)
+        outcomes.append(.failure(index: index, item: items[index], sessionId: nil,
+          reason: "branch not started before deadline" + suffix, cancelled: false))
+      }
 
       func scheduleNext() {
         let index = indices[nextIndex]
         nextIndex += 1
+        if let expiresAt, retryClock.now() >= expiresAt {
+          expire(index)
+          return
+        }
+        running += 1
         group.addTask {
-          try await self.runFanoutBranch(
-            index: index,
-            item: items[index],
-            directive: directive,
-            request: request,
-            changeEvidence: changeEvidence,
-            parentSessionId: parentSessionId
-          )
+          .branch(try await self.runFanoutBranch(
+            index: index, item: items[index], directive: directive, request: request,
+            changeEvidence: changeEvidence, parentSessionId: parentSessionId, fanoutDispatchAt: fanoutDispatchAt
+          ))
         }
       }
 
-      for _ in 0..<min(concurrency, indices.count) {
-        scheduleNext()
-      }
-      while let outcome = try await group.next() {
-        outcomes.append(outcome)
-        if directive.failurePolicy == .failFast, outcome.isFailure {
-          shouldScheduleMore = false
-          group.cancelAll()
-        }
-        if shouldScheduleMore, nextIndex < indices.count {
-          scheduleNext()
+      if let expiresAt {
+        group.addTask {
+          do {
+            try await self.retryClock.sleep(until: expiresAt)
+            return .expiryTick
+          } catch is CancellationError {
+            return .timerCancelled
+          }
         }
       }
+      for _ in 0..<min(concurrency, indices.count) { scheduleNext() }
+      while running > 0 || (shouldScheduleMore && nextIndex < indices.count) {
+        guard let event = try await group.next() else { break }
+        switch event {
+        case let .branch(outcome):
+          running -= 1
+          outcomes.append(outcome)
+          if directive.failurePolicy == .failFast, outcome.isFailure {
+            shouldScheduleMore = false
+            group.cancelAll()
+          }
+          if shouldScheduleMore, nextIndex < indices.count { scheduleNext() }
+        case .expiryTick:
+          while shouldScheduleMore && nextIndex < indices.count {
+            expire(indices[nextIndex])
+            nextIndex += 1
+          }
+        case .timerCancelled:
+          break
+        }
+      }
+      group.cancelAll()
       return outcomes
     }
   }
@@ -228,7 +263,8 @@ extension DeterministicWorkflowRunner {
     directive: WorkflowFanoutDispatchDirective,
     request: DeterministicWorkflowRunRequest,
     changeEvidence: WorkflowFanoutChangeEvidence?,
-    parentSessionId: String
+    parentSessionId: String,
+    fanoutDispatchAt: Date
   ) async throws -> FanoutBranchOutcome {
     var reservedChildSessionId: String?
     do {
@@ -312,6 +348,7 @@ extension DeterministicWorkflowRunner {
         stopBeforeStepId: directive.workflowId == nil ? directive.joinStepId : nil,
         definitionSource: branchDefinitionSource
       )
+      branchRequest.runStartedAt = fanoutDispatchAt
       branchRequest.workflowRunId = request.workflowRunId
       branchRequest.parentSessionId = parentSessionId
       branchRequest.rootSessionId = request.rootSessionId ?? parentSessionId
@@ -641,6 +678,12 @@ private func fanoutStepOutputs(_ stepIds: [String], session: WorkflowSession) ->
     }
   }
   return outputs
+}
+
+private enum FanoutGroupEvent: Sendable {
+  case branch(FanoutBranchOutcome)
+  case expiryTick
+  case timerCancelled
 }
 
 private struct FanoutBranchOutcome: Sendable {

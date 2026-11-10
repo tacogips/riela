@@ -1,6 +1,6 @@
 # Issue 188 Plan 02: Workflow validation for `deadlineMs` and `retry`
 
-**Status**: Ready
+**Status**: Completed (2026-11-10; accepted by step7 adversarial review and combined-tree integration, issue #188)
 **planId**: issue188-02-validation
 **dependsOn**: (none; wave 1; raw-JSON only)
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md §6; design-docs/specs/design-workflow-json.md `WorkflowStepRef`
@@ -93,12 +93,31 @@ Imitate `Tests/RielaCoreTests/WorkflowStepFailurePolicyTests.swift`. Use its `wo
 
 ## Completion criteria
 
-- [ ] All 7 rules are implemented, with path-qualified diagnostics.
-- [ ] Verification 1–3 exit 0, with log paths recorded.
-- [ ] Only writePaths and this plan file are changed.
+- [x] All 7 rules are implemented, with path-qualified diagnostics.
+- [x] Verification 1–3 exit 0, with log paths recorded.
+- [x] Only writePaths and this plan file are changed.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 **Tasks Completed**: Plan authored (Opus).
 **Blockers**: None.
+
+### Implementation progress: 2026-11-10
+- Implemented raw validation for all seven rules and path-qualified diagnostics; no new-field diagnostics on legacy steps. The helper runs before step identity guards to report applicable errors even for malformed steps.
+- Added `StepRetryPolicyValidationTests` for bounds, malformed values including booleans and non-finite values, cross-field rules, and legacy fixtures. Focused run passed 4 tests, 0 failures: `tmp/issue-188/issue188-02-validation/test-01.log` (moving shared tree).
+- Strict selected-file SwiftLint passed: `tmp/issue-188/issue188-02-validation/lint-01.log`; plan lint passed: `tmp/issue-188/issue188-02-validation/plan-lint.log`.
+- Initial regression build failed before tests on sibling-owned `Tests/RielaCoreTests/ManualWorkflowRetryClock.swift` generic continuation inference; log `tmp/issue-188/issue188-02-validation/regression.log`. Sibling subsequently changed that file; final-source reruns required.
+- Source hashes before/after edits and exact edit intentions are recorded under `tmp/issue-188/issue188-02-validation/edit-*-intent.txt`. Independent review, serial integration and final commit remain downstream.
+
+- Final-source reruns passed: focused 4 tests (`tmp/issue-188/issue188-02-validation/test-final-02.log`), regression 17 tests (`tmp/issue-188/issue188-02-validation/regression-final.log`), strict selected-file lint (`tmp/issue-188/issue188-02-validation/lint-final.log`), and plan lint (`tmp/issue-188/issue188-02-validation/plan-lint-final.log`). Tests ran on the shared moving tree; serial integration remains required. An intermediate misplaced helper call compile failure is retained in `test-final.log` and was corrected before these reruns.
+
+### Test-integrity revision P02-TI-1
+- Replaced the invalid placement fixture with a valid workspace/target and matched the exact rule-7 message for deadline plus retry and deadline alone; placement alone has no deadline/retry diagnostic. Without the rule-7 branch, neither valid-placement case can produce that specific message, so both assertions fail.
+- Test file SHA-256 before: `23576f1f3d71e9bf2d5c6900eebf56f0b3fc57c272061f4a1ee9d946883d7ced`; after is recorded in `tmp/issue-188/issue188-02-validation/edit-p02-ti-1.txt`.
+- Focused tests: 4 passed (`test-final-03.log`); regression: 17 passed (`regression-final-03.log`); strict changed-file lint and plan lint passed (`lint-final-03.log`, `plan-lint-final-03.log`), all under `tmp/issue-188/issue188-02-validation/`. Shared-tree evidence remains subject to serial integration and independent review.
+
+### Author self-check: malformed node identifiers
+- Required a string step nodeId before matching an add-on node, preventing missing or non-string identifiers from matching each other. Added a focused regression for both cases.
+- Focused tests passed 5; regression passed 17; strict selected-file and plan lint passed. Logs: `tmp/issue-188/issue188-02-validation/{test-current-05,regression-current-05,lint-current-05,plan-lint-current-05}.log`. These are shared-tree results; independent review and serial integration remain downstream.
+- Pre/post hashes and edit intentions are in `tmp/issue-188/issue188-02-validation/edit-{node-resolution,node-test,plan}-05.txt` (node edit files use suffix `04`).

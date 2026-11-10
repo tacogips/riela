@@ -88,6 +88,27 @@ verification and review. The dispatch manifest `active/ds179-dispatch.json`
 stays active until the dispatch run closes. The final commit remains a
 workflow step.
 
+Issue [#188](https://github.com/tacogips/riela/issues/188) step deadline and
+retry policy (2026-11-10) is implemented and accepted on `main`. Its plans
+[`issue188-01-core-contract`](completed/issue188-01-core-contract.md),
+[`issue188-02-validation`](completed/issue188-02-validation.md),
+[`issue188-03-notion-classification`](completed/issue188-03-notion-classification.md),
+[`issue188-04-step-supervisor`](completed/issue188-04-step-supervisor.md),
+[`issue188-05-fanout-expiry`](completed/issue188-05-fanout-expiry.md) and
+[`issue188-06-docs`](completed/issue188-06-docs.md) are archived. They add an
+optional whole-step `deadlineMs` and a bounded add-on `retry` policy
+(`timeoutMs` stays per-attempt), a step supervisor with a runner backstop,
+mutation-safe Notion failure classification, local-fanout expiry of unstarted
+branches, validation and diagnostics. The design is
+[`design-step-deadline-and-retry-policy`](../design-docs/specs/design-step-deadline-and-retry-policy.md);
+user docs are in
+[`docs/workflows/step-deadline-and-retry.md`](../docs/workflows/step-deadline-and-retry.md).
+Combined-tree verification (`tmp/issue-188/reconcile-session3-wave3/`) gave
+a clean build, a union filter of 222 tests with 0 failures including
+`testBranchEntryDeadlineAnchoredAtFanoutDispatch`, and a clean swiftlint run.
+The dispatch manifest `active/issue-188-dispatch.json` stays active until the
+dispatch run closes. The final commit and push remain workflow steps.
+
 Session storage efficiency and default GC (2026-10-30, branch
 `feat/message-log-storage-gc`): the first plan set
 (`completed/session-storage-gc.md`, `completed/session-storage-gc-01..05-*.md`

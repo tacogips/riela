@@ -146,6 +146,8 @@ private func validateSteps(
     "promptVariant",
     "timeoutMs",
     "stallTimeoutMs",
+    "deadlineMs",
+    "retry",
     "failurePolicy",
     "sessionPolicy",
     "placement",
@@ -175,6 +177,7 @@ private func validateSteps(
       diagnostics.append(error("\(path).\(key)", "uses an unsupported step field"))
     }
 
+    validateStepDeadlineAndRetry(entry, path: path, nodeEntries: nodeEntries, diagnostics: &diagnostics)
     guard let id = entry["id"] as? String, !id.isEmpty else {
       diagnostics.append(error("\(path).id", "must be a non-empty string"))
       continue

@@ -598,6 +598,30 @@ Pass that block to `appendBlocks`:
 }
 ```
 
+#### Step deadline and retry for save jobs
+
+Add-on steps (for example `riela/notion-gateway-write`) can set an optional
+whole-step `deadlineMs` and a bounded `retry` policy (`maxAttempts`,
+`initialDelayMs`, `multiplier`, `maxDelayMs`, `jitter`). The existing
+`timeoutMs` stays the per-attempt timeout; `deadlineMs` also covers queue
+waits, Retry-After and backoff, so an HTTP timeout alone is not treated as a
+save-job deadline. A step is retried only when its failure is classified
+retryable and its effect is not `unknown`. For Notion writes, 429/409
+rejections are retried and honor Retry-After. Ambiguous writes (missing or
+`unknown` `mutationOutcome`, or a failure after `createPage`/`appendBlocks`
+succeeded) are never repeated. Permanent validation, auth or quota failures
+stop immediately. The runner itself expires a stuck step at the deadline plus
+a 5 s backstop. In a local fanout whose entry step sets `deadlineMs`, branches
+that had not started by the deadline become failed join records with
+`attempts=0` instead of running late. `retry` requires `deadlineMs`, applies
+only to add-on steps, and cannot be combined with `config.writeRetry`. Steps
+that set neither field behave exactly as before. Diagnostics are recorded as
+`riela.step.attempt.finished` / `riela.step.retry.stopped` events and a
+`[rielaRetry ...]` failure suffix. These settings bound the step and make it
+observable; they do not reduce runtime CPU overhead. See
+[step deadline and retry](docs/workflows/step-deadline-and-retry.md) and the
+[Notion failure classification](docs/builtin-gateway-json.md#notion-failure-classification-step-retry).
+
 In a following writer node, use `appendBlocks` with
 `{"children":"{{upload.notionGateway.block}}"}` and the target page `id`.
 Upload create and send are two sequential SDK calls; a failed send is never

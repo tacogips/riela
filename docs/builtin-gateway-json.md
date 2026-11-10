@@ -83,6 +83,37 @@ sent while creating the page; remaining blocks are appended in ordered chunks.
 When `pageId` targets an existing page, `data.publishPage.url` is empty because
 the append operation returns block results without page metadata.
 
+### Notion failure classification (step retry)
+
+For Notion writes, the first matching rule applies; the gateway's mutation
+outcome takes precedence over status or code:
+
+1. `mutationOutcome=unknown` is `effectOutcome=unknown` and never retryable,
+   including 429/409 and partial `ensurePagePath` creation.
+2. A mutation with no parseable outcome is unknown and not retryable.
+3. `mutationOutcome=rejected` with HTTP 429 or 409 is retryable; 429 can carry
+   Retry-After. Other rejected 4xx, including quota, validation and auth errors,
+   are permanent.
+4. `mutationOutcome=notDispatched` gateway pre-dispatch errors are permanent.
+5. A Riela timeout before the call is `notDispatched` and retryable; during the
+   call it is unknown and not retryable.
+
+For reads, 429, 409, 5xx, 408, `TRANSPORT`, `INVALID_RESPONSE` and Riela
+timeouts are retryable; other 4xx and gateway pre-dispatch errors are not.
+
+For multi-call `publishPage` and `uploadLocalFile`, the failing sub-call's
+classification is preserved. Once `createPage` or `appendBlocks` succeeds in an
+attempt, a later failure is unknown and not retryable. Only an `ensurePagePath`
+that returned success is exempt from this taint: a retry re-scans its pages. A
+failed partial path creation follows the write rules above. Unattached expiring
+file uploads do not taint. The incomplete-page message remains available. A
+single `createPage` rejected with 429/409 can be retried when no earlier call
+has tainted the attempt.
+
+The notion-gateway has no internal retry; `retry.maxAttempts` bounds gateway
+invocations per step (a composite invocation may itself make multiple calls).
+See [step deadline and retry](workflows/step-deadline-and-retry.md).
+
 Both X readers support `config.userCache: true` (default: disabled). The built-in
 owns the separate `x-gateway-users` cache namespace and its policy: 30 days,
 512 KiB, TTL and LRU pruning. It stores only public `{id, username, name}` metadata;

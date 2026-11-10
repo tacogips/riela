@@ -1,6 +1,6 @@
 # Issue 188 Plan 06: User/reference documentation (step deadline, retry, Notion classification, ART settings)
 
-**Status**: Ready
+**Status**: Completed (2026-11-10; accepted by step7 adversarial review and combined-tree integration, issue #188)
 **planId**: issue188-06-docs
 **dependsOn**: (none; wave 1, documentation only, written from the accepted design)
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md (§3, §4.2, §6, §7, §9)
@@ -81,12 +81,21 @@ State that the notion-gateway does not retry internally, so the number of gatewa
 
 ## Completion criteria
 
-- [ ] Both files written as specified.
-- [ ] Verification 1–3 exit 0, with log paths recorded.
-- [ ] Only writePaths and this plan file are changed.
+- [x] Both files written as specified.
+- [x] Verification 1–3 exit 0, with log paths recorded.
+- [x] This plan edits only its declared writePaths; sibling changes are preserved.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 **Tasks Completed**: Plan authored (Opus).
+**Blockers**: None.
+
+### Current-source author check: 2026-11-10
+**Verification**: Diff, whitespace and required-terms checks each exited 0; fresh logs: `tmp/issue-188/issue188-06-docs/p06-current-diffcheck.log`, `tmp/issue-188/issue188-06-docs/p06-current-ws.log`, and `tmp/issue-188/issue188-06-docs/p06-current-terms.log`.
+
+### Implementation: 2026-11-10
+**Tasks Completed**: Wrote the deadline/retry reference and the Notion classification subsection from the accepted design. The gateway invocation count is bounded by maxAttempts, since early success or a stop can use fewer attempts.
+**Verification**: diff check, whitespace check and required-terms check passed; complete logs: `tmp/issue-188/issue188-06-docs/p06-diffcheck.log`, `tmp/issue-188/issue188-06-docs/p06-ws.log`, `tmp/issue-188/issue188-06-docs/p06-terms.log`.
+**Next**: Independent review and serial integration are downstream.
 **Blockers**: None.

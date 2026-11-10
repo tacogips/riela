@@ -679,6 +679,21 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     }
     let execution = projectBackendLiveTail(on: session.executions[index])
     guard execution.status == .running else {
+      if input.eventType == "riela.step.deadline.exceededAfterSuccess",
+         execution.status == .completed,
+         !(execution.recentBackendEvents ?? []).contains(where: { $0.eventType == input.eventType }) {
+        let date = input.at ?? clock.now()
+        let sequence = (execution.backendEventCount ?? 0) + 1
+        var tail = WorkflowExecutionLiveTail(execution: execution)
+        appendRecentBackendEvent(to: &tail, input: input, sequence: sequence, date: date)
+        var updatedSession = session
+        updatedSession.executions[index].recentBackendEvents = tail.recentBackendEvents
+        updatedSession.executions[index].backendEventCount = sequence
+        updatedSession.executions[index].lastBackendEventAt = date
+        updatedSession.executions[index].lastBackendEventType = input.eventType
+        sessions[input.sessionId] = updatedSession
+        return WorkflowBackendEventReceipt(executionId: input.executionId, sequence: sequence, at: date)
+      }
       return WorkflowBackendEventReceipt(
         executionId: execution.executionId,
         sequence: execution.backendEventCount,

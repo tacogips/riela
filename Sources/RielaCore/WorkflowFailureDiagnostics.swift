@@ -13,6 +13,10 @@ public struct WorkflowFailureDiagnostics: Codable, Equatable, Sendable {
   /// Encoded size bound of a retained receipt: the selected diagnostics are
   /// at most `stdoutByteLimit` bytes, plus the fixed envelope keys.
   public static let eventMetadataByteLimit = stdoutByteLimit + 256
+  public static let stepRetryEventTypes: Set<String> = [
+    "riela.step.attempt.finished", "riela.step.retry.stopped", "riela.step.deadline.exceededAfterSuccess"
+  ]
+  public static let stepRetryEventMetadataByteLimit = 1_024
 
   public init(schema: JSONObject, maxBytes: Int = 16_384, path: [String] = []) {
     self.schema = schema
@@ -176,6 +180,9 @@ public struct WorkflowFailureDiagnostics: Codable, Equatable, Sendable {
   /// `eventMetadataByteLimit`; anything else (including a remote worker's
   /// arbitrary object under that event name) is dropped.
   public static func retainedEventMetadata(eventType: String, metadata: JSONObject?) -> JSONObject? {
+    if stepRetryEventTypes.contains(eventType) {
+      return retainedStepRetryEventMetadata(eventType: eventType, metadata: metadata)
+    }
     guard eventType == Self.eventType, let metadata,
       metadata["authoritative"] == .bool(false),
       case .integer(let exitCode)? = metadata["exitCode"], (Int64(Int32.min)...Int64(Int32.max)).contains(exitCode),
@@ -190,6 +197,40 @@ public struct WorkflowFailureDiagnostics: Codable, Equatable, Sendable {
       return nil
     }
     guard let encoded = try? JSONEncoder().encode(metadata), encoded.count <= eventMetadataByteLimit else { return nil }
+    return metadata
+  }
+
+  private static func retainedStepRetryEventMetadata(eventType: String, metadata: JSONObject?) -> JSONObject? {
+    guard let metadata else { return nil }
+    let attempt = eventType == "riela.step.attempt.finished"
+    let stopped = eventType == "riela.step.retry.stopped"
+    let integerKeys: Set<String> = attempt
+      ? ["attempt", "maxAttempts", "attemptDurationMs", "elapsedMs", "budgetRemainingMs", "queueWaitMs",
+         "recordStartedDurationMs", "retryAfterMs", "nextDelayMs"]
+      : stopped ? ["attempts", "elapsedMs"] : ["elapsedMs", "overrunMs"]
+    if attempt && (metadata["attempt"] == nil || metadata["outcome"] == nil) { return nil }
+    if stopped && (metadata["attempts"] == nil || metadata["stopReason"] == nil) { return nil }
+    for (key, value) in metadata {
+      if integerKeys.contains(key) {
+        guard case .integer(let number) = value else { return nil }
+        let limit: Int64 = ["attempt", "attempts", "maxAttempts"].contains(key) ? 1_000 : 1_000_000_000_000
+        guard (0...limit).contains(number) else { return nil }
+      } else if attempt && key == "retryable" {
+        guard case .bool = value else { return nil }
+      } else {
+        guard case .string(let string) = value else { return nil }
+        switch key {
+        case "outcome" where attempt: guard ["succeeded", "failed"].contains(string) else { return nil }
+        case "errorCode" where attempt: guard AdapterExecutionErrorCode(rawValue: string) != nil else { return nil }
+        case "effectOutcome" where attempt: guard AdapterEffectOutcome(rawValue: string) != nil else { return nil }
+        case "timeoutKind" where attempt: guard StepTimeoutKind(rawValue: string) != nil else { return nil }
+        case "timeoutSource" where attempt: guard ["adapter", "runner-backstop"].contains(string) else { return nil }
+        case "stopReason" where stopped: guard StepRetryStopReason(rawValue: string) != nil else { return nil }
+        default: return nil
+        }
+      }
+    }
+    guard let encoded = try? JSONEncoder().encode(metadata), encoded.count <= stepRetryEventMetadataByteLimit else { return nil }
     return metadata
   }
 

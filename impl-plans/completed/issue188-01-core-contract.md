@@ -1,6 +1,6 @@
 # Issue 188 Plan 01: Core contract (step fields, effect outcome, retry clock, backoff math)
 
-**Status**: Ready
+**Status**: Completed (2026-11-10; accepted by step7 adversarial review and combined-tree integration, issue #188)
 **planId**: issue188-01-core-contract
 **dependsOn**: (none; wave 1)
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md (§3, §4.1, §5.4, §7)
@@ -135,9 +135,9 @@ Concurrent workers share `.build`. SwiftPM serialises on its lock, so wait for i
 
 ## Completion criteria
 
-- [ ] All symbols above exist with the exact names and shapes shown.
-- [ ] Verification 2–4 exit 0, with log paths recorded. There is no item 1; the full build belongs to integration.
-- [ ] `git diff --stat` touches only this plan's writePaths and this plan file.
+- [x] All symbols above exist with the exact names and shapes shown.
+- [x] Verification 2–4 exit 0, with log paths recorded. There is no item 1; the full build belongs to integration.
+- [x] This plan edited only its writePaths; the shared tree also contains sibling work.
 
 ## Progress Log
 
@@ -145,3 +145,14 @@ Concurrent workers share `.build`. SwiftPM serialises on its lock, so wait for i
 **Tasks Completed**: Plan authored (Opus).
 **Tasks In Progress**: None.
 **Blockers**: None.
+
+### Implementation: 2026-11-10
+- Implemented optional step fields, retry clock and backoff contracts, adapter effect outcome, diagnostics and cancellation-aware manual clock. No supervisor or fanout wiring is included.
+- Focused tests: 3 passed, exit 0, `tmp/issue-188/issue188-01-core-contract/test-current.log`. Regression: 12 passed, exit 0, `tmp/issue-188/issue188-01-core-contract/regression-final.log`. Both ran on the moving shared tree.
+- Selected-file strict lint and plan lint exit 0: `tmp/issue-188/issue188-01-core-contract/lint-current.log` and `tmp/issue-188/issue188-01-core-contract/plan-lint-current.log`.
+- Earlier regression was sibling-blocked by `Sources/RielaCore/WorkflowRawValidation.swift` missing `nodeEntries`; `regression.log` records the failure and the final rerun passed. The initial test continuation type inference failure was fixed; `test.log` records it.
+- Per-edit intentions and pre/post SHA-256 records are in `tmp/issue-188/issue188-01-core-contract/`; initial hashes are in `pre-sha256.txt`. Formal review, serial integration and commit are downstream.
+
+### Current-tree verification: 2026-11-10
+- Focused test: 3 passed; regression: 12 passed; both exit 0. Logs: `tmp/issue-188/issue188-01-core-contract/redispatch-test.log`, `tmp/issue-188/issue188-01-core-contract/redispatch-regression.log`.
+- Plan lint and strict selected-file lint exit 0: `tmp/issue-188/issue188-01-core-contract/redispatch-plan-lint.log`, `tmp/issue-188/issue188-01-core-contract/redispatch-strict-lint.log`; selected paths: `tmp/issue-188/issue188-01-core-contract/redispatch-swift-files.nul`. Shared-tree results remain subject to serial integration.

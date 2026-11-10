@@ -13,6 +13,13 @@ extension DeterministicWorkflowRunner {
     request: DeterministicWorkflowRunRequest,
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
+    if step.deadlineMs != nil || step.retry != nil {
+      return try await executeSupervisedAddonAndPublish(
+        addon: addon, session: session, sessionId: sessionId, workflow: workflow, step: step,
+        resolvedInputPayload: resolvedInputPayload, transitions: transitions, request: request,
+        executionIndex: executionIndex
+      )
+    }
     let adapterOutput: AdapterExecutionOutput
     do {
       let attachments = try await projectedAddonAttachments(
@@ -152,7 +159,7 @@ extension DeterministicWorkflowRunner {
     )
   }
 
-  private func retryPredecessorExecutionIds(
+  func retryPredecessorExecutionIds(
     session: WorkflowSession,
     step: WorkflowStepRef
   ) -> [String] {
@@ -173,7 +180,7 @@ extension DeterministicWorkflowRunner {
       && execution.acceptedOutput == nil
   }
 
-  private func projectedAddonAttachments(
+  func projectedAddonAttachments(
     addon: WorkflowNodeAddonRef,
     sessionId: String,
     workflow: WorkflowDefinition,

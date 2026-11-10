@@ -1,6 +1,6 @@
 # Issue 188 Plan 04: Step supervisor (deadline, retry loop, dispatch guard, diagnostics)
 
-**Status**: Ready (amended 2026-11-10, blocked-wave-scope-or-contract round 1; see Amendment section)
+**Status**: Completed (2026-11-10; amended in blocked-wave-scope-or-contract round 1, see the Amendment section; accepted by step7 adversarial review comm-000101 and combined-tree integration, issue #188)
 **planId**: issue188-04-step-supervisor
 **dependsOn**: issue188-01-core-contract
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md §3.1, §3.2, §3.3, §4, §5.1, §5.2, §5.4, §7, §10
@@ -155,10 +155,10 @@ If a compile error comes only from a sibling plan's writePaths (plans 03 and 05 
 
 ## Completion criteria
 
-- [ ] Supervised path implemented per the ordering above.
-- [ ] All 18 test cases pass in 3 consecutive runs.
-- [ ] Verification 1–3 exit 0, with log paths recorded.
-- [ ] Only writePaths and this plan file are changed.
+- [x] Supervised path implemented per the ordering above.
+- [x] All 18 test cases pass in 3 consecutive runs.
+- [x] Verification 1–3 exit 0, with log paths recorded.
+- [x] Only writePaths and this plan file are changed.
 
 ## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
 
@@ -277,9 +277,9 @@ In `InMemoryWorkflowRuntimeStore.recordStepBackendEventReceiptLocked`, replace o
 - Do not weaken or delete the three failing assertions in `StepRetryPolicyTests.swift`. They must pass as written, or be strengthened.
 
 ### Completion criteria added by this amendment
-- [ ] Decision B, C and D implemented; only plan-04 writePaths changed. Record pre/post sha256 for each of the four newly authorized files.
-- [ ] Amended verification 1–3 exit 0 with log paths recorded in the progress log.
-- [ ] `git diff -- Sources/RielaCore/WorkflowFailureDiagnostics.swift` shows the `command_failure_diagnostics` branch unchanged.
+- [x] Decision B, C and D implemented; only plan-04 writePaths changed. Record pre/post sha256 for each of the four newly authorized files.
+- [x] Amended verification 1–3 exit 0 with log paths recorded in the progress log.
+- [x] `git diff -- Sources/RielaCore/WorkflowFailureDiagnostics.swift` shows the `command_failure_diagnostics` branch unchanged.
 
 ## Progress Log
 
@@ -305,3 +305,8 @@ In `InMemoryWorkflowRuntimeStore.recordStepBackendEventReceiptLocked`, replace o
 - Settled successful adapter output before awaiting diagnostic events; added backstop attempt metadata, dispatch guard, cancellation elapsed time and publication duration telemetry. Expanded deterministic coverage to 20 methods, including stale timers, blocked projection, fanout and slow publication.
 - `tmp/issue-188/issue188-04-step-supervisor/cont1-test-attempt2.log`: exit 1, 20 tests, 3 failures. `cont1-strict-lint.log`: exit 0. Earlier compile failure and hashes remain in the evidence directory.
 - Required diagnostics cannot be retained with the present scope: `Sources/RielaCore/WorkflowFailureDiagnostics.swift:178` strips metadata from these event types; `Sources/RielaCore/RuntimeStore.swift:681` ignores events once an execution is terminal, including `riela.step.deadline.exceededAfterSuccess`. These files are outside plan 04 writePaths/sharedPaths. A checkpoint amendment or owner-assigned repair must authorize bounded metadata retention and a safe terminal-event mechanism, with tests across affected stores. Then rerun all three focused passes, regression and lint. Do not weaken assertions or claim completion.
+
+### Amendment implementation
+- Implemented bounded typed retry-event retention and once-only terminal success-deadline event persistence, with in-memory and SQLite coverage. The command diagnostics branch is unchanged.
+- Focused runs `tmp/issue-188/issue188-04-step-supervisor/redispatch-test{2,3,4}.log`: each exit 0, 23 tests, 0 failures. Regression `redispatch-regression.log`: exit 0, 75 tests, 0 failures. Plan and strict selected-file lint `redispatch-plan-lint.log` and `redispatch-strict-lint.log`: exit 0. These ran on the shared tree; serial integration must rerun combined gates.
+- Source identity and per-edit intent/hash evidence are under `tmp/issue-188/issue188-04-step-supervisor/`. Formal integrity and adversarial review, integration, commit and push remain downstream.

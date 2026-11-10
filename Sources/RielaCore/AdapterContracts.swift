@@ -9,25 +9,32 @@ public enum AdapterExecutionErrorCode: String, Codable, Sendable {
   case templateResolutionFailed = "template_resolution_failed"
 }
 
+public enum AdapterEffectOutcome: String, Codable, Sendable, Equatable {
+  case notDispatched, rejected, unknown
+}
+
 public struct AdapterExecutionError: Error, Equatable, Sendable {
   public var code: AdapterExecutionErrorCode
   public var message: String
   public var isRetryable: Bool?
   public var retryAfter: Duration?
   public var failureKind: WorkflowSessionFailureKind?
+  public var effectOutcome: AdapterEffectOutcome?
 
   public init(
     _ code: AdapterExecutionErrorCode,
     _ message: String,
     isRetryable: Bool? = nil,
     retryAfter: Duration? = nil,
-    failureKind: WorkflowSessionFailureKind? = nil
+    failureKind: WorkflowSessionFailureKind? = nil,
+    effectOutcome: AdapterEffectOutcome? = nil
   ) {
     self.code = code
     self.message = message
     self.isRetryable = isRetryable
     self.retryAfter = retryAfter
     self.failureKind = failureKind
+    self.effectOutcome = effectOutcome
   }
 }
 

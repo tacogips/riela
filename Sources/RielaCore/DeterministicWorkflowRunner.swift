@@ -2,6 +2,7 @@ import Foundation
 import RielaObservability
 
 public struct DeterministicWorkflowRunRequest: Sendable {
+  public var runStartedAt: Date?
   public var workflow: WorkflowDefinition
   public var nodePayloads: [String: AgentNodePayload]
   public var variables: JSONObject
@@ -160,6 +161,7 @@ public protocol NestedRecoveryCheckpointing: Sendable {
 }
 
 public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
+  public var retryClock: any WorkflowRetryClock
   public var store: any WorkflowRuntimeStore
   public var distributedExecutor: (any DistributedNodeExecuting)?
   public var adapter: any NodeAdapter
@@ -200,8 +202,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     calleeResolver: (any WorkflowCalleeResolving)? = nil,
     fanoutWorkspaceRoot: URL? = nil,
     nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil,
-    nestedInvocationRecoveryCheckpointer: (any NestedRecoveryCheckpointing)? = nil
+    nestedInvocationRecoveryCheckpointer: (any NestedRecoveryCheckpointing)? = nil,
+    retryClock: any WorkflowRetryClock = SystemWorkflowRetryClock()
   ) {
+    self.retryClock = retryClock
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
     self.adapter = adapter
@@ -237,6 +241,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let executionPlan = try validatedExecutionPlan(for: request)
     try validateSessionEntryModes(request)
     var effectiveRequest = request
+    if effectiveRequest.runStartedAt == nil { effectiveRequest.runStartedAt = retryClock.now() }
     let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
     let maxStepsSource: WorkflowStepBudgetSource = effectiveRequest.maxSteps == nil ? .computedDefault : .commandLine
     let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)

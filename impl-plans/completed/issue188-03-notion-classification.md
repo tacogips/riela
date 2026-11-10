@@ -1,6 +1,6 @@
 # Issue 188 Plan 03: Notion failure classification (effectOutcome / retryability)
 
-**Status**: Ready
+**Status**: Completed (2026-11-10; accepted by step7 adversarial review comm-000095 and combined-tree integration, issue #188)
 **planId**: issue188-03-notion-classification
 **dependsOn**: issue188-01-core-contract (needs `AdapterEffectOutcome`, `AdapterExecutionError.effectOutcome`)
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md §4.1, §4.2, §8, §10 cases 6, 6a, 6b, 6c, 7, 8
@@ -146,13 +146,25 @@ If a compile error comes only from a sibling plan's writePaths, record it as `si
 
 ## Completion criteria
 
-- [ ] The classifier and wrapper exist with the pinned signatures.
-- [ ] Every test case above is present and passing.
-- [ ] Verification 1–3 exit 0, with log paths recorded.
-- [ ] Only writePaths and this plan file are changed.
+- [x] The classifier and wrapper exist with the pinned signatures.
+- [x] Gateway-level malformed-output classification and context.deadline timeout coverage pass.
+- [x] Focused, regression and strict changed-file lint gates pass; see progress log.
+- [x] Edits are confined to plan writePaths.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 **Tasks Completed**: Plan authored (Opus).
 **Blockers**: Waits for issue188-01.
+
+### Implementation: 2026-11-10
+
+Implemented Notion-only ordered classification, fail-safe operation detection, deadline metadata and publishPage taint propagation. Focused tests: `tmp/issue-188/issue188-03-notion-classification/test-final-04.log` (7 passed). Regression: `tmp/issue-188/issue188-03-notion-classification/regression-final-04.log`. Strict changed-file lint: `tmp/issue-188/issue188-03-notion-classification/lint-final-04.log`. Tests ran on the shared working tree. The non-JSON case is tested directly against the classifier; the gateway envelope parser still throws before classification. Timeout tests exercise the wrapper directly, not the context.deadline integration path. These remain implementation work. Formal review and serial integration remain downstream.
+
+### Continuation: 2026-11-10
+
+Notion envelope parse failures retain the original error code and message while receiving safe retry and outcome metadata, including publish/upload calls. Context deadline tests cover pre-dispatch and started mutation timeouts. `continuation-test-final.log`: 9 passed; `continuation-regression-final.log`: 43 passed across both required suites; `continuation-lint-final.log`: strict changed-file lint exit 0. All logs are under `tmp/issue-188/issue188-03-notion-classification/`. The earlier `continuation-test.log` failed because the publishPage test fixture omitted required children; the fixture was corrected and the full suite rerun. These gates ran on the shared tree; formal review and serial integration remain downstream.
+
+### Redispatch verification: 2026-11-10
+
+The accepted core-contract dependency is available. On the shared tree, `redispatch-test.log` passed 9 tests and `redispatch-regression.log` passed 43 tests across both required classes. `redispatch-strict-lint.log` and `redispatch-plan-lint.log` exited 0. Evidence and the selected Swift file manifest are under `tmp/issue-188/issue188-03-notion-classification/`. Formal review and serial integration remain downstream.

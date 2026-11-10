@@ -135,11 +135,13 @@ struct LocalGatewayGraphQLEngine {
     let run = descriptor.run
     let tier = descriptor.tier
     let providerName = descriptor.providerName
-    let stdout = try await localGatewayRunWithDeadline(
-      deadline: context.deadline,
-      addonName: input.addon.name,
-      providerName: descriptor.providerName
-    ) {
+    let jsonMode = config["operation"] != nil && documentOverride == nil
+    let operationName: String? = { if case let .string(name)? = config["operation"] { return name }; return nil }()
+    let kind = providerName == "notion-gateway" ? operationName.flatMap { name in
+      (try? descriptor.catalog?())?.operation(named: name)?.kind.definitionKind
+    } : nil
+    let mutation = NotionGatewayFailureClassifier.isMutation(tier: tier, operationKind: kind, isJSONOperationMode: jsonMode, document: document)
+    let operation: @Sendable () async throws -> String = {
       #if canImport(GmailGatewayCore)
       if providerName == "gmail-gateway" {
         return try await GmailWriteExecutionContext.withDeadline(context.deadline) {
@@ -149,10 +151,22 @@ struct LocalGatewayGraphQLEngine {
       #endif
       return try await run(tier, document, variablesJSON, gatewayEnvironment)
     }
-    let envelope = try envelope(from: stdout, addonName: input.addon.name)
+    let stdout: String
+    if providerName == "notion-gateway" {
+      stdout = try await notionRunWithDeadline(deadline: context.deadline, addonName: input.addon.name, isMutation: mutation, operation: operation)
+    } else {
+      stdout = try await localGatewayRunWithDeadline(deadline: context.deadline, addonName: input.addon.name, providerName: providerName, operation: operation)
+    }
+    let envelope = try providerName == "notion-gateway"
+      ? notionEnvelope(stdout: stdout, addonName: input.addon.name, isMutation: mutation)
+      : envelope(from: stdout, addonName: input.addon.name)
     guard envelope.errors.isEmpty else {
       let detail = appleGatewayCompactText(envelope.errors.joined(separator: "; "))
-      throw AdapterExecutionError(.providerError, "\(input.addon.name) GraphQL errors: \(detail)")
+      let message = "\(input.addon.name) GraphQL errors: \(detail)"
+      if providerName == "notion-gateway" {
+        throw NotionGatewayFailureClassifier.classify(stdout: stdout, isMutation: mutation, message: message)
+      }
+      throw AdapterExecutionError(.providerError, message)
     }
     var payloadRoot: JSONObject = ["data": .object(envelope.data)]
     if let selected = try localGatewaySelectedValue(
@@ -482,6 +496,7 @@ private func executeNotionPublishPage(
   var pageURL = ""
   var createdBlockIDs: [String: String] = [:]
   var appendRequests = 0
+  var nonIdempotentSucceeded = false
   do {
     let chunks = try notionBlockChunks(blocks)
     let first = chunks.first ?? []
@@ -493,6 +508,7 @@ private func executeNotionPublishPage(
           document: "mutation($pageId:ID!,$children:JSON!){appendBlocks(id:$pageId,children:$children)}",
           variables: ["pageId": .string(existingPageId), "children": .array(chunk)], environment: runtimeEnvironment,
           bindings: childEnvironment, context: context, addonName: addonName)
+        nonIdempotentSucceeded = true
         let appendResult: JSONObject = appendResponse.data.values.first.flatMap { if case let .object(obj) = $0 { obj } else { nil } } ?? [:]
         try requireNotionAppendResults(appendResult, required: true, addonName: addonName)
         indexNotionResultIDs(appendResult, offset: nextIndex, path: [], into: &createdBlockIDs)
@@ -505,6 +521,7 @@ private func executeNotionPublishPage(
       let response = try await notionPublishCall(runner: runner,
         document: "mutation($parentId:ID!,$title:String!,$children:JSON,$position:JSON){createPage(parentId:$parentId,title:$title,children:$children,position:$position)}",
         variables: createVariables, environment: runtimeEnvironment, bindings: childEnvironment, context: context, addonName: addonName)
+      nonIdempotentSucceeded = true
       create = response
       let created: JSONObject = response.data.values.first.flatMap { if case let .object(obj) = $0 { obj } else { nil } } ?? [:]
       indexNotionResultIDs(created, offset: 0, path: [], into: &createdBlockIDs)
@@ -517,6 +534,7 @@ private func executeNotionPublishPage(
           document: "mutation($pageId:ID!,$children:JSON!){appendBlocks(id:$pageId,children:$children)}",
           variables: ["pageId": .string(id), "children": .array(chunk)], environment: runtimeEnvironment,
           bindings: childEnvironment, context: context, addonName: addonName)
+        nonIdempotentSucceeded = true
         let appendResult: JSONObject = appendResponse.data.values.first.flatMap { if case let .object(obj) = $0 { obj } else { nil } } ?? [:]
         indexNotionResultIDs(appendResult, offset: nextIndex, path: [], into: &createdBlockIDs)
         nextIndex += chunk.count
@@ -542,6 +560,7 @@ private func executeNotionPublishPage(
           document: "mutation($id:ID!,$children:JSON!){appendBlocks(id:$id,children:$children)}",
           variables: ["id": .string(targetId), "children": .array(chunk)], environment: runtimeEnvironment,
           bindings: childEnvironment, context: context, addonName: addonName)
+        nonIdempotentSucceeded = true
         let appendResult: JSONObject = appendResponse.data.values.first.flatMap { if case let .object(obj) = $0 { obj } else { nil } } ?? [:]
         try requireNotionAppendResults(appendResult, required: existingPageId != nil, addonName: addonName)
         indexNotionResultIDs(appendResult, offset: deferred.offset + indexOffset, path: deferred.parentPath, into: &createdBlockIDs)
@@ -559,7 +578,11 @@ private func executeNotionPublishPage(
       "uploadedFiles": .array(uploaded), "failedUploads": .array(failures), "appendRequests": .integer(Int64(appendRequests)),
       "blocks": .integer(Int64(blockCount)), "incomplete": .bool(true), "error": .string(notionPublishErrorMessage(error))]
     let partialJSON = (try? JSONValue.object(partial).compactJSONString()) ?? "{}"
-    throw AdapterExecutionError(.providerError, "publishPage incomplete: \(partialJSON)")
+    let underlying = error as? AdapterExecutionError
+    throw AdapterExecutionError(.providerError, "publishPage incomplete: \(partialJSON)",
+      isRetryable: nonIdempotentSucceeded ? false : underlying?.isRetryable,
+      retryAfter: nonIdempotentSucceeded ? nil : underlying?.retryAfter,
+      effectOutcome: nonIdempotentSucceeded ? .unknown : underlying?.effectOutcome)
   }
 }
 
@@ -664,16 +687,28 @@ private func notionUploadVariables(_ variables: JSONObject) throws -> String {
   return string
 }
 
+private func notionEnvelope(stdout: String, addonName: String, isMutation: Bool) throws -> AppleGatewayGraphQLEnvelope {
+  do {
+    return try AppleGatewayGraphQLEnvelope(stdout: stdout, addonName: addonName)
+  } catch let error as AdapterExecutionError {
+    let classified = NotionGatewayFailureClassifier.classify(stdout: stdout, isMutation: isMutation, message: error.message)
+    throw AdapterExecutionError(error.code, error.message, isRetryable: classified.isRetryable,
+      retryAfter: classified.retryAfter, failureKind: error.failureKind, effectOutcome: classified.effectOutcome)
+  }
+}
+
 private func notionUploadCall(
   runner: @escaping LocalGatewayGraphQLRunner, document: String, variables: String, environment: [String: String],
   context: AdapterExecutionContext, addonName: String
 ) async throws -> AppleGatewayGraphQLEnvelope {
-  let stdout = try await localGatewayRunWithDeadline(deadline: context.deadline, addonName: addonName, providerName: "notion-gateway") {
+  let mutation = NotionGatewayFailureClassifier.isMutation(tier: "writer", operationKind: nil, isJSONOperationMode: false, document: document)
+  let stdout = try await notionRunWithDeadline(deadline: context.deadline, addonName: addonName, isMutation: mutation) {
     try await runner("writer", document, variables, environment)
   }
-  let envelope = try AppleGatewayGraphQLEnvelope(stdout: stdout, addonName: addonName)
+  let envelope = try notionEnvelope(stdout: stdout, addonName: addonName, isMutation: mutation)
   guard envelope.errors.isEmpty else {
-    throw AdapterExecutionError(.providerError, "\(addonName) GraphQL errors: \(appleGatewayCompactText(envelope.errors.joined(separator: "; ")))")
+    let message = "\(addonName) GraphQL errors: \(appleGatewayCompactText(envelope.errors.joined(separator: "; ")))"
+    throw NotionGatewayFailureClassifier.classify(stdout: stdout, isMutation: mutation, message: message)
   }
   return envelope
 }

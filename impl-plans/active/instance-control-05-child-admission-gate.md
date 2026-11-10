@@ -144,10 +144,10 @@ A compile error caused only by sibling files is recorded as `sibling-blocked` an
 
 ## Completion criteria
 
-- [ ] The gate is implemented and wired.
-- [ ] All the test situations above pass 3× consecutively.
-- [ ] Lint exits 0.
-- [ ] Progress log written.
+- [x] The gate is implemented and wired.
+- [x] All the test situations above pass 3× consecutively.
+- [x] Lint exits 0.
+- [x] Progress log written.
 
 ## Progress Log
 
@@ -178,3 +178,10 @@ Plan authored (Opus). Not started.
 - The 3 consecutive green runs must all happen after the final source edit.
 
 **Progress log.** Record the 3 run exit codes, the lint exit code, and the log paths.
+
+
+### Implementation progress: 2026-11-10
+
+The child gate, admission channel, workflow boundary, cron accounting and handoff receipts are implemented. The focused filter ran three consecutive times on the final Swift source: 41 tests, zero failures, exit 0 in each of `tmp/instance-control/instance-control-05-child-admission-gate/test-run1.log`, `test-run2.log`, and `test-run3.log`. HOME and RIELA_APP_ROOT were isolated under the plan evidence root. Required lint and strict changed-file lint both exited 0: `lint.log` and `strict-lint.log` in the same evidence root. Earlier compilation attempts and their corrections are retained in `test-attempt1.log` and `test-attempt2.log`. Formal integrity, adversarial and integration reviews remain downstream.
+
+Continuation 1 resolved the receipt-save self-check: save errors now propagate; channel-managed Telegram and Discord advance offsets only after processing, and Slack regression checks that save failure leaves its cursor unchanged. Push-only and file-watch inputs surface the error and terminate the serve operation. Three final-source runs each passed 43 tests with zero failures in `continuation1/final-test-run{1,2,3}.log`; required and strict changed-file lint exited 0 in `continuation1/lint-final2.log` and `continuation1/strict-lint-final2.log`. Formal review and integration remain downstream.

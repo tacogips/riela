@@ -223,6 +223,23 @@ public struct ScopedWorkflowInstanceStore: Sendable {
     }
   }
 
+  public func findRecord(
+    identity: String,
+    workflowId: String? = nil,
+    scope: WorkflowInstanceScope? = nil,
+    profile: String? = nil
+  ) throws -> (scope: String, instance: WorkflowInstanceDefinition)? {
+    if let match = try find(identity: identity, workflowId: workflowId, scope: scope) {
+      return (match.0.rawValue, match.1)
+    }
+    guard scope == nil || scope == .all else { return nil }
+    let matches = try appProfiles.find(identity: identity, profile: profile, workflowId: workflowId)
+    guard matches.count <= 1 else {
+      throw WorkflowInstanceStoreError.ambiguousIdentity(identity, matches.map(\.profile).sorted())
+    }
+    return matches.first.map { ("app:\($0.profile)", $0.instance) }
+  }
+
   public func save(_ instance: WorkflowInstanceDefinition, scope: WorkflowInstanceScope) throws {
     switch scope {
     case .project:
@@ -278,6 +295,18 @@ public struct AppProfileWorkflowInstanceStore: Sendable {
   public func list(workflowId: String? = nil) throws -> [(String, WorkflowInstanceDefinition)] {
     try profileStateURLs().flatMap { profileName, stateURL in
       try instances(profileName: profileName, stateURL: stateURL, workflowId: workflowId)
+    }
+  }
+
+  public func find(
+    identity: String,
+    profile: String? = nil,
+    workflowId: String? = nil
+  ) throws -> [(profile: String, instance: WorkflowInstanceDefinition)] {
+    try profileStateURLs().filter { profile == nil || $0.0 == profile }.flatMap { name, url in
+      try instances(profileName: name, stateURL: url, workflowId: workflowId)
+        .filter { $0.1.identity == identity }
+        .map { (profile: name, instance: $0.1) }
     }
   }
 
@@ -342,11 +371,25 @@ public struct AppProfileWorkflowInstanceStore: Sendable {
     guard let sourceIdentity, !sourceIdentity.isEmpty else {
       return nil
     }
+    let selectedPrefix = "selected-workflow:"
+    if sourceIdentity.hasPrefix(selectedPrefix) {
+      let path = String(sourceIdentity.dropFirst(selectedPrefix.count))
+      let url = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("workflow.json")
+      if let data = try? Data(contentsOf: url),
+         let workflow = try? JSONDecoder().decode(SelectedWorkflowID.self, from: data) {
+        return workflow.workflowId
+      }
+      return path
+    }
     for prefix in ["user-workflow:", "app-workflow:", "project-workflow:"] where sourceIdentity.hasPrefix(prefix) {
       return String(sourceIdentity.dropFirst(prefix.count))
     }
     return sourceIdentity
   }
+}
+
+private struct SelectedWorkflowID: Decodable {
+  var workflowId: String
 }
 
 private struct AppProfileWorkflowStateFile: Decodable {

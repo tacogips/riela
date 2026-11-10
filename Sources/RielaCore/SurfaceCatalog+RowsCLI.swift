@@ -346,7 +346,10 @@ extension SurfaceCatalog {
         kind: .mutation,
         cli: "instance remove",
         graphql: graphQLMutation("deleteWorkflowInstance")
-      )
+      ),
+      surfaceRow(instanceDefaults, id: "instance.reload", family: "instance", kind: .mutation, cli: "instance reload"),
+      surfaceRow(instanceDefaults, id: "instance.run", family: "instance", kind: .mutation, cli: "instance run"),
+      surfaceRow(instanceDefaults, id: "instance.executions", family: "instance", kind: .query, cli: "instance executions")
     ]
   }
 

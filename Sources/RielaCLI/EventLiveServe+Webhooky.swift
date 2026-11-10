@@ -159,12 +159,12 @@ extension DefaultEventLiveServer {
           parsed: parsed
         ))
       } catch {
-        await recordWorkflowDispatchFailure(
+        try await recordWorkflowDispatchFailure(
           eventRoot: eventRoot,
           sourceKind: "webhooky",
           sourceId: source.id,
           workflowName: workflowName,
-          error: error
+          error: error, envelope: envelope
         )
         continue
       }

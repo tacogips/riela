@@ -109,10 +109,10 @@ Detail for case 7 (DR-003): installed A = {dir, root, digest D, fp TA}; proposed
 
 ## Completion criteria
 
-- [ ] Coordinator implemented in this order.
-- [ ] Tests 1–12 pass.
-- [ ] Lint exits 0.
-- [ ] Progress log written.
+- [x] Coordinator implemented in this order.
+- [x] Tests 1–12 pass.
+- [x] Lint exits 0.
+- [x] Progress log written.
 
 ## Progress Log
 
@@ -147,3 +147,10 @@ Plan authored (Opus). Not started.
 3. The lint command in `## Verification` is unchanged.
 
 **Progress log.** Record the exit codes and log paths.
+
+### Implementation 2026-11-10
+
+- Implemented port-driven coordinator and 12 fake-port scenarios, including DR-003 recovery. Formal review and App wiring remain downstream.
+- Lane-B seed: exit 0, 24,980,932 KiB available; `tmp/instance-control/instance-control-08-reload-coordinator/scratch-seed.log`.
+- Focused tests with isolated HOME and RIELA_APP_ROOT: exit 0, 15 tests, 0 failures (12 coordinator); `tmp/instance-control/instance-control-08-reload-coordinator/test-attempt2.log`. Initial attempt exited 1 because sibling `Tests/RielaCLITests/InstanceAppCommandsTests.swift` changed during compilation; complete log `tmp/instance-control/instance-control-08-reload-coordinator/test-attempt1.log`.
+- Plan lint and strict changed-file lint: both exit 0; `tmp/instance-control/instance-control-08-reload-coordinator/lint.log` and `tmp/instance-control/instance-control-08-reload-coordinator/strict-lint.log`. Tests ran on a shared moving tree; serial integration confirms the combined tree.

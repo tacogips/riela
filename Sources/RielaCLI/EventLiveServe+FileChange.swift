@@ -64,6 +64,9 @@ extension DefaultEventLiveServer {
             lastEnvelopeSourceId: envelope.sourceId,
             lastEnvelopeEventType: envelope.eventType.rawValue
           )
+        } catch is EventAdmissionClosed {
+          try await recordWorkflowDispatchFailure(eventRoot: eventRoot, sourceKind: "file-change", sourceId: source.id,
+                                              workflowName: workflowName, error: EventAdmissionClosed(), envelope: envelope)
         } catch {
           try? writeServeRecord(
             eventRoot: eventRoot,
@@ -117,11 +120,11 @@ struct FileChangeWatchSourceFile: Decodable {
   }
 
   var id: String
-  var directory: String? = nil
-  var changeTypes: [String]? = nil
-  var recursive: Bool? = nil
-  var filters: Filters? = nil
-  var stabilityWindowMs: Int? = nil
+  var directory: String?
+  var changeTypes: [String]?
+  var recursive: Bool?
+  var filters: Filters?
+  var stabilityWindowMs: Int?
 }
 
 /// Validated file-change watch source: an operator-configured local directory

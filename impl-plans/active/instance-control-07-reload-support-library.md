@@ -139,6 +139,18 @@ public static func installedTriggerDefaultsFingerprint(
 - [ ] Lint exits 0.
 - [ ] Progress log written.
 
+
+## Amendment A3 (operator, after wave-006/007 blockers; supersedes conflicting text above)
+1. `validateCandidate` returns a named public struct `InstanceReloadCandidateValidation`
+   (fields carrying the same three values the tuple specified, same names/meaning) instead of a
+   three-element tuple. Callers (plans 08/09) use the struct fields. No lint suppression.
+2. Concurrent-seed verification: the exact no-head-lookup/commit interleaving test is NOT required.
+   The accepted equivalent strategy is the existing tests: (a) import-operation seam with a
+   differing head and forced retry, and (b) a real SQLite `WorkflowDefinitionStore.commit` with an
+   outdated version mapping to `definition_conflict` with the competing head and audit count
+   unchanged. Do not modify WorkflowDefinitionService.
+3. Remaining focused tests listed in the progress log must pass; strict changed-file lint exits 0.
+
 ## Progress Log
 
 ### Session: 2026-11-10
@@ -166,3 +178,19 @@ Plan authored (Opus). Not started.
 - Compile errors caused only by sibling files are `sibling-blocked` and rerun.
 
 **Progress log.** Record the exit codes and log paths.
+
+### Implementation progress: partial
+
+Implemented candidate validation, read-only event parsing, head-aware import, installed fingerprint and start record in `Sources/RielaCLI/InstanceReloadSupport.swift`; added an import lifecycle test. `test-final.log` exits 0 (16 tests, including one new test). `lint-final.log` exits 0 with a large-tuple warning. `strict-final.log` exits 1 on the required three-element `validateCandidate` return tuple. The plan's specified tuple conflicts with strict changed-file lint; no rule suppression was retained. Further focused tests for mismatch, event errors, node patches, concurrent seeding, stale heads, audit details, no-write guarantees and fingerprint precedence are still required. Completion remains unchecked; independent review and integration are downstream.
+
+### Implementation continuation 1
+
+Added assertions for matching and mismatched IDs, valid and unknown-node patches, invalid event bindings, no store creation on rejected candidates, seed/unchanged/force audit actor and reason, store-over-file fingerprint precedence, file fallback and corrupt-store failure, differing-head retry, and stale-head error mapping with head preservation. The import operation seam permits deterministic retry/error testing; the retry test begins with an already differing head and does not itself reproduce a concurrent seed. File-resolution failures are now classified before store import; authored workflow decoding is used for mismatch fallback.
+
+`continuation1/test-final.log`: exit 0, 16 tests, 0 failures. `continuation1/lint-final.log`: exit 0 with the large-tuple warning. `continuation1/strict-final.log`: exit 1 on that warning. `continuation1/test-attempt2.log` failed once because the purported unreadable store contained no database; the fixture was corrected to contain a corrupt SQLite file and the final test passed. Remaining: strict lint conflicts with the mandated tuple signature; a real concurrent seed and a real stale expected-head store rejection are not yet tested through this library. Completion criteria remain unchecked.
+
+### Implementation continuation 2
+
+Replaced the injected stale-head error with an actual SQLite `WorkflowDefinitionStore.commit` using an outdated version, invoked through the library retry seam. The test verifies `definition_conflict`, unchanged competing head and unchanged audit count. `continuation2/test-final.log` exits 0: 16 tests, 0 failures. `continuation2/lint-final.log` exits 0 with a large-tuple warning; `continuation2/strict-final.log` exits 1 for the exact tuple required by this plan. A typealias remains subject to the same rule. Resolving this requires an approved plan contract amendment to use a named result or an explicit exception to the no-suppression rule.
+
+The actual service-level concurrent-seed interleaving requires a hook between `WorkflowDefinitionService` head lookup and commit; that service is outside this plan's write scope and its contract is explicitly unchanged. Existing retry coverage uses a real differing head, not that interleaving. A scope/contract amendment or accepted equivalent test strategy is needed. Completion criteria remain unchecked.

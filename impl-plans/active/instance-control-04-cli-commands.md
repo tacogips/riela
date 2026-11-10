@@ -227,10 +227,10 @@ Executions:
 
 ## Completion criteria
 
-- [ ] All commands exist and appear in help.
-- [ ] Tests 1 pass, and builds/lint exit 0.
-- [ ] The probe results are recorded.
-- [ ] No writes under `~/.riela`.
+- [x] All commands exist and appear in help.
+- [x] Tests 1 pass, and builds/lint exit 0.
+- [x] The probe results are recorded.
+- [x] No writes under `~/.riela`.
 
 ## Progress Log
 
@@ -312,7 +312,28 @@ Plan authored (Opus). Not started.
 6. `arch -arm64 /bin/zsh -lc '{ .build/debug/riela instance list --output json > tmp/instance-control/instance-control-04-cli-commands/probe-list.json; echo list-exit=$?; .build/debug/riela instance show configuration-903fe205-9c44-404f-9b4a-97c101422380 --output json > tmp/instance-control/instance-control-04-cli-commands/probe-show.json; echo show-exit=$?; .build/debug/riela instance executions configuration-903fe205-9c44-404f-9b4a-97c101422380 --limit 3 > tmp/instance-control/instance-control-04-cli-commands/probe-executions.json 2>&1; echo executions-exit=$?; } 2>&1 | tee tmp/instance-control/instance-control-04-cli-commands/probe.log'` — read-only; list and show exit 0; an `executions` `app_unreachable` exit is acceptable when recorded.
 
 **Round-2 completion criteria (in addition to `## Completion criteria`).**
-- [ ] help.log lists reload, run and executions and the existing five subcommands.
-- [ ] Regressions (a)-(f) exist and pass in test.log on the recorded final hashes.
-- [ ] cliapp-scope.diff shows only the two authorized hunks.
-- [ ] Probe exit codes recorded in this progress log.
+- [x] help.log lists reload, run and executions and the existing five subcommands.
+- [x] Regressions (a)-(f) exist and pass in test-final.log on the recorded final hashes.
+- [x] cliapp-scope.diff shows only the two authorized hunks.
+- [x] Probe exit codes recorded in this progress log.
+
+### Round-2 implementation repair: 2026-11-10
+
+- Finding IR-W3-04-HELP-SCOPE-AND-INCOMPLETE: added help lines and scripted transport regressions (a)-(f); non-wait run now emits exactly the three D5 keys.
+- Focused test: exit 0, 36 tests, 0 failures, including WorkflowInstanceCommandTests 11/11 (`tmp/instance-control/instance-control-04-cli-commands/test-final.log`). Earlier compilation failure in `test-repair1.log` was corrected.
+- Product build exit 0 (`build.log`); help check exit 0 (`help.log`); strict changed-file lint exit 0 (`strict-lint-final.log`, NUL manifest `changed-swift-final.nul`); authorized-hunk diff exit 0 (`cliapp-scope.diff`).
+- Read-only live probes (`probe.log`): list exit 0, show exit 0, executions exit 1 `app_unreachable`. No live reload/run.
+- Source SHA-256 after repair (also `final-sha256.txt`):
+
+```text
+12227d22ce47e385d274efd1a272eee6b893cf85742860836cb3804bb6607512  Sources/RielaCLI/FileWorkflowInstanceStore.swift
+4eaa1a87712a35d4ab807dec933af2ef31234c96bcaefde8948c25c526106c71  Sources/RielaCLI/InstanceCommands.swift
+8cc227510e325f9e4fb2f9f9204d498a11ee6f10fb35447357552dc149bd9149  Sources/RielaCLI/InstanceAppCommands.swift
+756132e842da9c927f348449a455acfda461af6851b7f5c8c6003fb4cf42938a  Sources/RielaCLI/RielaAppAPIClient.swift
+5d9194983896b8f621cafa2d1b951c3edc365f0d0b8b0bbf825aad18637fc6b4  Sources/RielaCLI/RielaCLIApplication.swift
+bfb1abac607b414b009ac7bacbee2df4cad595a460fcf704738d3c330dd90efa  Sources/RielaCLI/RielaClientFamilyArguments.swift
+bf3b21d0b73d857b9cf9c8e1edaefc1c8071934b6858151afe364a4b8a5ea0ea  Sources/RielaCore/SurfaceCatalog+RowsCLI.swift
+2dbe6d9ea2802ff31b0590bf85ff70cfb7d3136ee1d96121cdb8f8a3303e8d6e  Tests/RielaCLITests/InstanceIdentityNormalizationTests.swift
+1b3db15163577d9cdf77d3ed86cffa600bbf5f3f1d39f2c36b9c55189ab208e4  Tests/RielaCLITests/InstanceAppCommandsTests.swift
+```
+- Independent test-integrity and adversarial review, serial integration, commit and push remain downstream.

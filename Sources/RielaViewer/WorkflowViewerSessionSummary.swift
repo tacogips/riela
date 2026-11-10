@@ -8,6 +8,7 @@ public struct WorkflowViewerSessionSummary: Codable, Equatable, Sendable {
   public var currentStepId: String?
   public var activeStepIds: [String]
   public var updatedAt: Date
+  public var startedAt: Date?
 
   public init(
     sessionId: String,
@@ -15,7 +16,8 @@ public struct WorkflowViewerSessionSummary: Codable, Equatable, Sendable {
     status: WorkflowSessionStatus,
     currentStepId: String?,
     activeStepIds: [String],
-    updatedAt: Date
+    updatedAt: Date,
+    startedAt: Date? = nil
   ) {
     self.sessionId = sessionId
     self.workflowId = workflowId
@@ -23,5 +25,6 @@ public struct WorkflowViewerSessionSummary: Codable, Equatable, Sendable {
     self.currentStepId = currentStepId
     self.activeStepIds = activeStepIds
     self.updatedAt = updatedAt
+    self.startedAt = startedAt
   }
 }

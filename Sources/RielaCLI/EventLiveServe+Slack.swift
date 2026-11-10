@@ -67,12 +67,12 @@ extension DefaultEventLiveServer {
               parsed: parsed
             ))
           } catch {
-            await recordWorkflowDispatchFailure(
+            try await recordWorkflowDispatchFailure(
               eventRoot: eventRoot,
               sourceKind: "slack",
               sourceId: source.id,
               workflowName: workflowName,
-              error: error
+              error: error, envelope: envelope
             )
             continue
           }

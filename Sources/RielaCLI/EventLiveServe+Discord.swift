@@ -45,7 +45,7 @@ extension DefaultEventLiveServer {
       )
       for message in messages.sorted(by: { $0.sortKey < $1.sortKey }) {
         observedMessages += 1
-        if try !EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment) {
+        if admissionGate == nil, try !EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment) {
           try offsetStore.saveLastMessageId(message.id)
         }
         let resolvedAttachments = try await resolveDiscordAttachments(
@@ -70,6 +70,7 @@ extension DefaultEventLiveServer {
           envelope: envelope, triggerResult: triggerResult, parsed: parsed, eventRoot: eventRoot
         ) { try offsetStore.saveLastMessageId(message.id); continue }
         guard triggerResult.accepted else {
+          if admissionGate != nil { try offsetStore.saveLastMessageId(message.id) }
           continue
         }
         for trigger in triggerResult.triggers {
@@ -84,12 +85,12 @@ extension DefaultEventLiveServer {
               parsed: parsed
             ))
           } catch {
-            await recordWorkflowDispatchFailure(
+            try await recordWorkflowDispatchFailure(
               eventRoot: eventRoot,
               sourceKind: "discord",
               sourceId: source.id,
               workflowName: workflowName,
-              error: error
+              error: error, envelope: envelope
             )
             continue
           }
@@ -104,6 +105,7 @@ extension DefaultEventLiveServer {
             )
           }
         }
+        if admissionGate != nil { try offsetStore.saveLastMessageId(message.id) }
       }
     }
     return observedMessages

@@ -65,6 +65,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     public var currentStepId: String?
     public var activeStepIds: [String]
     public var updatedAt: Date
+    public var createdAt: Date?
 
     public init(
       sessionId: String,
@@ -72,7 +73,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       status: WorkflowSessionStatus,
       currentStepId: String?,
       activeStepIds: [String],
-      updatedAt: Date
+      updatedAt: Date,
+      createdAt: Date? = nil
     ) {
       self.sessionId = sessionId
       self.workflowId = workflowId
@@ -80,6 +82,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       self.currentStepId = currentStepId
       self.activeStepIds = activeStepIds
       self.updatedAt = updatedAt
+      self.createdAt = createdAt
     }
   }
 
@@ -126,7 +129,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
         status: status,
         currentStepId: currentStepId,
         activeStepIds: activeStepIds.sorted(),
-        updatedAt: updatedAt
+        updatedAt: updatedAt,
+        createdAt: row["created_at"].flatMap(Self.date(from:))
       )
     }
   }
@@ -272,7 +276,8 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
                 AND json_extract(execution.value, '$.status') = 'running'
             )
           ), '[]') AS active_step_ids,
-          snapshots.updated_at
+          snapshots.updated_at,
+          json_extract(snapshots.session_json, '$.createdAt') AS created_at
         FROM workflow_runtime_snapshots AS snapshots
         WHERE \(whereClause)
         ORDER BY snapshots.updated_at DESC, snapshots.workflow_execution_id

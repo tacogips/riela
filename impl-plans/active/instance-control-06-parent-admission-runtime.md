@@ -90,10 +90,10 @@ This plan adds:
 
 ## Completion criteria
 
-- [ ] Port and record implemented.
-- [ ] Tests pass.
-- [ ] Lint exits 0.
-- [ ] Progress log written.
+- [x] Port and record implemented.
+- [x] Tests pass.
+- [x] Lint exits 0.
+- [x] Progress log written.
 
 ## Progress Log
 
@@ -136,3 +136,14 @@ Plan authored (Opus). Not started.
 3. The lint command in `## Verification` is unchanged.
 
 **Progress log.** Record the exit codes and log paths. Tick criteria only after they exit 0.
+
+### Implementation continuation: 2026-11-10
+- Implemented the parent admission port and start-record primitives; successful starts also clear an old record if the provider returns nil. Added process-pipe and fake-runtime regressions in `DaemonAdmissionRuntimeTests.swift`.
+- Lane-B seed exited 0 (`scratch-seed.log`); available disk was 25,100,400 KiB. Strict changed-file lint and plan lint exited 0 (`strict-final.log`, `lint-final2.log`).
+- Initial test attempt exited 1 (53 tests, one fixture failure; `test-attempt1.log`); the fixture was corrected. The next attempts could not compile on the moving shared tree: `test-final.log` had a sibling `EventLiveServe.swift` argument-order error, `test-attempt3.log` saw `EventReadOnly.swift` modified during compilation, and `test-attempt4.log` had errors and concurrent changes in `Tests/RielaCLITests/EventAdmissionGateTests.swift`. All exited 1. Rerun the exact focused test after plan 05 stabilizes; no current-source passing behavioral gate is claimed.
+- Per-edit intentions and hashes are in the plan evidence directory. Formal review and serial integration remain downstream.
+
+### Verification continuation: 2026-11-10
+- The stabilized combined tree passed the lane-B focused suite: 53 tests, 0 failures, exit 0 (`test-resume.log`); the three assigned Swift files matched `resume-pre.sha256` after the run.
+- Plan lint and strict changed-file lint both exited 0 (`lint-resume.log`, `strict-resume.log`). The prior sibling compilation blockers and fixture failure are superseded by this current-source run.
+- Formal test-integrity and adversarial review, App route integration, and serial integration remain downstream.

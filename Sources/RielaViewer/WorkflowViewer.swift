@@ -327,7 +327,8 @@ public struct WorkflowViewerLoader: Sendable {
           status: $0.status,
           currentStepId: $0.currentStepId,
           activeStepIds: $0.activeStepIds,
-          updatedAt: $0.updatedAt
+          updatedAt: $0.updatedAt,
+          startedAt: $0.createdAt
         )
       }
       diagnostics = try storedSummaries.first.map {
@@ -451,7 +452,8 @@ public struct WorkflowViewerLoader: Sendable {
       status: session.status,
       currentStepId: session.currentStepId,
       activeStepIds: active.sorted(),
-      updatedAt: session.updatedAt
+      updatedAt: session.updatedAt,
+      startedAt: session.createdAt
     )
   }
 

@@ -234,6 +234,11 @@ riela instance update <identity> [... same setters ...]
 riela instance remove <identity> [--scope project|user]
 ```
 
+> 2026-11-10: `show` now also resolves RielaApp profile instances (after
+> project → user), and `update`/`remove` on an App-only identity fail as
+> read-only. The resident-App verbs `reload`, `run` and `executions` are
+> specified in `design-instance-reload-run-cli.md`.
+
 `riela workflow run` changes (`ParsedWorkflowOptions`):
 
 ```bash

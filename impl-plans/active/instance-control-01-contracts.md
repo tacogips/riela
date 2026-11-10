@@ -1,6 +1,6 @@
 # Instance control 01: shared contracts (admission wire, reload DTOs, start record)
 
-**Status**: Planned
+**Status**: Implemented; independent review pending
 **planId**: instance-control-01-contracts
 **dependsOn**: none (wave 1)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 5, 6, 8 and the response shape; §5
@@ -180,11 +180,22 @@ Record the integer exit status, testsRun and failureCount for each in the progre
 
 ## Completion criteria
 
-- [ ] All symbols above exist with the exact names and signatures.
-- [ ] Verification 1–3 exit 0, with log paths recorded.
-- [ ] Progress log updated.
+- [x] All symbols above exist with the exact names and signatures.
+- [x] Verification 1–3 exit 0, with log paths recorded.
+- [x] Progress log updated.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+### Implementation: 2026-11-10
+
+Implemented admission wire and controller forwarding, strict reload contracts, fingerprints and ports, with focused tests. This is a moving shared tree; formal review and serial integration remain downstream.
+
+- Build: `arch -arm64 /bin/zsh -lc 'swift build 2>&1 | tee tmp/instance-control/instance-control-01-contracts/build.log; exit ${pipestatus[1]}'` — exit 0, tests 0, failures 0.
+- Tests: `arch -arm64 /bin/zsh -lc 'export HOME="$PWD/tmp/instance-control/instance-control-01-contracts/home" RIELA_APP_ROOT="$PWD/tmp/instance-control/instance-control-01-contracts/app"; swift test --filter "RielaAppInstanceReloadContractTests|WorkflowServeAdmissionTests" 2>&1 | tee tmp/instance-control/instance-control-01-contracts/test.log; exit ${pipestatus[1]}'` — exit 0, 5 tests, 0 failures.
+- Plan selected-file lint: `arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaServer/WorkflowServeAdmission.swift Sources/RielaServer/WorkflowServingController.swift Sources/RielaAppSupport/RielaAppInstanceReloadContract.swift Tests/RielaAppSupportTests/RielaAppInstanceReloadContractTests.swift Tests/RielaServerTests/WorkflowServeAdmissionTests.swift 2>&1 | tee tmp/instance-control/instance-control-01-contracts/lint.log; exit ${pipestatus[1]}'` — exit 0, tests 0, failures 0.
+- Strict lint through `tmp/instance-control/instance-control-01-contracts/changed-swift.nul`: exit 0, log `tmp/instance-control/instance-control-01-contracts/lint-strict.log`, tests 0, failures 0. The first lint attempt found trailing whitespace; it was corrected before final checks.
+- Pre-edit SHA-256: `WorkflowServingController.swift` 2371722538ef1fc515213c24651f76e46be06b84c73a1e799fb29a45d46a8ed9; this plan 2af14f8548b07b8abcf61e1c9729e6bbaf3d24bb98e6e0469721325a7e0df44a; four new Swift files absent. Full pre/post source hashes and per-edit intentions are recorded in `tmp/instance-control/instance-control-01-contracts/`.
+- Post-edit SHA-256: `WorkflowServeAdmission.swift` 6f8d0e60b71147477efddb4d42d2e375b4e15010adec3a88197f7427d41e93e4; `WorkflowServingController.swift` ba8053c03a5ddc8e51186ea75d2c98a852d206635211bd00983f1e62895ad306; `RielaAppInstanceReloadContract.swift` 946e5c5340306ae7126b069aa6ce2fd9ae851bbea853ab37c47936fca9f631de; `RielaAppInstanceReloadContractTests.swift` 9c0b0b99c8dabfe62de0eb816bdcbaedf1e382ff66c2c131afb46feebc5b5f12; `WorkflowServeAdmissionTests.swift` b2cfe5ee589b5e7d4061d1d1f58a810ea6a9c5a1bfb378507ec7afd708b1dcb9.

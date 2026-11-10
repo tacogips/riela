@@ -2,7 +2,7 @@
 
 **Status**: Planned
 **planId**: instance-control-06-parent-admission-runtime
-**dependsOn**: instance-control-01-contracts (admission wire types, `WorkflowServingController.admissionControl`, `RielaAppInstanceStartRecord`, `RielaAppInstanceReloadFingerprint`)
+**dependsOn**: instance-control-01-contracts (admission wire types, `WorkflowServingController.admissionControl`, `RielaAppInstanceStartRecord`, `RielaAppInstanceReloadFingerprint`); instance-control-08-reload-coordinator (resource ordering only: lane B scratch ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 5 (installed start record, record-advance rule), 6 (parent sequence), 8 (confirm, replace)
 **Created**: 2026-11-10
 **Evidence root**: tmp/instance-control/instance-control-06-parent-admission-runtime/
@@ -99,3 +99,40 @@ This plan adds:
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+### Implementation attempt: 2026-11-10
+- Added initial parent admission forwarding, acknowledgement matching, timeout injection, and runtime start-record and replacement primitives. These changes are incomplete and have not been compiled or behaviorally verified.
+- Strict changed-file SwiftLint exited 0; see `tmp/instance-control/instance-control-06-parent-admission-runtime/lint-strict.log` and `changed-swift.nul`.
+- Required tests remain unwritten. The dispatched `artifactRoots` is empty; the required SwiftPM test would write generated build artifacts to `.build`, outside an authorized artifact root. Request a checkpoint amendment authorizing the build output before running it. Finish tests and rerun all plan gates afterward.
+- Pre/post source hashes and per-edit intent are under `tmp/instance-control/instance-control-06-parent-admission-runtime/`. Formal reviews and serial integration remain downstream.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Blocker resolved.** The dispatch declared `artifactRoots: []`, while `swift test` writes SwiftPM build output. This amendment authorizes build output in two serialized lanes. No design, contract, or source `writePaths` change.
+
+**Lanes:**
+- Lane A owns `.build`: plans 04 → 05 → 07 → 09 → 10.
+- Lane B owns `tmp/instance-control/swiftpm-lane-b`: plans 03 → 08 → 06.
+
+**This plan is the lane B tail.**
+- `writePaths` and `artifactRoots` add `tmp/instance-control/swiftpm-lane-b`.
+- `dependsOn` adds `instance-control-08-reload-coordinator` for resource ordering only. There is no code dependency, and plan 08's files must not be edited.
+- Never run SwiftPM against `.build`.
+
+**Disk gate.** `df -k .` must show Available ≥ 10485760 KiB before the seed or build. Otherwise record a `disk-space` blocker and stop, deleting nothing.
+
+**SwiftPM rules:**
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- If dependency resolution fails, record `dependency-resolution` and stop.
+- Compile errors caused only by sibling files are `sibling-blocked`.
+
+**Remaining work.** Write `Tests/RielaAppSupportTests/DaemonAdmissionRuntimeTests.swift` per `## Tests`. Compile, fix, and verify the partial source changes already recorded above.
+
+**Superseding verification** (each must exit 0; logs under `tmp/instance-control/instance-control-06-parent-admission-runtime/`):
+1. Idempotent seed. It is normally already done by plan 03; the log must list the four entries:
+   `mkdir -p tmp/instance-control/instance-control-06-parent-admission-runtime && arch -arm64 /bin/zsh -lc 'd=tmp/instance-control/swiftpm-lane-b; { df -k .; if [ ! -f $d/workspace-state.json ]; then mkdir -p $d && cp -c -R .build/checkouts .build/repositories .build/artifacts $d/ && sed "s#$PWD/.build/#$PWD/$d/#g" .build/workspace-state.json > $d/workspace-state.json; fi; ls -d $d/checkouts $d/repositories $d/artifacts $d/workspace-state.json; } 2>&1 | tee tmp/instance-control/instance-control-06-parent-admission-runtime/scratch-seed.log; exit ${pipestatus[1]}'`
+2. Focused tests, 0 failures, with `DaemonAdmissionRuntimeTests` present in the log:
+   `arch -arm64 /bin/zsh -lc 'swift test --scratch-path tmp/instance-control/swiftpm-lane-b --filter "DaemonAdmissionRuntimeTests|RuntimeEnvironmentChannelProcessTests|DaemonRuntimeEnvironmentTests|RuntimeEnvironmentReloadSafetyTests|DaemonWorkflowSupportTests" 2>&1 | tee tmp/instance-control/instance-control-06-parent-admission-runtime/test.log; exit ${pipestatus[1]}'`
+3. The lint command in `## Verification` is unchanged.
+
+**Progress log.** Record the exit codes and log paths. Tick criteria only after they exit 0.

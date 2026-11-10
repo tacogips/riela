@@ -2,7 +2,7 @@
 
 **Status**: Planned
 **planId**: instance-control-05-child-admission-gate
-**dependsOn**: instance-control-01-contracts (`WorkflowServeAdmissionFrame`, `WorkflowServeAdmissionAcknowledgement`, `WorkflowServeAdmissionState`, `WorkflowServeAdmissionWire`)
+**dependsOn**: instance-control-01-contracts (`WorkflowServeAdmissionFrame`, `WorkflowServeAdmissionAcknowledgement`, `WorkflowServeAdmissionState`, `WorkflowServeAdmissionWire`); instance-control-04-cli-commands (resource ordering only: lane A `.build` ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 step 6 (child gate, wire contract, closed-gate behaviour, lease), step 8.1; §5 gate tests; §6
 **Created**: 2026-11-10
 **Evidence root**: tmp/instance-control/instance-control-05-child-admission-gate/
@@ -153,3 +153,28 @@ A compile error caused only by sibling files is recorded as `sibling-blocked` an
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Blocker resolved.** The dispatch declared `artifactRoots: []`, while `swift test` writes SwiftPM build output to `.build`. This amendment authorizes build output in two serialized lanes. No design, contract, or source `writePaths` change.
+
+**Lanes:**
+- Lane A owns `.build`: plans 04 → 05 → 07 → 09 → 10.
+- Lane B owns `tmp/instance-control/swiftpm-lane-b`: plans 03 → 08 → 06.
+
+**This plan is in lane A, after 04.**
+- `writePaths` and `artifactRoots` add `.build`.
+- `dependsOn` adds `instance-control-04-cli-commands` for resource ordering only. There is no code dependency on plan 04, and plan 04's files must still not be edited.
+- The verification commands in `## Verification` are unchanged and authorized as written.
+- Write the three runs to `test-run1.log`, `test-run2.log` and `test-run3.log` (the dispatch manifest uses these names).
+
+**Rules:**
+- Never pass `--scratch-path`.
+- Never touch `tmp/instance-control/swiftpm-lane-b`.
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- If dependency resolution fails, record `dependency-resolution` with the log path and stop.
+- Wait on a held `.build` lock; never kill another SwiftPM process.
+- Compile errors caused only by sibling files are `sibling-blocked` and rerun.
+- The 3 consecutive green runs must all happen after the final source edit.
+
+**Progress log.** Record the 3 run exit codes, the lint exit code, and the log paths.

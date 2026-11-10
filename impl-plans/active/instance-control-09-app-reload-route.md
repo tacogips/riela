@@ -124,3 +124,19 @@ Running-child respawn paths are covered by plan 08 (coordinator) and plan 06 (ru
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Why.** This plan is not blocked yet, but it would hit the same blocker: its `swift test` and `swift build` write SwiftPM build output.
+
+**Change.**
+- `writePaths` and `artifactRoots` add `.build`.
+- `dependsOn` is unchanged. Through 06 (lane B tail) and 07 (lane A tail, after 04 and 05), it already runs after both build lanes, so it is the sole `.build` user at its level.
+- The verification commands in `## Verification` are unchanged and authorized as written.
+
+**Rules:**
+- Never pass `--scratch-path`.
+- Never touch or delete `tmp/instance-control/swiftpm-lane-b`.
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- If dependency resolution fails, record `dependency-resolution` and stop.
+- Wait on a held `.build` lock.

@@ -2,7 +2,7 @@
 
 **Status**: Planned
 **planId**: instance-control-07-reload-support-library
-**dependsOn**: instance-control-01-contracts (`RielaAppInstanceReloadFingerprint`, `RielaAppInstanceStartRecord`, `RielaAppInstanceReloadError`/`Code`, `RielaAppInstanceReloadResponse.Definition`)
+**dependsOn**: instance-control-01-contracts (`RielaAppInstanceReloadFingerprint`, `RielaAppInstanceStartRecord`, `RielaAppInstanceReloadError`/`Code`, `RielaAppInstanceReloadResponse.Definition`); instance-control-05-child-admission-gate (resource ordering only: lane A `.build` ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 3, 4, 5 (fingerprint source), 7.1 (head-aware import, DR-002); §5
 **Created**: 2026-11-10
 **Evidence root**: tmp/instance-control/instance-control-07-reload-support-library/
@@ -143,3 +143,26 @@ public static func installedTriggerDefaultsFingerprint(
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Blocker resolved.** The dispatch declared `artifactRoots: []`, while `swift test` writes SwiftPM build output to `.build`. This amendment authorizes build output in two serialized lanes. No design, contract, or source `writePaths` change.
+
+**Lanes:**
+- Lane A owns `.build`: plans 04 → 05 → 07 → 09 → 10.
+- Lane B owns `tmp/instance-control/swiftpm-lane-b`: plans 03 → 08 → 06.
+
+**This plan is the lane A tail before 09.**
+- `writePaths` and `artifactRoots` add `.build`.
+- `dependsOn` adds `instance-control-05-child-admission-gate` for resource ordering only. There is no code dependency, and plan 05's files must not be edited.
+- The verification commands in `## Verification` are unchanged and authorized as written.
+
+**Rules:**
+- Never pass `--scratch-path`.
+- Never touch `tmp/instance-control/swiftpm-lane-b`.
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- If dependency resolution fails, record `dependency-resolution` and stop.
+- Wait on a held `.build` lock.
+- Compile errors caused only by sibling files are `sibling-blocked` and rerun.
+
+**Progress log.** Record the exit codes and log paths.

@@ -65,3 +65,17 @@ Operators and agents need one page that explains how to control resident RielaAp
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Why.** This plan is not blocked yet, but it would hit the same blocker: its `swift test --filter SurfaceParitySkillTests` writes SwiftPM build output.
+
+**Change.**
+- `writePaths` and `artifactRoots` add `.build`.
+- `dependsOn` is unchanged; through 09 it runs after both build lanes.
+- The verification commands are unchanged and authorized as written.
+
+**Rules:**
+- Never pass `--scratch-path`.
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- Wait on a held `.build` lock.

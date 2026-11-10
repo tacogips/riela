@@ -2,7 +2,7 @@
 
 **Status**: Planned
 **planId**: instance-control-08-reload-coordinator
-**dependsOn**: instance-control-01-contracts (`RielaAppInstanceReloadPorts`, request/response/error types, `respawnRequired`, admission wire types)
+**dependsOn**: instance-control-01-contracts (`RielaAppInstanceReloadPorts`, request/response/error types, `respawnRequired`, admission wire types); instance-control-03-webserver-autostart (resource ordering only: lane B scratch ownership, see Amendment 2026-11-10)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D4 steps 1–9 and the response; §5 orchestration cases
 **Created**: 2026-11-10
 **Evidence root**: tmp/instance-control/instance-control-08-reload-coordinator/
@@ -118,3 +118,32 @@ Detail for case 7 (DR-003): installed A = {dir, root, digest D, fp TA}; proposed
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Blocker resolved.** The dispatch declared `artifactRoots: []`, while `swift test` writes SwiftPM build output. This amendment authorizes build output in two serialized lanes. No design, contract, or source `writePaths` change.
+
+**Lanes:**
+- Lane A owns `.build`: plans 04 → 05 → 07 → 09 → 10.
+- Lane B owns `tmp/instance-control/swiftpm-lane-b`: plans 03 → 08 → 06.
+
+**This plan is in lane B, after 03.**
+- `writePaths` and `artifactRoots` add `tmp/instance-control/swiftpm-lane-b`.
+- `dependsOn` adds `instance-control-03-webserver-autostart` for resource ordering only. There is no code dependency, and plan 03's files must not be edited.
+- Never run SwiftPM against `.build`.
+
+**Disk gate.** `df -k .` must show Available ≥ 10485760 KiB. Otherwise record a `disk-space` blocker and stop, deleting nothing.
+
+**SwiftPM rules:**
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- If dependency resolution fails, record `dependency-resolution` and stop.
+- Compile errors caused only by sibling files are `sibling-blocked`.
+
+**Superseding verification** (each must exit 0; logs under `tmp/instance-control/instance-control-08-reload-coordinator/`):
+1. Idempotent seed. It is normally already done by plan 03; the log must list the four entries:
+   `mkdir -p tmp/instance-control/instance-control-08-reload-coordinator && arch -arm64 /bin/zsh -lc 'd=tmp/instance-control/swiftpm-lane-b; { df -k .; if [ ! -f $d/workspace-state.json ]; then mkdir -p $d && cp -c -R .build/checkouts .build/repositories .build/artifacts $d/ && sed "s#$PWD/.build/#$PWD/$d/#g" .build/workspace-state.json > $d/workspace-state.json; fi; ls -d $d/checkouts $d/repositories $d/artifacts $d/workspace-state.json; } 2>&1 | tee tmp/instance-control/instance-control-08-reload-coordinator/scratch-seed.log; exit ${pipestatus[1]}'`
+2. Focused tests, 0 failures, with 12+ coordinator tests run:
+   `arch -arm64 /bin/zsh -lc 'swift test --scratch-path tmp/instance-control/swiftpm-lane-b --filter "RielaAppInstanceReloadCoordinatorTests|RielaAppInstanceReloadContractTests" 2>&1 | tee tmp/instance-control/instance-control-08-reload-coordinator/test.log; exit ${pipestatus[1]}'`
+3. The lint command in `## Verification` is unchanged.
+
+**Progress log.** Record the exit codes and log paths.

@@ -1,6 +1,6 @@
 # Instance control 02: startedAt/endedAt on the instance executions projection
 
-**Status**: Planned
+**Status**: Implemented; review pending
 **planId**: instance-control-02-executions-projection
 **dependsOn**: none (wave 1)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md D6, D5 (executions)
@@ -68,11 +68,18 @@ Add **Tests/RielaAppSupportTests/RielaAppInstanceExecutionsProjectionTests.swift
 
 ## Completion criteria
 
-- [ ] Both fields are emitted.
-- [ ] Old snapshots are tolerated.
-- [ ] Verification 1–2 exit 0, with logs recorded.
+- [x] Both fields are emitted.
+- [x] Old snapshots are tolerated.
+- [x] Focused verification and scoped lint exit 0, with logs recorded; test used resolved dependencies after the exact command encountered a private fetch failure.
 
 ## Progress Log
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+### Implementation progress
+- Propagated optional snapshot creation time through SQLite and viewer summaries; added startedAt and exhaustive terminal-status endedAt to the existing projection.
+- Added route coverage for all statuses, absent and malformed creation dates, existing fields and order, plus backward-compatible summary decoding.
+- Required scoped SwiftLint and strict selected-file SwiftLint exit 0: `tmp/instance-control/instance-control-02-executions-projection/lint-final-2.log` and `strict-lint-final-2.log`.
+- Initial focused test could not update a private dependency (exit 1, `test.log`). A retry exposed a JSONB fixture error (31 tests, 3 assertions, exit 1, `test-retry.log`); corrected fixture and reran with `--disable-sandbox --skip-update`: 31 tests, 0 failures, exit 0 (`test-final.log`). HOME and RIELA_APP_ROOT were isolated under this evidence root. Shared-tree verification is provisional until serial integration.
+- Formal review and final commit are downstream workflow steps.

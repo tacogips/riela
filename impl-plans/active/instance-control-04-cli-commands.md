@@ -236,3 +236,31 @@ Executions:
 
 ### Session: 2026-11-10
 Plan authored (Opus). Not started.
+
+### Implementation handoff
+- Added App profile identity lookup, profile disambiguation, selected-workflow ID normalization, and App-only mutation rejection; added an isolated store-level regression test. These changes have not yet been verified.
+- The prescribed focused `swift test` began fetching dependencies into the shared `.build` tree and was interrupted (exit 130; `tmp/instance-control/instance-control-04-cli-commands/test.log`). The dispatch declares no artifact roots, while its verification commands require generated build output outside those roots. A checkpoint amendment authorizing an isolated build artifact root is needed before continuing generated build/test work.
+- HTTP client, reload/run/executions, routing, remaining tests and all completion gates remain outstanding. Formal review and integration follow implementation.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+**Blocker resolved.** The dispatch declared `artifactRoots: []`, while `swift test` and `swift build` write SwiftPM build output to `.build`. This amendment authorizes build output in two serialized lanes. No design, contract, or source `writePaths` change.
+
+**Lanes:**
+- Lane A owns `.build`: plans 04 → 05 → 07 → 09 → 10.
+- Lane B owns `tmp/instance-control/swiftpm-lane-b`: plans 03 → 08 → 06.
+
+**This plan is the lane A head.**
+- `writePaths` and `artifactRoots` add `.build`.
+- `dependsOn` stays none.
+- The verification commands in `## Verification` are unchanged and authorized as written, including `.build/debug/riela` for help and the read-only probes.
+
+**Rules:**
+- Never pass `--scratch-path`.
+- Never touch `tmp/instance-control/swiftpm-lane-b`.
+- Never run `swift package clean`, `reset`, `update`, or anything that rewrites `Package.resolved`.
+- If dependency resolution fails, record `dependency-resolution` with the log path and stop.
+- If another SwiftPM process holds the `.build` lock (for example the serial integration step), wait. Do not kill it.
+- Compile errors caused only by sibling-plan files (including lane B's in-progress edits) are recorded as `sibling-blocked` and rerun.
+
+**Progress log.** Complete the remaining implementation, then record every verification exit code and log path. Tick criteria only after they exit 0.

@@ -65,6 +65,10 @@
       {
         "decision": "Unresolved items are retained via fanout collect-partial failed join records; cross-run backlog belongs to ART.",
         "rationale": "Riela keeps runtime evidence only; timed-out work is never marked completed (design §9)."
+      },
+      {
+        "decision": "Amendment 2026-11-10 round 1: plan issue188-04-step-supervisor gains exact writePaths Sources/RielaCore/WorkflowFailureDiagnostics.swift (closed typed allowlist, <=1024-byte metadata retention for riela.step.attempt.finished / riela.step.retry.stopped / riela.step.deadline.exceededAfterSuccess; command_failure_diagnostics branch byte-identical), Sources/RielaCore/RuntimeStore.swift (once-only post-terminal append of riela.step.deadline.exceededAfterSuccess to a .completed execution, no status/output/live-tail change), and new tests Tests/RielaCoreTests/StepRetryEventRetentionTests.swift and Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift; verification widened accordingly (plan Decisions A-E).",
+        "rationale": "Blocked plan ids: issue188-04-step-supervisor (reason blocked-wave-scope-or-contract; evidence tmp/issue-188/issue188-04-step-supervisor/cont1-test-attempt2.log exit 1, 20 tests, 3 failures). Resolved gaps: WorkflowFailureDiagnostics.swift:178 discarded retry-event metadata and RuntimeStore.swift:681 ignored backend events after terminal status, so design §5.1/§7 diagnostics could not be persisted within plan 04 writePaths. No redesign; plan IDs, dependsOn and accepted plans issue188-01/02/03/05/06 unchanged; FailClosedSQLiteWorkflowRuntimeStore needs no change because it persists the session snapshot after the backing call. Accepted by step5-impl-plan-review comm-000068."
       }
     ],
     "intentionalTradeoffs": [
@@ -201,21 +205,27 @@
         "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift",
         "Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift",
         "Tests/RielaCoreTests/StepRetryPolicyTests.swift",
-        "impl-plans/active/issue188-04-step-supervisor.md"
+        "impl-plans/active/issue188-04-step-supervisor.md",
+        "Sources/RielaCore/WorkflowFailureDiagnostics.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Tests/RielaCoreTests/StepRetryEventRetentionTests.swift",
+        "Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift"
       ],
       "sharedPaths": [],
       "artifactRoots": [],
       "acceptanceCriteria": [
         "executeAddonAndPublish delegates to executeSupervisedAddonAndPublish only when deadlineMs or retry is authored; otherwise the code path is unchanged.",
         "Supervisor implements readyAt, dispatch guards, unstructured child Task with once-flag race (no task group), per-attempt timers replaced/disarmed with stale fires ignored, retry decision order, outcome handling and diagnostics events per design §5.1/§7.",
-        "All 18 StepRetryPolicyTests cases pass in 3 consecutive runs; regression filter and swiftlint exit 0 with log paths recorded."
+        "Amendment round 1: WorkflowFailureDiagnostics retains riela.step.attempt.finished / retry.stopped / deadline.exceededAfterSuccess metadata only under the closed typed allowlist (<=1024 bytes, whole object dropped on any violation); command_failure_diagnostics branch unchanged.",
+        "Amendment round 1: InMemoryWorkflowRuntimeStore appends riela.step.deadline.exceededAfterSuccess at most once to a completed execution without changing status/completedAt/updatedAt/output or recreating a live tail; all other post-terminal events stay ignored; the event persists through FailClosedSQLiteWorkflowRuntimeStore.",
+        "All StepRetryPolicyTests, StepRetryEventRetentionTests and StepRetryEventSQLitePersistenceTests cases pass in 3 consecutive runs; regression filter and swiftlint exit 0 with log paths recorded."
       ],
       "verification": [
-        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter StepRetryPolicyTests 2>&1 | tee tmp/issue-188/p04-test-run1.log; exit ${pipestatus[1]}'",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter StepRetryPolicyTests 2>&1 | tee tmp/issue-188/p04-test-run2.log; exit ${pipestatus[1]}'",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter StepRetryPolicyTests 2>&1 | tee tmp/issue-188/p04-test-run3.log; exit ${pipestatus[1]}'",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RunnerFailurePolicyTests|RunnerNonTerminalStepFailureTests|DeterministicWorkflowRunnerFanoutTests|FanoutFailedBranchStepOutputsTests\" 2>&1 | tee tmp/issue-188/p04-regression.log; exit ${pipestatus[1]}'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift Tests/RielaCoreTests/StepRetryPolicyTests.swift 2>&1 | tee tmp/issue-188/p04-lint.log; exit ${pipestatus[1]}'"
+        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter \"StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests\" 2>&1 | tee tmp/issue-188/p04-test-run1.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests\" 2>&1 | tee tmp/issue-188/p04-test-run2.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests\" 2>&1 | tee tmp/issue-188/p04-test-run3.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RunnerFailurePolicyTests|RunnerNonTerminalStepFailureTests|DeterministicWorkflowRunnerFanoutTests|FanoutFailedBranchStepOutputsTests|RuntimeStoreTests|CommandFailureDiagnosticsCaptureTests|CommandFailureDiagnosticsExportTests|SessionReconcileCommandTests\" 2>&1 | tee tmp/issue-188/p04-regression.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift Sources/RielaCore/WorkflowFailureDiagnostics.swift Sources/RielaCore/RuntimeStore.swift Tests/RielaCoreTests/StepRetryPolicyTests.swift Tests/RielaCoreTests/StepRetryEventRetentionTests.swift Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift 2>&1 | tee tmp/issue-188/p04-lint.log; exit ${pipestatus[1]}'"
       ]
     },
     {

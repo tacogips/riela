@@ -1,6 +1,6 @@
 # Issue 188 Plan 04: Step supervisor (deadline, retry loop, dispatch guard, diagnostics)
 
-**Status**: Ready
+**Status**: Ready (amended 2026-11-10, blocked-wave-scope-or-contract round 1; see Amendment section)
 **planId**: issue188-04-step-supervisor
 **dependsOn**: issue188-01-core-contract
 **Design Reference**: design-docs/specs/design-step-deadline-and-retry-policy.md §3.1, §3.2, §3.3, §4, §5.1, §5.2, §5.4, §7, §10
@@ -160,8 +160,148 @@ If a compile error comes only from a sibling plan's writePaths (plans 03 and 05 
 - [ ] Verification 1–3 exit 0, with log paths recorded.
 - [ ] Only writePaths and this plan file are changed.
 
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 1)
+
+Source: `checkpointAmendment` (round 0 → this is amendment round 1 of max 2), summary `tmp/opus-terra-waves/opus-terra-design-and-implement-review-loop-session-3/wave-001/wave-summary.json`. Blocker: the runtime store drops the metadata of the design §7 `riela.step.*` events (`WorkflowFailureDiagnostics.retainedEventMetadata`, `Sources/RielaCore/WorkflowFailureDiagnostics.swift:178`) and ignores every backend event once an execution is terminal (`InMemoryWorkflowRuntimeStore.recordStepBackendEventReceiptLocked`, `Sources/RielaCore/RuntimeStore.swift:681`). That makes test cases 2, 4 and 14 (`testRetryAfterRaisesBackoffAndRecordsAttempts`, `testCancellationDuringBackoffStopsWithoutAnotherDispatch`, `testSuccessfulEffectIsPublishedAfterSlowPublicationCrossesDeadline`) unpassable. Evidence: `tmp/issue-188/issue188-04-step-supervisor/cont1-test-attempt2.log` (exit 1, 20 tests, 3 failures).
+
+This amendment is additive. It does not redesign: design §7 already requires these events to be runtime-store-owned evidence, and design §5.1/§7 already require `exceededAfterSuccess` after a published success. No other plan is changed.
+
+### Decision A: authorized extra write paths (plan 04 only, exact files)
+- `Sources/RielaCore/WorkflowFailureDiagnostics.swift`: bounded retention of step-retry event metadata.
+- `Sources/RielaCore/RuntimeStore.swift`: one post-terminal event, limited to `riela.step.deadline.exceededAfterSuccess`.
+- `Tests/RielaCoreTests/StepRetryEventRetentionTests.swift` (new): in-memory store tests.
+- `Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift` (new): SQLite fail-closed store round-trip test.
+
+No other plan in issue 188 owns these files. Plans 01, 02, 03, 05 and 06 are accepted and must not be touched. `Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift`, `Sources/RielaCore/RuntimeSession.swift`, `Sources/RielaCore/RuntimeStorePublicationTransactions.swift`, `Tests/RielaCoreTests/RuntimeStoreTests.swift` and `Tests/RielaAdaptersTests/CommandFailureDiagnosticsCaptureTests.swift` stay **read-only**. The fail-closed store needs no change, because its `recordStepBackendEventReceipt` already calls `persist(sessionId:)` after the backing in-memory call.
+
+### Decision B: additive contract for metadata retention (`WorkflowFailureDiagnostics.swift`)
+- Keep the `command_failure_diagnostics` branch of `retainedEventMetadata(eventType:metadata:)` byte-identical: same shape checks, same `eventMetadataByteLimit`.
+- Add one dispatch at the top. If `eventType` is one of the three step-retry event types, return `retainedStepRetryEventMetadata(eventType:metadata:)`, a new `private static` function in the same file. Every other event type still returns nil.
+- Add `public static let stepRetryEventTypes: Set<String> = ["riela.step.attempt.finished", "riela.step.retry.stopped", "riela.step.deadline.exceededAfterSuccess"]` and `public static let stepRetryEventMetadataByteLimit = 1_024`.
+- Value rules apply to every key. Use a closed, typed allowlist; drop the whole object (return nil) on any violation. Never strip only the offending key.
+  - Duration and count integers must be `.integer`; `.double` and `.string` are rejected. Range is `0...1_000_000_000_000`, and `attempt`/`attempts`/`maxAttempts` use `0...1_000`.
+  - Booleans must be `.bool`.
+  - Strings must be members of the closed sets below, built from the existing raw values. Do not hand-copy strings that already exist as enum raw values.
+- `riela.step.attempt.finished`.
+  - Required keys: `attempt` and `outcome`.
+  - Allowed integer keys: `attempt`, `maxAttempts`, `attemptDurationMs`, `elapsedMs`, `budgetRemainingMs`, `queueWaitMs`, `recordStartedDurationMs`, `retryAfterMs`, `nextDelayMs`.
+  - Allowed `.bool` key: `retryable`.
+  - Allowed string keys and their values:
+    - `outcome` ∈ {`succeeded`, `failed`};
+    - `errorCode` ∈ `AdapterExecutionErrorCode` raw values;
+    - `effectOutcome` ∈ `AdapterEffectOutcome` raw values;
+    - `timeoutKind` ∈ `StepTimeoutKind` raw values;
+    - `timeoutSource` ∈ {`adapter`, `runner-backstop`}.
+- `riela.step.retry.stopped`.
+  - Required keys: `attempts` and `stopReason`.
+  - Allowed keys: `attempts` (integer), `elapsedMs` (integer), and `stopReason` ∈ `StepRetryStopReason` raw values (`succeeded` and `cancelled` are already cases).
+- `riela.step.deadline.exceededAfterSuccess`.
+  - nil metadata stays nil.
+  - Otherwise the allowed keys are `elapsedMs` and `overrunMs` (integers), and none is required.
+- After validation, encode with `JSONEncoder` and reject anything over `stepRetryEventMetadataByteLimit` bytes.
+- Pitfalls:
+  - Do not loosen the command-diagnostics rules.
+  - Do not accept free strings: the adapter error *message* must never enter metadata.
+  - Do not add session or execution ids.
+  - Do not change `eventMetadata(exitCode:diagnostics:)`.
+- Supervisor alignment (own file, `DeterministicWorkflowRunner+StepSupervisor.swift`): every metadata object it emits must satisfy these rules. In particular, `attempt.finished` must always carry `attempt` and `outcome`, including the success and runner-backstop paths. The supervisor may add `elapsedMs`/`overrunMs` to `exceededAfterSuccess`; it is not required to.
+
+### Decision C: safe terminal-event mechanism (`RuntimeStore.swift`)
+In `InMemoryWorkflowRuntimeStore.recordStepBackendEventReceiptLocked`, replace only the early return of the `guard execution.status == .running` branch, as follows:
+- **Append once after a completed step.** Append exactly once when all three hold:
+  - `input.eventType == "riela.step.deadline.exceededAfterSuccess"`;
+  - the stored execution's `status == .completed`;
+  - the stored execution's `recentBackendEvents` has no event of that type yet.
+  
+  Append it **directly to the stored terminal execution** (`sessions[sessionId].executions[index]`):
+  - Use `sequence = (execution.backendEventCount ?? 0) + 1` and `at = input.at ?? clock.now()`.
+  - The record's `channel`, `toolName` and `usage` come from the input. Its metadata is `WorkflowFailureDiagnostics.retainedEventMetadata(...)`, and its content is `contentSnapshot ?? contentDelta`, exactly as in `appendRecentBackendEvent`.
+  - Keep the same 100-event bound.
+  - Update only `backendEventCount`, `lastBackendEventAt` and `lastBackendEventType` (if that field exists on `WorkflowStepExecution`; mirror what `WorkflowExecutionLiveTail.applying(to:)` sets).
+  - Write the session back to `sessions`, then return the new receipt.
+- **Ignore everything else.** Any other event type, any repeat, or a non-`.completed` terminal or suspended status gets today's behaviour: no mutation, return the existing receipt.
+- **Invariants:**
+  - Never change the execution's `status`, `completedAt`, `updatedAt`, `output`, `failureReason` or attempt, or any message, publication or session status.
+  - Never create or recreate an `executionLiveTails` entry for a terminal execution, so `executionLiveTailCountForTesting()` is unchanged.
+  - Never append `attempt.finished` or `retry.stopped` after terminal status. The supervisor already emits those before publication.
+  - `recordStepBackendEvent` (non-receipt) shares this function and must return the updated stored execution.
+- Persistence: `FailClosedSQLiteWorkflowRuntimeStore.recordStepBackendEventReceipt` already persists the session snapshot after the backing call, and SQLite stores the execution as JSON bytes. So the appended event and its metadata reach SQLite with no wrapper change.
+- Rejected alternative: a new `WorkflowRuntimeStore` protocol method. It would force edits to the fail-closed store and three test-only conformances (`WorkflowStepFailurePolicyTests.swift:SessionStatusRecordingStore`, `DefaultLoopGuardTests.swift:NonTransactionalWorkflowRuntimeStore`, `RuntimeStoreTests.swift:StaticWorkflowRuntimeStore`) for no gain.
+
+### Decision D: added tests (situation → expected)
+`Tests/RielaCoreTests/StepRetryEventRetentionTests.swift`. Use `@testable import RielaCore` and imitate `RuntimeStoreTests.testCommandFailureDiagnosticsMetadataIsDroppedUnlessItHasTheReceiptShape`.
+1. A valid `attempt.finished` carrying every allowed key → the stored metadata equals the input.
+2. A valid `retry.stopped` for each `StepRetryStopReason` case → retained.
+3. Invalid variants, each causing metadata nil while the event itself is still recorded (count +1):
+   - an unknown key;
+   - `attempt` given as `.string`;
+   - a `.double` duration;
+   - a negative or above-range integer;
+   - `stopReason:"bogus"`;
+   - a missing `outcome`;
+   - a missing `stopReason`;
+   - `timeoutSource:"worker"`.
+
+   Also add a separate positive check: a maximal valid `attempt.finished` (every allowed key at its maximum range value) is retained. That proves the 1024-byte guard never rejects valid output; the guard itself is defensive only.
+4. `retainedEventMetadata(eventType:"other", …)` → nil. The `command_failure_diagnostics` receipt shape is still retained.
+5. Complete an execution (`updateStepExecution(... status: .completed ...)`), then record `exceededAfterSuccess` with `{elapsedMs, overrunMs}` → `loadSession` shows:
+   - the event, with metadata, last in `recentBackendEvents`;
+   - `backendEventCount` +1;
+   - status, `completedAt`, `updatedAt` and output unchanged;
+   - `executionLiveTailCountForTesting() == 0`.
+6. Record the same event again → no duplicate; the receipt sequence is unchanged.
+7. After completion, record `riela.step.retry.stopped` or an assistant delta → ignored, with the event count unchanged.
+8. A `.failed` execution receiving `exceededAfterSuccess` → ignored.
+
+`Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift`. Imitate `SessionReconcileCommandTests.testCancelledSessionRunsTerminalPersistenceHookOnce`: `makeRielaCLITestTemporaryDirectory`, `FailClosedSQLiteWorkflowRuntimeStore(backing:rootDirectory: canonicalRuntimeStoreRoot(...))`, and reload via `SQLiteWorkflowRuntimePersistenceStore(rootDirectory:).load(sessionId:)`.
+9. Create a session, record a running execution, record `retry.stopped{attempts:1, stopReason:"succeeded", elapsedMs:5}`, complete the execution, record `exceededAfterSuccess` → in the reloaded SQLite session, the execution holds both events with metadata retained, and its status is `.completed`.
+
+### Decision E: amended verification (each must exit 0; logs under `tmp/issue-188/`)
+1. Run three focused passes, each also required to include the new store tests:
+   ```
+   arch -arm64 /bin/zsh -lc 'swift test --filter "StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests" 2>&1 | tee tmp/issue-188/p04-test-run{1,2,3}.log; exit ${pipestatus[1]}'
+   ```
+   Run them as three separate commands with `run1`, `run2` and `run3`.
+2. Run a regression pass covering the old filter plus the store and diagnostics guards:
+   ```
+   arch -arm64 /bin/zsh -lc 'swift test --filter "RunnerFailurePolicyTests|RunnerNonTerminalStepFailureTests|DeterministicWorkflowRunnerFanoutTests|FanoutFailedBranchStepOutputsTests|RuntimeStoreTests|CommandFailureDiagnosticsCaptureTests|CommandFailureDiagnosticsExportTests|SessionReconcileCommandTests" 2>&1 | tee tmp/issue-188/p04-regression.log; exit ${pipestatus[1]}'
+   ```
+3. Lint the plan-owned Swift files:
+   ```
+   arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift Sources/RielaCore/WorkflowFailureDiagnostics.swift Sources/RielaCore/RuntimeStore.swift Tests/RielaCoreTests/StepRetryPolicyTests.swift Tests/RielaCoreTests/StepRetryEventRetentionTests.swift Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift 2>&1 | tee tmp/issue-188/p04-lint.log; exit ${pipestatus[1]}'
+   ```
+   `RuntimeStore.swift` is long. If lint reports a violation in it, first check whether the violation pre-exists. Run `git show HEAD:Sources/RielaCore/RuntimeStore.swift > tmp/issue-188/p04-runtimestore-head.swift`, then lint that copy into `tmp/issue-188/p04-runtimestore-head-lint.log`. Do not use git stash.
+   - A violation that is present at HEAD is recorded as pre-existing.
+   - A violation that is new must be fixed by keeping the added helper small and in the same file.
+   - Never disable rules.
+- Do not weaken or delete the three failing assertions in `StepRetryPolicyTests.swift`. They must pass as written, or be strengthened.
+
+### Completion criteria added by this amendment
+- [ ] Decision B, C and D implemented; only plan-04 writePaths changed. Record pre/post sha256 for each of the four newly authorized files.
+- [ ] Amended verification 1–3 exit 0 with log paths recorded in the progress log.
+- [ ] `git diff -- Sources/RielaCore/WorkflowFailureDiagnostics.swift` shows the `command_failure_diagnostics` branch unchanged.
+
 ## Progress Log
 
 ### Session: 2026-11-10
 **Tasks Completed**: Plan authored (Opus).
 **Blockers**: Waits for issue188-01.
+
+### Implementation continuation
+- Added the ready-at calculation and exposed existing add-on helpers for reuse; the supervised execution path, timer race, retry loop, diagnostics, and publication are still outstanding.
+- Added nine initial behavioral test methods. The remaining cases include non-cooperative execution and projection, timed retry and cancellation, stale timers, fanout, and slow publication.
+- Partial test evidence: `tmp/issue-188/issue188-04-step-supervisor/partial-test.log`. All completion criteria above remain open; run the three focused passes, regression, and strict changed-file lint after implementation is complete.
+- Partial focused run after correcting a helper compile error: `partial-test-2.log`, exit 1, 9 tests and 11 failures (1 unexpected); the supervised path is not wired. The earlier compile failure is retained in `partial-test.log`.
+- Strict changed-file lint: `partial-lint.log`, exit 0, using `changed-swift.nul`. These checks do not satisfy the required final-source gates.
+
+### Implementation continuation: supervisor draft
+- Wired the authored-policy path to an unstructured supervisor with ready-at accounting, retry classification, cancellation, separate step/attempt timers and stale timer disarm; legacy path remains unchanged. Added non-cooperative attempt and cancellation tests.
+- Focused draft run `tmp/issue-188/issue188-04-step-supervisor/p04-test-run1.log` passed 11 tests before subsequent lint-only refactoring; current source requires a fresh rerun. Strict selected-file lint passed in `p04-strict-lint-3.log`.
+- Work remains: complete the full 18 design cases, attempt/backstop and publication diagnostics and telemetry, audit dispatch/expiry races and success timing, run all three focused passes and regression on final source, and resolve any failures. The implementation is not ready for review or integration.
+- Current-source `p04-current.log` passed 11 tests, and `p04-regression.log` passed 31 tests. These do not satisfy the three 18-case focused runs. Strict changed-file lint passed on the same Swift sources.
+- Self-check finding: the child currently awaits the success attempt event before settling the supervisor, so a delayed event receipt can allow the backstop to win after an adapter success. Settle successful effects before awaiting diagnostics and verify the slow-store case. Backstop attempt events and required detailed metadata/telemetry also remain incomplete.
+
+### Continuation 1: runtime-store ownership blocker
+- Settled successful adapter output before awaiting diagnostic events; added backstop attempt metadata, dispatch guard, cancellation elapsed time and publication duration telemetry. Expanded deterministic coverage to 20 methods, including stale timers, blocked projection, fanout and slow publication.
+- `tmp/issue-188/issue188-04-step-supervisor/cont1-test-attempt2.log`: exit 1, 20 tests, 3 failures. `cont1-strict-lint.log`: exit 0. Earlier compile failure and hashes remain in the evidence directory.
+- Required diagnostics cannot be retained with the present scope: `Sources/RielaCore/WorkflowFailureDiagnostics.swift:178` strips metadata from these event types; `Sources/RielaCore/RuntimeStore.swift:681` ignores events once an execution is terminal, including `riela.step.deadline.exceededAfterSuccess`. These files are outside plan 04 writePaths/sharedPaths. A checkpoint amendment or owner-assigned repair must authorize bounded metadata retention and a safe terminal-event mechanism, with tests across affected stores. Then rerun all three focused passes, regression and lint. Do not weaken assertions or claim completion.

@@ -127,7 +127,7 @@ All three commands share these rules:
 ### Shared files (single owner: this plan)
 
 - `Sources/RielaCLI/RielaClientFamilyArguments.swift`: add `reload`, `run` and `executions` to `InstanceClientSubcommand`. Do not touch any other enum.
-- `Sources/RielaCLI/RielaCLIApplication.swift`: change only the `.instance(options)` case (line ~154) to `return await instanceCommandRunner.runAsync(options)`.
+- `Sources/RielaCLI/RielaCLIApplication.swift` (writePath since the round-2 amendment): change only (1) the `.instance(options)` case (line ~153) to `return await instanceCommandRunner.runAsync(options)`, and (2) the static `riela instance ...` usage line(s) (~line 354). See `## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 2)`.
 - `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift`: in `instanceRows`, add rows `instance.reload` (mutation), `instance.run` (mutation) and `instance.executions` (query) with `cli: "instance reload"` etc.
   - GraphQL stays excluded: use the `instanceDefaults` exclusion with no `graphql:` argument. Inspect how a row without GraphQL is declared in the same file, e.g. the cache rows.
   - SurfaceParity tests must stay green. If they require a CLI options list, add the declared flags.
@@ -264,3 +264,55 @@ Plan authored (Opus). Not started.
 - Compile errors caused only by sibling-plan files (including lane B's in-progress edits) are recorded as `sibling-blocked` and rerun.
 
 **Progress log.** Complete the remaining implementation, then record every verification exit code and log path. Tick criteria only after they exit 0.
+
+### Implementation continuation: 2026-11-10
+- Added an initial App API client with endpoint/profile discovery, bootstrap profile checking, request headers, response size check and safe-code mapping. Added isolated discovery and bootstrap tests; command integration and the remaining request, error and polling tests are still required.
+- The prior focused run passed 27 tests on the earlier source (`tmp/instance-control/instance-control-04-cli-commands/test-attempt2.log`); it predates the new client and is not final-source evidence. The product build with the initial client passed (`build-attempt2.log`); the client subsequently received lint-only edits.
+- Strict changed-file SwiftLint passed for the current assigned Swift files (`strict-lint-attempt3.log`, exit 0). Final-source focused tests, product build, help, and read-only probes remain required after implementation is complete.
+- Current partial source: isolated focused test command passed 29 tests, 0 failures, exit 0 (`test-attempt3.log`); this does not establish the missing command contract. Strict changed-file lint exit 0 (`strict-lint-attempt3.log`). Resume with command implementation, routing, complete regressions, then rerun all required gates and probes.
+
+### Implementation continuation 1: 2026-11-10
+- Implemented initial reload/run/executions command handling, App API routing and catalog entries; added identity, client and argument-validation regressions. Detailed retry/polling, closed-output and failure-path regression cases remain incomplete.
+- Focused suite exited 0 with 33 tests and zero failures (`test-cont1.log`); the later test-only whitespace fix means this is not exact final-source evidence. Strict changed-file lint exited 0 (`strict-lint-cont1-retry.log`).
+- The worktree binary `riela instance --help` exited 0 but omits the three commands (`help-cont1.log`). Help is extracted from the static line in `Sources/RielaCLI/RielaCLIApplication.swift:354`; the plan explicitly permits only the `.instance(options)` case in that file. Router changes cannot affect the intercepted help. Amend the permitted hunk to update the static instance usage line, then complete remaining behavioral tests and rerun all gates and read-only probes.
+
+## Amendment 2026-11-10 (blocked-wave-scope-or-contract, round 2)
+
+**Reason.** `dispatch-plans` reported `integration-paths-outside-writePaths` for `Sources/RielaCLI/RielaCLIApplication.swift` (finding `IR-W3-04-HELP-SCOPE-AND-INCOMPLETE`, severity mid). `riela instance --help` is intercepted before routing and printed from the static usage text at `RielaCLIApplication.swift:353-354`, so router or `InstanceCommands` changes cannot fix it. Previous checkpoint: `0b6cdaccacf63cf0993fad8db5823f021530257d`. No design, contract or other plan changes. Plan 03 is accepted and is now an `acceptedDependency`.
+
+**Ownership decision.** `Sources/RielaCLI/RielaCLIApplication.swift` moves from `sharedPaths` to this plan's `writePaths`. No other pending plan writes it (plan 05 explicitly excludes it). Authorized hunks, and nothing else:
+1. The `.instance(options)` dispatch case (~line 153): `return await instanceCommandRunner.runAsync(options)` (already applied in the working tree).
+2. The static `riela instance ...` usage line(s) (~line 354). Keep the existing `list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]` text intact, and add lines in the same two-space-indented style:
+   - `riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N] [--server <url>] [--profile <name>]`
+   - `riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N] [--server <url>] [--profile <name>]`
+   - `riela instance executions <identity> [--limit N] [--server <url>] [--profile <name>]`
+   - Use the exact flag spellings the parser in `InstanceAppCommands.swift` accepts. If a SurfaceParity test derives from usage text, update the matching row in `SurfaceCatalog+RowsCLI.swift` (existing sharedPath) consistently.
+
+**Ordered remaining work.**
+1. Usage-line edit above.
+2. Add regressions to `Tests/RielaCLITests/InstanceAppCommandsTests.swift` using the injected `RielaAppAPIClient.Transport` (recording fake) and a fake sleep/clock; no real network:
+   - (a) `reload --wait-idle`: 409 `instance_run_in_flight` twice then 200 → exit 0 with 3 POSTs; any other 409 code → no retry; retries stop at `--timeout-seconds` → exit 1 `instance_run_in_flight`.
+   - (b) 200 `handoff:"lost"` → exit 1 `reload_handoff_lost`, body printed; 404 or 405 without the reload route → `app_reload_unsupported`; 404 `instance_not_found` passes through.
+   - (c) `run` without `--wait` prints exactly the keys `launchId`,`sessionId`,`status`; `--wait` polls running → completed (exit 0); failed → `run_failed`; timeout → `run_wait_timeout`; null `sessionId` → polling, and a launch-record 404 → executions-detail fallback.
+   - (d) `executions --limit 0`/`101` → exit 2; output items have exactly the key set `sessionId,status,startedAt,endedAt,updatedAt,currentStepId`; missing `startedAt` → null; extra server fields dropped.
+   - (e) transport connection-refused → `app_unreachable`; bootstrap profile mismatch → `app_profile_conflict` and the recorded requests contain no POST; a response over 1 MiB → `app_response_too_large`.
+   - (f) every POST carries `Origin`, `x-riela-csrf`, `x-riela-profile`, `content-type: application/json`; GET polls carry no `Origin`; captured stdout/stderr never contain the fake csrf token string.
+3. Fix only the gaps those tests expose, in `InstanceAppCommands.swift` and `RielaAppAPIClient.swift`.
+4. Run all `## Verification (round 2)` commands below and record exit codes, log paths and the post-edit sha256 of every changed file in the progress log; then tick the completion criteria.
+
+**Pitfalls.** Do not edit any other line of `RielaCLIApplication.swift` (other in-flight plans in this repository own other usage lines). Do not change `riela environment` or `instance list` output. Do not weaken, skip or delete existing `WorkflowInstanceCommandTests`/SurfaceParity tests. Never print the csrf token or environment values; never write under `~/.riela`; never run `reload`/`run` against the live App. No git commit/stash/checkout/reset. Lane A rules from round 1 still apply (`.build` only, never `--scratch-path`, no `swift package update/reset/clean`).
+
+## Verification (round 2; supersedes `## Verification`, each logs under the evidence root)
+
+1. `mkdir -p tmp/instance-control/instance-control-04-cli-commands/home tmp/instance-control/instance-control-04-cli-commands/app-root && arch -arm64 /bin/zsh -lc 'export HOME=$PWD/tmp/instance-control/instance-control-04-cli-commands/home RIELA_APP_ROOT=$PWD/tmp/instance-control/instance-control-04-cli-commands/app-root; swift test --skip-update --filter "InstanceIdentityNormalizationTests|InstanceAppCommandsTests|WorkflowInstanceCommandTests|SurfaceParityCLITests|SurfaceParitySkillTests" 2>&1 | tee tmp/instance-control/instance-control-04-cli-commands/test.log; exit ${pipestatus[1]}'` — exit 0, positive test count, 0 failures, WorkflowInstanceCommandTests 11/11.
+2. `arch -arm64 /bin/zsh -lc 'swift build --skip-update --product riela 2>&1 | tee tmp/instance-control/instance-control-04-cli-commands/build.log; exit ${pipestatus[1]}'` — exit 0.
+3. `arch -arm64 /bin/zsh -lc 'f=tmp/instance-control/instance-control-04-cli-commands/help.log; .build/debug/riela instance --help > $f 2>&1; e=$?; for w in list show create update remove reload run executions; do grep -q "$w" $f || { echo missing-$w; exit 3; }; done; exit $e'` — exit 0.
+4. `arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/InstanceCommands.swift Sources/RielaCLI/InstanceAppCommands.swift Sources/RielaCLI/RielaAppAPIClient.swift Sources/RielaCLI/FileWorkflowInstanceStore.swift Sources/RielaCLI/RielaCLIApplication.swift Tests/RielaCLITests/InstanceIdentityNormalizationTests.swift Tests/RielaCLITests/InstanceAppCommandsTests.swift 2>&1 | tee tmp/instance-control/instance-control-04-cli-commands/lint.log; exit ${pipestatus[1]}'` — exit 0, empty output.
+5. `arch -arm64 /bin/zsh -lc 'git diff -U0 0b6cdaccacf63cf0993fad8db5823f021530257d -- Sources/RielaCLI/RielaCLIApplication.swift > tmp/instance-control/instance-control-04-cli-commands/cliapp-scope.diff; exit $?'` — exit 0; the diff contains only the `.instance` dispatch hunk and the instance usage-line hunk.
+6. `arch -arm64 /bin/zsh -lc '{ .build/debug/riela instance list --output json > tmp/instance-control/instance-control-04-cli-commands/probe-list.json; echo list-exit=$?; .build/debug/riela instance show configuration-903fe205-9c44-404f-9b4a-97c101422380 --output json > tmp/instance-control/instance-control-04-cli-commands/probe-show.json; echo show-exit=$?; .build/debug/riela instance executions configuration-903fe205-9c44-404f-9b4a-97c101422380 --limit 3 > tmp/instance-control/instance-control-04-cli-commands/probe-executions.json 2>&1; echo executions-exit=$?; } 2>&1 | tee tmp/instance-control/instance-control-04-cli-commands/probe.log'` — read-only; list and show exit 0; an `executions` `app_unreachable` exit is acceptable when recorded.
+
+**Round-2 completion criteria (in addition to `## Completion criteria`).**
+- [ ] help.log lists reload, run and executions and the existing five subcommands.
+- [ ] Regressions (a)-(f) exist and pass in test.log on the recorded final hashes.
+- [ ] cliapp-scope.diff shows only the two authorized hunks.
+- [ ] Probe exit codes recorded in this progress log.

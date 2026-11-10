@@ -1,6 +1,6 @@
 # Instance control 03: honour persisted web-server isEnabled at App launch
 
-**Status**: Implementation verification blocked
+**Status**: Implementation verified; review pending
 **planId**: instance-control-03-webserver-autostart
 **dependsOn**: none (wave 1)
 **Design Reference**: design-docs/specs/design-instance-reload-run-cli.md §2 row 1, D2; design-docs/specs/design-rielaapp-web-server-lifecycle-packaging.md §2.2
@@ -58,7 +58,7 @@ Fresh-read before each edit; record the pre- and post-edit sha256. Single owner.
 ## Completion criteria
 
 - [x] Autostart honours the persisted `isEnabled`.
-- [ ] Tests pass and logs are recorded.
+- [x] Tests pass and logs are recorded.
 
 ## Progress Log
 
@@ -109,3 +109,9 @@ Plan authored (Opus). Implementation (Codex): added the pure launch decision, co
 3. The lint command in `## Verification` is unchanged.
 
 **Progress log.** Record the seed log, the df output, and the test exit code with its log path. Tick "Tests pass" only after command 2 exits 0.
+
+### Lane B verification retry
+- Seed exited 0; `scratch-seed.log` records 26,532,788 KiB available and all four seeded entries under `tmp/instance-control/swiftpm-lane-b`.
+- Focused tests with HOME and RIELA_APP_ROOT isolated under this plan's evidence directory exited 0: 10 tests, 0 failures; `test-lane-b.log`.
+- Plan lint and strict changed-file lint exited 0: `lint-lane-b.log` and `strict-lint-lane-b.log`; the strict manifest is `changed-swift-lane-b.nul`.
+- Tests ran on the shared working tree; serial integration and formal review remain downstream. Source hashes are recorded in `pre-plan-edit-sha256.txt` and `post-plan-edit-sha256.txt` in the evidence directory.

@@ -14,6 +14,15 @@ public struct InstanceCommandRunner: Sendable {
     self.jsonLoader = jsonLoader
   }
 
+  public func runAsync(_ options: CLICommandOptions) async -> CLICommandResult {
+    switch options.command {
+    case "reload", "run", "executions":
+      return await InstanceAppCommands().run(options)
+    default:
+      return run(options)
+    }
+  }
+
   public func run(_ options: CLICommandOptions) -> CLICommandResult {
     do {
       switch options.command {
@@ -51,10 +60,12 @@ public struct InstanceCommandRunner: Sendable {
     }
     let parsed = try InstanceCommandOptions(options.arguments, defaultScope: nil, defaultOutput: options.output)
     let stores = ScopedWorkflowInstanceStore(workingDirectory: parsed.workingDirectory)
-    guard let resolved = try stores.find(identity: identity, workflowId: parsed.workflowId, scope: parsed.scope) else {
+    guard let resolved = try stores.findRecord(
+      identity: identity, workflowId: parsed.workflowId, scope: parsed.scope, profile: parsed.profile
+    ) else {
       throw WorkflowInstanceStoreError.notFound(identity)
     }
-    let record = InstanceRecord(scope: resolved.0.rawValue, instance: resolved.1)
+    let record = InstanceRecord(scope: resolved.scope, instance: resolved.instance)
     return CLICommandResult(exitCode: .success, stdout: try render(record, output: parsed.output))
   }
 
@@ -94,6 +105,7 @@ public struct InstanceCommandRunner: Sendable {
     let parsed = try InstanceCommandOptions(options.arguments, defaultScope: .project, defaultOutput: options.output)
     let stores = ScopedWorkflowInstanceStore(workingDirectory: parsed.workingDirectory)
     guard let existing = try stores.find(identity: identity, workflowId: parsed.workflowId, scope: parsed.scope) else {
+      try rejectAppOnly(identity: identity, parsed: parsed, stores: stores)
       throw WorkflowInstanceStoreError.notFound(identity)
     }
     let resolvedWorkflow = try resolveWorkflow(
@@ -122,9 +134,22 @@ public struct InstanceCommandRunner: Sendable {
     }
     let parsed = try InstanceCommandOptions(options.arguments, defaultScope: .project, defaultOutput: options.output)
     let stores = ScopedWorkflowInstanceStore(workingDirectory: parsed.workingDirectory)
+    if try stores.find(identity: identity, workflowId: parsed.workflowId, scope: parsed.scope) == nil {
+      try rejectAppOnly(identity: identity, parsed: parsed, stores: stores)
+    }
     try stores.remove(identity: identity, workflowId: parsed.workflowId, scope: parsed.scope)
     let result = InstanceRemovalResult(identity: identity, scope: parsed.scope.rawValue, removed: true)
     return CLICommandResult(exitCode: .success, stdout: try render(result, output: parsed.output))
+  }
+
+  private func rejectAppOnly(
+    identity: String, parsed: InstanceCommandOptions, stores: ScopedWorkflowInstanceStore
+  ) throws {
+    guard try stores.find(identity: identity, workflowId: parsed.workflowId) == nil,
+          try !stores.appProfiles.find(identity: identity, profile: parsed.profile, workflowId: parsed.workflowId).isEmpty else {
+      return
+    }
+    throw CLIUsageError("instance_app_scope_read_only: use 'riela instance reload <identity> [--workflow-definition-dir <dir>]'")
   }
 
   private func resolveWorkflow(
@@ -226,6 +251,7 @@ public struct InstanceCommandRunner: Sendable {
 
 private struct InstanceCommandOptions: ParsableArguments {
   @Option(name: .customLong("workflow")) var workflowId: String?
+  @Option var profile: String?
   @Option(name: [.customLong("scope"), .customLong("instance-scope")])
   private var parsedScope: WorkflowInstanceScope?
   @Option(name: .customLong("output")) private var parsedOutput: WorkflowOutputFormat?

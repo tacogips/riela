@@ -753,6 +753,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
 
 @MainActor
 public final class RielaAppDaemonWorkflowRuntime {
+  public typealias StartRecordProvider = @Sendable (RielaAppDaemonWorkflowCandidate, String) -> RielaAppInstanceStartRecord?
+
   public struct RuntimeSnapshot: Equatable {
     public var status: WorkflowServeStatus
     public var detail: String
@@ -775,6 +777,8 @@ public final class RielaAppDaemonWorkflowRuntime {
     /// Managed names of the private channel the child was started with; nil
     /// for a child without a channel (or one that has not been prepared yet).
     var channelNames: [String]?
+    var startRecord: RielaAppInstanceStartRecord?
+    var pendingStartRecord: RielaAppInstanceStartRecord?
   }
 
   private let eventSourceFactory: any WorkflowServeEventSourceFactory
@@ -782,18 +786,49 @@ public final class RielaAppDaemonWorkflowRuntime {
   private let environmentStore: RuntimeEnvironmentSnapshotStore
   private var environmentStatuses: [RuntimeEnvironmentScope: RuntimeEnvironmentStatus] = [:]
   private var runningWorkflows: [String: RunningWorkflow] = [:]
+  private var startRecordProvider: StartRecordProvider?
+  private var lastInstalledStartRecord: [String: RielaAppInstanceStartRecord] = [:]
 
   public init(
     eventSourceFactory: any WorkflowServeEventSourceFactory = RielaAppDaemonProcessEventSourceFactory(),
     monitorIntervalNanoseconds: UInt64 = 2_000_000_000,
-    environmentStore: RuntimeEnvironmentSnapshotStore = RuntimeEnvironmentSnapshotStore()
+    environmentStore: RuntimeEnvironmentSnapshotStore = RuntimeEnvironmentSnapshotStore(),
+    startRecordProvider: StartRecordProvider? = nil
   ) {
     self.eventSourceFactory = eventSourceFactory
     self.monitorIntervalNanoseconds = monitorIntervalNanoseconds
     self.environmentStore = environmentStore
+    self.startRecordProvider = startRecordProvider
   }
   public func snapshot(for identity: String) -> RuntimeSnapshot {
     runningWorkflows[identity]?.snapshot ?? RuntimeSnapshot(status: .stopped, detail: "Inactive")
+  }
+
+  public func setStartRecordProvider(_ provider: StartRecordProvider?) {
+    startRecordProvider = provider
+  }
+
+  public func installedStartRecord(identity: String) -> RielaAppInstanceStartRecord? {
+    lastInstalledStartRecord[identity]
+  }
+
+  public func isChildRunning(identity: String) -> Bool {
+    guard let running = runningWorkflows[identity], running.candidate.startsEventSources else { return false }
+    return running.snapshot.status == .running || running.snapshot.status == .starting
+  }
+
+  public func admissionControl(identity: String, frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
+    guard let running = runningWorkflows[identity] else { throw WorkflowServeAdmissionError.childExited }
+    return try await running.controller.admissionControl(frame)
+  }
+
+  public func replaceChild(
+    _ candidate: RielaAppDaemonWorkflowCandidate, configuration: WorkflowServeRuntimeConfiguration,
+    server: RielaServerConfiguration, sessionStoreRoot: String
+  ) async -> RuntimeSnapshot {
+    await stop(identity: candidate.id)
+    await start(candidate, configuration: configuration, server: server, sessionStoreRoot: sessionStoreRoot)
+    return snapshot(for: candidate.id)
   }
 
   public func prepareEnvironment(
@@ -1043,7 +1078,9 @@ public final class RielaAppDaemonWorkflowRuntime {
       controller: controller,
       snapshot: RuntimeSnapshot(status: .starting, detail: "Starting"),
       endpoint: nil,
-      monitorTask: monitorTask
+      monitorTask: monitorTask,
+      startRecord: lastInstalledStartRecord[candidate.id],
+      pendingStartRecord: startRecordProvider?(candidate, sessionStoreRoot)
     )
     do {
       let environment = try await prepareEnvironment(for: candidate, configuration: configuration)
@@ -1064,8 +1101,14 @@ public final class RielaAppDaemonWorkflowRuntime {
         eventRoot: candidate.eventRoot,
         startsEventSources: candidate.startsEventSources
       ))
+      guard runningWorkflows[candidate.id]?.controller === controller else { return }
       runningWorkflows[candidate.id]?.snapshot = snapshot(from: state)
       runningWorkflows[candidate.id]?.endpoint = state.generation?.endpoint
+      if state.status == .running {
+        let record = runningWorkflows[candidate.id]?.pendingStartRecord
+        runningWorkflows[candidate.id]?.startRecord = record
+        lastInstalledStartRecord[candidate.id] = record
+      }
     } catch {
       runningWorkflows[candidate.id]?.snapshot = RuntimeSnapshot(status: .failed, detail: "\(error)")
       runningWorkflows[candidate.id]?.endpoint = nil

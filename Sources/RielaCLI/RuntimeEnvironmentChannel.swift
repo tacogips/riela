@@ -6,6 +6,7 @@ import Glibc
 #endif
 import RielaAppSupport
 import RielaCore
+import RielaServer
 
 /// Child-side name for the shared ACK wire type (`RielaAppSupport`).
 typealias RuntimeEnvironmentAcknowledgement = RuntimeEnvironmentChannelAcknowledgement
@@ -200,11 +201,32 @@ final class RuntimeEnvironmentChannel: @unchecked Sendable {
   private var continuation: AsyncStream<Data>.Continuation?
   private var task: Task<Void, Never>?
 
-  init(state: EventRuntimeEnvironment, input: FileHandle = .standardInput, output: FileHandle = .standardOutput) {
+  init(state: EventRuntimeEnvironment, input: FileHandle = .standardInput, output: FileHandle = .standardOutput,
+       admissionGate: EventAdmissionGate? = nil) {
     self.state = state; self.input = input; self.output = output
     let stream = AsyncStream<Data>(bufferingPolicy: .bufferingOldest(4)) { continuation = $0 }
     task = Task { [state, output] in
       for await frame in stream {
+        if let control = WorkflowServeAdmissionFrame.decodeControlLine(frame) {
+          let ack: WorkflowServeAdmissionAcknowledgement
+          if let admissionGate {
+            switch control.type {
+            case "admission-close":
+              let seconds = min(600, max(1, control.leaseSeconds ?? WorkflowServeAdmissionWire.defaultLeaseSeconds))
+              ack = await admissionGate.close(requestId: control.requestId, leaseSeconds: seconds)
+            case "admission-confirm":
+              ack = await admissionGate.confirm(requestId: control.requestId)
+            default:
+              ack = await admissionGate.reopen(requestId: control.requestId)
+            }
+          } else {
+            ack = WorkflowServeAdmissionAcknowledgement(requestId: control.requestId, state: .open, running: 0, queued: 0)
+          }
+          if let data = try? JSONEncoder().encode(ack) {
+            try? output.write(contentsOf: data + Data([10]))
+          }
+          continue
+        }
         let ack = await state.replace(frame)
         if let data = try? JSONEncoder().encode(ack) {
           try? output.write(contentsOf: data + Data([10]))

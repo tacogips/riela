@@ -56,7 +56,7 @@ final class RielaAppWebServerController {
   }
 
   func startIfRequested(by options: RielaAppLaunchOptions) async {
-    guard options.startsWebServer else { return }
+    guard settings.shouldStartAtLaunch(launchFlag: options.startsWebServer) else { return }
     await start()
   }
 

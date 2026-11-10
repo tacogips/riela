@@ -151,7 +151,7 @@ public struct RielaCLIApplication: Sendable {
       case let .kaiba(options):
         return await kaibaInstanceCommandRunner.run(options)
       case let .instance(options):
-        return instanceCommandRunner.run(options)
+        return await instanceCommandRunner.runAsync(options)
       case let .doctor(options):
         if options.scope == "storage" { return StorageDoctorCommandRunner().run(options.arguments) }
         return await doctorCommand.run(options)
@@ -352,6 +352,9 @@ Usage:
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
+  riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]
+  riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--server URL] [--profile P] [--cwd <dir>]
+  riela instance executions <identity> [--limit N] [--server URL] [--profile P] [--cwd <dir>]
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
   riela doctor storage [--scope project|user|auto] [--top <n>] [--output text|json]
   riela storage compact [--apply] [--max-batch <n>] [--abandoned-after-hours <h>] [--allow-live-vacuum] [--output text|json]

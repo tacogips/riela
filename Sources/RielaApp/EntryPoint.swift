@@ -128,6 +128,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
     refreshLaunchAtLoginStatus()
     startDaemonStatusRefreshTimer()
+    daemonRuntime.setStartRecordProvider(Self.reloadStartRecord)
     importDaemonSourcesIfRequested()
     openInitialWorkflowsIfRequested()
     if launchOptions.opensWorkerSettings { showDistributedControllerSettings() }

@@ -15,6 +15,10 @@ public struct RielaAppWebServerSettings: Codable, Equatable, Sendable {
     self.port = port
   }
 
+  public func shouldStartAtLaunch(launchFlag: Bool) -> Bool {
+    launchFlag || isEnabled
+  }
+
   public func validated() throws -> Self {
     guard (1...65_535).contains(port) else {
       throw RielaAppWebServerSettingsError.invalidPort(port)

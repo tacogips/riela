@@ -1,4 +1,5 @@
 import Foundation
+import Crypto
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -67,6 +68,7 @@ struct DefaultEventLiveServer: EventLiveServing {
   var workflowRunner: any EventWorkflowRunning
   var telemetry: any RielaTelemetry
   var runtimeEnvironment: EventRuntimeEnvironment?
+  var admissionGate: EventAdmissionGate?
   var clock: any EventServeClock
   var triggerDefaultsResolver: (any EventWorkflowTriggerDefaultsResolving)?
   var cancelSettleTimeout: Duration
@@ -114,11 +116,12 @@ struct DefaultEventLiveServer: EventLiveServing {
       required: parsed.runtimeEnvironmentChannel ? [] : required, base: CLIRuntimeEnvironment.mergedProcessEnvironment(),
       workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)
     let runtime = EventRuntimeEnvironment(base: prepared, requiresBootstrap: parsed.runtimeEnvironmentChannel)
-    let channel = descriptors.map { RuntimeEnvironmentChannel(state: runtime, input: $0.input, output: $0.output) }
+    let gate = parsed.runtimeEnvironmentChannel ? EventAdmissionGate(clock: clock) : nil
+    let channel = descriptors.map { RuntimeEnvironmentChannel(state: runtime, input: $0.input, output: $0.output, admissionGate: gate) }
     defer { channel?.stop() }
     do {
       return try await serve(eventRoot: eventRoot, target: target, parsed: parsed, runtime: runtime,
-        required: required, stopsOnChannelClose: channel != nil)
+        required: required, stopsOnChannelClose: channel != nil, admissionGate: gate)
     } catch let error as CLIUsageError where channel != nil {
       // The managing parent reads only safe codes from a managed child's
       // stderr; stdout (the structured result) is /dev/null in channel mode.
@@ -132,9 +135,9 @@ struct DefaultEventLiveServer: EventLiveServing {
   /// the managing parent is gone: serving is cancelled and the command fails
   /// with `environment_channel_closed` instead of running on stale values.
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, runtime: EventRuntimeEnvironment,
-             required: [String], stopsOnChannelClose: Bool) async throws -> ScopedParityCommandResult {
+             required: [String], stopsOnChannelClose: Bool, admissionGate: EventAdmissionGate? = nil) async throws -> ScopedParityCommandResult {
     try await runtime.awaitInitial()
-    let server = { var server = self; server.runtimeEnvironment = runtime; return server }()
+    let server = { var server = self; server.runtimeEnvironment = runtime; server.admissionGate = admissionGate; return server }()
     let captured = try await runtime.capture()
     if required.contains(where: { captured[$0]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false }) {
       throw CLIUsageError("environment_required_missing")
@@ -229,7 +232,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     let webhookySourcesById = Dictionary(uniqueKeysWithValues: webhookySources.map { ($0.id, $0) })
     let dispatcher = CronOverlapDispatcher(
       server: self, eventRoot: eventRoot, parsed: parsed, policies: overlapPolicies,
-      clock: clock, cancelSettleTimeout: cancelSettleTimeout
+      clock: clock, cancelSettleTimeout: cancelSettleTimeout, admissionGate: admissionGate
     )
     do {
       repeat {
@@ -544,8 +547,29 @@ extension DefaultEventLiveServer {
     sourceKind: String,
     sourceId: String,
     workflowName: String,
-    error: any Error
-  ) async {
+    error: any Error,
+    envelope: ExternalEventEnvelope? = nil
+  ) async throws {
+    if error is EventAdmissionClosed {
+      if let envelope {
+        let bytes = Data((envelope.sourceId + "\u{0}" + envelope.eventId).utf8)
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let receipt = PersistedEventReceipt(
+          receiptId: "event-handoff-" + digest, sourceId: envelope.sourceId, eventId: envelope.eventId,
+          status: "rejected", duplicate: false, workflowExecutionId: nil, workflowName: workflowName,
+          replayedFromReceiptId: nil, reason: "reload-handoff", updatedAt: clock.now(), envelope: envelope,
+          readOnlyTriggers: nil, readOnlyDiagnostics: nil
+        )
+        try EventReceiptStore(eventRoot: eventRoot).save(receipt)
+      }
+      try? writeServeRecord(eventRoot: eventRoot, status: "ready", pollingTarget: sourceId,
+                            lastIgnoredReason: "reload-handoff", lastWorkflowName: workflowName)
+      await telemetry.recordLog(RielaTelemetryLog(name: "riela.events.workflow.dispatch.rejected", attributes: [
+        "runtime.surface": "events-serve", "event.source.id": sourceId, "event.source.kind": sourceKind,
+        "workflow.name": workflowName, "reason": "reload-handoff"
+      ]))
+      return
+    }
     let message = String(describing: error)
     try? writeServeRecord(
       eventRoot: eventRoot,
@@ -578,6 +602,7 @@ extension DefaultEventLiveServer {
     eventRoot: URL,
     source: TelegramGatewaySource,
     update: TelegramUpdate,
+    envelope: ExternalEventEnvelope,
     dedupeStore: TelegramMessageDedupeStore
   ) async throws -> WorkflowRunResult? {
     do {
@@ -587,14 +612,14 @@ extension DefaultEventLiveServer {
         parsed: parsed
       ))
     } catch {
-      await recordWorkflowDispatchFailure(
+      try await recordWorkflowDispatchFailure(
         eventRoot: eventRoot,
         sourceKind: "telegram",
         sourceId: source.id,
         workflowName: workflowName,
-        error: error
+        error: error, envelope: envelope
       )
-      if let message = update.message {
+      if admissionGate == nil, let message = update.message {
         try dedupeStore.markSeen(message: message)
       }
       return nil
@@ -634,7 +659,7 @@ extension DefaultEventLiveServer {
       )
       for update in updates {
         observedUpdates += 1
-        if try !EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment) {
+        if admissionGate == nil, try !EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment) {
           try offsetStore.saveOffset(update.updateId + 1)
         }
         let resolvedAttachments: EventResolvedAttachmentInputs
@@ -690,6 +715,7 @@ extension DefaultEventLiveServer {
             lastDiagnosticCodes: triggerResult.diagnostics.map(\.code).joined(separator: ","),
             lastBindingIds: config.bindings.map(\.id).joined(separator: ",")
           )
+          if admissionGate != nil { try offsetStore.saveOffset(update.updateId + 1) }
           continue
         }
         for trigger in triggerResult.triggers {
@@ -716,6 +742,7 @@ extension DefaultEventLiveServer {
             eventRoot: eventRoot,
             source: source,
             update: update,
+            envelope: envelope,
             dedupeStore: dedupeStore
           ) else {
             continue
@@ -738,9 +765,13 @@ extension DefaultEventLiveServer {
               lastReplyAs: replies.compactMap(\.replyAs).joined(separator: ",")
             )
           }
-          if let message = update.message {
+          if admissionGate == nil, let message = update.message {
             try dedupeStore.markSeen(message: message)
           }
+        }
+        if admissionGate != nil {
+          if let message = update.message { try dedupeStore.markSeen(message: message) }
+          try offsetStore.saveOffset(update.updateId + 1)
         }
       }
     }

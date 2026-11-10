@@ -36,10 +36,15 @@ public protocol RielaAppDaemonEventServeProcessHandle: Sendable {
   var terminationStatus: Int32? { get }
   var capturedOutput: String { get }
   func terminate() async
+  func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws
 }
 
 public extension RielaAppDaemonEventServeProcessHandle {
+  func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
+    throw WorkflowServeAdmissionError.unsupported
+  }
+
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
     throw RuntimeEnvironmentError.notPrepared
   }
@@ -295,7 +300,11 @@ private func logEventServe(_ message: String) {
 }
 
 public struct DefaultEventServeProcessLauncher: RielaAppDaemonEventServeProcessLaunching {
-  public init() {}
+  public var admissionTimeoutSeconds: TimeInterval
+
+  public init(admissionTimeoutSeconds: TimeInterval = 5) {
+    self.admissionTimeoutSeconds = admissionTimeoutSeconds
+  }
 
   public func launch(_ command: RielaAppDaemonEventServeCommand) throws -> any RielaAppDaemonEventServeProcessHandle {
     let process = Process()
@@ -318,7 +327,7 @@ public struct DefaultEventServeProcessLauncher: RielaAppDaemonEventServeProcessL
     let handle = FoundationEventServeProcessHandle(
       process: process,
       outputPipe: output,
-      errorPipe: error, inputPipe: input
+      errorPipe: error, inputPipe: input, admissionTimeoutSeconds: admissionTimeoutSeconds
     )
     try process.run()
     handle.startCapturing()
@@ -363,6 +372,10 @@ private final class EventServeSourceHandle: WorkflowServeEventSourceHandle, @unc
     }
   }
 
+  public func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
+    try await process.admissionControl(frame)
+  }
+
   public func shutdown() async throws {
     await process.terminate()
   }
@@ -373,6 +386,8 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   private let outputPipe: Pipe
   private let errorPipe: Pipe
   private let inputPipe: Pipe?
+  private let admissionTimeoutSeconds: TimeInterval
+  private var admissionAcknowledgements: [String: WorkflowServeAdmissionAcknowledgement] = [:]
   private var acknowledgementBuffer = Data()
   private var acknowledgements: [UInt64: Bool] = [:]
   private var acknowledgedNames: [UInt64: [String]] = [:]
@@ -385,7 +400,8 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   private var outputBuffer = Data()
   private var errorBuffer = Data()
 
-  init(process: Process, outputPipe: Pipe, errorPipe: Pipe, inputPipe: Pipe? = nil) {
+  init(process: Process, outputPipe: Pipe, errorPipe: Pipe, inputPipe: Pipe? = nil, admissionTimeoutSeconds: TimeInterval = 5) {
+    self.admissionTimeoutSeconds = admissionTimeoutSeconds
     self.inputPipe = inputPipe
     self.process = process
     self.outputPipe = outputPipe
@@ -456,6 +472,38 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     throw RuntimeEnvironmentError.sourceTimeout
   }
 
+  func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
+    guard let inputPipe else { throw WorkflowServeAdmissionError.unsupported }
+    guard isRunning else { throw WorkflowServeAdmissionError.childExited }
+    let deadline = ProcessInfo.processInfo.systemUptime + admissionTimeoutSeconds
+    let data = try frame.encodedLine()
+    var claimed = false
+    while ProcessInfo.processInfo.systemUptime < deadline {
+      claimed = lock.withLock {
+        guard !frameWriteInProgress else { return false }
+        frameWriteInProgress = true
+        return true
+      }
+      if claimed { break }
+      guard isRunning else { throw WorkflowServeAdmissionError.childExited }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    guard claimed else { throw WorkflowServeAdmissionError.noAcknowledgement }
+    do {
+      try await writeFrame(data, to: inputPipe.fileHandleForWriting.fileDescriptor, deadline: deadline)
+    } catch {
+      lock.withLock { frameWriteInProgress = false }
+      throw isRunning ? WorkflowServeAdmissionError.noAcknowledgement : WorkflowServeAdmissionError.childExited
+    }
+    lock.withLock { frameWriteInProgress = false }
+    while ProcessInfo.processInfo.systemUptime < deadline {
+      if let ack = lock.withLock({ admissionAcknowledgements.removeValue(forKey: frame.requestId) }) { return ack }
+      guard isRunning else { throw WorkflowServeAdmissionError.childExited }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    throw WorkflowServeAdmissionError.noAcknowledgement
+  }
+
   static let acknowledgementTimeoutSeconds: TimeInterval = 10
 
   /// Non-blocking write bounded by the ACK deadline; a child that stops reading
@@ -517,6 +565,11 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
         if acknowledgementBuffer.count > 1_048_576 { acknowledgementBuffer.removeAll(); return }
         while let end = acknowledgementBuffer.firstIndex(of: 10) {
           let line = acknowledgementBuffer.prefix(upTo: end); acknowledgementBuffer.removeSubrange(...end)
+          if let admission = WorkflowServeAdmissionAcknowledgement.decodeLine(Data(line)) {
+            if admissionAcknowledgements.count >= 64 { admissionAcknowledgements.removeAll() }
+            admissionAcknowledgements[admission.requestId] = admission
+            continue
+          }
           guard let ack = RuntimeEnvironmentChannelAcknowledgement.decodeLine(Data(line)),
             let generation = ack.generation else { continue }
           acknowledgements[generation] = ack.accepted

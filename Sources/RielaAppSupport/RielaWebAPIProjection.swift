@@ -132,13 +132,22 @@ public struct RielaWebAPIProjection {
         "revision": .number(Double(webRevision)),
         "instanceId": .string(identity),
         "items": .array(state.sessions.prefix(100).map { session in
-          .object([
+          let endedAt: JSONValue
+          switch session.status {
+          case .created, .running, .suspended:
+            endedAt = .null
+          case .completed, .failed, .cancelled:
+            endedAt = .string(formatter.string(from: session.updatedAt))
+          }
+          return .object([
             "sessionId": .string(session.sessionId),
             "workflowId": .string(session.workflowId),
             "status": .string(session.status.rawValue),
             "currentStepId": session.currentStepId.map(JSONValue.string) ?? .null,
             "activeStepIds": .array(session.activeStepIds.map(JSONValue.string)),
-            "updatedAt": .string(formatter.string(from: session.updatedAt))
+            "updatedAt": .string(formatter.string(from: session.updatedAt)),
+            "startedAt": session.startedAt.map { .string(formatter.string(from: $0)) } ?? .null,
+            "endedAt": endedAt
           ])
         }),
         "truncated": .bool(state.sessions.count > 100),

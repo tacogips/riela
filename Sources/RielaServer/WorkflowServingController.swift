@@ -23,10 +23,15 @@ public protocol WorkflowServeListenerFactory: Sendable {
 public protocol WorkflowServeEventSourceHandle: Sendable {
   var status: WorkflowServeEventSourceStatus { get }
   func shutdown() async throws
+  func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws
 }
 
 public extension WorkflowServeEventSourceHandle {
+  func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
+    throw WorkflowServeAdmissionError.unsupported
+  }
+
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
     throw WorkflowServeRuntimeEnvironmentError.unsupported
   }
@@ -100,6 +105,21 @@ public actor WorkflowServingController {
     active.request.configuration.runtimeEnvironmentValues = managedValues
     activeGeneration = active
     lastAcceptedStartRequest = active.request
+  }
+
+  public func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
+    guard let current = activeGeneration else { throw WorkflowServeRuntimeEnvironmentError.noActiveGeneration }
+    var last: WorkflowServeAdmissionAcknowledgement?
+    var firstNonOpen: WorkflowServeAdmissionAcknowledgement?
+    for handle in current.eventSources {
+      let ack = try await handle.admissionControl(frame)
+      last = ack
+      if firstNonOpen == nil && ack.state != .open { firstNonOpen = ack }
+    }
+    guard let result = (frame.type == "admission-close" ? firstNonOpen ?? last : last) else {
+      throw WorkflowServeAdmissionError.noAcknowledgement
+    }
+    return result
   }
 
   public func currentState() -> WorkflowServeState {

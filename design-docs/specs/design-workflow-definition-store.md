@@ -12,6 +12,14 @@ memory/cache/kv candidates and their history, section 4 (evaluated
 adoption and approval) and section 5 (self-improve cleanup), and RielaApp
 editor UI changes.
 
+**Amendment 2026-11-11 (source drift, ART outage of 2026-11-10).** A
+service run no longer ignores a changed source file silently. §4.1 adds a
+drift check at run start. A head that has not been edited since its last
+file import is auto-synced from the file. A head that was edited in the
+store is kept, and the run, the session diagnostics and `riela doctor`
+report the drift. This changes the "later file changes are ignored" rule in
+§1, §3 and §11 only as §4.1 states. No schema change.
+
 This is the first implemented slice of the definition store in
 `design-execution-environment-consolidation.md` §4. It narrows that design
 (workflow kind only, no workspace scopes, no activation, fork, consolidate or
@@ -22,7 +30,7 @@ package-as-import) and changes one of its decisions, the one-time CLI run
 
 | Execution | Definition and prompt source | Run record |
 | --- | --- | --- |
-| Long-running service: GraphQL `executeWorkflow` (served by `riela serve`, the serve web host and RielaApp), the RielaApp configured-run API, and `riela events serve` (all event sources, including cron and routines, plus RielaApp daemon workflows, which spawn `events serve`) | **The SQLite definition store.** The workflow file only seeds a store entry on first use. Later file changes are ignored until an explicit force import | `definitionSource.kind = store`, pinned `versionId` and `digest` |
+| Long-running service: GraphQL `executeWorkflow` (served by `riela serve`, the serve web host and RielaApp), the RielaApp configured-run API, and `riela events serve` (all event sources, including cron and routines, plus RielaApp daemon workflows, which spawn `events serve`) | **The SQLite definition store.** The workflow file seeds a store entry on first use. Later file changes are auto-synced at run start while the head is untouched since its last file import. Otherwise they are reported as drift and ignored until an explicit force import (§4.1) | `definitionSource.kind = store`, pinned `versionId` and `digest` |
 | One-time CLI: `riela workflow run`, library `executeWorkflow`, and every other caller that does not set service mode | **Workflow files only.** No definition row is read or written | `definitionSource.kind = file`, source path, scope and `digest` |
 
 Files are default values. In service mode every improvement accumulates in
@@ -138,11 +146,13 @@ insignificant whitespace) with two parts:
   existing `Codable` conformances. Inheritance (`extends`) and `nodeRef`
   shared nodes are already materialized in it, prompt files are already
   inlined (hydrated), the `*File` paths are kept, and stdio paths are
-  already made absolute under `source_directory`. Once a head exists, no
-  service path reads a workflow, base, shared-node or prompt file. That
-  covers the run, the configured-launch pre-resolve and the events-serve
-  preflight (§4). A change to any of those files therefore cannot reach a
-  registered workflow. Files are read only to seed a head on first use.
+  already made absolute under `source_directory`. Once a head exists, a
+  service run executes only the stored document. Files are read for two
+  reasons only: to seed a head on first use, and for the run-start drift
+  check of §4.1. That check runs once at each service run's root
+  `lookup` and at callee lookups. It does not run in the configured-launch
+  pre-resolve or the `lookupOnly` preflights. A file change reaches a registered workflow only
+  through the §4.1 auto-sync or an explicit import or update.
 - **`authoredFiles`** holds the verbatim text of the files in the
   workflow's own directory that define it: `workflow.json`, every own
   `nodeFile`, and every prompt `*File` those node files reference
@@ -237,8 +247,10 @@ therefore cannot intercept this route, so it changes itself:
   resolver: lookup, then seed on first use (steps 1-3 below). The candidate
   store is the explicit `context.sessionStoreRoot` the route already passes.
   The resolved bundle is passed to `EditorPreparedBundleResolver` as today.
-- When a head exists, no workflow, node or prompt file is read on this
-  route. Only the first-use seed reads files.
+- When a head exists, the route's lookup reads no workflow, node or
+  prompt file, because it skips the §4.1 drift check. The one check for
+  the launch runs in the run command's lookup (§4.1 configured-launch
+  handoff). Only the first-use seed reads files on this route.
 - The host-selected-source guard keeps its intent but compares against the
   resolved bundle:
   - `workflowId` must equal `source.workflowId`, otherwise 409
@@ -279,7 +291,10 @@ steps:
    import --force`. There is no file fallback. If the request names a
    `workflowDefinitionDir` or scope whose resolved directory differs from
    the head's `source_directory`, the run gets a warning diagnostic. It
-   still uses the stored version.
+   still uses the stored version. In `lookupOrSeed` mode, the §4.1 drift
+   check runs after the lookup and can replace the loaded version with an
+   auto-synced one. `lookupOnly` mode (events-serve preflight, RielaApp
+   reload trigger-defaults fingerprint) never runs it.
 3. **Seed on first use.** If no candidate store has a head, the resolver
    resolves the file bundle as today. In the store that `storeRootForRun`
    selects for that bundle, it then runs `BEGIN IMMEDIATE`,
@@ -313,6 +328,172 @@ rerun` load the pinned `versionId` from `definitionSource.storeRoot`. The surfac
 does not matter: CLI and GraphQL behave the same. They never use the head
 or the file, so a resumed service run cannot mix prompt versions.
 File-origin sessions keep today's file resolution.
+
+### 4.1 Source drift check and auto-sync (amendment 2026-11-11)
+
+**Incident.** The ART instance's head was seeded on 2026-10-27 with
+`defaults.nodeTimeoutMs = 3300000`. `workflow.json` was changed to
+`21600000` on 2026-11-04. Step 2 returned the stored head, nothing compared
+it with the file, and nothing warned. Runs were killed at 3300 s for about
+13 hours, until `riela instance reload` force-imported the file.
+
+**Where it runs.** The check lives inside
+`DefinitionStoreWorkflowBundleResolver.lookup(_:)` and runs only when the
+resolver's mode is `lookupOrSeed` and a head was found. Putting it in
+`lookup` covers every caller, both those that call `lookup` directly and
+those that go through `resolve` (which calls `lookup` first):
+
+| Caller (current code) | Mode | Check |
+| --- | --- | --- |
+| `WorkflowRunCommand.resolveRunBundle` (`WorkflowRunCommand+KaibaPreflight.swift:97-99`). This is the root target of every service run: GraphQL `executeWorkflow`, `events serve` runs including cron, and configured launches | `lookupOrSeed` | **yes. This is the one check per run start** |
+| Callee resolution through the run's `effectiveResolver.resolve` (`FileSystemWorkflowCalleeResolver`), and the resume/rerun `calleeResolver` (`SessionCommands.swift:24`) | `lookupOrSeed` | yes. A callee gets its own check and pin, as in §4 step 4 |
+| Configured-launch route pre-resolve (`WebWorkflowRequestHandler+ConfiguredLaunch.swift:31-38`) | lookup without the check (see the handoff below) | **no** |
+| Events-serve trigger defaults (`EventLiveServe.swift:1010`), required-environment preflight (`RuntimeEnvironmentPreparation.swift:50`), and the reload trigger-defaults fingerprint (`InstanceReloadSupport.swift:125`) | `lookupOnly` | no. They read only and write nothing |
+| Resume and rerun of the root session (`loadPinned`), the seed path, and every one-time path | n/a | no |
+
+**Configured-launch handoff.** The route keeps its 409 `source_changed`
+and 422 `run_preflight_failed` guards and its first-use seed. Its head
+lookup runs without the drift check: the route builds its lookup resolver
+in `lookupOnly` mode and keeps a `lookupOrSeed` resolver only for the seed
+call. This does not weaken the workflowId guard. Auto-sync never imports a
+file whose `workflowId` differs from the workflow name (that file is
+`sourceInvalid`), so the stored `workflowId` the route checks is the same
+before and after a sync. The route then hands its bundle to
+`WorkflowRunCommand` through `EditorPreparedBundleResolver`, as it does
+today. In service mode, `resolveRunBundle` calls `storeResolver.lookup`
+before it ever asks the inner prepared resolver. That lookup runs the one
+check, may auto-sync, and pins the resulting head. Its diagnostics land in
+that run's session. Exactly one check runs per configured launch, and the
+pinned version, the runtime, the authored files and the diagnostics all
+come from that check. The prepared bundle is never used as file content.
+It stays only as the inner resolver's fallback, as today.
+
+**File candidate.** The check never uses the resolver's `inner` for the
+file side, because `inner` can be a prepared resolver
+(`EditorPreparedBundleResolver`, `WebWorkflowLaunch.swift:50-56`) that
+returns a captured stored bundle. Instead it builds a fresh
+`FileSystemWorkflowBundleResolver()` and resolves
+`WorkflowResolutionOptions(workflowName, workflowDefinitionDir:
+head.source_directory, workingDirectory: <request working directory>)`.
+This is the same resolution `riela instance reload` uses
+(`InstanceReloadSupport.importDefinition`). The candidate document is
+`WorkflowDefinitionDocument.make(from:)` applied to that one fresh file
+bundle. Its `runtime` part and its `authoredFiles` therefore both come from
+the same read of `head.source_directory`, and a captured or stored runtime
+can never be paired with newly read authored text. A test seam may inject a
+file-backed resolver factory. A production caller cannot substitute its
+`inner` for it. The request's scope and `workflowDefinitionDir` are not
+used. The existing step 2 directory warning still covers a request that
+names another directory.
+
+**Repeated checks.** The check is idempotent. After an auto-sync, the head
+equals the file document, so the next check (a callee of the same workflow,
+the next launch, a concurrent run that lost the CAS) classifies `inSync`
+and writes nothing. An unchanged file never produces a second `import`
+audit.
+
+**Digests.** `fileDigest` is the §3 definition digest of
+`WorkflowDefinitionDocument.make(fileBundle)`. The baseline is the head's
+`last_file_version_id` version. `baselineDigest` is the digest of that
+version's document after decoding it and re-encoding it canonically with
+the running binary. When the re-encoding equals the stored bytes, this is
+the stored `document_digest`. The re-encoding keeps an encoding change
+between riela releases from looking like a file edit.
+
+**Classification.** This is one pure function in `RielaWorkflowRegistry`,
+shared by the resolver and `riela doctor`. `untouched` means
+`current_version_id == last_file_version_id`.
+
+| Case | Result | Run uses | Writes |
+| --- | --- | --- | --- |
+| File does not resolve, fails validation, or its `workflowId` differs | `sourceInvalid` | stored head | none |
+| `source_directory` is missing | `sourceUnavailable` | stored head | none |
+| `fileDigest == baselineDigest`, or `fileDigest` equals the current version's digest | `inSync` | stored head | none |
+| digests differ and `untouched` | `autoSync` | the new version | one `import` version and its audit |
+| digests differ and the head was edited (`update`, `updatePrompt`, `restore`, `undo`, `redo` moved it off the last file version) | `drift` | stored head | none |
+
+`sourceInvalid` uses the same validation set as the other file-sourced
+operations (§5): the file-resolver validation,
+`DefaultWorkflowValidator().validate`, and `validateAgentNodePayload` for
+each node payload. An invalid file never changes the run and never fails
+it.
+
+**Existing stores, no new metadata.** `definition_heads.last_file_version_id`
+is `NOT NULL` from generation 10 on. Every seed, import and forceUpdate sets
+it (`WorkflowDefinitionStore.commit`, the `fileOperation` rule). Retention
+always protects it (`WorkflowDefinitionStore+Retention.swift`). Every
+existing store therefore already has the baseline, and this amendment adds
+no column, no generation bump and no migration. A defensive fallback
+covers a baseline version or document that cannot be read or decoded. Then
+the head counts as `untouched` only if the current version's operation is
+`seed`, `import` or `forceUpdate`, and the current version is the baseline.
+Otherwise the result is `drift`. When in doubt, the check warns and never
+overwrites.
+
+**Auto-sync write.** A new `WorkflowDefinitionService` method writes the
+file document through the existing `store.commit`:
+
+- operation `import`. It is file-derived, so the existing `fileOperation`
+  rule moves `last_file_version_id` to the new version. The enum gains no
+  value, so older binaries that read the store still decode it.
+- parent = the current version, and
+  `expectedCurrentVersionId = head.current_version_id` (compare-and-swap)
+- `source_directory`, `source_scope` and `provenance` taken from the file
+  bundle
+- actor kind = the run's service actor kind (`api` or `cli`), actor id
+  `service-auto-sync`
+- reason: `auto-synced from <source_directory> on <service actor id> service run: file digest <fileDigest> differs from last file import <last_file_version_id>`
+- `diff_json`: the structural diff from the current document to the file
+  document. `overwritten_changes_json` is null, because an untouched head
+  has no store-only changes.
+- the history retention default and configuration that seed uses
+
+The run then pins the new version (§4 step 4). The non-force `import`
+CLI/GraphQL operation keeps its no-write `unchanged | differs` behavior
+(§5). `import --force`, `update --from-file --force` and `riela instance
+reload` (non-force import, then force on `differs`) do not use this method,
+so their behavior does not change.
+
+**Concurrency.** The commit's `staleHead` (`definition_conflict`) means
+another writer moved the head. A concurrent auto-sync, a CLI edit or a
+reload are examples. The check re-reads the head once and never retries the
+write. If the new current digest equals `fileDigest`, the run uses that
+head silently. Otherwise the run uses the re-read head with an
+`autoSyncConflict` warning. The run never overwrites a head it did not
+classify as untouched.
+
+**Diagnostics.** Each non-`inSync` result appends one warning-severity
+`WorkflowValidationDiagnostic` (`WorkflowValidationSeverity` has only
+`error` and `warning`) to `ResolvedWorkflowBundle.diagnostics`. The path
+`definitionStore.<result>` uses one of these results: `autoSynced`,
+`sourceDrift`, `sourceInvalid`, `sourceUnavailable` or `autoSyncConflict`.
+The message names the workflow, the head version, the baseline version and
+both digests. For `autoSynced`, it also names the new version and the audit
+id.
+
+- `sourceDrift` remediation: inspect the change with `riela workflow
+  definition diff <workflow> --file`. Then adopt the file with `riela
+  instance reload <instance>` (RielaApp) or `riela workflow definition
+  import <workflow> --force --reason <r>`, or keep the store edit and make
+  the file match with `riela workflow definition export <workflow>
+  --to-source --overwrite`.
+- `sourceInvalid` remediation: fix the file. The stored head stays in use.
+
+Service runs carry these warnings into the session. The run command adds
+every `definitionStore.*` bundle diagnostic to the persisted session
+snapshot `diagnostics`, as `warning: <path>: <message>` (the same shape and
+seam as `validateEffectiveSessionPolicies` and the loop-notification
+diagnostics). It also writes them to the run's stderr or log, which `events
+serve` and RielaApp already capture. The existing step 2
+`definitionStore.sourceDirectory` warning travels the same way. The plan
+must confirm whether that warning reaches the session today and wire it if
+it does not. No new event type or GraphQL field is added. The warning
+repeats on every run until the drift is resolved. No suppression state is
+stored.
+
+**Not configurable.** Auto-sync of untouched heads is the default and only
+behavior. The accepted request needs no opt-out, because an untouched head
+by definition holds no store-only work that could be lost.
 
 ## 5. Operations
 
@@ -537,6 +718,26 @@ argument.
   `writeToSource` it also rewrites the recorded source directory under the
   §7 rules. GraphQL never accepts an arbitrary target path.
 
+**`riela doctor` drift report (amendment 2026-11-11).** `DoctorCommandResult`
+gains `definitionSources: [DoctorDefinitionSourceReport]`, where each
+report has `storeRoot`, `workflowName`, `currentVersionId`,
+`lastFileVersionId`, `sourceDirectory`, `result` and `status`.
+`DoctorSummary` gains `definitionSourceWarnings`.
+
+- Candidate stores are `WorkflowDefinitionStoreSelection.candidateRoots`
+  for doctor's `--scope` and `RIELA_SESSION_STORE`. A store whose database
+  file does not exist is skipped, and doctor never creates one.
+- For every head in a store, doctor runs the §4.1 file resolution and
+  classification. It is read-only: no seed, no import, no auto-sync.
+- Status mapping: `inSync` gives `ok`. `drift`, `sourceInvalid` and
+  `sourceUnavailable` give `warning`. `autoSync` is reported as result
+  `pendingAutoSync` with status `warning`, because the next service run
+  will import the file.
+- A store that cannot be opened or read gives one report with status
+  `unknown` and the error. Doctor itself does not fail.
+- The text output prints each non-`ok` row with the §4.1 remediation.
+- Any warning raises the summary status to at least `warning`.
+
 **Catalog and SDL.**
 
 - Each new operation gets a `SurfaceCatalog` row
@@ -750,9 +951,12 @@ completes without writing rows. The dedicated test drives the store path
   not extended. The audited whole-workflow store update is the new
   `riela workflow definition update` and its GraphQL equivalent (§5, §8).
 - For a workflow already registered in a definition store, registry edits
-  (including RielaApp editor saves) reach service runs only after
-  `import --force` or `update --from-file`. This follows the issue's "no
-  automatic re-import" rule. See user QA Q1.
+  (including RielaApp editor saves) reach service runs in one of two ways.
+  If the head is untouched since its last file import, the §4.1 auto-sync
+  picks them up at the next service run start. Otherwise they need `import
+  --force` or `update --from-file`, and the run and `riela doctor` report
+  the drift. The 2026-11-11 user request narrows the issue's earlier "no
+  automatic re-import" rule in this way. See user QA Q1.
 - `workflow self-improve` and `.riela/workflow-history` are unchanged
   (issue section 5).
 
@@ -769,11 +973,12 @@ New focused suites (names are indicative; plans fix the exact names):
   - a service run seeds on first use
   - an `update-prompt` is used by the next service run with the file
     untouched
-  - a changed file is ignored by service runs. This is checked for
-    executeWorkflow, events serve and the configured-run API: after
-    seeding, the workflow file is made invalid and its `workflowId` is
-    changed, then `launchConfiguredWorkflow` is called. The launch returns
-    202, the run succeeds, and it pins the stored `versionId`.
+  - an invalid changed file never changes or fails a service run. This is
+    checked for executeWorkflow, events serve and the configured-run API:
+    after seeding, the workflow file is made invalid and its `workflowId`
+    is changed, then `launchConfiguredWorkflow` is called. The launch
+    returns 202, the run succeeds, it pins the stored `versionId`, and the
+    session diagnostics contain `definitionStore.sourceInvalid`.
   - an events-serve preflight (trigger defaults and the required-environment
     check) with a broken file and an existing head succeeds and writes no
     rows
@@ -839,6 +1044,91 @@ New focused suites (names are indicative; plans fix the exact names):
 - `RielaExampleParityTests` pass with the new example registered and the
   mock-scenario counts updated.
 - `swift test --filter SurfaceParity` passes after SDL regeneration.
+
+**Amendment 2026-11-11 (§4.1, §8 doctor).** All of these use temp stores
+and temp workflow directories, never `~/.riela`.
+
+- `WorkflowDefinitionServiceResolutionTests` (or a new
+  `WorkflowDefinitionSourceDriftTests`, RielaCLITests) covers:
+  - **Auto-sync.** Seed, then change `defaults.nodeTimeoutMs` in
+    `workflow.json`. The next `lookupOrSeed` resolve returns a new version
+    with operation `import` whose runtime has the new value. Head and
+    `last_file_version_id` both equal the new version. The audit has
+    actor id `service-auto-sync`, the service actor kind, a reason
+    starting `auto-synced from`, and a non-empty diff. The bundle has a
+    `definitionStore.autoSynced` warning. A second resolve writes nothing
+    (row counts unchanged).
+  - **Edited head.** Seed, `update-prompt`, then edit the file. The
+    resolve returns the `updatePrompt` version unchanged and writes zero
+    rows. It carries `definitionStore.sourceDrift`, whose message names
+    `riela instance reload` and `import --force`.
+  - **Invalid file.** Seed, then make the file invalid. The stored head is
+    used, zero rows are written, and the bundle carries
+    `definitionStore.sourceInvalid`. A missing `source_directory` gives
+    `sourceUnavailable`.
+  - **Existing-store shapes.** A head whose last file version is a `seed`,
+    one whose is a `forceUpdate` (the instance-reload outcome), and an
+    `undo` back onto an older version (`drift`, no write). A baseline
+    document that cannot be decoded gives the conservative fallback.
+  - **Conflict.** A head moved between classification and commit (an
+    injected writer) gives `staleHead`. The run uses the re-read head, no
+    overwrite happens, and the run gets `autoSyncConflict` or no warning
+    when the re-read head already equals the file.
+  - **Mode boundaries.** `lookupOnly` with a changed file writes zero rows
+    and returns the stored head. `riela workflow run` (one-time) still
+    leaves zero `definition_*` rows.
+  - **Session surfacing.** A service run whose resolve produced a
+    `definitionStore.*` warning persists it in the session snapshot
+    `diagnostics`.
+  - **End-to-end service entry paths (valid post-seed edit).** Each path
+    uses a temp store and an untouched seeded head with
+    `defaults.nodeTimeoutMs = 3300000`. Then `workflow.json` is changed to
+    `21600000`:
+    - (a) the ordinary service path: `WorkflowRunCommand` in
+      `executionMode: service` with the default file resolver, as used by
+      executeWorkflow and events serve
+    - (b) the configured launch: `launchConfiguredWorkflow`, which runs
+      through `EditorPreparedBundleResolver`
+
+    For each path:
+    - The launch returns 202 for (b), and the run succeeds.
+    - The pinned `versionId` is the new `import` version.
+    - The pinned runtime `defaults.nodeTimeoutMs` is `21600000`. The
+      stored document's `authoredFiles["workflow.json"]` also contains
+      `21600000`, so runtime and authored content are consistent.
+    - Exactly one `import` audit exists with actor id `service-auto-sync`,
+      and the session diagnostics contain `definitionStore.autoSynced`.
+    - For (b), the route's pre-resolve wrote nothing before the run (one
+      check per launch).
+    - A second launch with the file unchanged writes zero new versions and
+      audits, still one `import` audit, and carries no `autoSynced`
+      warning.
+    - With an invalid file instead, both paths keep the stored head,
+      write nothing and carry `sourceInvalid`.
+    - With an `update-prompt` edited head instead, both paths keep that
+      head and carry `sourceDrift`.
+    - For (b), a stored head whose `workflowId` differs from the source
+      still returns 409 `source_changed`. An unregistered workflow still
+      seeds on first use.
+  - **Prepared-resolver isolation.** `DefinitionStoreWorkflowBundleResolver`
+    with `inner = EditorPreparedBundleResolver(<stale stored bundle>)` and
+    an edited file auto-syncs from the file. The imported runtime and
+    authored files both carry the file value, never the prepared bundle's.
+  - **Callee.** A service-run callee whose own file changed (head
+    untouched) auto-syncs and pins its own new version.
+- `DefinitionStoreWorkflowBundleResolver` tests for the classification
+  function: table-driven over the §4.1 cases, including the
+  `fileDigest == current digest` case for an edited head.
+- `WorkflowDefinitionCommandTests` and the instance-reload suites still
+  pass unchanged: non-force `import` writes nothing on `differs`, and
+  reload outcomes are unchanged.
+- `DoctorCommandTests` uses temp project and user stores with an
+  `inSync`, a `pendingAutoSync`, a `drift` and a `sourceInvalid` head. It
+  checks report statuses, the summary count and that zero rows are written.
+  A missing store database is skipped and not created.
+
+Command:
+`arch -arm64 /bin/zsh -lc 'swift build && swift test --filter "WorkflowDefinitionStore|WorkflowDefinitionService|DefinitionStoreWorkflowBundleResolver|WorkflowDefinitionSourceDrift|WorkflowDefinitionCommand|InstanceReload|Doctor" && swiftlint lint --strict --quiet <changed files>'`
 
 Docs: README and the CLI docs describe `riela workflow definition`
 (including `update`), the §1 policy table, and the two improve add-ons.

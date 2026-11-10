@@ -293,7 +293,10 @@ authors `deadlineMs`. Otherwise scheduling is unchanged.
 
 - **Clock injection**: a new RielaCore protocol
   `WorkflowRetryClock { now() -> Date; sleep(until: Date) async throws }`.
-  - The default uses `Task.sleep`; tests inject a manual fake clock.
+  - The default (`SystemWorkflowRetryClock`) sleeps until the `Date`
+    deadline on the wall clock (`wallClockSleep(until:)`, so host sleep
+    counts toward the budget; amendment 2026-11-11, see
+    `design-wall-clock-deadlines.md`). Tests inject a manual fake clock.
   - The runner uses it for `readyAt`, deadlines, both backstops, the fanout expiry timer,
     and backoff.
   - Production uses the same wall-clock time base as `WorkflowRuntimeClock`. Tests set

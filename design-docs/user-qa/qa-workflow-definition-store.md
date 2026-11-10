@@ -35,6 +35,16 @@ mutable-registry mutations and RielaApp editor saves, because RielaApp
 editor UI changes are out of scope. Their edits reach service runs only
 through `import --force` or `update --from-file`.
 
+**Decision (user, 2026-11-11, after the ART outage of 2026-11-10):** "fix
+everything that can be fixed" (修正できる箇所は修正せよ). File edits must
+not go silently stale. If a head has had no store edits since its last
+file import, the next service run auto-syncs it from the file with an
+audited `import` version (actor id `service-auto-sync`). If a head has been
+edited in the store, it is kept, and the run and `riela doctor` report
+source drift. The design is in
+`design-docs/specs/design-workflow-definition-store.md` §4.1. Nothing about
+this behavior is configurable.
+
 ## Q2: Store selection when no store is named
 
 Each project (`<cwd>/.riela/sessions`) and each user (`~/.riela/sessions`)

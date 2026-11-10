@@ -76,6 +76,20 @@ Where `daemonRuntime` is set up after init (or in `applicationDidFinishLaunching
 - This must run before any daemon instance auto-start. Place it before the first `daemonRuntime.start` call path; check the launch flow.
 - `daemonRuntime` is a `let` actor, so `setStartRecordProvider` is `await`ed.
 
+### Contract alignment with accepted code (continuation run, 2026-11-10, step 4)
+
+- The ports protocol is fixed in `Sources/RielaAppSupport/RielaAppInstanceReloadContract.swift:226-241`. Implement exactly those 13 requirements and do not edit that file or `RielaAppInstanceReloadCoordinator.swift` (both accepted).
+- `validate(candidate:instance:)` returns `RielaAppInstanceReloadValidated(workflowId:triggerDefaultsFingerprint:eventRootDigest:)`. Build it from plan 07's `InstanceReloadCandidateValidation`: `.bundle.workflow.workflowId`, `.triggerDefaultsFingerprint`, `.eventRootDigest`. Never use tuple element access.
+- `replaceChild(identity:interrupt:)` is the port signature. Inside it, call `daemonRuntime.replaceChild(...)` (`Sources/RielaAppSupport/DaemonWorkflowSupport.swift:825`) with the approved candidate. `interrupt` is already handled by the coordinator's barrier ordering, so do not add a second stop.
+- The runtime hooks to use are `setStartRecordProvider` (`DaemonWorkflowSupport.swift:807`), `installedStartRecord(identity:)` (811), `isChildRunning(identity:)` (815) and `admissionControl(identity:frame:)` (820). Always pass the runtime identity (`profileRuntimeIdentity`), never the local list identity.
+- Tests must build `RielaApp` only with temp app/session roots, as `ConfiguredWorkflowLaunchTests` does. Running `RielaApp()` against defaults writes into the real `~/.riela/rielaapp` (known leak), so a test that cannot isolate roots must not be written.
+
+Done-criteria evidence:
+- `grep -n "/api/v1/instances/{identity}/reload" Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` matches exactly once.
+- `grep -n "webInstanceReloadResponse" Sources/RielaApp/RielaAppWebAPI.swift` matches exactly once.
+- `grep -n "setStartRecordProvider" Sources/RielaApp/EntryPoint.swift` matches once.
+- `git diff --stat` for the three sharedPaths shows only additions of those lines.
+
 ## Key pitfalls
 
 - Security: the profile header, Host/Origin/CSRF guards and JSON content type come from the router (`RielaAppWebRouter.securityRejection`) for every `/api/v1` POST. Do not bypass them, and do not register the route anywhere that skips the router.

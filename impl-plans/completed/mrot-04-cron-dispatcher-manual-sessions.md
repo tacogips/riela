@@ -159,7 +159,7 @@ hashes. Stop on drift.
 
 ## Done when
 
-- [ ] Seam, idle shortcut, policy table, queued-idle advancement, and the
+- [x] Seam, idle shortcut, policy table, queued-idle advancement, and the
       submit, loop and drain hooks are implemented.
-- [ ] All test bullets green, and the old suite green.
-- [ ] Progress log complete.
+- [x] All test bullets green, and the old suite green.
+- [x] Progress log complete.

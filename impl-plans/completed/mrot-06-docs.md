@@ -61,6 +61,6 @@ and post hashes. Stop on drift.
 
 ## Done when
 
-- [ ] Both docs updated, with wording consistent with the pinned contracts
+- [x] Both docs updated, with wording consistent with the pinned contracts
       (flag name, JSON shape, reason format).
-- [ ] Progress log complete.
+- [x] Progress log complete.

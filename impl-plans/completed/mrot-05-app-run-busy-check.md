@@ -105,6 +105,6 @@ fresh-read pre and post hashes. Stop on drift.
 
 ## Done when
 
-- [ ] Key-set rule, busy check, identity on the launch, and 409 body implemented.
-- [ ] Six tests green, and the existing launch test green.
-- [ ] Progress log complete.
+- [x] Key-set rule, busy check, identity on the launch, and 409 body implemented.
+- [x] Six tests green, and the existing launch test green.
+- [x] Progress log complete.

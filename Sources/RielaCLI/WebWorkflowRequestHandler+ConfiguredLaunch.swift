@@ -10,12 +10,35 @@ public extension RielaWebWorkflowRequestHandler {
     identity: String,
     source: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowInstanceConfiguration,
-    variables: JSONObject
+    variables: JSONObject,
+    allowOverlap: Bool = false
   ) -> RielaHTTPResponse {
     runtime.launches = runtime.launches.filter { _, launch in
       launch.snapshot["status"] == .string("running") || Date().timeIntervalSince(launch.createdAt) < 3600
     }
     runtime.launchTasks = runtime.launchTasks.filter { runtime.launches[$0.key] != nil }
+    if !allowOverlap {
+      let running = runtime.launches.values.filter {
+        $0.identity == identity && $0.snapshot["status"] == .string("running")
+      }.sorted { $0.createdAt < $1.createdAt }
+      var blocker: String?
+      if let launch = running.first {
+        if case let .string(sessionId) = launch.snapshot["sessionId"] {
+          blocker = sessionId
+        } else {
+          blocker = "pending"
+        }
+      } else if let sessions = try? LiveRootSessionProbe.liveRootSessions(
+        workflowId: source.workflowId, sessionStoreRoot: context.sessionStoreRoot
+      ) {
+        blocker = sessions.first?.sessionId
+      }
+      if let blocker {
+        return .json(status: 409, .object(["error": .object([
+          "code": .string("instance_busy"), "runningSessionId": .string(blocker)
+        ])]))
+      }
+    }
     guard runtime.launches.count < 40,
           runtime.launches.values.filter({ $0.snapshot["status"] == .string("running") }).count < 4 else {
       return .json(status: 429, .object(["error": .object(["code": .string("run_limit")])]))
@@ -61,7 +84,7 @@ public extension RielaWebWorkflowRequestHandler {
         workingDirectory: directory, explicitWorkingDirectory: true
       )
       options.executionMode = .service(.init(kind: .api, id: "configured-run"))
-      let job = WebWorkflowLaunch(profile: context.profile.rawValue)
+      let job = WebWorkflowLaunch(profile: context.profile.rawValue, identity: identity)
       runtime.launches[job.id] = job
       var environment = context.environment
       environment["RIELA_API_KEY"] = ""

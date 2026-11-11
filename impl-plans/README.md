@@ -190,6 +190,29 @@ passed 30 tests. Browser E2E was skipped because no `web/` file changed. The
 dispatch manifest `active/stale-definition-dispatch.json` stays active until
 the dispatch run closes; it records the original plan paths.
 
+Manual-run overlap and the terminal-step reserve (ART hourly recovery,
+2026-11-11) are implemented and accepted on
+`fix/manual-overlap-terminal-reserve`. There is no GitHub issue. Plans
+`mrot-01` … `mrot-06` are archived under [`completed/mrot-*.md`](completed/):
+[`mrot-01-terminal-reserve-precondition`](completed/mrot-01-terminal-reserve-precondition.md),
+[`mrot-02-live-root-session-probe`](completed/mrot-02-live-root-session-probe.md),
+[`mrot-03-cli-allow-overlap`](completed/mrot-03-cli-allow-overlap.md),
+[`mrot-04-cron-dispatcher-manual-sessions`](completed/mrot-04-cron-dispatcher-manual-sessions.md),
+[`mrot-05-app-run-busy-check`](completed/mrot-05-app-run-busy-check.md) and
+[`mrot-06-docs`](completed/mrot-06-docs.md). Live manual instance runs now
+count toward the cron binding's `overlapPolicy`. `riela instance run` refuses
+with `instance_busy` while a run is live unless `--allow-overlap` is passed.
+The terminal-step reserve no longer redirects acyclic workflows whose longest
+remaining path fits the step budget. The design is
+[`design-manual-run-overlap-and-terminal-reserve`](../design-docs/specs/design-manual-run-overlap-and-terminal-reserve.md);
+user docs are in
+[`docs/app-instance-control.md`](../docs/app-instance-control.md#cron-overlap-with-manual-runs).
+Integration review passed 162 focused tests with 0 failures
+(`tmp/manual-overlap-terminal-reserve/serial-reconcile-wave-002/`). Browser E2E
+was skipped because no `web/` file changed. The dispatch manifest
+`active/manual-overlap-terminal-reserve-dispatch.json` stays active until the
+dispatch run closes; it records the original plan paths.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

@@ -13,6 +13,7 @@ private struct AppInstanceOptions: ParsableArguments {
   @Option var timeoutSeconds: Int?
   @Option var variables: String?
   @Flag var wait = false
+  @Flag var allowOverlap = false
   @Option var pollIntervalSeconds: Int = 2
   @Option var limit: Int = 20
 }
@@ -38,7 +39,7 @@ struct InstanceAppCommands: Sendable {
       } catch { throw CLIUsageError(AppInstanceOptions.message(for: error)) }
       let action = options.command ?? ""
       guard ["reload", "run", "executions"].contains(action), (1...100).contains(args.limit),
-        (1...60).contains(args.pollIntervalSeconds),
+        (1...60).contains(args.pollIntervalSeconds), action == "run" || !args.allowOverlap,
         args.timeoutSeconds.map({ (1...86400).contains($0) }) ?? true else {
         throw CLIUsageError("instance_invalid_options")
       }
@@ -129,9 +130,17 @@ struct InstanceAppCommands: Sendable {
   private func runInstance(_ client: RielaAppAPIClient, path: String, args: AppInstanceOptions,
                            variables: [String: Any]) async throws -> CLICommandResult {
     let bootstrap = try await client.bootstrap()
-    let body: [String: Any] = ["expectedProfile": client.profile, "expectedRevision": bootstrap.revision,
+    var body: [String: Any] = ["expectedProfile": client.profile, "expectedRevision": bootstrap.revision,
                                "variables": variables]
-    let data = try await client.post(path + "/runs", body: body, bootstrap: bootstrap)
+    if args.allowOverlap { body["allowOverlap"] = true }
+    let data: Data
+    do {
+      data = try await client.post(path + "/runs", body: body, bootstrap: bootstrap)
+    } catch let failure as RielaAppAPIFailure where failure.status == 409 && failure.code == "instance_busy" {
+      guard let busy = try? JSONDecoder().decode(AppInstanceBusyFailure.self, from: failure.body),
+        let sessionId = busy.error.runningSessionId else { throw failure }
+      return try Self.result(AppInstanceBusyOutput(error: failure.code, sessionId: sessionId, exitCode: 1), code: failure.code)
+    }
     var launch = try JSONDecoder().decode(AppLaunch.self, from: data)
     let timeout = args.timeoutSeconds ?? (args.wait ? 3600 : 60)
     var elapsed = 0
@@ -182,6 +191,11 @@ struct InstanceAppCommands: Sendable {
 }
 
 private struct AppCommandFailure: Encodable { var error: String; var exitCode: Int32 }
+private struct AppInstanceBusyFailure: Decodable {
+  struct Detail: Decodable { var runningSessionId: String? }
+  var error: Detail
+}
+private struct AppInstanceBusyOutput: Encodable { var error: String; var sessionId: String; var exitCode: Int32 }
 
 private struct AppReloadResponse: Codable {
   struct Definition: Codable { var outcome: String; var versionId: String?; var digest: String? }

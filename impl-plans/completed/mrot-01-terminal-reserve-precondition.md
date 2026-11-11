@@ -140,7 +140,7 @@ note the drift. Do not overwrite it.
 
 ## Done when
 
-- [ ] Method added, with the early return in the redirect.
-- [ ] New test file covers all the bullets above.
-- [ ] The verification commands are green, with logs recorded.
-- [ ] Progress log is complete: hashes, the failing-before evidence, and command results.
+- [x] Method added, with the early return in the redirect.
+- [x] New test file covers all the bullets above.
+- [x] The verification commands are green, with logs recorded.
+- [x] Progress log is complete: hashes, the failing-before evidence, and command results.

@@ -128,6 +128,6 @@ drift is detected).
 
 ## Done when
 
-- [ ] The contract compiles exactly as pinned.
-- [ ] All the test bullets are implemented and green.
-- [ ] Progress log complete.
+- [x] The contract compiles exactly as pinned.
+- [x] All the test bullets are implemented and green.
+- [x] Implementation progress log complete; formal review and final handoff remain downstream.

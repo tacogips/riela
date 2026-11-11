@@ -8,6 +8,20 @@ import Darwin
 import Glibc
 #endif
 
+protocol ExternalRunProbing: Sendable {
+  func liveManualSessionIds(workflowId: String) throws -> [String]
+}
+
+struct StoreExternalRunProbe: ExternalRunProbing {
+  let sessionStoreRoot: String
+  var workflowStoreRoots: [String: String] = [:]
+
+  func liveManualSessionIds(workflowId: String) throws -> [String] {
+    try LiveRootSessionProbe.liveRootSessions(workflowId: workflowId, sessionStoreRoot: workflowStoreRoots[workflowId] ?? sessionStoreRoot)
+      .filter(\.isManual).map(\.sessionId)
+  }
+}
+
 struct CronOverlapFire: Sendable {
   var bindingId: String
   var sourceId: String
@@ -127,6 +141,8 @@ actor CronOverlapDispatcher {
     var settleGeneration = 0
   }
 
+  private let externalProbe: (any ExternalRunProbing)?
+  private let bindingWorkflowIds: [String: String]
   private let admissionGate: EventAdmissionGate?
   private let server: DefaultEventLiveServer
   private let eventRoot: URL
@@ -150,8 +166,12 @@ actor CronOverlapDispatcher {
     policies: [String: EffectiveEventOverlapPolicy],
     clock: any EventServeClock,
     cancelSettleTimeout: Duration,
-    admissionGate: EventAdmissionGate? = nil
+    admissionGate: EventAdmissionGate? = nil,
+    externalProbe: (any ExternalRunProbing)? = nil,
+    bindingWorkflowIds: [String: String] = [:]
   ) {
+    self.externalProbe = externalProbe
+    self.bindingWorkflowIds = bindingWorkflowIds
     self.admissionGate = admissionGate
     self.server = server
     self.eventRoot = eventRoot
@@ -194,19 +214,26 @@ actor CronOverlapDispatcher {
   }
 
   private func submitReserved(_ fire: CronOverlapFire) -> CronOverlapSubmitOutcome {
+    advanceExternallyBlocked(bindingId: fire.bindingId)
     var scope = scopes[fire.bindingId] ?? Scope()
     let policy = effectivePolicy(bindingId: fire.bindingId)
-    if scope.running.isEmpty && scope.pendingAfterCancel == nil {
+    let idle = scope.running.isEmpty && scope.pendingAfterCancel == nil && scope.queue.isEmpty
+    let external = (idle || policy.policy == .concurrent) ? externalBlockers(bindingId: fire.bindingId) : []
+    if idle && external.isEmpty {
       scopes[fire.bindingId] = scope
       start(fire, policy: policy)
       return .started
+    }
+    if idle, let blocker = external.first, policy.policy == .skip || policy.policy == .cancelRunning {
+      return recordNonStart(fire, policy: policy, status: .skipped,
+                            reason: CronOverlapReason.skip(fire.bindingId, runningSessionId: blocker))
     }
     switch policy.policy {
     case .skip:
       let reason = CronOverlapReason.skip(fire.bindingId, runningSessionId: scope.running.first?.sessionId)
       return recordNonStart(fire, policy: policy, status: .skipped, reason: reason)
     case .concurrent:
-      if let cap = policy.maxConcurrentRuns, scope.running.count >= cap {
+      if let cap = policy.maxConcurrentRuns, scope.running.count + external.count >= cap {
         return recordNonStart(
           fire, policy: policy, status: .skipped, reason: CronOverlapReason.concurrencyCap(fire.bindingId, cap: cap)
         )
@@ -327,7 +354,9 @@ actor CronOverlapDispatcher {
     }
   }
 
-  private var isDrained: Bool {
+  var hasQueued: Bool { scopes.values.contains { !$0.queue.isEmpty } }
+
+  var isDrained: Bool {
     scopes.values.allSatisfy { $0.running.isEmpty && $0.queue.isEmpty && $0.pendingAfterCancel == nil }
   }
 
@@ -446,15 +475,47 @@ actor CronOverlapDispatcher {
       )
       return
     }
-    guard scope.running.isEmpty, scope.pendingAfterCancel == nil, !scope.queue.isEmpty else { return }
-    let next = scope.queue.removeFirst()
-    scopes[bindingId] = scope
-    guard !skipDeferredIfRoutineInactive(next, policy: policy) else {
-      releaseQueuedReservation()
-      await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
+    advanceExternallyBlocked(bindingId: bindingId)
+  }
+
+  func advanceAllExternallyBlocked() {
+    for bindingId in scopes.keys.sorted() {
+      advanceExternallyBlocked(bindingId: bindingId)
+    }
+    resumeDrainWaitersIfNeeded()
+  }
+
+  private func advanceExternallyBlocked(bindingId: String) {
+    guard let initial = scopes[bindingId], initial.running.isEmpty,
+          initial.pendingAfterCancel == nil, !initial.queue.isEmpty else { return }
+    guard externalBlockers(bindingId: bindingId).isEmpty else { return }
+    let policy = effectivePolicy(bindingId: bindingId)
+    while var scope = scopes[bindingId], scope.running.isEmpty,
+          scope.pendingAfterCancel == nil, !scope.queue.isEmpty {
+      let next = scope.queue.removeFirst()
+      scopes[bindingId] = scope
+      if skipDeferredIfRoutineInactive(next, policy: policy) {
+        releaseQueuedReservation()
+        continue
+      }
+      start(next, policy: policy)
       return
     }
-    start(next, policy: policy)
+  }
+
+  private func externalBlockers(bindingId: String) -> [String] {
+    guard let externalProbe, let workflowId = bindingWorkflowIds[bindingId] else { return [] }
+    do {
+      return try externalProbe.liveManualSessionIds(workflowId: workflowId)
+    } catch {
+      let policy = effectivePolicy(bindingId: bindingId)
+      Task { [server] in
+        await server.telemetry.recordLog(Self.overlapTelemetryLog(
+          bindingId: bindingId, policy: policy.policy.rawValue, reason: "overlap-external-probe-failed:\(bindingId)"
+        ))
+      }
+      return []
+    }
   }
 
   /// Returns true when the routine gate stopped the deferred fire (it is then

@@ -91,6 +91,6 @@ hashes per edited file. Stop on drift.
 
 ## Done when
 
-- [ ] Flag, body rule, 409 mapping and help line done.
-- [ ] Five tests added and green.
-- [ ] Progress log complete.
+- [x] Flag, body rule, 409 mapping and help line done.
+- [x] Five tests added and green.
+- [x] Progress log complete.

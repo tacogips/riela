@@ -35,7 +35,7 @@ During a closed barrier, cron ticks are recorded as skipped and other events as 
 ## Run
 
 ```sh
-riela instance run ID [--variables '<json>|@file'] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--server URL] [--profile NAME] [--cwd DIR]
+riela instance run ID [--variables '<json>|@file'] [--allow-overlap] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--server URL] [--profile NAME] [--cwd DIR]
 ```
 
 Variables must be a JSON object or `@file`, default `{}`; relative files resolve against `--cwd`. The CLI waits for a session ID even without `--wait`, then returns; `--wait` waits for completion. Timeout defaults to 60 seconds without `--wait` and 3600 with it (range 1–86400); polling defaults to 2 seconds (range 1–60).
@@ -45,6 +45,12 @@ Variables must be a JSON object or `@file`, default `{}`; relative files resolve
 ```
 
 The `error` field is included only with `--wait`. A failed run or timeout exits 1 with `run_failed` or `run_wait_timeout`, respectively, and prints the last known result, including session ID if available.
+
+A run is refused when the instance already has a live execution, whether started manually or by cron, in the App profile's session store. The CLI exits 1 and prints `{"error":"instance_busy","sessionId":"<id|pending>","exitCode":1}` on stdout; `pending` means the session ID has not yet been allocated. Pass `--allow-overlap` to bypass this check. An older App rejects this flag with `invalid_configured_run`. Orphaned sessions from a crashed process never block a run.
+
+### Cron overlap with manual runs
+
+Live manual runs count as running for the cron binding's `overlapPolicy`. When the binding is otherwise idle, `skip` records `overlap-skip:<bindingId>:<manualSessionId>`; `queue` waits for the manual run to end and preserves FIFO order; `concurrent` counts manual runs toward `maxConcurrentRuns`; and `cancelRunning` skips rather than canceling a manual run. The check has a typically sub-second race window before session allocation, and instances sharing a workflow ID in one profile share the busy and overlap check. If the session probe fails, the check fails open.
 
 ## Executions
 

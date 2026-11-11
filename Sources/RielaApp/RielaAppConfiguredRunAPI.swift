@@ -10,6 +10,7 @@ private struct ConfiguredRunInput: Decodable {
   let expectedProfile: String
   let expectedRevision: Int
   let variables: JSONObject
+  let allowOverlap: Bool?
 }
 
 extension RielaApp {
@@ -20,7 +21,9 @@ extension RielaApp {
           request.headers["x-riela-profile"] == daemonProfileName.rawValue,
           let identity = parts[3].removingPercentEncoding,
           let object = try? JSONDecoder().decode(JSONObject.self, from: request.body),
-          Set(object.keys) == ["expectedProfile", "expectedRevision", "variables"],
+          Set(object.keys).isSuperset(of: ["expectedProfile", "expectedRevision", "variables"]),
+          Set(object.keys).isSubset(of: ["expectedProfile", "expectedRevision", "variables", "allowOverlap"]),
+          object["allowOverlap"] == nil || object["allowOverlap"] == .bool(true) || object["allowOverlap"] == .bool(false),
           let input = try? JSONDecoder().decode(ConfiguredRunInput.self, from: request.body) else {
       return .json(status: 400, .object(["error": .object(["code": .string("invalid_configured_run")])]))
     }
@@ -45,7 +48,8 @@ extension RielaApp {
           environment: snapshot.runtimeEnvironment()
         )
         return webWorkflowRuntime.handler(context: context).launchConfiguredWorkflow(
-          identity: identity, source: approved.candidate, configuration: approved.preference.configuration, variables: input.variables
+          identity: identity, source: approved.candidate, configuration: approved.preference.configuration, variables: input.variables,
+          allowOverlap: input.allowOverlap ?? false
         )
       } catch let error as RuntimeEnvironmentError {
         return .json(status: 422, .object(["error": .object(["code": .string(error.rawValue)])]))

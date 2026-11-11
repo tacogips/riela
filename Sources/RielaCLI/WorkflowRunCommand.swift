@@ -28,6 +28,7 @@ public struct WorkflowRunCommand: Sendable {
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
   var sessionStartedObserver: (@Sendable (String) -> Void)?
+  var operatorCancellationReason: (@Sendable () -> String?)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
   var improvementCLIProcessRunnerOverride: (any LocalProcessRunning)?
@@ -224,8 +225,8 @@ public struct WorkflowRunCommand: Sendable {
         effectiveInstance: effectiveInstance,
         eventHandler: runEventHandler,
         sessionExecutionAdmission: taskAdmission ?? processAdmission,
-        boundaryHandover: taskContext?.boundaryHandover,
-        cancellationCause: taskContext?.cancellationCause,
+        boundaryHandover: taskContext?.boundaryHandover, cancellationCause: taskContext?.cancellationCause,
+        cancellationReason: operatorCancellationReason,
         definitionSource: definitionSource
       )
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(

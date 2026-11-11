@@ -15,6 +15,7 @@ public final class WebWorkflowLaunch: @unchecked Sendable {
   private var state = State.running
   private var sessionId: String?
   private var error: String?
+  var onFirstSessionId: (@Sendable (String) -> Void)?
 
   init(profile: String, identity: String? = nil) {
     self.profile = profile
@@ -26,8 +27,15 @@ public final class WebWorkflowLaunch: @unchecked Sendable {
           let event = try? JSONDecoder().decode(JSONObject.self, from: data),
           case let .string(id) = event["sessionId"] else { return }
     lock.lock()
-    if sessionId == nil { sessionId = id }
+    let callback: (@Sendable (String) -> Void)?
+    if sessionId == nil {
+      sessionId = id
+      callback = onFirstSessionId
+    } else {
+      callback = nil
+    }
     lock.unlock()
+    callback?(id)
   }
 
   func finish(_ result: CLICommandResult) {

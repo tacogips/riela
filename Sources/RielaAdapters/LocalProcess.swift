@@ -370,11 +370,10 @@ private final class LocalProcessCancellationState: @unchecked Sendable {
     self.pipes = pipes
     self.completion = completion
     shouldCancel = didCancel
-    lock.unlock()
-
     if shouldCancel {
       cancelConfiguredProcess(processHandle: processHandle, pipes: pipes, completion: completion)
     }
+    lock.unlock()
   }
 
   func cancel() {
@@ -390,14 +389,21 @@ private final class LocalProcessCancellationState: @unchecked Sendable {
     currentProcessHandle = processHandle
     currentPipes = pipes
     currentCompletion = completion
-    lock.unlock()
-
     if let currentProcessHandle, let currentPipes, let currentCompletion {
       cancelConfiguredProcess(
         processHandle: currentProcessHandle,
         pipes: currentPipes,
         completion: currentCompletion
       )
+    }
+    lock.unlock()
+  }
+
+  func killAfterLeaderExitIfNeeded(_ handle: LocalProcessHandle, completion: LocalProcessCompletion) {
+    lock.lock()
+    defer { lock.unlock() }
+    if !completion.cancelled() || handle.usesAwaitOwner {
+      _ = handle.killGroupOrProcess()
     }
   }
 
@@ -415,10 +421,9 @@ private final class LocalProcessCancellationState: @unchecked Sendable {
     pipes: LocalProcessPipes,
     completion: LocalProcessCompletion
   ) {
-    completion.markCancelled()
-    pipes.closeForFailureOrTimeout()
-    if processHandle.terminateGroupOrProcess() {
-      processHandle.scheduleKillIfRunning(after: 1)
+    processHandle.beginTaskCancellation {
+      completion.markCancelled()
+      pipes.closeForFailureOrTimeout()
     }
   }
 }
@@ -453,13 +458,108 @@ final class LocalProcessHandle: @unchecked Sendable {
   private var processId: pid_t?
   private var processGroupId: pid_t?
   private var didExit = false
+  private var leaderExited = false
   private var killWorkItem: DispatchWorkItem?
   private let signalProcess: LocalProcessSignal
   private let cancellationPolicy: WorkflowProcessCancellation
+  private let cancellationGroup = DispatchGroup()
+  private let snapshotter: any LocalProcessTreeSnapshotting
+  private let cancellationGrace: TimeInterval
+  private let cancellationHardBound: TimeInterval
+  private let cancellationScanInterval: TimeInterval
+  private let survivorReporter: @Sendable (Int) -> Void
 
-  init(cancellationPolicy: WorkflowProcessCancellation = .terminateGroup, signalProcess: @escaping LocalProcessSignal = { processId, signal in kill(processId, signal) }) {
+  init(
+    cancellationPolicy: WorkflowProcessCancellation = .terminateGroup,
+    signalProcess: @escaping LocalProcessSignal = { processId, signal in kill(processId, signal) },
+    snapshotter: any LocalProcessTreeSnapshotting = SystemLocalProcessTreeSnapshotter(),
+    cancellationGrace: TimeInterval = 5,
+    cancellationHardBound: TimeInterval = 5,
+    cancellationScanInterval: TimeInterval = 0.1,
+    survivorReporter: @escaping @Sendable (Int) -> Void = { count in
+      FileHandle.standardError.write(Data("process_tree_survivors \(count)\n".utf8))
+    }
+  ) {
     self.signalProcess = signalProcess
     self.cancellationPolicy = cancellationPolicy
+    self.snapshotter = snapshotter
+    self.cancellationGrace = cancellationGrace
+    self.cancellationHardBound = cancellationHardBound
+    self.cancellationScanInterval = cancellationScanInterval
+    self.survivorReporter = survivorReporter
+  }
+
+  func beginTaskCancellation(markCancelled: () -> Void) {
+    if cancellationPolicy == .awaitOwner {
+      markCancelled()
+      _ = terminateGroupOrProcess()
+      return
+    }
+    cancellationGroup.enter()
+    markCancelled()
+    DispatchQueue.global(qos: .utility).async {
+      self.cancelProcessTree()
+      self.cancellationGroup.leave()
+    }
+  }
+
+  var usesAwaitOwner: Bool { cancellationPolicy == .awaitOwner }
+
+  func waitForCancellation() {
+    cancellationGroup.wait()
+  }
+
+  private func cancelProcessTree() {
+    lock.lock()
+    let leader = processId
+    let group = processGroupId
+    lock.unlock()
+    guard let leader, let group else { return }
+    let initial = snapshotter.snapshot()
+    var tracked = Dictionary(uniqueKeysWithValues: localProcessDescendants(of: [leader], in: initial).map { ($0.pid, $0) })
+    _ = signalGroupOrProcess(SIGTERM)
+    signalTracked(tracked, signal: SIGTERM, excludingGroup: group)
+    let graceEnd = Date().addingTimeInterval(cancellationGrace)
+    while (!tracked.isEmpty || !leaderHasExited()) && Date() < graceEnd {
+      Thread.sleep(forTimeInterval: cancellationScanInterval)
+      refreshTracked(&tracked, signalNew: true)
+    }
+    killScheduledProcessGroup()
+    let hardEnd = Date().addingTimeInterval(cancellationHardBound)
+    while !tracked.isEmpty && Date() < hardEnd {
+      refreshTracked(&tracked, signalNew: false)
+      killScheduledProcessGroup()
+      signalTracked(tracked, signal: SIGKILL, excludingGroup: nil)
+      if !tracked.isEmpty { Thread.sleep(forTimeInterval: cancellationScanInterval) }
+    }
+    refreshTracked(&tracked, signalNew: false)
+    if !tracked.isEmpty { survivorReporter(tracked.count) }
+  }
+
+  private func leaderHasExited() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return leaderExited || didExit || processId == nil
+  }
+
+  private func refreshTracked(_ tracked: inout [pid_t: LocalProcessTreeEntry], signalNew: Bool) {
+    let entries = snapshotter.snapshot()
+    let current = Dictionary(uniqueKeysWithValues: entries.map { ($0.pid, $0) })
+    tracked = tracked.filter { current[$0.key]?.startTime == $0.value.startTime }
+    let descendants = localProcessDescendants(of: Set(tracked.keys), in: entries)
+    var added: [pid_t: LocalProcessTreeEntry] = [:]
+    for entry in descendants where tracked[entry.pid] == nil {
+      tracked[entry.pid] = entry
+      added[entry.pid] = entry
+    }
+    if signalNew { signalTracked(added, signal: SIGTERM, excludingGroup: nil) }
+  }
+
+  private func signalTracked(_ tracked: [pid_t: LocalProcessTreeEntry], signal: Int32, excludingGroup: pid_t?) {
+    for entry in tracked.values where entry.pgid != excludingGroup {
+      guard snapshotter.snapshot().contains(where: { $0.pid == entry.pid && $0.startTime == entry.startTime }) else { continue }
+      _ = signalProcess(entry.pid, signal)
+    }
   }
 
   func store(processId: pid_t) {
@@ -518,7 +618,12 @@ final class LocalProcessHandle: @unchecked Sendable {
     repeat {
       result = waitid(P_PID, id_t(ownedPID), &information, WEXITED | WNOWAIT)
     } while result < 0 && errno == EINTR
-    if result == 0 { return true }
+    if result == 0 {
+      lock.lock()
+      leaderExited = true
+      lock.unlock()
+      return true
+    }
     // Someone else reaped the child: ownership cannot be inferred from the
     // numeric ID any more, so fail closed without any subsequent signal.
     lock.lock()
@@ -707,6 +812,13 @@ private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
 /// detached services require a separately owned lifecycle, not this runner.
 public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEventStreaming {
   var deadlineScheduler: any WallClockDeadlineScheduling = SystemWallClockDeadlineScheduler()
+  var treeSnapshotter: any LocalProcessTreeSnapshotting = SystemLocalProcessTreeSnapshotter()
+  var cancellationGrace: TimeInterval = 5
+  var cancellationHardBound: TimeInterval = 5
+  var cancellationScanInterval: TimeInterval = 0.1
+  var survivorReporter: @Sendable (Int) -> Void = { count in
+    FileHandle.standardError.write(Data("process_tree_survivors \(count)\n".utf8))
+  }
 
   public init() {}
 
@@ -750,7 +862,11 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
         let inputPipe = Pipe()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        let processHandle = LocalProcessHandle(cancellationPolicy: configuration.cancellationPolicy)
+        let processHandle = LocalProcessHandle(
+          cancellationPolicy: configuration.cancellationPolicy, snapshotter: treeSnapshotter,
+          cancellationGrace: cancellationGrace, cancellationHardBound: cancellationHardBound,
+          cancellationScanInterval: cancellationScanInterval, survivorReporter: survivorReporter
+        )
         let pipes = LocalProcessPipes(inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
 
         let outputGroup = DispatchGroup()
@@ -804,12 +920,12 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
           DispatchQueue.global(qos: .utility).async {
             let ownsExitedChild = processHandle.waitForLeaderExit()
             if ownsExitedChild {
-              // Do this before waiting for EOF: a background child can keep
-              // the pipes open even after a successful leader exit. WNOWAIT
-              // still pins signal authority; all leader bytes remain readable.
-              processHandle.killGroupOrProcess()
+              // Serialize the normal-exit signal with cancellation registration.
+              cancellationState.killAfterLeaderExitIfNeeded(processHandle, completion: completion)
             }
             outputGroup.notify(queue: .global(qos: .utility)) {
+              cancellationState.finish()
+              if completion.cancelled() { processHandle.waitForCancellation() }
               let status = processHandle.reapAfterOutput(terminateRemaining: true)
               completion.cancelDeadline()
               if completion.timedOut() {

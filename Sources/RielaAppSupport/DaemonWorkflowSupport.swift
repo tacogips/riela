@@ -816,12 +816,14 @@ public final class RielaAppDaemonWorkflowRuntime {
     guard let running = runningWorkflows[identity], running.candidate.startsEventSources else { return false }
     return running.snapshot.status == .running || running.snapshot.status == .starting
   }
-
   public func admissionControl(identity: String, frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
     guard let running = runningWorkflows[identity] else { throw WorkflowServeAdmissionError.childExited }
     return try await running.controller.admissionControl(frame)
   }
-
+  public func sessionControl(identity: String, frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement {
+    guard let running = runningWorkflows[identity] else { throw WorkflowServeSessionControlError.childExited }
+    return try await running.controller.sessionControl(frame)
+  }
   public func replaceChild(
     _ candidate: RielaAppDaemonWorkflowCandidate, configuration: WorkflowServeRuntimeConfiguration,
     server: RielaServerConfiguration, sessionStoreRoot: String

@@ -43,6 +43,7 @@ struct EventWorkflowRunRequest: Sendable {
   var runtimeVariables: JSONObject
   var parsed: ParsedParityOptions
   var onSessionStarted: (@Sendable (String) -> Void)?
+  var operatorCancellation: OperatorCancellation?
 }
 struct EventResolvedAttachmentInputs: Equatable, Sendable {
   var attachments: [JSONObject]
@@ -69,6 +70,7 @@ struct DefaultEventLiveServer: EventLiveServing {
   var telemetry: any RielaTelemetry
   var runtimeEnvironment: EventRuntimeEnvironment?
   var admissionGate: EventAdmissionGate?
+  var sessionCancelRegistry: LiveSessionCancelRegistry?
   var clock: any EventServeClock
   var triggerDefaultsResolver: (any EventWorkflowTriggerDefaultsResolving)?
   var externalRunProbeOverride: (any ExternalRunProbing)?
@@ -117,11 +119,12 @@ struct DefaultEventLiveServer: EventLiveServing {
       workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)
     let runtime = EventRuntimeEnvironment(base: prepared, requiresBootstrap: parsed.runtimeEnvironmentChannel)
     let gate = parsed.runtimeEnvironmentChannel ? EventAdmissionGate(clock: clock) : nil
-    let channel = descriptors.map { RuntimeEnvironmentChannel(state: runtime, input: $0.input, output: $0.output, admissionGate: gate) }
+    let registry = descriptors == nil ? nil : LiveSessionCancelRegistry()
+    let channel = descriptors.map { RuntimeEnvironmentChannel(state: runtime, input: $0.input, output: $0.output, admissionGate: gate, sessionRegistry: registry) }
     defer { channel?.stop() }
     do {
       return try await serve(eventRoot: eventRoot, target: target, parsed: parsed, runtime: runtime,
-        required: required, stopsOnChannelClose: channel != nil, admissionGate: gate)
+        required: required, stopsOnChannelClose: channel != nil, admissionGate: gate, sessionRegistry: registry)
     } catch let error as CLIUsageError where channel != nil {
       // The managing parent reads only safe codes from a managed child's
       // stderr; stdout (the structured result) is /dev/null in channel mode.
@@ -135,9 +138,10 @@ struct DefaultEventLiveServer: EventLiveServing {
   /// the managing parent is gone: serving is cancelled and the command fails
   /// with `environment_channel_closed` instead of running on stale values.
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, runtime: EventRuntimeEnvironment,
-             required: [String], stopsOnChannelClose: Bool, admissionGate: EventAdmissionGate? = nil) async throws -> ScopedParityCommandResult {
+             required: [String], stopsOnChannelClose: Bool, admissionGate: EventAdmissionGate? = nil,
+             sessionRegistry: LiveSessionCancelRegistry? = nil) async throws -> ScopedParityCommandResult {
     try await runtime.awaitInitial()
-    let server = { var server = self; server.runtimeEnvironment = runtime; server.admissionGate = admissionGate; return server }()
+    let server = { var server = self; server.runtimeEnvironment = runtime; server.admissionGate = admissionGate; server.sessionCancelRegistry = sessionRegistry; return server }()
     let captured = try await runtime.capture()
     if required.contains(where: { captured[$0]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false }) {
       throw CLIUsageError("environment_required_missing")
@@ -1063,6 +1067,9 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
     let workingDirectory = request.parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     var observedCommand = command
     observedCommand.sessionStartedObserver = request.onSessionStarted
+    if let cancellation = request.operatorCancellation {
+      observedCommand.operatorCancellationReason = { cancellation.failureReason }
+    }
     var options = WorkflowRunOptions(
       target: request.workflowName,
       resolution: WorkflowResolutionOptions(

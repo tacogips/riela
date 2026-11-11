@@ -19,7 +19,14 @@ public extension RielaWebWorkflowRequestHandler {
     runtime.launchTasks = runtime.launchTasks.filter { runtime.launches[$0.key] != nil }
     if !allowOverlap {
       let running = runtime.launches.values.filter {
-        $0.identity == identity && $0.snapshot["status"] == .string("running")
+        guard $0.identity == identity, $0.snapshot["status"] == .string("running") else { return false }
+        guard case let .string(sessionId) = $0.snapshot["sessionId"] else { return true }
+        let root = canonicalRuntimeStoreRoot(sessionStoreRoot: context.sessionStoreRoot)
+        let databasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)
+        guard FileManager.default.fileExists(atPath: databasePath),
+              let status = try? SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root)
+                .loadStrictReadOnly(sessionId: sessionId).session.status else { return true }
+        return !status.isTerminal
       }.sorted { $0.createdAt < $1.createdAt }
       var blocker: String?
       if let launch = running.first {
@@ -88,20 +95,54 @@ public extension RielaWebWorkflowRequestHandler {
       runtime.launches[job.id] = job
       var environment = context.environment
       environment["RIELA_API_KEY"] = ""
-      runtime.launchTasks[job.id] = Task.detached {
+      let registry = runtime.registry(for: identity)
+      let cancellation = OperatorCancellation()
+      let handleBox = ConfiguredLaunchTaskHandleBox()
+      job.onFirstSessionId = { sessionId in
+        registry.register(sessionId: sessionId, cancellation: cancellation) { handleBox.cancel() }
+      }
+      registry.beginRun()
+      let task = Task.detached {
         await CLIRuntimeEnvironment.$overrides.withValue(nil) {
           await CLIRuntimeEnvironment.$captured.withValue(environment) {
           var command = WorkflowRunCommand(resolver: EditorPreparedBundleResolver(bundle: bundle), jsonlRecordWriter: job.append)
+          command.operatorCancellationReason = { cancellation.failureReason }
           command.configuredInstanceOverride = WorkflowInstanceDefinition(identity: identity, workflowId: source.workflowId,
             sourceIdentity: source.id, configuration: configuration)
           let result = await command.run(options)
           job.finish(result)
+          if case let .string(sessionId) = job.snapshot["sessionId"] { registry.unregister(sessionId: sessionId) }
+          registry.endRun()
           }
         }
       }
+      handleBox.store(task)
+      runtime.launchTasks[job.id] = task
       return .json(status: 202, .object(job.snapshot))
     } catch {
       return .json(status: 422, .object(["error": .object(["code": .string("run_preflight_failed")])]))
     }
+  }
+}
+
+private final class ConfiguredLaunchTaskHandleBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var task: Task<Void, Never>?
+  private var cancelled = false
+
+  func store(_ task: Task<Void, Never>) {
+    lock.lock()
+    self.task = task
+    let shouldCancel = cancelled
+    lock.unlock()
+    if shouldCancel { task.cancel() }
+  }
+
+  func cancel() {
+    lock.lock()
+    cancelled = true
+    let task = self.task
+    lock.unlock()
+    task?.cancel()
   }
 }

@@ -161,7 +161,16 @@ extension SurfaceCatalog {
       graphqlState: .blocked(evidence: "desktop app-owned configured launches use profile/revision approval and its owned launch lifecycle"),
       web: webRoute("POST", "/api/v1/instances/{identity}/runs"),
       desktop: .implemented
-    )
+    ),
+    surfaceRow(consoleDefaults, id: "console.instance-cancel-session", family: "console", kind: .mutation,
+      graphqlState: .blocked(evidence: "desktop app-owned cancellation"),
+      web: webRoute("POST", "/api/v1/instances/{identity}/executions/{sessionId}/cancel"), desktop: .implemented),
+    surfaceRow(consoleDefaults, id: "console.instance-cancel", family: "console", kind: .mutation,
+      graphqlState: .blocked(evidence: "desktop app-owned cancellation"),
+      web: webRoute("POST", "/api/v1/instances/{identity}/cancel"), desktop: .implemented),
+    surfaceRow(consoleDefaults, id: "console.instance-reload", family: "console", kind: .mutation,
+      graphqlState: .blocked(evidence: "desktop app-owned reload with admission handoff"),
+      web: webRoute("POST", "/api/v1/instances/{identity}/reload"), desktop: .implemented)
   ]
 
   static let configurationRows: [SurfaceOperation] = [

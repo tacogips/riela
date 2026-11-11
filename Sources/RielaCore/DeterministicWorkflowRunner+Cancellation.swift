@@ -36,6 +36,9 @@ extension DeterministicWorkflowRunner {
          || triggerFailureKind == .cancelled {
       failureKind = triggerFailureKind
       failureReason = "task handover trigger: \(triggerFailureKind.rawValue)"
+    } else if isWorkflowRunCancellation(error), let reason = request.cancellationReason?() {
+      failureKind = .cancelled
+      failureReason = reason
     } else {
       failureKind = workflowRunFailureKind(error)
       failureReason = workflowRunFailureReason(error)

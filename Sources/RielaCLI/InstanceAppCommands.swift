@@ -7,6 +7,7 @@ private struct AppInstanceOptions: ParsableArguments {
   @Option var profile: String?
   @Option(name: .customLong("cwd")) var cwd = FileManager.default.currentDirectoryPath
   @Option var reason: String?
+  @Option var session: String?
   @Option var workflowDefinitionDir: String?
   @Flag var interruptRunning = false
   @Flag var waitIdle = false
@@ -38,14 +39,18 @@ struct InstanceAppCommands: Sendable {
         args = try AppInstanceOptions.parse(options.arguments)
       } catch { throw CLIUsageError(AppInstanceOptions.message(for: error)) }
       let action = options.command ?? ""
-      guard ["reload", "run", "executions"].contains(action), (1...100).contains(args.limit),
+      guard ["reload", "run", "executions", "cancel"].contains(action), (1...100).contains(args.limit),
         (1...60).contains(args.pollIntervalSeconds), action == "run" || !args.allowOverlap,
         args.timeoutSeconds.map({ (1...86400).contains($0) }) ?? true else {
         throw CLIUsageError("instance_invalid_options")
       }
       let reason = args.reason?.trimmingCharacters(in: .whitespacesAndNewlines)
-      if action == "reload", !(reason.map { (1...512).contains($0.utf8.count) } ?? false) {
+      if ["reload", "cancel"].contains(action), !(reason.map { (1...512).contains($0.utf8.count) } ?? false) {
         throw CLIUsageError("instance_reason_required")
+      }
+      if action == "cancel", args.timeoutSeconds != nil && !args.wait ||
+        !(args.session.map { (1...1024).contains($0.utf8.count) } ?? true) {
+        throw CLIUsageError("instance_invalid_options")
       }
       var variables: [String: Any] = [:]
       if action == "run", let reference = args.variables {
@@ -64,10 +69,12 @@ struct InstanceAppCommands: Sendable {
       var client = RielaAppAPIClient(endpoint: endpoint, profile: profile)
       if let transport { client.transport = transport }
       let encoded = identity.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
-      let path = "/api/v1/instances/" + encoded
+      let path = "/api/v1/instances" + "/" + encoded
       switch action {
       case "reload":
         return try await reload(client, path: path, args: args, reason: reason ?? "")
+      case "cancel":
+        return try await cancel(client, path: path, args: args, reason: reason ?? "")
       case "run":
         return try await runInstance(client, path: path, args: args, variables: variables)
       default:
@@ -124,6 +131,46 @@ struct InstanceAppCommands: Sendable {
         }
         throw failure
       }
+    }
+  }
+
+  private func cancel(_ client: RielaAppAPIClient, path: String, args: AppInstanceOptions,
+                      reason: String) async throws -> CLICommandResult {
+    let bootstrap = try await client.bootstrap()
+    let cancelPath = args.session.map {
+      path + "/executions/" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "") + "/cancel"
+    } ?? path + "/cancel"
+    let response: AppCancelResponse
+    do {
+      let data = try await client.post(cancelPath, body: ["expectedProfile": client.profile, "reason": reason],
+                                       bootstrap: bootstrap)
+      response = try JSONDecoder().decode(AppCancelResponse.self, from: data)
+    } catch let failure as RielaAppAPIFailure {
+      if failure.code == "ambiguous_running_sessions" {
+        let details = try? JSONDecoder().decode(AppCancelAmbiguityDetails.self, from: failure.body)
+        return try Self.result(AppCancelAmbiguity(error: failure.code, exitCode: 1,
+          sessionIds: details?.sessionIds ?? [], pendingRunCount: details?.pendingRunCount ?? 0), code: failure.code)
+      }
+      if [404, 405].contains(failure.status), !["instance_not_found", "session_not_found"].contains(failure.code) {
+        throw RielaAppAPIFailure(code: "app_cancel_unsupported", status: failure.status, body: Data())
+      }
+      throw failure
+    }
+    var output = AppCancelOutput(response: response, status: nil)
+    guard args.wait else { return try Self.result(output) }
+    let encodedSession = response.sessionId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+    var elapsed = 0
+    let timeout = args.timeoutSeconds ?? 60
+    while true {
+      let data = try await client.get(path + "/executions/" + encodedSession)
+      output.status = try JSONDecoder().decode(AppExecutionDetail.self, from: data).session.status
+      if output.status == "cancelled" { return try Self.result(output) }
+      if output.status == "completed" || output.status == "failed" {
+        return try Self.result(output, code: "cancel_not_effective")
+      }
+      guard elapsed < timeout else { return try Self.result(output, code: "cancel_wait_timeout") }
+      try await sleep(1_000_000_000)
+      elapsed += 1
     }
   }
 
@@ -188,6 +235,35 @@ struct InstanceAppCommands: Sendable {
     return CLICommandResult(exitCode: exitCode, stdout: data.flatMap { String(data: $0, encoding: .utf8) }.map { $0 + "\n" } ?? "{}\n",
                             stderr: (stderr ?? code) + "\n")
   }
+}
+
+private struct AppCancelResponse: Decodable {
+  var identity: String
+  var profile: String
+  var sessionId: String
+  var owner: String
+  var outcome: String
+}
+private struct AppCancelOutput: Encodable {
+  var response: AppCancelResponse
+  var status: String?
+  enum CodingKeys: String, CodingKey { case identity, profile, sessionId, owner, outcome, status }
+  func encode(to encoder: Encoder) throws {
+    var box = encoder.container(keyedBy: CodingKeys.self)
+    try box.encode(response.identity, forKey: .identity)
+    try box.encode(response.profile, forKey: .profile)
+    try box.encode(response.sessionId, forKey: .sessionId)
+    try box.encode(response.owner, forKey: .owner)
+    try box.encode(response.outcome, forKey: .outcome)
+    try box.encode(status, forKey: .status)
+  }
+}
+private struct AppCancelAmbiguityDetails: Decodable { var sessionIds: [String]; var pendingRunCount: Int }
+private struct AppCancelAmbiguity: Encodable {
+  var error: String
+  var exitCode: Int
+  var sessionIds: [String]
+  var pendingRunCount: Int
 }
 
 private struct AppCommandFailure: Encodable { var error: String; var exitCode: Int32 }

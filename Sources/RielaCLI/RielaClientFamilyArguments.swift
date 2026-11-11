@@ -62,6 +62,7 @@ enum InstanceClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case reload
   case run
   case executions
+  case cancel
 }
 
 enum SetupClientSubcommand: String, CaseIterable, ExpressibleByArgument {

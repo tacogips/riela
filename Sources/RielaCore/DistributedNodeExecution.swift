@@ -117,8 +117,11 @@ public struct QueuedDistributedNodeExecutor: DistributedNodeExecuting {
       if Task.isCancelled {
         // This wait runs in a fresh cancellation context. A controller status
         // change alone cannot prove a claimed worker has stopped its process.
+        // A worker stops a command tree with a SIGTERM grace and a SIGKILL hard
+        // bound (5 s each in LocalProcess) before it can acknowledge the stop,
+        // so the proof wait must outlast both plus scheduling slack.
         let stopped = try await Task.detached {
-          let deadline = Date().addingTimeInterval(5)
+          let deadline = Date().addingTimeInterval(remoteStopProofTimeout)
           while Date() < deadline {
             guard let job = try await controller.job(id: executionId, now: Date()) else { return false }
             if job.status != .cancelled { return false }
@@ -137,3 +140,6 @@ public struct QueuedDistributedNodeExecutor: DistributedNodeExecuting {
     }
   }
 }
+
+/// How long a cancelled distributed node waits for the worker's stop proof.
+let remoteStopProofTimeout: TimeInterval = 20

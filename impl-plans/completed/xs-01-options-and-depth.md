@@ -155,3 +155,7 @@ this plan's intent. Never run git commands that modify the index or branches.
 - `git grep -n "needsRequest" Sources/RielaCLI` shows the window property and the read-loop use.
 - `git diff --stat -- Tests/RielaCLITests/XCollectionTests.swift Sources/RielaCLI/XLookupCollection.swift` is empty.
 - Verification 1–3 pass; progress log lists commands, exit codes, log paths and file hashes.
+
+## Implementation status
+
+Completed and accepted (2026-11-11): Step 6 verification, adversarial review and combined-tree integration review passed (50 tests, 0 failures); see `impl-plans/progress/xs-01-options-and-depth.md`.

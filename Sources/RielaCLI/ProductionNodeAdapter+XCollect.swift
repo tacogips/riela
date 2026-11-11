@@ -50,32 +50,49 @@ struct XAuthorCollector {
   static let searchEndLag: TimeInterval = 11
 
   func collect(fetch: (String, JSONObject, JSONObject) async throws -> JSONObject) async throws -> JSONObject {
-    guard try xInstant(options.end) <= clock() else { throw xCollectionInvalid() }
+    var samplingState = try options.authorDailyPostThreshold == nil ? nil : XSamplingState(options: options)
+    let samplingEnabled = options.authorSampling != nil || options.authorDailyPostThreshold != nil
+    let samplingDay = try samplingEnabled ? XSamplingState.day(end: options.end, timezone: options.timezone) : ""
+    var probabilities = options.authorSampling ?? [:]
+    if let state = samplingState {
+      for (handle, entry) in state.auto where probabilities[handle] == nil { probabilities[handle] = entry.probability }
+    }
+    let sampledHandles = options.handles.filter { probabilities[$0.lowercased()] != nil }
+    var regularOptions = options
+    regularOptions.handles = options.handles.filter { probabilities[$0.lowercased()] == nil }
+    var previous = options.previous
+    previous.removeValue(forKey: "author_sampling")
+    let now = clock()
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+    let billingDayStart = calendar.startOfDay(for: now)
+    guard try xInstant(options.end) <= now else { throw xCollectionInvalid() }
     let account = try await fetch("accountMe", [:], ["id": .bool(true), "username": .bool(true)])
     guard let identity = try xOptionalID(account["id"]),
       case let .string(handle)? = account["username"], handle.lowercased() == options.expected.lowercased() else {
       throw AdapterExecutionError(.policyBlocked, "X collection authenticated account mismatch")
     }
-    let groups = options.groups
+    let groups = regularOptions.handles.isEmpty ? [] : regularOptions.groups
+    samplingState?.retainPending(queries: groups.map { $0.map { "from:" + $0 }.joined(separator: " OR ") })
     let previousShards: JSONObject
-    if options.previous["author_scope"] == .string(options.scope), case let .object(shards)? = options.previous["author_shards"] {
+    if previous["author_scope"] == .string(regularOptions.scope), case let .object(shards)? = previous["author_shards"] {
       previousShards = shards
     } else { previousShards = [:] }
     var checkpoints: JSONObject = [:], posts: [JSONObject] = [], failures: [JSONValue] = []
     // Validate every imported cursor before the first paid search request.
     var windows: [XCollectionWindow] = []
     for (index, handles) in groups.enumerated() {
-      var child = options; child.handles = handles; child.maximum = options.maximum / groups.count
+      var child = options; child.billingDayStart = billingDayStart; child.handles = handles; child.maximum = options.maximum / groups.count
       if case var .object(settings)? = child.signatureContext["settings"] {
         settings["author_handles"] = .array(handles.map(JSONValue.string))
         if groups.count > 1 { settings["max_posts"] = .integer(Int64(child.maximum)) }
         child.signatureContext["settings"] = .object(settings)
       }
       guard child.maximum >= 5, !child.fresh || child.maximum >= 2 * child.pageSize else { throw xCollectionInvalid() }
-      let previous = groups.count == 1 ? options.previous : {
+      let childPrevious = groups.count == 1 ? previous : {
         if case let .object(value)? = previousShards[String(index)] { return value }; return [:]
       }()
-      let window = try XCollectionWindow(options: child, query: handles.map { "from:" + $0 }.joined(separator: " OR "), account: identity, previous: previous)
+      let window = try XCollectionWindow(options: child, query: handles.map { "from:" + $0 }.joined(separator: " OR "), account: identity, previous: childPrevious)
       if child.fresh, window.checkpoint["pending_scan"] != nil, try xInstant(window.end) < xInstant(child.end) {
         guard child.maximum >= window.size + child.pageSize else { throw xCollectionInvalid() }
       }
@@ -95,8 +112,10 @@ struct XAuthorCollector {
         } else {
           var headOptions = window.options; headOptions.start = window.end; headOptions.fresh = false
           headOptions.maximum = headOptions.pageSize; headOptions.maxPages = 1
-          var head = try XCollectionWindow(options: headOptions, query: window.query, account: identity,
-            previous: ["account_id": .string(identity), "author_query": .string(window.query), "since_id": window.checkpoint["since_id"] ?? .null])
+          var headPrevious: JSONObject = ["account_id": .string(identity), "author_query": .string(window.query),
+            "since_id": window.checkpoint["since_id"] ?? .null]
+          if let depth = headOptions.depthIdentity { headPrevious["reference_depth"] = .integer(Int64(depth)) }
+          var head = try XCollectionWindow(options: headOptions, query: window.query, account: identity, previous: headPrevious)
           let success = try await read(&head, shard: index, label: "head", failures: &failures, fetch: fetch)
           posts += head.posts
           let status = success ? (head.cursor == nil ? "complete" : "partial") : "failed"
@@ -110,16 +129,25 @@ struct XAuthorCollector {
       }
       _ = try await read(&window, shard: index, label: "page", failures: &failures, fetch: fetch)
       posts += window.posts
+      try samplingState?.apply(window: window, handles: groups[index], sampled: false, success: !window.failed)
       checkpoints[String(index)] = .object(try window.result(at: ISO8601DateFormatter().string(from: clock())))
     }
+    let (metadata, sampledGroupCount) = try await collectSampled(handles: sampledHandles, probabilities: probabilities,
+      identity: identity, state: &samplingState, posts: &posts, failures: &failures, fetch: fetch)
     var seen = Set<String>()
     posts = posts.filter { value in value["id"].flatMap { nonEmptyString($0) }.map { seen.insert($0).inserted } ?? false }
-    guard posts.count <= options.maximum, try JSONEncoder().encode(posts).count <= 6_000_000 else { throw xCollectionInvalid() }
-    let checkpoint: JSONObject
-    if groups.count == 1, case let .object(single)? = checkpoints["0"] { checkpoint = single } else {
+    guard posts.count <= options.maximum + options.pageSize * sampledGroupCount, try JSONEncoder().encode(posts).count <= 6_000_000 else { throw xCollectionInvalid() }
+    var checkpoint: JSONObject
+    if groups.isEmpty {
+      checkpoint = ["account_id": .string(identity), "expected_handle": .string(options.expected),
+        "checked_at": .string(ISO8601DateFormatter().string(from: clock())), "author_query": .string(""),
+        "coverage": .object(["version": .integer(1), "account_id": .string(identity),
+          "expected_handle": .string(options.expected.lowercased()), "start": .string(options.start),
+          "end": .string(options.end), "complete": .bool(true)])]
+    } else if groups.count == 1, case let .object(single)? = checkpoints["0"] { checkpoint = single } else {
       let children = checkpoints.values.compactMap { if case let .object(value) = $0 { return value }; return nil }
       let complete = children.allSatisfy { if case let .object(coverage)? = $0["coverage"] { return coverage["complete"] == .bool(true) }; return false }
-      var combined: JSONObject = ["author_scope": .string(options.scope), "author_shards": .object(checkpoints),
+      var combined: JSONObject = ["author_scope": .string(regularOptions.scope), "author_shards": .object(checkpoints),
         "account_id": .string(identity), "expected_handle": .string(options.expected),
         "checked_at": .string(ISO8601DateFormatter().string(from: clock())),
         "page_count": .integer(children.reduce(0) { $0 + (xInt($1["page_count"]) ?? 0) }),
@@ -133,18 +161,67 @@ struct XAuthorCollector {
       combined["coverage"] = .object(["version": .integer(1), "account_id": .string(identity), "expected_handle": .string(options.expected.lowercased()),
         "start": .string(first), "end": .string(last), "complete": .bool(complete)])
       if !complete { combined["pending_scan"] = .object(["author_shards": .bool(true)]); combined["scan_stop_reason"] = .string("author-shard-pending") }
-      if let key = options.previous["config_key"] { combined["config_key"] = key }
+      if let key = previous["config_key"] { combined["config_key"] = key }
       checkpoint = combined
     }
+    if let samplingState { checkpoint["author_sampling"] = .object(samplingState.json) }
     let complete: Bool
     if case let .object(coverage)? = checkpoint["coverage"] { complete = coverage["complete"] == .bool(true) } else { complete = false }
-    return ["posts": .array(posts.map(JSONValue.object)), "checkpoint": .object(checkpoint),
+    var output: JSONObject = ["posts": .array(posts.map(JSONValue.object)), "checkpoint": .object(checkpoint),
       "complete": .bool(complete), "failures": .array(failures)]
+    if samplingEnabled {
+      output["sampling"] = .object(["version": .integer(1),
+        "threshold": options.authorDailyPostThreshold.map { .integer(Int64($0)) } ?? .null,
+        "day": .string(samplingDay), "handles": .array(metadata.keys.sorted().compactMap { metadata[$0].map(JSONValue.object) })])
+    }
+    return output
+  }
+
+  private func collectSampled(handles: [String], probabilities: [String: Double], identity: String,
+                              state: inout XSamplingState?, posts: inout [JSONObject], failures: inout [JSONValue],
+                              fetch: (String, JSONObject, JSONObject) async throws -> JSONObject) async throws -> ([String: JSONObject], Int) {
+    var drawn: [String] = []
+    var metadata: [String: JSONObject] = [:]
+    for handle in handles {
+      let key = handle.lowercased()
+      guard let probability = probabilities[key] else { continue }
+      let isDrawn = XCollectionSampling.drawn(probability: probability,
+        value: try XCollectionSampling.drawValue(handle: key, end: options.end))
+      if isDrawn { drawn.append(handle) }
+      let volume = state?.volume(key)
+      metadata[key] = ["handle": .string(key), "source": .string(options.authorSampling?[key] == nil ? "auto" : "explicit"),
+        "probability": .number(probability), "observedDailyVolume": volume.map(JSONValue.number) ?? .null,
+        "status": .string(isDrawn ? "drawn" : "skipped"), "fetchedCount": .integer(0), "truncated": .bool(false)]
+    }
+    var sampledOptions = options
+    sampledOptions.handles = drawn
+    sampledOptions.fresh = false
+    sampledOptions.maximum = options.pageSize
+    sampledOptions.maxPages = 1
+    let sampledGroups = drawn.isEmpty ? [] : sampledOptions.groups
+    for (index, handles) in sampledGroups.enumerated() {
+      var child = sampledOptions; child.handles = handles
+      var window = try XCollectionWindow(options: child, query: handles.map { "from:" + $0 }.joined(separator: " OR "),
+        account: identity, previous: [:])
+      let success = try await read(&window, shard: index, label: "sampled", failures: &failures, fetch: fetch)
+      try state?.apply(window: window, handles: handles, sampled: true, success: success)
+      posts += window.posts
+      for handle in handles {
+        let key = handle.lowercased()
+        let count = window.posts.filter { post in
+          guard case let .object(author)? = post["author"], case let .string(name)? = author["username"] else { return false }
+          return name.lowercased() == key
+        }.count
+        metadata[key]?["fetchedCount"] = .integer(Int64(count))
+        metadata[key]?["truncated"] = .bool(window.cursor != nil)
+      }
+    }
+    return (metadata, sampledGroups.count)
   }
 
   private func read(_ window: inout XCollectionWindow, shard: Int, label: String, failures: inout [JSONValue],
                     fetch: (String, JSONObject, JSONObject) async throws -> JSONObject) async throws -> Bool {
-    while window.pages < window.options.maxPages, window.pages == 0 || window.cursor != nil {
+    while window.pages < window.options.maxPages, window.needsRequest {
       guard window.options.maximum - window.fetched >= window.size else { break }
       do {
         try Task.checkCancellation()

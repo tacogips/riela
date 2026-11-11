@@ -539,6 +539,29 @@ non-blocking `warning:` lines on stderr. `inspect`, the registry and the server
 do not apply these checks. Aliases and legacy modes, including the X nested
 `select` form, stay valid.
 
+`riela/x-collect` cost controls can sample prolific authors and limit reference
+expansion, for example:
+
+```json
+{"authorHandles":["example","other"],"authorSampling":{"example":0.25},"authorDailyPostThreshold":10,"referenceDepth":1}
+```
+
+`authorSampling` keys must be listed in `authorHandles` (case-insensitive) and
+map to probabilities in `[0,1]`. A deterministic per-run draw decides whether a
+sampled handle is read. `authorDailyPostThreshold` (1 to 100000) auto-samples
+authors above it at `threshold / observedDailyVolume`; explicit entries win.
+`referenceDepth` is 0, 1 or 2 (default 2) and cannot be combined with `select`.
+The output `sampling` metadata lists each sampled handle with its source,
+probability, observed volume, drawn/skipped status, `fetchedCount` and
+`truncated`.
+
+Sampled handles are read only for the current run's window. A sampling or depth
+change restarts coverage from `start`. X deduplicates billed reads only within a UTC
+day. See the [collection design](design-docs/specs/design-native-source-collection.md)
+for details. Daily usage is available through `riela/x-gateway-reader` JSON
+mode with `operation: "apiUsage"`, `select: {"projectUsage": true}` and a
+`pick` postprocess for `/data/apiUsage`.
+
 X readers also accept `providerFailure: "output"`. A recognized provider
 failure then completes with `xGateway.failure.{category,retryable}` and the
 `providerFailed` / `providerRetryable` / `spendCapReached` / `rateLimited`

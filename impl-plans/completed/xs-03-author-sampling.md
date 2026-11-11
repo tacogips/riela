@@ -124,3 +124,7 @@ re-read and re-apply only this intent on drift. No git index/branch operations.
 - `git grep -n "Hasher" Sources/RielaCLI/XCollectionSampling.swift` → no match.
 - Every case above is a named passing test; existing tests unchanged and green.
 - Progress log lists commands, exit codes, log paths and hashes.
+
+Implementation status: completed and accepted (2026-11-11); XS03-ADV-M1 was
+repaired and the adversarial and combined-tree integration reviews passed; see
+`impl-plans/progress/xs-03-author-sampling.md`.

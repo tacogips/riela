@@ -18,11 +18,17 @@ struct XCollectionOptions {
   var signatureContext: JSONObject
   let selection: JSONObject
   let previous: JSONObject
+  let authorSampling: [String: Double]?
+  let authorDailyPostThreshold: Int?
+  let referenceDepth: Int
+  let customSelection: Bool
+  var billingDayStart: Date?
+  var depthIdentity: Int? { customSelection || referenceDepth == 2 ? nil : referenceDepth }
 
   init(_ values: JSONObject) throws {
     guard Set(values.keys).isSubset(of: ["expectedHandle", "authorHandles", "start", "end", "earliest", "bounded",
       "maxPosts", "maxPages", "pageSize", "freshPage", "timezone", "signatureContext", "select", "previous",
-      "includeStatusLinks", "includeCoverageMetadata", "requestedStart"]),
+      "includeStatusLinks", "includeCoverageMetadata", "requestedStart", "authorSampling", "authorDailyPostThreshold", "referenceDepth"]),
       case let .string(expected)? = values["expectedHandle"], xMatches(.string(expected), #"^[A-Za-z0-9_]{1,15}$"#),
       case let .array(authors)? = values["authorHandles"], (1...100).contains(authors.count),
       authors.allSatisfy({ xMatches($0, #"^[A-Za-z0-9_]{1,15}$"#) }),
@@ -45,11 +51,35 @@ struct XCollectionOptions {
     self.maximum = try Self.integer(values, "maxPosts", fallback: 100, range: 5...5000)
     self.maxPages = try Self.integer(values, "maxPages", fallback: 1, range: 1...1000)
     self.pageSize = try Self.integer(values, "pageSize", fallback: 25, range: 10...100)
+    self.referenceDepth = try Self.integer(values, "referenceDepth", fallback: 2, range: 0...2)
+    self.customSelection = values["select"] != nil
+    guard values["referenceDepth"] == nil || !customSelection else { throw xCollectionInvalid() }
+    if values["authorDailyPostThreshold"] != nil {
+      self.authorDailyPostThreshold = try Self.integer(values, "authorDailyPostThreshold", fallback: 1, range: 1...100_000)
+    } else { self.authorDailyPostThreshold = nil }
+    if let sampling = values["authorSampling"] {
+      guard case let .object(entries) = sampling else { throw xCollectionInvalid() }
+      var normalized: [String: Double] = [:]
+      let allowed = Set(handles.map { $0.lowercased() })
+      for (key, value) in entries {
+        let handle = key.lowercased()
+        guard allowed.contains(handle), normalized[handle] == nil else { throw xCollectionInvalid() }
+        let probability: Double
+        switch value {
+        case let .integer(number): probability = Double(number)
+        case let .number(number): probability = number
+        default: throw xCollectionInvalid()
+        }
+        guard probability.isFinite, (0...1).contains(probability) else { throw xCollectionInvalid() }
+        normalized[handle] = probability
+      }
+      self.authorSampling = normalized
+    } else { self.authorSampling = nil }
     let selection: JSONObject
     if let value = values["select"] {
       guard case let .object(fields) = value else { throw xCollectionInvalid() }; selection = fields
     } else {
-      selection = ["posts": .object(Self.postFields(depth: 0, links: links, coverage: coverage)),
+      selection = ["posts": .object(Self.postFields(level: 0, referenceDepth: referenceDepth, links: links, coverage: coverage)),
         "pageInfo": .object(["nextToken": .bool(true)])]
     }
     self.previous = previous; self.selection = selection; self.signatureContext = signatureContext
@@ -91,6 +121,18 @@ struct XCollectionOptions {
   private static func integer(_ values: JSONObject, _ key: String, fallback: Int, range: ClosedRange<Int>) throws -> Int {
     guard case let .integer(value) = values[key] ?? .integer(Int64(fallback)), range.contains(Int(value)) else { throw xCollectionInvalid() }
     return Int(value)
+  }
+
+  static func postFields(level: Int, referenceDepth: Int, links: Bool, coverage: Bool) -> JSONObject {
+    var value = postFields(depth: 2, links: links, coverage: coverage)
+    if level == 0 || level < referenceDepth {
+      value["references"] = .object(["id": .bool(true), "relation": .bool(true)])
+    }
+    if level < referenceDepth {
+      let child = JSONValue.object(postFields(level: level + 1, referenceDepth: referenceDepth, links: links, coverage: coverage))
+      value["quote"] = child; value["repost"] = child
+    }
+    return value
   }
 
   static func postFields(depth: Int, links: Bool, coverage: Bool) -> JSONObject {

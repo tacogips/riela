@@ -564,8 +564,10 @@ the in-process `x-gateway-reader graphql schema` (the same call
   root names, and leave ART's monitor without daily usage until an SDK release
   adds the field.
 
-Implementation outcome: _to be recorded by the implementation step (present
-or absent, with the x-gateway version checked)._
+Implementation outcome: **present** as `apiUsage(days: Int)` in x-gateway
+0.1.27. The pinned SDL and `/2/usage/tweets` mapping were checked with
+`grep -rn -i usage .build/checkouts/x-gateway/Sources`; evidence:
+`tmp/x-collect-author-sampling/xs-04-usage-and-docs/usage-grep-final.log`.
 
 ## Composable media pipeline, version `1`
 

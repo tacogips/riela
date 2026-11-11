@@ -37,6 +37,18 @@ evidence is implemented and accepted. Its plan is archived at
 the [progress log](progress/fanout-directory-change-tracking.md) records focused
 verification and review. Final commit and push remain workflow steps.
 
+X collection cost controls (2026-11-11) are implemented and accepted on
+`feat/x-collect-author-sampling`: per-author sampling (`authorSampling`,
+`authorDailyPostThreshold`), `referenceDepth`, UTC-day aware re-reads and
+daily usage through `riela/x-gateway-reader`. The plans are archived at
+[`completed/xs-01-options-and-depth.md`](completed/xs-01-options-and-depth.md),
+[`completed/xs-02-utc-day-segments.md`](completed/xs-02-utc-day-segments.md),
+[`completed/xs-03-author-sampling.md`](completed/xs-03-author-sampling.md) and
+[`completed/xs-04-usage-and-docs.md`](completed/xs-04-usage-and-docs.md); the
+progress logs under `progress/xs-0*.md` record verification and review. The
+dispatch manifest `active/x-collect-author-sampling-dispatch.json` stays active
+until the dispatch run closes.
+
 Relative node `workingDirectory` resolution (2026-11-11) is implemented and
 accepted on `fix/node-cwd-relative`. The plan is archived at
 [`completed/node-cwd-relative-01-runner-resolution.md`](completed/node-cwd-relative-01-runner-resolution.md).

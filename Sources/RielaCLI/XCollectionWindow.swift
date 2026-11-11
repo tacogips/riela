@@ -21,7 +21,14 @@ struct XCollectionWindow {
   init(options: XCollectionOptions, query: String, account: String, previous: JSONObject) throws {
     self.options = options; self.query = query; self.account = account
     var previous = previous
-    if previous["account_id"] != .string(account) || previous["author_query"] != .string(query) {
+    let previousDepth: Int
+    switch previous["reference_depth"] {
+    case nil: previousDepth = 2
+    case .integer(0)?: previousDepth = 0
+    case .integer(1)?: previousDepth = 1
+    default: throw xCollectionInvalid()
+    }
+    if previousDepth != (options.depthIdentity ?? 2) || previous["account_id"] != .string(account) || previous["author_query"] != .string(query) {
       previous = previous.filter { $0.key == "config_key" }
     }
     previous["author_query"] = .string(query)
@@ -32,18 +39,22 @@ struct XCollectionWindow {
       scan = value
       let base: Set<String> = ["start", "end", "since_id", "max_id", "next_token", "page_size", "page_count", "visited_tokens", "recent_ids"]
       let keys = Set(scan.keys)
-      guard [base, base.union(["wire_start", "wire_end"]), base.union(["wire_start", "wire_end", "search_start"])].contains(keys),
+      let segmented = scan["skip"] != nil
+      let legacyKeys = [base, base.union(["wire_start", "wire_end"]), base.union(["wire_start", "wire_end", "search_start"])]
+      let segmentKeys = [base.union(["wire_start", "wire_end", "skip", "segment"]), base.union(["wire_start", "wire_end", "skip", "segment", "search_start"])]
+      guard (segmented ? segmentKeys : legacyKeys).contains(keys),
         try xOptionalID(scan["since_id"]) == since,
         case let .string(first)? = scan["start"], case let .string(last)? = scan["end"],
         try xInstant(first) >= xInstant(options.earliest), try xInstant(first) < xInstant(last),
         try xInstant(last) <= xInstant(options.end),
         try !options.bounded || (xInstant(first) == xInstant(options.start)),
         case let .integer(size)? = scan["page_size"], (5...100).contains(size), size <= options.maximum,
-        case let .integer(count)? = scan["page_count"], (1...10_000).contains(count),
-        case let .string(token)? = scan["next_token"], !token.isEmpty, token.utf8.count <= 8192,
+        case let .integer(count)? = scan["page_count"], (segmented ? 0...10_000 : 1...10_000).contains(count),
         case let .array(visited)? = scan["visited_tokens"], visited.count == Int(count),
         Set(visited.compactMap { nonEmptyString($0) }).count == visited.count, visited.allSatisfy({ xMatches($0, #"^[0-9a-f]{64}$"#) }),
-        !visited.contains(.string(JSONCanonical.sha256Hex(Data(token.utf8)))),
+        (count == 0 && segmented && scan["next_token"] == .null) || (count > 0 && (nonEmptyString(scan["next_token"]).map {
+          $0.utf8.count <= 8192 && !visited.contains(.string(JSONCanonical.sha256Hex(Data($0.utf8))))
+        } ?? false)),
         case let .array(recent)? = scan["recent_ids"], recent.count <= 100,
         recent.allSatisfy({ xMatches($0, #"^[0-9]{1,32}$"#) }) else { throw xCollectionInvalid() }
       _ = try xOptionalID(scan["max_id"])
@@ -52,7 +63,17 @@ struct XCollectionWindow {
         guard scan["wire_start"] == .string(try xWire(first, upper: false)),
           scan["wire_end"] == .string(try xWire(last, upper: true)) else { throw xCollectionInvalid() }
       }
-      if let value = scan["search_start"] {
+      if segmented {
+        guard case let .object(skip)? = scan["skip"], Set(skip.keys) == ["start", "end"],
+          case let .string(hs)? = skip["start"], case let .string(he)? = skip["end"],
+          try xInstant(first) <= xInstant(hs), try xInstant(hs) < xInstant(he), try xInstant(he) <= xInstant(last),
+          case let .string(segment)? = scan["segment"] else { throw xCollectionInvalid() }
+        if segment == "suffix" {
+          guard try xInstant(he) < xInstant(last), scan["search_start"] == .string(try since.map { try Self.searchStart($0, start: he, end: last) } ?? xWire(he, upper: false)) else { throw xCollectionInvalid() }
+        } else if segment == "prefix" {
+          guard try xInstant(first) < xInstant(hs), scan["search_start"] == nil else { throw xCollectionInvalid() }
+        } else { throw xCollectionInvalid() }
+      } else if let value = scan["search_start"] {
         guard let since, value == .string(try Self.searchStart(since, start: first, end: last)) else { throw xCollectionInvalid() }
       }
     } else {
@@ -63,11 +84,34 @@ struct XCollectionWindow {
         "visited_tokens": .array([]), "recent_ids": .array([]),
         "wire_start": .string(try xWire(start, upper: false)), "wire_end": .string(try xWire(end, upper: true))]
       if let since { scan["search_start"] = .string(try Self.searchStart(since, start: start, end: end)) }
+      if let day = options.billingDayStart, case let .object(coverage)? = previous["coverage"],
+        coverage["complete"] == .bool(true), coverage["account_id"] == .string(account),
+        case let .string(cs)? = coverage["start"], case let .string(ce)? = coverage["end"],
+        let csDate = try? xInstant(cs), let ceDate = try? xInstant(ce) {
+        let hs = max(csDate, try xInstant(start)), he = min(ceDate, try xInstant(end), day)
+        if hs < he {
+          let format = ISO8601DateFormatter()
+          let hsText = hs == csDate ? cs : start, heText = he == ceDate ? ce : (he == (try xInstant(end)) ? end : format.string(from: he))
+          scan["skip"] = .object(["start": .string(hsText), "end": .string(heText)])
+          if he < (try xInstant(end)) {
+            scan["segment"] = .string("suffix")
+            if let since { scan["search_start"] = .string(try Self.searchStart(since, start: heText, end: end)) } else { scan["search_start"] = .string(try xWire(heText, upper: false)) }
+          } else if (try xInstant(start)) < hs {
+            scan["segment"] = .string("prefix"); scan.removeValue(forKey: "search_start")
+          } else {
+            scan["segment"] = .string("done"); scan.removeValue(forKey: "search_start")
+          }
+        }
+      }
     }
     previous.removeValue(forKey: "fresh_head")
     checkpoint = previous; self.scan = scan
   }
 
+  var needsRequest: Bool {
+    if scan["skip"] != nil { return scan["segment"] != .string("done") && (xInt(scan["page_count"]) == 0 || cursor != nil) }
+    return pages == 0 || cursor != nil
+  }
   var cursor: String? { nonEmptyString(scan["next_token"]) }
   var size: Int { Int(xInt(scan["page_size"]) ?? 0) }
 
@@ -77,9 +121,10 @@ struct XCollectionWindow {
       !visited.contains(.string(tokenHash)) else { throw xCollectionInvalid() }
     var arguments: JSONObject = ["query": .string(query), "maxResults": .integer(Int64(max(10, size))),
       "startTime": .string(try xWire(start, upper: false)), "endTime": .string(try xWire(end, upper: true))]
-    if let since = try xOptionalID(scan["since_id"]) {
-      if let search = scan["search_start"] { arguments["startTime"] = search }
-      else { arguments.removeValue(forKey: "startTime"); arguments["sinceId"] = .string(since) }
+    if case let .object(skip)? = scan["skip"] {
+      if scan["segment"] == .string("suffix") { arguments["startTime"] = scan["search_start"] } else if case let .string(hs)? = skip["start"] { arguments["endTime"] = .string(try xWire(hs, upper: true)) }
+    } else if let since = try xOptionalID(scan["since_id"]) {
+      if let search = scan["search_start"] { arguments["startTime"] = search } else { arguments.removeValue(forKey: "startTime"); arguments["sinceId"] = .string(since) }
     }
     if let cursor { arguments["nextToken"] = .string(cursor) }
     return arguments
@@ -116,8 +161,13 @@ struct XCollectionWindow {
         case let .string(created)? = post["createdAt"], case .string? = post["text"] else { throw xCollectionInvalid() }
       let identity = xDecimal(id), instant = try xInstant(created)
       recent.append(identity)
-      let since = try xOptionalID(scan["since_id"])
-      guard !seen.contains(identity), instant >= (try xInstant(start)), instant < (try xInstant(end)),
+      let since = scan["segment"] == .string("prefix") ? nil : try xOptionalID(scan["since_id"])
+      var lower = start, upper = end
+      if case let .object(skip)? = scan["skip"] {
+        if scan["segment"] == .string("suffix"), case let .string(he)? = skip["end"] { lower = he }
+        if scan["segment"] == .string("prefix"), case let .string(hs)? = skip["start"] { upper = hs }
+      }
+      guard !seen.contains(identity), instant >= (try xInstant(lower)), instant < (try xInstant(upper)),
         since == nil || xGreater(identity, xDecimal(since ?? "0")) else { continue }
       seen.insert(identity)
       bytes += try JSONEncoder().encode(post).count + 512
@@ -137,15 +187,24 @@ struct XCollectionWindow {
     scan["page_count"] = .integer((xInt(scan["page_count"]) ?? 0) + 1)
     scan["next_token"] = token.map(JSONValue.string) ?? .null
     pages += 1; fetched += rows.count
+    if token == nil, case let .object(skip)? = scan["skip"] {
+      if scan["segment"] == .string("suffix"), case let .string(hs)? = skip["start"], try xInstant(start) < xInstant(hs) {
+        scan["segment"] = .string("prefix"); scan["page_count"] = .integer(0)
+        scan["visited_tokens"] = .array([]); scan.removeValue(forKey: "search_start")
+      } else { scan["segment"] = .string("done") }
+    }
   }
 
   func result(at timestamp: String) throws -> JSONObject {
     var result = checkpoint
+    if let depth = options.depthIdentity { result["reference_depth"] = .integer(Int64(depth)) } else { result.removeValue(forKey: "reference_depth") }
     let growth = try xInstant(end) < xInstant(options.end)
     result.merge(["account_id": .string(account), "expected_handle": .string(options.expected), "checked_at": .string(timestamp),
       "window_start": .string(start), "window_end": .string(end), "page_count": .integer(Int64(pages)),
       "scan_page_count": scan["page_count"] ?? .integer(0), "catchup_pending": .bool(growth || (failed && pages == 0))]) { _, new in new }
-    if cursor != nil {
+    let segmented = scan["skip"] != nil
+    let finished = segmented ? scan["segment"] == .string("done") : cursor == nil
+    if (segmented && !finished) || (!segmented && cursor != nil) {
       result["pending_scan"] = .object(scan)
       result["scan_stop_reason"] = .string(failed ? "gateway-failure" : "page-budget")
     } else if failed && pages == 0 {
@@ -157,7 +216,7 @@ struct XCollectionWindow {
     }
     result["coverage"] = .object(["version": .integer(1), "account_id": .string(account),
       "expected_handle": .string(options.expected.lowercased()), "start": .string(start), "end": .string(end),
-      "complete": .bool(!failed && cursor == nil && !growth)])
+      "complete": .bool(!failed && finished && !growth)])
     return result
   }
 

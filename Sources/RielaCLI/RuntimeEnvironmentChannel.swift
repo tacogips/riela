@@ -202,11 +202,24 @@ final class RuntimeEnvironmentChannel: @unchecked Sendable {
   private var task: Task<Void, Never>?
 
   init(state: EventRuntimeEnvironment, input: FileHandle = .standardInput, output: FileHandle = .standardOutput,
-       admissionGate: EventAdmissionGate? = nil) {
+       admissionGate: EventAdmissionGate? = nil, sessionRegistry: LiveSessionCancelRegistry? = nil) {
     self.state = state; self.input = input; self.output = output
     let stream = AsyncStream<Data>(bufferingPolicy: .bufferingOldest(4)) { continuation = $0 }
     task = Task { [state, output] in
       for await frame in stream {
+        if let control = WorkflowServeSessionControlFrame.decodeControlLine(frame) {
+          let ack: WorkflowServeSessionControlAcknowledgement
+          if control.type == "session-cancel", let sessionId = control.sessionId,
+             let reason = control.reason, let actor = control.actor {
+            let outcome = sessionRegistry?.requestCancel(sessionId: sessionId, reason: reason, actor: actor) ?? .notFound
+            ack = .cancelAck(requestId: control.requestId, sessionId: sessionId, outcome: outcome)
+          } else {
+            let snapshot = sessionRegistry?.liveSnapshot() ?? (sessionIds: [], pendingRunCount: 0)
+            ack = .listAck(requestId: control.requestId, sessionIds: snapshot.sessionIds, pendingRunCount: snapshot.pendingRunCount)
+          }
+          if let data = try? JSONEncoder().encode(ack) { try? output.write(contentsOf: data + Data([10])) }
+          continue
+        }
         if let control = WorkflowServeAdmissionFrame.decodeControlLine(frame) {
           let ack: WorkflowServeAdmissionAcknowledgement
           if let admissionGate {

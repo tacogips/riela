@@ -16,7 +16,7 @@ public struct InstanceCommandRunner: Sendable {
 
   public func runAsync(_ options: CLICommandOptions) async -> CLICommandResult {
     switch options.command {
-    case "reload", "run", "executions":
+    case "reload", "run", "executions", "cancel":
       return await InstanceAppCommands().run(options)
     default:
       return run(options)

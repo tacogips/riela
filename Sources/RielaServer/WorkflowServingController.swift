@@ -24,12 +24,17 @@ public protocol WorkflowServeEventSourceHandle: Sendable {
   var status: WorkflowServeEventSourceStatus { get }
   func shutdown() async throws
   func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement
+  func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws
 }
 
 public extension WorkflowServeEventSourceHandle {
   func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
     throw WorkflowServeAdmissionError.unsupported
+  }
+
+  func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement {
+    throw WorkflowServeSessionControlError.unsupported
   }
 
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
@@ -120,6 +125,35 @@ public actor WorkflowServingController {
       throw WorkflowServeAdmissionError.noAcknowledgement
     }
     return result
+  }
+
+  public func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement {
+    guard let current = activeGeneration else { throw WorkflowServeSessionControlError.childExited }
+    var last: WorkflowServeSessionControlAcknowledgement?
+    var ids = Set<String>()
+    var pending = 0
+    var unsupported = 0
+    for handle in current.eventSources {
+      let ack: WorkflowServeSessionControlAcknowledgement
+      do {
+        ack = try await handle.sessionControl(frame)
+      } catch WorkflowServeSessionControlError.unsupported {
+        unsupported += 1
+        continue
+      }
+      last = ack
+      if frame.type == "session-cancel", ack.outcome != .notFound { return ack }
+      ids.formUnion(ack.sessionIds ?? [])
+      pending += ack.pendingRunCount ?? 0
+    }
+    if !current.eventSources.isEmpty && unsupported == current.eventSources.count {
+      throw WorkflowServeSessionControlError.unsupported
+    }
+    guard let last else { throw WorkflowServeSessionControlError.noAcknowledgement }
+    if frame.type == "session-list" {
+      return .listAck(requestId: frame.requestId, sessionIds: ids.sorted(), pendingRunCount: pending)
+    }
+    return last
   }
 
   public func currentState() -> WorkflowServeState {

@@ -94,9 +94,10 @@ store, a fake adapter that blocks until cancelled.
 
 ## Done criteria
 
-- The tests above pass.
-- The diff is limited to the 3 source files plus 1 new test.
-- The progress log has exit codes and log paths.
+- [x] The tests above pass (9 tests, 0 failures).
+- [x] Source changes are limited to the 3 source files plus 1 new test.
+- [x] The progress log has exit codes and log paths.
+- Formal review and stable integration verification remain downstream.
 
 ## Drift protocol
 

@@ -77,3 +77,9 @@ group. Cancelling one execution by sessionId must:
 ## Drift protocol
 
 Record pre/post sha256 of the new file.
+
+## Implementation progress 2026-11-11
+
+The test-only implementation and plan-local verification are complete: build, one non-skipped test, and strict selected-file lint exit 0; the post-test process scan is empty. See `impl-plans/progress/instance-cancel-11-nested-tree-e2e.md` for evidence and the moving-tree compile retry. Formal review and serial integration remain downstream.
+
+Continuation: the previously missing 120-second overall XCTest timeout is now implemented, with recorded-PID cleanup in the outer timeout scope. Final-source verification is recorded in the progress log; formal review remains pending.

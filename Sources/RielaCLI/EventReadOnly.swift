@@ -22,6 +22,40 @@ enum EventReadOnlyPolicy {
 
 struct EventReadOnlyDispatchBlocked: Error {}
 
+struct EventOperatorCancelled: Error, CustomStringConvertible {
+  let sessionId: String?
+  var description: String { "operator_cancelled" }
+}
+
+private final class EventTaskHandleBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var task: Task<WorkflowRunResult, Error>?
+  private var cancelled = false
+  private var storedSessionId: String?
+
+  func store(_ task: Task<WorkflowRunResult, Error>) {
+    lock.lock(); defer { lock.unlock() }
+    self.task = task
+    if cancelled { task.cancel() }
+  }
+
+  func cancel() {
+    lock.lock(); defer { lock.unlock() }
+    cancelled = true
+    task?.cancel()
+  }
+
+  func recordSession(_ id: String) {
+    lock.lock(); defer { lock.unlock() }
+    storedSessionId = id
+  }
+
+  var sessionId: String? {
+    lock.lock(); defer { lock.unlock() }
+    return storedSessionId
+  }
+}
+
 extension DefaultEventLiveServer {
   /// Every live workflow entry passes this boundary, including injected runners.
   func runEventWorkflow(_ request: EventWorkflowRunRequest, queuedAdmission: Bool = false) async throws -> WorkflowRunResult {
@@ -29,6 +63,44 @@ extension DefaultEventLiveServer {
       try await admissionGate?.admitQueued()
     } else {
       try await admissionGate?.admit()
+    }
+    if let registry = sessionCancelRegistry {
+      registry.beginRun()
+      let cancellation = OperatorCancellation()
+      let box = EventTaskHandleBox()
+      var registeredRequest = request
+      registeredRequest.operatorCancellation = cancellation
+      registeredRequest.onSessionStarted = { sessionId in
+        box.recordSession(sessionId)
+        registry.register(sessionId: sessionId, cancellation: cancellation, cancel: { box.cancel() })
+        request.onSessionStarted?(sessionId)
+      }
+      let childRequest = registeredRequest
+      let child = Task {
+        let captured = try await currentEnvironment()
+        return try await CLIRuntimeEnvironment.$overrides.withValue(nil) {
+          try await CLIRuntimeEnvironment.$captured.withValue(captured) {
+            guard try !EventReadOnlyPolicy.isEnabled(parsed: childRequest.parsed, environment: captured) else {
+              throw EventReadOnlyDispatchBlocked()
+            }
+            return try await workflowRunner.runWorkflow(childRequest)
+          }
+        }
+      }
+      box.store(child)
+      do {
+        let result = try await withTaskCancellationHandler { try await child.value } onCancel: { child.cancel() }
+        if let id = box.sessionId { registry.unregister(sessionId: id) }
+        registry.endRun()
+        await admissionGate?.release()
+        return result
+      } catch {
+        if let id = box.sessionId { registry.unregister(sessionId: id) }
+        registry.endRun()
+        await admissionGate?.release()
+        if cancellation.isRequested { throw EventOperatorCancelled(sessionId: box.sessionId) }
+        throw error
+      }
     }
     do {
       let captured = try await currentEnvironment()

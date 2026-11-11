@@ -146,7 +146,7 @@ drift.
 
 ## Implementation status
 
-Source wiring and initial tests are present. Required aggregate verification is blocked: EventAdmissionGateTests writes fixtures under `tmp/instance-control/instance-control-05-child-admission-gate/`, outside this plan’s artifact roots. Completion and review remain pending. See the progress log.
+Source wiring and the planned behavioral assertions are present. The aggregate passed 67 tests on the moving shared tree; build and strict selected-file lint passed. See the progress log. Formal review and serial integration remain pending.
 
 ## Amendment 2026-11-11 (integration-paths-outside-writePaths, round 1)
 

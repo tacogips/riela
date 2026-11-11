@@ -35,6 +35,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var sessionExecutionAdmission: (@Sendable (String) throws -> Void)?
   public var boundaryHandover: (@Sendable (_ nextStepId: String) async -> SuspendRecord?)?
   public var cancellationCause: (@Sendable () -> WorkflowSessionFailureKind?)?
+  public var cancellationReason: (@Sendable () -> String?)?
   /// Nesting depth of live cross-workflow dispatch. Top-level runs are 0;
   /// each dispatched callee run increments it so runaway workflow-call cycles
   /// fail loudly instead of recursing without bound.
@@ -75,6 +76,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     sessionExecutionAdmission: (@Sendable (String) throws -> Void)? = nil,
     boundaryHandover: (@Sendable (_ nextStepId: String) async -> SuspendRecord?)? = nil,
     cancellationCause: (@Sendable () -> WorkflowSessionFailureKind?)? = nil,
+    cancellationReason: (@Sendable () -> String?)? = nil,
     crossWorkflowDispatchDepth: Int = 0,
     stopBeforeStepId: String? = nil,
     stopAfterStepId: String? = nil,
@@ -106,6 +108,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.sessionExecutionAdmission = sessionExecutionAdmission
     self.boundaryHandover = boundaryHandover
     self.cancellationCause = cancellationCause
+    self.cancellationReason = cancellationReason
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
     self.stopAfterStepId = stopAfterStepId

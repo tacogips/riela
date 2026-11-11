@@ -44,6 +44,10 @@ enum CronOverlapReceiptStatus: String, Sendable {
 enum CronOverlapReason {
   static func reloadHandoff(_ bindingId: String) -> String { "reload-handoff:\(bindingId)" }
 
+  static func operatorCancelled(_ bindingId: String, sessionId: String?) -> String {
+    sessionId.map { "operator-cancelled:\(bindingId):\($0)" } ?? "operator-cancelled:\(bindingId)"
+  }
+
   static func skip(_ bindingId: String, runningSessionId: String?) -> String {
     "overlap-skip:\(bindingId):\(runningSessionId ?? "pending")"
   }
@@ -364,24 +368,27 @@ actor CronOverlapDispatcher {
       let result: WorkflowRunResult?
       let failure: String?
       let admissionClosed: Bool
+      let operatorCancelled: Bool
       do {
         result = try await server.runEventWorkflow(request, queuedAdmission: true)
         failure = nil
         admissionClosed = false
+        operatorCancelled = false
       } catch {
         result = nil
         failure = String(describing: error)
         admissionClosed = error is EventAdmissionClosed
+        operatorCancelled = error is EventOperatorCancelled
       }
       await hops.waitAll()
-      await dispatcher.finish(receiptId: id, bindingId: fire.bindingId, result: result, error: failure, admissionClosed: admissionClosed)
+      await dispatcher.finish(receiptId: id, bindingId: fire.bindingId, result: result, error: failure, admissionClosed: admissionClosed, operatorCancelled: operatorCancelled)
     }
     var scope = scopes[fire.bindingId] ?? Scope()
     scope.running.append(RunHandle(receiptId: id, task: task, sessionId: nil, fire: fire, cancelCause: nil))
     scopes[fire.bindingId] = scope
   }
 
-  private func finish(receiptId: String, bindingId: String, result: WorkflowRunResult?, error: String?, admissionClosed: Bool) async {
+  private func finish(receiptId: String, bindingId: String, result: WorkflowRunResult?, error: String?, admissionClosed: Bool, operatorCancelled: Bool) async {
     guard var scope = scopes[bindingId], let index = scope.running.firstIndex(where: { $0.receiptId == receiptId }) else { return }
     let handle = scope.running[index]
     let policy = effectivePolicy(bindingId: bindingId)
@@ -407,13 +414,15 @@ actor CronOverlapDispatcher {
         CronOverlapReason.shutdownCancelled(bindingId)
       }
       updateReceipt(receiptId, status: .cancelled, reason: reason)
+    } else if operatorCancelled {
+      updateReceipt(receiptId, status: .cancelled, reason: CronOverlapReason.operatorCancelled(bindingId, sessionId: handle.sessionId))
     } else {
       updateReceipt(receiptId, status: .failed, reason: error)
     }
     // Advance before any suspension so a reentrant submit cannot overtake the FIFO
     // queue; record the failure before waking drain so serve reports it.
     await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
-    if result == nil, !handle.cancelRequested, !admissionClosed {
+    if result == nil, !handle.cancelRequested, !admissionClosed, !operatorCancelled {
       try? await server.recordWorkflowDispatchFailure(
         eventRoot: eventRoot, sourceKind: "cron", sourceId: handle.fire.sourceId,
         workflowName: handle.fire.workflowName, error: CLIUsageError(error ?? "cron workflow failed")

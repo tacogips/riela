@@ -1,10 +1,10 @@
 # Control resident RielaApp instances
 
-Use `riela instance list` and `show` to find a resident instance, then use `instance reload`, `instance run`, and `instance executions` to update, launch, and inspect it without restarting the App. Manual runs use the App's in-memory environment.
+Use `riela instance list` and `show` to find a resident instance, then use `instance reload`, `instance run`, `instance executions`, and `instance cancel` to update, launch, inspect, and cancel executions of it without restarting the App. Manual runs use the App's in-memory environment.
 
 ## Prerequisites
 
-With a running RielaApp 0.3.1, start the listener once in Console > Settings > Web Config server. `run` and `executions` then work without restarting. Reload and execution start/end timestamps require a **one-time App upgrade** to a build containing this feature. Once upgraded, a listener explicitly enabled in Settings starts automatically on subsequent App launches; reloads and runs need no App restart.
+With a running RielaApp 0.3.1, start the listener once in Console > Settings > Web Config server. `run` and `executions` then work without restarting. Reload and execution start/end timestamps require a **one-time App upgrade** to a build containing this feature. Cancel, like reload, requires the upgraded App. Once upgraded, a listener explicitly enabled in Settings starts automatically on subsequent App launches; reloads and runs need no App restart.
 
 ## Discovery and identity
 
@@ -57,6 +57,43 @@ The limit defaults to 20 (range 1–100), applied to the App's returned order. O
 ```json
 {"identity":"ID","profile":"default","items":[{"sessionId":"session-1","status":"completed","startedAt":"2026-11-10T00:00:00Z","endedAt":"2026-11-10T00:01:00Z","updatedAt":"2026-11-10T00:01:00Z","currentStepId":null}],"truncated":false}
 ```
+
+## Cancel
+
+```sh
+riela instance cancel ID [--session SESSION] --reason TEXT [--wait] [--timeout-seconds N] [--server URL] [--profile NAME] [--cwd DIR]
+```
+
+`--reason` is required and must contain 1–512 UTF-8 bytes after trimming, with no NUL. The session records `operator_cancelled by rielaapp-api:<profile>: <reason>`. With `--session`, the CLI posts to `POST /api/v1/instances/{identity}/executions/{sessionId}/cancel`; without it, the CLI posts to `POST /api/v1/instances/{identity}/cancel`.
+
+Without `--session`, the App selects from live runs, not executions history. Exactly one live run is cancelled; zero returns `no_running_execution`. Several live runs, or one live run plus a pending run whose session has not started, return `ambiguous_running_sessions` with `sessionIds` and `pendingRunCount`; nothing is cancelled. A single pending run without a session returns `session_not_owned`; retry after it starts.
+
+`--wait` polls about once per second until the session is terminal. `--timeout-seconds` is valid only with `--wait`, defaults to 60, and accepts 1–86400. A final `cancelled` status exits 0; another terminal status exits 1 with `cancel_not_effective`, and a timeout exits 1 with `cancel_wait_timeout`. Without `--wait`, `status` is null. For example, with `--wait`:
+
+```json
+{"identity":"ID","profile":"default","sessionId":"session-1","owner":"eventServe","outcome":"cancelRequested","status":"cancelled"}
+```
+
+Cancellation stops the command's whole process tree, including descendants in other process groups such as a nested `riela workflow run`. Processes receive SIGTERM, followed by SIGKILL after a 5-second grace period. The session becomes terminal after tracked tree cleanup, subject to a hard bound for survivors stuck in uninterruptible sleep. Every task-cancelled command now gives its tree up to 5 seconds instead of 1 second.
+
+Other executions of the instance keep running. A cancelled cron run's receipt is `cancelled` with reason `operator-cancelled:<binding>:<session>`. A cancelled manual run's launch status reads `failed`, while its session reads `cancelled`. Orphan sessions that are `running` in the store but have no live runner cannot be cancelled; use `riela session reconcile`.
+
+## Cancel error codes
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `invalid_cancel_request` | 400 | Request is malformed. |
+| `instance_not_found` | 404 | Instance does not exist. |
+| `session_not_found` | 404 | Session does not exist for this instance. |
+| `configuration_conflict` | 409 | Profile does not match the App. |
+| `not_running` | 409 | Session has finished. |
+| `session_not_owned` | 409 | No live runner owns the session, or its session has not started; retry or reconcile an orphan. |
+| `cancel_unavailable` | 409 | The instance child cannot answer; restart the instance on the upgraded App. |
+| `instance_busy` | 409 | Another operation is in progress. |
+| `no_running_execution` | 409 | No execution is live. |
+| `ambiguous_running_sessions` | 409 | Multiple live or pending runs prevent selecting one. |
+
+CLI-only codes include `app_cancel_unsupported` (upgrade the App once), `cancel_wait_timeout`, `cancel_not_effective`, and `instance_reason_required`.
 
 ## Reload error codes
 

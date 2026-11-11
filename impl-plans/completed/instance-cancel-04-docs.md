@@ -76,3 +76,9 @@ style: short paragraphs, `sh` and `json` blocks, and code tables.
 - The sections exist and list every code.
 - Only this file changed.
 - The progress log has the grep result.
+
+## Implementation progress
+
+- [x] Document cancellation, routes, behavior, and error codes.
+- [x] Run the plan-local grep verification; see the progress log.
+- [ ] Complete downstream independent review and workflow finalization.

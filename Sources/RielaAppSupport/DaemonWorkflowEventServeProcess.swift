@@ -37,12 +37,17 @@ public protocol RielaAppDaemonEventServeProcessHandle: Sendable {
   var capturedOutput: String { get }
   func terminate() async
   func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement
+  func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws
 }
 
 public extension RielaAppDaemonEventServeProcessHandle {
   func admissionControl(_ frame: WorkflowServeAdmissionFrame) async throws -> WorkflowServeAdmissionAcknowledgement {
     throw WorkflowServeAdmissionError.unsupported
+  }
+
+  func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement {
+    throw WorkflowServeSessionControlError.unsupported
   }
 
   func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
@@ -376,6 +381,10 @@ private final class EventServeSourceHandle: WorkflowServeEventSourceHandle, @unc
     try await process.admissionControl(frame)
   }
 
+  public func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement {
+    try await process.sessionControl(frame)
+  }
+
   public func shutdown() async throws {
     await process.terminate()
   }
@@ -388,6 +397,7 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   private let inputPipe: Pipe?
   private let admissionTimeoutSeconds: TimeInterval
   private var admissionAcknowledgements: [String: WorkflowServeAdmissionAcknowledgement] = [:]
+  private var sessionControlAcknowledgements: [String: WorkflowServeSessionControlAcknowledgement] = [:]
   private var acknowledgementBuffer = Data()
   private var acknowledgements: [UInt64: Bool] = [:]
   private var acknowledgedNames: [UInt64: [String]] = [:]
@@ -504,6 +514,38 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     throw WorkflowServeAdmissionError.noAcknowledgement
   }
 
+  func sessionControl(_ frame: WorkflowServeSessionControlFrame) async throws -> WorkflowServeSessionControlAcknowledgement {
+    guard let inputPipe else { throw WorkflowServeSessionControlError.unsupported }
+    guard isRunning else { throw WorkflowServeSessionControlError.childExited }
+    let deadline = ProcessInfo.processInfo.systemUptime + admissionTimeoutSeconds
+    let data = try frame.encodedLine()
+    var claimed = false
+    while ProcessInfo.processInfo.systemUptime < deadline {
+      claimed = lock.withLock {
+        guard !frameWriteInProgress else { return false }
+        frameWriteInProgress = true
+        return true
+      }
+      if claimed { break }
+      guard isRunning else { throw WorkflowServeSessionControlError.childExited }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    guard claimed else { throw WorkflowServeSessionControlError.noAcknowledgement }
+    do {
+      try await writeFrame(data, to: inputPipe.fileHandleForWriting.fileDescriptor, deadline: deadline)
+    } catch {
+      lock.withLock { frameWriteInProgress = false }
+      throw isRunning ? WorkflowServeSessionControlError.noAcknowledgement : WorkflowServeSessionControlError.childExited
+    }
+    lock.withLock { frameWriteInProgress = false }
+    while ProcessInfo.processInfo.systemUptime < deadline {
+      if let ack = lock.withLock({ sessionControlAcknowledgements.removeValue(forKey: frame.requestId) }) { return ack }
+      guard isRunning else { throw WorkflowServeSessionControlError.childExited }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    throw WorkflowServeSessionControlError.noAcknowledgement
+  }
+
   static let acknowledgementTimeoutSeconds: TimeInterval = 10
 
   /// Non-blocking write bounded by the ACK deadline; a child that stops reading
@@ -568,6 +610,11 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
           if let admission = WorkflowServeAdmissionAcknowledgement.decodeLine(Data(line)) {
             if admissionAcknowledgements.count >= 64 { admissionAcknowledgements.removeAll() }
             admissionAcknowledgements[admission.requestId] = admission
+            continue
+          }
+          if let session = WorkflowServeSessionControlAcknowledgement.decodeLine(Data(line)) {
+            if sessionControlAcknowledgements.count >= 64 { sessionControlAcknowledgements.removeAll() }
+            sessionControlAcknowledgements[session.requestId] = session
             continue
           }
           guard let ack = RuntimeEnvironmentChannelAcknowledgement.decodeLine(Data(line)),

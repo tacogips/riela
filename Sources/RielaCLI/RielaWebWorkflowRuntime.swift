@@ -36,6 +36,22 @@ public final class RielaWebWorkflowRuntime {
   public let generations = WorkflowEditorGenerationStore()
   public internal(set) var launches: [String: WebWorkflowLaunch] = [:]
   var launchTasks: [String: Task<Void, Never>] = [:]
+  var launchCancelRegistries: [String: LiveSessionCancelRegistry] = [:]
+
+  func registry(for identity: String) -> LiveSessionCancelRegistry {
+    if let registry = launchCancelRegistries[identity] { return registry }
+    let registry = LiveSessionCancelRegistry()
+    launchCancelRegistries[identity] = registry
+    return registry
+  }
+
+  public func cancelLaunch(identity: String, sessionId: String, reason: String, actor: String) -> WorkflowServeSessionCancelOutcome {
+    launchCancelRegistries[identity]?.requestCancel(sessionId: sessionId, reason: reason, actor: actor) ?? .notFound
+  }
+
+  public func liveLaunchInventory(identity: String) -> (sessionIds: [String], pendingRunCount: Int) {
+    launchCancelRegistries[identity]?.liveSnapshot() ?? ([], 0)
+  }
 
   public init() {}
 

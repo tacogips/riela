@@ -190,6 +190,29 @@ passed 30 tests. Browser E2E was skipped because no `web/` file changed. The
 dispatch manifest `active/stale-definition-dispatch.json` stays active until
 the dispatch run closes; it records the original plan paths.
 
+Per-execution RielaApp instance cancel (2026-11-11, ART hourly duplicates
+previously stopped with `kill -TERM`) is implemented and accepted on
+`feat/instance-cancel`. There is no GitHub issue. Plans `instance-cancel-01` …
+`instance-cancel-11` are archived under
+[`completed/instance-cancel-*.md`](completed/). The feature adds
+`riela instance cancel <identity> [--session <sid>] --reason <text> [--wait]`,
+the desktop-only App routes
+`POST /api/v1/instances/{identity}/executions/{sessionId}/cancel` and
+`POST /api/v1/instances/{identity}/cancel`, per-session cancel registries in the
+events-serve child and the App launch runtime, a live-inventory cancel
+coordinator, cross-process-group LocalProcess tree termination (SIGTERM, then
+SIGKILL after 5 s) and the session failure reason
+`operator_cancelled by <actor>: <reason>`. The design is
+[`design-instance-cancel`](../design-docs/specs/design-instance-cancel.md);
+user docs are in
+[`docs/app-instance-control.md`](../docs/app-instance-control.md#cancel).
+Integration review passed 185 tests with 0 failures and 1 pre-existing opt-in
+skip (`tmp/instance-cancel/reconcile-wave-005/`). Browser E2E was skipped
+because no `web/` file changed. Live cancel needs a one-time App upgrade
+(older Apps report `app_cancel_unsupported`). The dispatch manifest
+`active/instance-cancel-dispatch.json` stays active until the dispatch run
+closes; it records the original plan paths.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

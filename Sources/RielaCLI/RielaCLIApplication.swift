@@ -355,6 +355,7 @@ Usage:
   riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]
   riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--server URL] [--profile P] [--cwd <dir>]
   riela instance executions <identity> [--limit N] [--server URL] [--profile P] [--cwd <dir>]
+  riela instance cancel <identity> [--session <id>] --reason <text> [--wait] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
   riela doctor storage [--scope project|user|auto] [--top <n>] [--output text|json]
   riela storage compact [--apply] [--max-batch <n>] [--abandoned-after-hours <h>] [--allow-live-vacuum] [--output text|json]

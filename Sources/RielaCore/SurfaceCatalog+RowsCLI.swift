@@ -349,7 +349,8 @@ extension SurfaceCatalog {
       ),
       surfaceRow(instanceDefaults, id: "instance.reload", family: "instance", kind: .mutation, cli: "instance reload"),
       surfaceRow(instanceDefaults, id: "instance.run", family: "instance", kind: .mutation, cli: "instance run"),
-      surfaceRow(instanceDefaults, id: "instance.executions", family: "instance", kind: .query, cli: "instance executions")
+      surfaceRow(instanceDefaults, id: "instance.executions", family: "instance", kind: .query, cli: "instance executions"),
+      surfaceRow(instanceDefaults, id: "instance.cancel", family: "instance", kind: .mutation, cli: "instance cancel")
     ]
   }
 

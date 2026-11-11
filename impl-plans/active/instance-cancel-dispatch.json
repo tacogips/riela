@@ -1,0 +1,485 @@
+{
+  "taskId": "instance-cancel",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/instance-cancel",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "c6e127b62a6f3190f513d809ebdd34b89df14815",
+  "evidenceRoot": "tmp/instance-cancel",
+  "designDocPaths": [
+    "design-docs/specs/design-instance-cancel.md"
+  ],
+  "reviewContext": {
+    "issueReference": "No GitHub issue. Operator request 2026-11-11 (workflowInput.requestedBehavior: cancel one running RielaApp instance execution without kill); accepted at step5-impl-plan-review comm-000008 in opus-terra-design-and-implement-review-loop-session-1.",
+    "userProblem": "On 2026-11-11 overlapping/broken executions of the RielaApp-resident ART hourly instance had to be stopped with kill -TERM on the command-node process (python3 scripts/art.py run) and its nested `riela workflow run art`, because Riela has no way to cancel a single running execution; `riela instance reload --interrupt-running` interrupts ALL executions and reloads the definition.",
+    "requiredOutcomes": [
+      "`riela instance cancel <identity> [--session <sid>] --reason <text> [--wait] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]` using the same endpoint discovery, identity normalization and JSON output conventions as instance reload|run|executions.",
+      "App routes POST /api/v1/instances/{identity}/executions/{sessionId}/cancel and POST /api/v1/instances/{identity}/cancel (desktopOnly, x-riela-profile handling like reload).",
+      "Cancelling a running execution terminates its command-node process tree including grandchildren in other process groups (SIGTERM, SIGKILL after 5 s grace); the session ends cancelled with failureReason `operator_cancelled by rielaapp-api:<profile>: <reason>`.",
+      "A second concurrently running execution of the same instance is unaffected.",
+      "No-session: exactly one live run is cancelled; zero -> no_running_execution; several -> ambiguous_running_sessions (with sessionIds, pendingRunCount); unknown -> session_not_found; finished -> not_running; older App -> app_cancel_unsupported.",
+      "After cancel the instance's running slot, cron receipt (cancelled, operator-cancelled:<binding>:<sid>) and admission are released so executions list and cron overlap see it finished.",
+      "swift build, focused swift test filters and swiftlint on changed files pass; docs/app-instance-control.md documents the command, routes and error codes."
+    ],
+    "nonGoals": [
+      "No change to reload/run/executions behavior, flags or response shapes (additive only); launch snapshot JSON keys unchanged, no new launch status.",
+      "No App restart; no change to ~/.riela/** or installed binaries; tests use temp stores and fake processes.",
+      "No serve-host (`riela serve`) route and no GraphQL surface.",
+      "No change to deadline-timeout kill path, await-owner policy, spawn flags or the normal-exit group kill in LocalProcess.",
+      "No change to admission gate semantics, cancelRunning, queue or shutdown receipts; plain events serve without the runtime-environment channel stays byte-identical.",
+      "Orphan sessions (running in store, no live runner) are not cancellable; use riela session reconcile."
+    ],
+    "constraints": [
+      "Work only in worktree /Users/taco/gits/tacogips/riela-worktrees/instance-cancel; never touch the main checkout or its .build.",
+      "Do not restart/kill/reconfigure the running RielaApp; do not modify ~/.riela/** or installed binaries.",
+      "Branch fix/manual-overlap-terminal-reserve concurrently edits InstanceAppCommands.swift, EventCronOverlapDispatcher.swift, WebWorkflowRequestHandler+ConfiguredLaunch.swift and RielaWebAPIRouteTable.swift: keep edits there minimal and additive.",
+      "Run swift build / swift test / swiftlint via arch -arm64 /bin/zsh -lc from the worktree root; logs and exit files under tmp/instance-cancel/<planId>/.",
+      "Each worker edits only its writePaths and its own impl-plans/progress/<planId>.md; pre/post sha256 drift protocol, stop on unexpected drift."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Session status `cancelled` with failureKind `.cancelled` and failureReason `operator_cancelled by <actor>: <reason>` via a root-only DeterministicWorkflowRunRequest.cancellationReason closure (plan 02); handover cancellationCause keeps precedence.",
+        "rationale": "Least invasive: the store already has cancelled status; the reason is recorded only on the root run request so fanout/cross-workflow children do not inherit it (design C1, C6)."
+      },
+      {
+        "decision": "Shared contracts pinned in new files (OperatorCancellation, WorkflowServeSessionControl frames/acks, LiveSessionCancelRegistry, RielaAppInstanceCancelContract + ports protocol) in wave 1.",
+        "rationale": "Lets wave-2 plans 06-09 implement child, parent channel, App launches and coordinator in parallel against identical types (design C1-C4b)."
+      },
+      {
+        "decision": "Events-serve child answers session-cancel/session-list frames on the existing private runtime-environment channel; each in-process run is registered by sessionId and cancelled through its own Task handle (TaskHandleBox handles cancel-before-handle).",
+        "rationale": "Resident cron/event runs execute in the child; per-session cancellation leaves other runs untouched and releases registry before admission release (design C2, C3, C5)."
+      },
+      {
+        "decision": "App manual runs use a per-identity LiveSessionCancelRegistry in RielaWebWorkflowRuntime; cancelled launches read `failed` in the unchanged launch snapshot while the session reads `cancelled`.",
+        "rationale": "Keeps launch snapshot shape byte-identical while making Task.detached manual runs cancellable by (identity, sessionId) (design C2 item 2, C5)."
+      },
+      {
+        "decision": "Pure RielaAppInstanceCancelCoordinator decides from live inventories (never executions history); routes are thin wrappers imitating the reload API.",
+        "rationale": "All decision branches unit-testable with fake ports; no-session ambiguity/zero/unavailable paths make zero cancel calls (design C4, C4b)."
+      },
+      {
+        "decision": "LocalProcess Task-cancellation with terminateGroup snapshots the descendant tree across process groups, SIGTERMs, waits up to 5 s grace, SIGKILLs with pid+startTime guard, and returns only after the tree is gone.",
+        "rationale": "Nested `riela workflow run` launches commands in separate process groups that survived the old owned-group-only kill (design §2 counterexample, C8)."
+      },
+      {
+        "decision": "CLI maps 404/405 without instance_not_found/session_not_found to app_cancel_unsupported and uses string codes only (plan 05 independent of plan 01 types).",
+        "rationale": "Older Apps answer the unknown route with the projection 404; wave-1 parallelism (design C7)."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Cancellation grace rises from 1 s to 5 s for every Task-cancelled terminateGroup LocalProcess node; deadline-timeout path unchanged.",
+      "A process-tree snapshot can miss a descendant spawned within one 100 ms scan interval (design §7).",
+      "A cancelled manual launch reports `failed` in the launch snapshot (no new status) while its session reads `cancelled`.",
+      "The RielaApp handler and ports are covered by compilation plus coordinator and route-table tests only (RielaApp has no XCTest target).",
+      "Process-tree survivors after the hard bound are reported as a stderr line `process_tree_survivors <n>` (no telemetry handle in RielaAdapters)."
+    ],
+    "supportedEdgeCases": [
+      "Cancel requested before the run's Task handle is stored (TaskHandleBox cancels on store).",
+      "Second cancel -> alreadyRequested; unknown session -> session_not_found; terminal -> not_running; nonTerminal with no live owner -> session_not_owned; child channel failure -> cancel_unavailable.",
+      "No-session with a live run hidden behind many newer terminal sessions -> still cancelled (live inventory, not history).",
+      "One live id plus a pending (not-yet-started) run -> ambiguous_running_sessions, nothing cancelled.",
+      "Cron cancelRunning supersede wins over operator cancel for the receipt reason.",
+      "Leader exits on SIGTERM before nested groups finish cooperative cleanup -> cleanup not preempted; PID reuse guarded by startTime.",
+      "Cancel for identity A never reaches a launch of identity B."
+    ],
+    "outOfScopeEdgeCases": [
+      "Cancelling orphan sessions with no live runner.",
+      "Cancel via riela serve host or GraphQL.",
+      "Cancelling runs on an App that has not been upgraded (reported as app_cancel_unsupported / cancel_unavailable)."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCLI/InstanceAppCommands.swift",
+      "Sources/RielaCLI/InstanceCommands.swift",
+      "Sources/RielaCLI/EventReadOnly.swift",
+      "Sources/RielaCLI/EventLiveServe.swift",
+      "Sources/RielaCLI/RuntimeEnvironmentChannel.swift",
+      "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+      "Sources/RielaCLI/RielaWebWorkflowRuntime.swift",
+      "Sources/RielaCLI/WebWorkflowLaunch.swift",
+      "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+      "Sources/RielaAdapters/LocalProcess.swift",
+      "Sources/RielaServer/WorkflowServingController.swift",
+      "Sources/RielaServer/WorkflowServeAdmission.swift",
+      "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
+      "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+      "Sources/RielaAppSupport/RielaAppInstanceReloadCoordinator.swift",
+      "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift",
+      "Sources/RielaApp/RielaAppInstanceReloadAPI.swift",
+      "Sources/RielaApp/RielaAppWebAPI.swift",
+      "docs/app-instance-control.md"
+    ],
+    "residualRisks": [
+      "RielaApp cancel handler and ports covered only by compilation plus coordinator and route-table tests (plan 10).",
+      "1 s -> 5 s cancellation grace may affect existing timing tests at reconcile (plan 03).",
+      "Plan 11 requires `swift build --product riela` before the test and must not skip.",
+      "Merge overlap with fix/manual-overlap-terminal-reserve (additive edits only).",
+      "Shared .build contention across parallel wave plans: log sibling breaks and re-run, never fix sibling files."
+    ],
+    "codexAgentReferences": [],
+    "reconcileVerification": [
+      "mkdir -p tmp/instance-cancel/reconcile && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/reconcile/build.log 2>&1; echo $? > tmp/instance-cancel/reconcile/build.exit'",
+      "arch -arm64 /bin/zsh -lc 'swift build --product riela > tmp/instance-cancel/reconcile/build-riela.log 2>&1; echo $? > tmp/instance-cancel/reconcile/build-riela.exit'",
+      "arch -arm64 /bin/zsh -lc 'swift test --filter \"OperatorCancellationTests|WorkflowServeSessionControlTests|LiveSessionCancelRegistryTests|RielaAppInstanceCancelContractTests|OperatorCancellationReasonFinalizeTests|WorkflowCancelledStatusTests|LocalProcessCancellationTreeTests|LocalProcessForegroundLifetimeTests|LocalProcessAdmissionTests|LocalProcessWallDeadlineTests\" > tmp/instance-cancel/reconcile/test-core.log 2>&1; echo $? > tmp/instance-cancel/reconcile/test-core.exit'",
+      "arch -arm64 /bin/zsh -lc 'swift test --filter \"InstanceAppCancelCommandTests|InstanceAppCommandsTests|SurfaceParity|CLISubcommandHelp|EventOperatorCancelTests|EventCronOverlap|EventAdmissionGateTests|RuntimeEnvironmentChannelTests|EventLiveServeCronTests|ConfiguredLaunchCancelTests|WorkflowDefinitionServiceResolutionTests|InstanceCancelNestedTreeTests\" > tmp/instance-cancel/reconcile/test-cli.log 2>&1; echo $? > tmp/instance-cancel/reconcile/test-cli.exit'",
+      "arch -arm64 /bin/zsh -lc 'swift test --filter \"DaemonSessionControlTests|DaemonAdmissionRuntimeTests|WorkflowServeAdmissionTests|RielaAppInstanceCancelCoordinatorTests|RielaAppInstanceCancelRouteTests|RielaAppInstanceReloadRouteTests\" > tmp/instance-cancel/reconcile/test-app.log 2>&1; echo $? > tmp/instance-cancel/reconcile/test-app.exit'",
+      "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet <all changed Swift files> > tmp/instance-cancel/reconcile/lint.log 2>&1; echo $? > tmp/instance-cancel/reconcile/lint.exit'"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "instance-cancel-01-contracts",
+      "planPath": "impl-plans/active/instance-cancel-01-contracts.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/OperatorCancellation.swift",
+        "Sources/RielaServer/WorkflowServeSessionControl.swift",
+        "Sources/RielaCLI/LiveSessionCancelRegistry.swift",
+        "Sources/RielaAppSupport/RielaAppInstanceCancelContract.swift",
+        "Tests/RielaCoreTests/OperatorCancellationTests.swift",
+        "Tests/RielaServerTests/WorkflowServeSessionControlTests.swift",
+        "Tests/RielaCLITests/LiveSessionCancelRegistryTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppInstanceCancelContractTests.swift",
+        "impl-plans/progress/instance-cancel-01-contracts.md",
+        "tmp/instance-cancel/instance-cancel-01-contracts"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-01-contracts"
+      ],
+      "acceptanceCriteria": [
+        "The 8 new files exist with the pinned types (OperatorCancellation, WorkflowServeSessionControl frames/acks/errors, LiveSessionCancelRegistry, RielaAppInstanceCancel request/codes/error/response/inventory/stored-state/actor and the RielaAppInstanceCancelPorts protocol) exactly as in the plan; code strings match the design.",
+        "No pre-existing file modified (git diff --stat shows none).",
+        "OperatorCancellationTests, WorkflowServeSessionControlTests, LiveSessionCancelRegistryTests and RielaAppInstanceCancelContractTests pass.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-01-contracts/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-01-contracts && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-01-contracts/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-01-contracts/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"OperatorCancellationTests|WorkflowServeSessionControlTests|LiveSessionCancelRegistryTests|RielaAppInstanceCancelContractTests\" > tmp/instance-cancel/instance-cancel-01-contracts/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-01-contracts/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/OperatorCancellation.swift Sources/RielaServer/WorkflowServeSessionControl.swift Sources/RielaCLI/LiveSessionCancelRegistry.swift Sources/RielaAppSupport/RielaAppInstanceCancelContract.swift Tests/RielaCoreTests/OperatorCancellationTests.swift Tests/RielaServerTests/WorkflowServeSessionControlTests.swift Tests/RielaCLITests/LiveSessionCancelRegistryTests.swift Tests/RielaAppSupportTests/RielaAppInstanceCancelContractTests.swift > tmp/instance-cancel/instance-cancel-01-contracts/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-01-contracts/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-02-runner-reason",
+      "planPath": "impl-plans/active/instance-cancel-02-runner-reason.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Tests/RielaCoreTests/OperatorCancellationReasonFinalizeTests.swift",
+        "impl-plans/progress/instance-cancel-02-runner-reason.md",
+        "tmp/instance-cancel/instance-cancel-02-runner-reason"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-02-runner-reason"
+      ],
+      "acceptanceCriteria": [
+        "DeterministicWorkflowRunRequest gains cancellationReason (defaulted init param after cancellationCause); finalizeInterruptedSessionFailed uses failureKind .cancelled with the closure's reason only for workflow-run cancellation when non-nil; handover cause wins; non-cancellation errors never consult the closure.",
+        "WorkflowRunCommand gains operatorCancellationReason passed only to the root DeterministicWorkflowRunRequest.",
+        "OperatorCancellationReasonFinalizeTests (incl. single-finalization case) and existing WorkflowCancelledStatusTests pass; existing initializer call sites compile unchanged.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-02-runner-reason/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-02-runner-reason && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-02-runner-reason/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-02-runner-reason/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"OperatorCancellationReasonFinalizeTests|WorkflowCancelledStatusTests\" > tmp/instance-cancel/instance-cancel-02-runner-reason/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-02-runner-reason/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Tests/RielaCoreTests/OperatorCancellationReasonFinalizeTests.swift > tmp/instance-cancel/instance-cancel-02-runner-reason/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-02-runner-reason/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-03-localprocess-tree",
+      "planPath": "impl-plans/active/instance-cancel-03-localprocess-tree.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAdapters/LocalProcessTree.swift",
+        "Sources/RielaAdapters/LocalProcess.swift",
+        "Tests/RielaAdaptersTests/LocalProcessCancellationTreeTests.swift",
+        "impl-plans/progress/instance-cancel-03-localprocess-tree.md",
+        "tmp/instance-cancel/instance-cancel-03-localprocess-tree"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-03-localprocess-tree"
+      ],
+      "acceptanceCriteria": [
+        "LocalProcessTree.swift provides LocalProcessTreeEntry, LocalProcessTreeSnapshotting, SystemLocalProcessTreeSnapshotter (Darwin sysctl / Linux /proc) and localProcessDescendants.",
+        "Task cancellation with terminateGroup runs the cross-group tree driver (snapshot before signal, SIGTERM, 5 s grace, SIGKILL with pid+startTime guard, hard bound 5 s, survivor report) and returns only after the tree is gone; awaitOwner, deadline-timeout and normal-exit paths unchanged.",
+        "LocalProcessCancellationTreeTests (same group, separate group early leader exit, cooperative cleanup, PID-reuse guard, descendants) pass with existing LocalProcessForegroundLifetimeTests, LocalProcessAdmissionTests and LocalProcessWallDeadlineTests; no leftover `sleep 300` processes (pgrep before/after logged).",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-03-localprocess-tree/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-03-localprocess-tree && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-03-localprocess-tree/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-03-localprocess-tree/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'pgrep -f \"sleep 300\" > tmp/instance-cancel/instance-cancel-03-localprocess-tree/pgrep-before.log 2>&1; swift test --filter \"LocalProcessCancellationTreeTests|LocalProcessForegroundLifetimeTests|LocalProcessAdmissionTests|LocalProcessWallDeadlineTests\" > tmp/instance-cancel/instance-cancel-03-localprocess-tree/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-03-localprocess-tree/test.exit; pgrep -f \"sleep 300\" > tmp/instance-cancel/instance-cancel-03-localprocess-tree/pgrep-after.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaAdapters/LocalProcess.swift Sources/RielaAdapters/LocalProcessTree.swift Tests/RielaAdaptersTests/LocalProcessCancellationTreeTests.swift > tmp/instance-cancel/instance-cancel-03-localprocess-tree/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-03-localprocess-tree/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-04-docs",
+      "planPath": "impl-plans/active/instance-cancel-04-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "docs/app-instance-control.md",
+        "impl-plans/progress/instance-cancel-04-docs.md",
+        "tmp/instance-cancel/instance-cancel-04-docs"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-04-docs"
+      ],
+      "acceptanceCriteria": [
+        "docs/app-instance-control.md intro lists `instance cancel`; new `## Cancel` section after `## Executions` with synopsis, reason rules, both routes, no-session semantics, --wait/--timeout-seconds behavior, example output, process-tree (5 s grace) and other-executions/cron-receipt/orphan notes; Prerequisites sentence added.",
+        "New `## Cancel error codes` table lists every server code with HTTP status plus the CLI-only codes app_cancel_unsupported, cancel_wait_timeout, cancel_not_effective, instance_reason_required.",
+        "Existing Reload/Run/Executions sections unchanged; only this doc changed.",
+        "grep.exit equals 0 under tmp/instance-cancel/instance-cancel-04-docs/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-04-docs && /bin/zsh -c 'rc=0; test $(grep -c \"instance cancel\" docs/app-instance-control.md) -ge 2 || rc=1; for c in invalid_cancel_request instance_not_found session_not_found configuration_conflict not_running session_not_owned cancel_unavailable instance_busy no_running_execution ambiguous_running_sessions app_cancel_unsupported cancel_wait_timeout cancel_not_effective instance_reason_required; do grep -q \"$c\" docs/app-instance-control.md && echo \"ok $c\" || { echo \"missing $c\"; rc=1; }; done > tmp/instance-cancel/instance-cancel-04-docs/grep.log 2>&1; echo $rc > tmp/instance-cancel/instance-cancel-04-docs/grep.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-05-cli-command",
+      "planPath": "impl-plans/active/instance-cancel-05-cli-command.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/InstanceAppCommands.swift",
+        "Sources/RielaCLI/InstanceCommands.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "Sources/RielaCLI/CLISubcommandHelp.swift",
+        "Tests/RielaCLITests/InstanceAppCancelCommandTests.swift",
+        "impl-plans/progress/instance-cancel-05-cli-command.md",
+        "tmp/instance-cancel/instance-cancel-05-cli-command"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/InstanceAppCommands.swift",
+          "intendedEdit": "Additive only: `--session` option, `cancel` action, cancel validation and private cancel(...) helper; branch fix/manual-overlap-terminal-reserve also edits this file, so never restructure reload/run/executions code."
+        },
+        {
+          "path": "Sources/RielaCLI/CLISubcommandHelp.swift",
+          "intendedEdit": "Edit only if a surface-parity/help test assertion demands an `instance cancel` help entry; record the failing assertion in the progress log."
+        }
+      ],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-05-cli-command"
+      ],
+      "acceptanceCriteria": [
+        "`riela instance cancel` posts body exactly {expectedProfile, reason} to /executions/{encodedSession}/cancel or /cancel after bootstrap/CSRF; never GETs /executions to pick a session.",
+        "404/405 without instance_not_found/session_not_found -> app_cancel_unsupported; ambiguous_running_sessions prints closed-field sessionIds/pendingRunCount with exit 1; --wait yields exit 0 on cancelled, cancel_not_effective or cancel_wait_timeout otherwise; usage errors instance_reason_required / instance_invalid_options exit 2.",
+        "instance.cancel surface row, usage line and InstanceCommands case added; reload/run/executions behavior and output unchanged.",
+        "InstanceAppCancelCommandTests, InstanceAppCommandsTests, SurfaceParity and CLISubcommandHelp suites pass; build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-05-cli-command/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-05-cli-command && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-05-cli-command/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-05-cli-command/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"InstanceAppCancelCommandTests|InstanceAppCommandsTests|SurfaceParity|CLISubcommandHelp\" > tmp/instance-cancel/instance-cancel-05-cli-command/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-05-cli-command/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/InstanceAppCommands.swift Sources/RielaCLI/InstanceCommands.swift Sources/RielaCLI/RielaCLIApplication.swift Sources/RielaCore/SurfaceCatalog+RowsCLI.swift Sources/RielaCLI/CLISubcommandHelp.swift Tests/RielaCLITests/InstanceAppCancelCommandTests.swift > tmp/instance-cancel/instance-cancel-05-cli-command/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-05-cli-command/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-06-event-serve-child",
+      "planPath": "impl-plans/active/instance-cancel-06-event-serve-child.md",
+      "dependsOn": [
+        "instance-cancel-01-contracts",
+        "instance-cancel-02-runner-reason"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/EventLiveServe.swift",
+        "Sources/RielaCLI/EventReadOnly.swift",
+        "Sources/RielaCLI/RuntimeEnvironmentChannel.swift",
+        "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+        "Tests/RielaCLITests/EventOperatorCancelTests.swift",
+        "impl-plans/progress/instance-cancel-06-event-serve-child.md",
+        "tmp/instance-cancel/instance-cancel-06-event-serve-child"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+          "intendedEdit": "One helper CronOverlapReason.operatorCancelled, one finish parameter operatorCancelled and one branch after handle.cancelCause; branch fix/manual-overlap-terminal-reserve also edits this file."
+        }
+      ],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-06-event-serve-child"
+      ],
+      "acceptanceCriteria": [
+        "With a LiveSessionCancelRegistry (runtime-environment channel present), each runEventWorkflow run is registered by sessionId, cancellable individually through a TaskHandleBox-backed child Task, unregistered and endRun before admission release, and throws EventOperatorCancelled when operator-cancelled; without a registry behavior is byte-identical.",
+        "RuntimeEnvironmentChannel answers session-cancel and session-list frames before the admission decode; admission and environment frames still handled.",
+        "Cron receipt for operator cancel is `cancelled` with reason operator-cancelled:<binding>:<sid>, no dispatch-failure record; cancelRunning supersede still wins.",
+        "EventOperatorCancelTests, EventCronOverlap, EventAdmissionGateTests, RuntimeEnvironmentChannelTests and EventLiveServeCronTests pass; build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-06-event-serve-child/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-06-event-serve-child && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-06-event-serve-child/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-06-event-serve-child/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"EventOperatorCancelTests|EventCronOverlap|EventAdmissionGateTests|RuntimeEnvironmentChannelTests|EventLiveServeCronTests\" > tmp/instance-cancel/instance-cancel-06-event-serve-child/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-06-event-serve-child/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/EventLiveServe.swift Sources/RielaCLI/EventReadOnly.swift Sources/RielaCLI/RuntimeEnvironmentChannel.swift Sources/RielaCLI/EventCronOverlapDispatcher.swift Tests/RielaCLITests/EventOperatorCancelTests.swift > tmp/instance-cancel/instance-cancel-06-event-serve-child/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-06-event-serve-child/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-07-app-child-channel",
+      "planPath": "impl-plans/active/instance-cancel-07-app-child-channel.md",
+      "dependsOn": [
+        "instance-cancel-01-contracts"
+      ],
+      "writePaths": [
+        "Sources/RielaServer/WorkflowServingController.swift",
+        "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
+        "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+        "Tests/RielaAppSupportTests/DaemonSessionControlTests.swift",
+        "impl-plans/progress/instance-cancel-07-app-child-channel.md",
+        "tmp/instance-cancel/instance-cancel-07-app-child-channel"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-07-app-child-channel"
+      ],
+      "acceptanceCriteria": [
+        "WorkflowServeEventSourceHandle and RielaAppDaemonEventServeProcessHandle gain sessionControl with defaults throwing .unsupported; WorkflowServingController merges session-cancel (first non-notFound ack) and session-list (sorted union, summed pending); no active generation -> .childExited.",
+        "The event-serve process writes session frames under the shared frameWriteInProgress claim and parses session acks in appendOutput before the environment-ack decode; admission/environment behavior unchanged.",
+        "RielaAppDaemonWorkflowRuntime.sessionControl(identity:frame:) mirrors admissionControl; unknown identity -> .childExited.",
+        "DaemonSessionControlTests, DaemonAdmissionRuntimeTests and WorkflowServeAdmissionTests pass; build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-07-app-child-channel/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-07-app-child-channel && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-07-app-child-channel/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-07-app-child-channel/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DaemonSessionControlTests|DaemonAdmissionRuntimeTests|WorkflowServeAdmissionTests\" > tmp/instance-cancel/instance-cancel-07-app-child-channel/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-07-app-child-channel/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaServer/WorkflowServingController.swift Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift Sources/RielaAppSupport/DaemonWorkflowSupport.swift Tests/RielaAppSupportTests/DaemonSessionControlTests.swift > tmp/instance-cancel/instance-cancel-07-app-child-channel/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-07-app-child-channel/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-08-app-launch-registry",
+      "planPath": "impl-plans/active/instance-cancel-08-app-launch-registry.md",
+      "dependsOn": [
+        "instance-cancel-01-contracts",
+        "instance-cancel-02-runner-reason"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/RielaWebWorkflowRuntime.swift",
+        "Sources/RielaCLI/WebWorkflowLaunch.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+        "Tests/RielaCLITests/ConfiguredLaunchCancelTests.swift",
+        "impl-plans/progress/instance-cancel-08-app-launch-registry.md",
+        "tmp/instance-cancel/instance-cancel-08-app-launch-registry"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+          "intendedEdit": "Additive only inside launchConfiguredWorkflow (registry beginRun/register/unregister/endRun, private TaskHandleBox, operatorCancellationReason); branch fix/manual-overlap-terminal-reserve may also edit this file."
+        }
+      ],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-08-app-launch-registry"
+      ],
+      "acceptanceCriteria": [
+        "RielaWebWorkflowRuntime has per-identity launch registries with cancelLaunch(identity:sessionId:reason:actor:) and liveLaunchInventory(identity:); cross-identity cancels return .notFound.",
+        "WebWorkflowLaunch.onFirstSessionId fires exactly once outside the lock; launch snapshot JSON keys stay exactly {id, status, sessionId, error}; a cancelled launch reads failed while its session is cancelled with failureReason `operator_cancelled by rielaapp-api:default: dup`.",
+        "Early-return 429/409/422 paths never call beginRun; caps unchanged.",
+        "ConfiguredLaunchCancelTests and WorkflowDefinitionServiceResolutionTests pass with no leftover `sleep 300` (pgrep before/after logged); build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-08-app-launch-registry/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-08-app-launch-registry && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-08-app-launch-registry/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-08-app-launch-registry/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'pgrep -f \"sleep 300\" > tmp/instance-cancel/instance-cancel-08-app-launch-registry/pgrep-before.log 2>&1; swift test --filter \"ConfiguredLaunchCancelTests|WorkflowDefinitionServiceResolutionTests\" > tmp/instance-cancel/instance-cancel-08-app-launch-registry/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-08-app-launch-registry/test.exit; pgrep -f \"sleep 300\" > tmp/instance-cancel/instance-cancel-08-app-launch-registry/pgrep-after.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/RielaWebWorkflowRuntime.swift Sources/RielaCLI/WebWorkflowLaunch.swift Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift Tests/RielaCLITests/ConfiguredLaunchCancelTests.swift > tmp/instance-cancel/instance-cancel-08-app-launch-registry/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-08-app-launch-registry/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-09-cancel-coordinator",
+      "planPath": "impl-plans/active/instance-cancel-09-cancel-coordinator.md",
+      "dependsOn": [
+        "instance-cancel-01-contracts"
+      ],
+      "writePaths": [
+        "Sources/RielaAppSupport/RielaAppInstanceCancelCoordinator.swift",
+        "Tests/RielaAppSupportTests/RielaAppInstanceCancelCoordinatorTests.swift",
+        "impl-plans/progress/instance-cancel-09-cancel-coordinator.md",
+        "tmp/instance-cancel/instance-cancel-09-cancel-coordinator"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-09-cancel-coordinator"
+      ],
+      "acceptanceCriteria": [
+        "RielaAppInstanceCancelCoordinator.cancel(identity:sessionId:request:) follows C4 steps (configuration_conflict, instance_not_found, app owner, eventServe owner, then stored state -> session_not_found / not_running / cancel_unavailable / session_not_owned).",
+        "cancelSole decides from live inventories only (never storedSessionState): no_running_execution, ambiguous_running_sessions with sessionIds/pendingRunCount, session_not_owned, cancel_unavailable; zero cancel calls on ambiguous/zero/unavailable paths; sole id cancelled through its owner only (.notFound -> not_running).",
+        "RielaAppInstanceCancelCoordinatorTests (explicit and no-session history-boundary cases) pass; exactly 2 new files.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-09-cancel-coordinator/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-09-cancel-coordinator && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-09-cancel-coordinator/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-09-cancel-coordinator/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaAppInstanceCancelCoordinatorTests\" > tmp/instance-cancel/instance-cancel-09-cancel-coordinator/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-09-cancel-coordinator/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaAppSupport/RielaAppInstanceCancelCoordinator.swift Tests/RielaAppSupportTests/RielaAppInstanceCancelCoordinatorTests.swift > tmp/instance-cancel/instance-cancel-09-cancel-coordinator/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-09-cancel-coordinator/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-10-app-route",
+      "planPath": "impl-plans/active/instance-cancel-10-app-route.md",
+      "dependsOn": [
+        "instance-cancel-07-app-child-channel",
+        "instance-cancel-08-app-launch-registry",
+        "instance-cancel-09-cancel-coordinator"
+      ],
+      "writePaths": [
+        "Sources/RielaApp/RielaAppInstanceCancelAPI.swift",
+        "Sources/RielaApp/RielaAppWebAPI.swift",
+        "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift",
+        "Tests/RielaAppSupportTests/RielaAppInstanceCancelRouteTests.swift",
+        "impl-plans/progress/instance-cancel-10-app-route.md",
+        "tmp/instance-cancel/instance-cancel-10-app-route"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift",
+          "intendedEdit": "Append two desktopOnly POST entries after the /runs entry (owner Sources/RielaApp/RielaAppInstanceCancelAPI.swift); branch fix/manual-overlap-terminal-reserve may also edit this file, append only."
+        },
+        {
+          "path": "Sources/RielaApp/RielaAppWebAPI.swift",
+          "intendedEdit": "Insert one line dispatching webInstanceCancelResponse after the reload line, before the shared projection."
+        }
+      ],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-10-app-route"
+      ],
+      "acceptanceCriteria": [
+        "RielaAppInstanceCancelAPI.swift handles POST /api/v1/instances/{identity}/executions/{sessionId}/cancel and POST /api/v1/instances/{identity}/cancel (percent-decoded, 405 for non-POST, profile header check, strict decode, distributedControllerOperations.run, instance_busy on termination, 202 success, error envelope with top-level sessionIds/pendingRunCount for ambiguous); reason never echoed or logged.",
+        "RielaAppCancelPorts wires profile, daemonInstances, the /runs RielaWebWorkflowRuntime keyed by the same identity as launchConfiguredWorkflow, daemonRuntime.isChildRunning/sessionControl via profileRuntimeIdentity, and storedSessionState via the webExecutionDetail lookup.",
+        "Route table desktopOnly gains both entries with ownerMarkers appearing verbatim in the owner file; reload/runs entries and projection handlers unchanged.",
+        "RielaAppInstanceCancelRouteTests, RielaAppInstanceReloadRouteTests, SurfaceParityWebAPITests and SurfaceParity pass; build.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-10-app-route/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-10-app-route && arch -arm64 /bin/zsh -lc 'swift build > tmp/instance-cancel/instance-cancel-10-app-route/build.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-10-app-route/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaAppInstanceCancelRouteTests|RielaAppInstanceReloadRouteTests|SurfaceParityWebAPITests|SurfaceParity\" > tmp/instance-cancel/instance-cancel-10-app-route/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-10-app-route/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaApp/RielaAppInstanceCancelAPI.swift Sources/RielaApp/RielaAppWebAPI.swift Sources/RielaAppSupport/RielaWebAPIRouteTable.swift Tests/RielaAppSupportTests/RielaAppInstanceCancelRouteTests.swift > tmp/instance-cancel/instance-cancel-10-app-route/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-10-app-route/lint.exit'"
+      ]
+    },
+    {
+      "planId": "instance-cancel-11-nested-tree-e2e",
+      "planPath": "impl-plans/active/instance-cancel-11-nested-tree-e2e.md",
+      "dependsOn": [
+        "instance-cancel-03-localprocess-tree",
+        "instance-cancel-06-event-serve-child"
+      ],
+      "writePaths": [
+        "Tests/RielaCLITests/InstanceCancelNestedTreeTests.swift",
+        "impl-plans/progress/instance-cancel-11-nested-tree-e2e.md",
+        "tmp/instance-cancel/instance-cancel-11-nested-tree-e2e"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/instance-cancel/instance-cancel-11-nested-tree-e2e"
+      ],
+      "acceptanceCriteria": [
+        "InstanceCancelNestedTreeTests drives two concurrent outer runs (wrapper -> nested `riela workflow run inner` in a separate process group) through runEventWorkflow with a LiveSessionCancelRegistry; cancelling A throws EventOperatorCancelled and at that return wrapper-A, nested-A and inner-A pids are ESRCH.",
+        "A's root session is cancelled with failureKind cancelled and failureReason `operator_cancelled by rielaapp-api:default: dup`; A's nested session is terminal cancelled; B's inner pid is alive and B's session running until B is cancelled with the same cleanup.",
+        "Test executes (not skipped) after `swift build --product riela`; no leftover `while :; do sleep 1` processes; test-only, exactly 1 new file.",
+        "build-riela.exit, test.exit and lint.exit equal 0 under tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-cancel/instance-cancel-11-nested-tree-e2e && arch -arm64 /bin/zsh -lc 'swift build --product riela > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/build-riela.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/build-riela.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter InstanceCancelNestedTreeTests > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/test.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/test.exit; pgrep -f \"while :; do sleep 1\" > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/pgrep.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Tests/RielaCLITests/InstanceCancelNestedTreeTests.swift > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/lint.log 2>&1; echo $? > tmp/instance-cancel/instance-cancel-11-nested-tree-e2e/lint.exit'"
+      ]
+    }
+  ]
+}

@@ -63,3 +63,7 @@ stale.
 Before the edit, read the file fresh and record its sha256. Re-check it
 before writing and stop on drift. Touch no other files. Git use is
 read-only.
+
+## Implementation status
+
+The scoped test updates and required focused verification are complete; see the progress log for hashes, results, and evidence paths. Formal review and final integration remain downstream.

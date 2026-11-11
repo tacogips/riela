@@ -19,7 +19,7 @@ private actor SeedRaceStartBarrier {
 }
 
 final class WorkflowDefinitionStoreTests: XCTestCase {
-  func testFreshStoreCreatesDefinitionSchemaAtGenerationEleven() throws {
+  func testFreshStoreCreatesDefinitionSchemaAtCurrentGeneration() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let store = WorkflowDefinitionStore(rootDirectory: root.path)
@@ -33,7 +33,8 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
       XCTAssertTrue(try database.tableExists(table), "missing \(table)")
     }
     XCTAssertFalse(try database.tableExists("definition_blobs"))
-    XCTAssertEqual(try database.query("PRAGMA user_version").first?["user_version"], "11")
+    XCTAssertEqual(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration, 12)
+    XCTAssertEqual(try database.query("PRAGMA user_version").first?["user_version"], String(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration))
   }
 
   func testGenerationNineMigratesInPlaceAndKeepsSession() async throws {
@@ -58,7 +59,7 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
     XCTAssertNil(try WorkflowDefinitionStore(rootDirectory: root.path).head(workflowName: "keep"))
     XCTAssertEqual(try persistence.load(sessionId: session.sessionId).session, session)
     let reopened = try SQLiteDatabase.open(path: path, mode: .strictReadOnly, options: .readOnlyDefault)
-    XCTAssertEqual(try reopened.query("PRAGMA user_version").first?["user_version"], "11")
+    XCTAssertEqual(try reopened.query("PRAGMA user_version").first?["user_version"], String(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration))
     XCTAssertTrue(try reopened.tableExists("definition_history_versions"))
   }
 

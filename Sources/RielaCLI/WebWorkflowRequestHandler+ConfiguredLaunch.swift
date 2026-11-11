@@ -19,7 +19,14 @@ public extension RielaWebWorkflowRequestHandler {
     runtime.launchTasks = runtime.launchTasks.filter { runtime.launches[$0.key] != nil }
     if !allowOverlap {
       let running = runtime.launches.values.filter {
-        $0.identity == identity && $0.snapshot["status"] == .string("running")
+        guard $0.identity == identity, $0.snapshot["status"] == .string("running") else { return false }
+        guard case let .string(sessionId) = $0.snapshot["sessionId"] else { return true }
+        let root = canonicalRuntimeStoreRoot(sessionStoreRoot: context.sessionStoreRoot)
+        let databasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)
+        guard FileManager.default.fileExists(atPath: databasePath),
+              let status = try? SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root)
+                .loadStrictReadOnly(sessionId: sessionId).session.status else { return true }
+        return !status.isTerminal
       }.sorted { $0.createdAt < $1.createdAt }
       var blocker: String?
       if let launch = running.first {

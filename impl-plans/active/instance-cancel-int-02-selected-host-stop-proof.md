@@ -188,3 +188,7 @@ Decision (final amendment; the budget is now exhausted):
   fixture-only change (proofDeadline ≥ 12 s), every assertion, and the
   stop-and-report rule. The combined-tree focused filter belongs to
   reconciliation and integration review, not to this plan.
+
+## Implementation status 2026-11-11
+
+Blocked: the longer bound reaches the stop gate, but the required suite reports eight later stop-receipt and reconciliation assertion failures. See the progress log and `after.log`. The repeat runs and scratch cleanup remain pending.

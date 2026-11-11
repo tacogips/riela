@@ -172,3 +172,7 @@ report drift. Do not touch the files of other plans
 (`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift`,
 `Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift`). No git commands
 other than read-only `git diff`/`git status`.
+
+## Implementation status (Step 6)
+
+Assigned implementation and focused verification completed; formal reviews and integration remain downstream. See the plan-local progress log for evidence.

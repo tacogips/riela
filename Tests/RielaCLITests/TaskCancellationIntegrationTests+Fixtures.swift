@@ -177,7 +177,9 @@ extension TaskCancellationIntegrationTests {
     let version = try XCTUnwrap(store.loadTask(id: taskId)).version
     try runSelectedHostDecisionProcess(taskId: taskId, version: version, sessionStore: root.path)
 
-    let proofDeadline = Date().addingTimeInterval(4)
+    // C8 uses a 5-second grace and 5-second hard bound; allow 4 seconds for scheduling.
+    let selectedHostStopReceiptBound: TimeInterval = 5 + 5 + 4
+    let proofDeadline = Date().addingTimeInterval(selectedHostStopReceiptBound)
     while !(await stopGate.paused), Date() < proofDeadline {
       try await Task.sleep(for: .milliseconds(20))
     }

@@ -113,3 +113,39 @@ Before the edit, re-read the file fresh and record its sha256. Re-check the
 sha256 immediately before writing. If it changed and you did not change it,
 stop and report drift. Touch no other plan's files. Git use is read-only
 (`git diff`, `git archive`, `git status`).
+
+## Amendment 2026-11-11 (blocked-wave-scope-or-contract, round 1)
+
+Blocker: Step 1.2 needs a location authorized for build artifacts, to hold
+the git-archive export of `293527c8` and its SwiftPM `.build` outputs.
+
+Decision:
+
+- Authorized artifact root, added to this plan's `writePaths` **and**
+  `artifactRoots`:
+  `tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8`.
+  The runtime records it as a digest/count manifest only, never as content.
+  It is not a source path.
+- Step 1.2 now runs entirely inside that root. This replaces the earlier
+  `tmp/instance-cancel-integration/int-02/at-293527c8` location:
+  - `mkdir -p tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 && git archive 293527c8 | tar -x -C tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8`
+  - `/usr/bin/arch -arm64 /bin/zsh -lc "cd tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 && swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.exit`
+
+  The build output (`.build`) stays inside the archive root, because SwiftPM
+  builds in the package directory. Do not pass `--scratch-path` outside it,
+  and do not use the worktree's own `.build` for this run.
+- Logs and exit files for every step go directly under
+  `tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/`,
+  outside the artifact root. They are evidence, not artifacts. All
+  `tmp/instance-cancel-integration/int-02/...` paths in this plan map to
+  that directory.
+- Step 1.4 (removing the export after the run) is kept, and must happen only
+  after `at-293527c8.exit` is written. Record the export's `du -sh` before
+  removal in the progress log.
+- Unchanged: the plan's intent and non-goals, the requirement to confirm
+  before editing, the stop-and-report rule, the fixture-only change, every
+  assertion, and the verification commands of Steps 1.3 and 3 (with logs
+  redirected to the directory above).
+- Accepted dependencies, not re-planned: `instance-cancel-int-01-busy-terminal-session`
+  and `instance-cancel-int-03-definition-store-generation` (accepted at
+  integration review, wave 006).

@@ -49,6 +49,10 @@
       {
         "decision": "WorkflowDefinitionStoreTests assert String(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration) and pin it to 12; rename test to ...AtCurrentGeneration.",
         "rationale": "Generation 12 is intended by design-session-storage-efficiency-and-default-gc.md §3.2 (additive DDL); tests are stale (design §8.3)."
+      },
+      {
+        "decision": "Amendment 2026-11-11 round 1: plan instance-cancel-int-02-selected-host-stop-proof gains artifact root tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 (in writePaths and artifactRoots) for the git-archive export of 293527c8 and its SwiftPM .build; logs and exit files move to tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/ outside the root; Step 1.4 removal kept after at-293527c8.exit with du -sh recorded; int-01 and int-03 recorded as acceptedDependencies.",
+        "rationale": "Blocked plan instance-cancel-int-02-selected-host-stop-proof (blocked-wave-scope-or-contract): the mandatory historical reproduction at 293527c8 had no authorized artifact root for build outputs. Resolved by an authorized root under gitignored tmp/; plan intent, non-goals, confirm-before-edit, fixture-only change and assertions unchanged. Accepted at step5-impl-plan-review comm-000035."
       }
     ],
     "intentionalTradeoffs": [
@@ -82,72 +86,47 @@
       "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift"
     ]
   },
-  "acceptedDependencies": [],
-  "plans": [
+  "acceptedDependencies": [
     {
       "planId": "instance-cancel-int-01-busy-terminal-session",
       "planPath": "impl-plans/active/instance-cancel-int-01-busy-terminal-session.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
-        "Tests/RielaCLITests/ConfiguredLaunchCancelTests.swift",
-        "impl-plans/progress/instance-cancel-int-01-busy-terminal-session.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "New testBusyCheckIgnoresRunningLaunchWhoseSessionIsPersistedTerminal fails before the source change (Case A 409) and passes after (202).",
-        "All ConfiguredLaunchCancelTests pass; second concurrent launch uses allowOverlap:true; existing assertions unchanged.",
-        "ConfiguredRunOverlap, InstanceApp and LiveRootSession tests unaffected; swiftlint clean on both files."
-      ],
-      "verification": [
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter ConfiguredLaunchCancelTests/testBusyCheckIgnoresRunningLaunchWhoseSessionIsPersistedTerminal\" > tmp/instance-cancel-integration/int-01/before.log 2>&1; echo $? > tmp/instance-cancel-integration/int-01/before.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter ConfiguredLaunchCancelTests\" > tmp/instance-cancel-integration/int-01/after.log 2>&1; echo $? > tmp/instance-cancel-integration/int-01/after.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter 'ConfiguredRunOverlap|InstanceApp|LiveRootSession'\" > tmp/instance-cancel-integration/int-01/overlap.log 2>&1; echo $? > tmp/instance-cancel-integration/int-01/overlap.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swiftlint lint Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift Tests/RielaCLITests/ConfiguredLaunchCancelTests.swift\""
-      ]
+      "commit": "36c4f88bdb056e4bf3a8e75b1834d742b02790be",
+      "provides": "DR-01 rule-1 busy check ignores running launches whose root session is persisted terminal; ConfiguredLaunchCancelTests second launch uses allowOverlap (implemented in wave 006 and accepted at integration review; working-tree changes pending final integration)."
     },
+    {
+      "planId": "instance-cancel-int-03-definition-store-generation",
+      "planPath": "impl-plans/active/instance-cancel-int-03-definition-store-generation.md",
+      "commit": "36c4f88bdb056e4bf3a8e75b1834d742b02790be",
+      "provides": "WorkflowDefinitionStoreTests assert current schema generation 12 (implemented in wave 006 and accepted at integration review; working-tree changes pending final integration)."
+    }
+  ],
+  "plans": [
     {
       "planId": "instance-cancel-int-02-selected-host-stop-proof",
       "planPath": "impl-plans/active/instance-cancel-int-02-selected-host-stop-proof.md",
       "dependsOn": [],
       "writePaths": [
         "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
-        "impl-plans/progress/instance-cancel-int-02-selected-host-stop-proof.md"
+        "impl-plans/progress/instance-cancel-int-02-selected-host-stop-proof.md",
+        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8"
       ],
       "sharedPaths": [],
-      "artifactRoots": [],
+      "artifactRoots": [
+        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8"
+      ],
       "acceptanceCriteria": [
         "Hypothesis confirmed first: static-main-diff empty, test fails at 293527c8 and at unmodified HEAD with 'delayed stop receipt'.",
         "Only the proofDeadline bound (>= 12 s, tied to C8 5 s grace + hard bound) changes; no XCTAssert removed or weakened.",
         "TaskCancellationIntegrationTests exit 0 and the selected-host test passes 3 consecutive runs; swiftlint clean."
       ],
       "verification": [
-        "git diff --stat 293527c8 8ab7f848 -- Sources/RielaAdapters Sources/RielaWork Sources/RielaServer > tmp/instance-cancel-integration/int-02/static-main-diff.txt",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/int-02/head-before.log 2>&1; echo $? > tmp/instance-cancel-integration/int-02/head-before.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests\" > tmp/instance-cancel-integration/int-02/after.log 2>&1; echo $? > tmp/instance-cancel-integration/int-02/after.exit",
-        "for i in 1 2 3; do /usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/int-02/repeat-$i.log 2>&1; echo $? > tmp/instance-cancel-integration/int-02/repeat-$i.exit; done",
+        "git diff --stat 293527c8 8ab7f848 -- Sources/RielaAdapters Sources/RielaWork Sources/RielaServer > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/static-main-diff.txt",
+        "mkdir -p tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 && git archive 293527c8 | tar -x -C tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8",
+        "/usr/bin/arch -arm64 /bin/zsh -lc \"cd tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 && swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.exit",
+        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-before.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-before.exit",
+        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/after.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/after.exit",
+        "for i in 1 2 3; do /usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/repeat-$i.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/repeat-$i.exit; done",
         "/usr/bin/arch -arm64 /bin/zsh -lc \"swiftlint lint Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift\""
-      ]
-    },
-    {
-      "planId": "instance-cancel-int-03-definition-store-generation",
-      "planPath": "impl-plans/active/instance-cancel-int-03-definition-store-generation.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift",
-        "impl-plans/progress/instance-cancel-int-03-definition-store-generation.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Fresh-store test renamed to testFreshStoreCreatesDefinitionSchemaAtCurrentGeneration and both tests assert String(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration), with schemaGeneration pinned to 12.",
-        "No assertion removed; 9 -> current migration path still exercised; no Sources change.",
-        "WorkflowDefinitionStoreTests exit 0; swiftlint clean."
-      ],
-      "verification": [
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter WorkflowDefinitionStoreTests\" > tmp/instance-cancel-integration/int-03/after.log 2>&1; echo $? > tmp/instance-cancel-integration/int-03/after.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swiftlint lint Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift\""
       ]
     }
   ]

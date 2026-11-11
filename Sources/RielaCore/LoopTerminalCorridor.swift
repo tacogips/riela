@@ -17,6 +17,27 @@ public struct LoopTerminalCorridor: Equatable, Sendable {
 public struct LoopTerminalCorridorSelector: Sendable {
   public init() {}
 
+  public func acyclicRemainingStepBound(workflow: WorkflowDefinition, originStepId: String) -> Int? {
+    let stepsById = Dictionary(uniqueKeysWithValues: workflow.steps.map { ($0.id, $0) })
+    guard stepsById[originStepId] != nil else { return nil }
+    var visiting: Set<String> = []
+    var bounds: [String: Int] = [:]
+
+    func visit(_ id: String) -> Int? {
+      if let bound = bounds[id] { return bound }
+      guard visiting.insert(id).inserted, let step = stepsById[id] else { return nil }
+      var longest = 1
+      for edge in step.transitions ?? [] where isLocalLinearEdge(edge) && stepsById[edge.toStepId] != nil {
+        guard let child = visit(edge.toStepId) else { return nil }
+        longest = max(longest, child + 1)
+      }
+      visiting.remove(id)
+      bounds[id] = longest
+      return longest
+    }
+    return visit(originStepId)
+  }
+
   public func select(
     workflow: WorkflowDefinition,
     originStepId: String,

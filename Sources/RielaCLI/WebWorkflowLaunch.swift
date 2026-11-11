@@ -9,6 +9,7 @@ public final class WebWorkflowLaunch: @unchecked Sendable {
   enum State: String { case running, completed, failed }
   public let id = UUID().uuidString.lowercased()
   public let profile: String
+  public let identity: String?
   public let createdAt = Date()
   private let lock = NSLock()
   private var state = State.running
@@ -16,7 +17,10 @@ public final class WebWorkflowLaunch: @unchecked Sendable {
   private var error: String?
   var onFirstSessionId: (@Sendable (String) -> Void)?
 
-  init(profile: String) { self.profile = profile }
+  init(profile: String, identity: String? = nil) {
+    self.profile = profile
+    self.identity = identity
+  }
 
   func append(_ line: String) {
     guard let data = line.data(using: .utf8),

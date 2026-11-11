@@ -476,6 +476,11 @@ smaller than the corridor itself, or no unambiguous corridor exists, existing
 hard limit while preventing an undeclared revision loop from consuming commit,
 push, or output capacity. Authored policies never enter this reservation path.
 
+Amendment (2026-11-11): reservation also requires that a cycle is reachable
+from the current step, or that the longest acyclic path from it exceeds the
+remaining budget. A remainder that is acyclic and fits is never redirected.
+See `design-docs/specs/design-manual-run-overlap-and-terminal-reserve.md` §4.
+
 #### CLI and cross-workflow propagation
 
 `riela workflow run --disable-default-loop-guard` is a typed Boolean option

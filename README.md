@@ -1201,7 +1201,7 @@ contain the new keys, and `events replay` reuses stored envelopes verbatim.
 `riela events serve` runs cron-fired workflows as tracked in-flight tasks, so a
 long run does not block the other sources in the same serve process. When a
 fire arrives while a run of the same binding is still in flight, the
-binding's overlap policy decides what happens:
+binding's overlap policy decides what happens. Live manual (named-instance) sessions of the same workflow in the same session store also count as running; see [instance control](docs/app-instance-control.md).
 
 - `skip` (the default): the new fire starts no run. It is recorded with reason
   `overlap-skip:<bindingId>:<runningSessionId>`.

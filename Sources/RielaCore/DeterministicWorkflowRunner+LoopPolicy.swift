@@ -283,6 +283,12 @@ extension DeterministicWorkflowRunner {
       return nil
     }
 
+    if let bound = LoopTerminalCorridorSelector().acyclicRemainingStepBound(
+      workflow: workflow, originStepId: currentStepId
+    ), bound <= remainingSteps {
+      return nil
+    }
+
     let resolved = try await inputResolver.resolveInput(
       for: session.sessionId,
       stepId: currentStepId,

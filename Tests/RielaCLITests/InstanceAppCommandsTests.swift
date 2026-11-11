@@ -168,6 +168,66 @@ final class InstanceAppCommandsTests: XCTestCase {
     XCTAssertTrue(paths.contains("/api/v1/instances/instance/executions/session"))
   }
 
+  func testRunOmitsOverlapByDefault() async throws {
+    let fake = ScriptedAppTransport([bootstrap, reply(202, #"{"id":"launch","status":"running","sessionId":"session"}"#)])
+    let result = await invoke("run", [], fake)
+    XCTAssertEqual(result.exitCode, .success)
+    let requests = await fake.requests
+    let post = try XCTUnwrap(requests.first { $0.httpMethod == "POST" })
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(post.httpBody)) as? [String: Any])
+    XCTAssertEqual(Set(body.keys), Set(["expectedProfile", "expectedRevision", "variables"]))
+  }
+
+  func testRunAllowsOverlapWhenRequested() async throws {
+    let fake = ScriptedAppTransport([bootstrap, reply(202, #"{"id":"launch","status":"running","sessionId":"session"}"#)])
+    let result = await invoke("run", ["--allow-overlap"], fake)
+    XCTAssertEqual(result.exitCode, .success)
+    let output = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    XCTAssertEqual(output["sessionId"] as? String, "session")
+    XCTAssertEqual(Set(output.keys), Set(["launchId", "sessionId", "status"]))
+    let requests = await fake.requests
+    let post = try XCTUnwrap(requests.first { $0.httpMethod == "POST" })
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(post.httpBody)) as? [String: Any])
+    XCTAssertEqual(body["allowOverlap"] as? Bool, true)
+  }
+
+  func testRunBusyReportsSessionWithoutPolling() async throws {
+    let fake = ScriptedAppTransport([bootstrap, reply(409, #"{"error":{"code":"instance_busy","runningSessionId":"hourly-refresh-session-249"}}"#)])
+    let result = await invoke("run", ["--wait"], fake)
+    XCTAssertEqual(result.exitCode, .failure)
+    let output = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    XCTAssertEqual(Set(output.keys), Set(["error", "sessionId", "exitCode"]))
+    XCTAssertEqual(output["error"] as? String, "instance_busy")
+    XCTAssertEqual(output["sessionId"] as? String, "hourly-refresh-session-249")
+    XCTAssertEqual(output["exitCode"] as? Int, 1)
+    XCTAssertEqual(result.stderr, "instance_busy\n")
+    let requests = await fake.requests
+    XCTAssertEqual(requests.count, 2)
+    XCTAssertEqual(requests.last?.httpMethod, "POST")
+  }
+
+  func testRunBusyWithoutSessionKeepsGenericFailure() async throws {
+    let fake = ScriptedAppTransport([bootstrap, reply(409, #"{"error":{"code":"instance_busy"}}"#)])
+    let result = await invoke("run", [], fake)
+    XCTAssertEqual(result.exitCode, .failure)
+    let output = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    XCTAssertEqual(Set(output.keys), Set(["error", "exitCode"]))
+    XCTAssertEqual(output["error"] as? String, "instance_busy")
+    XCTAssertEqual(output["exitCode"] as? Int, 1)
+    XCTAssertEqual(result.stderr, "instance_busy\n")
+  }
+
+  func testNonRunRejectsOverlapWithoutRequest() async {
+    for action in ["reload", "executions"] {
+      let fake = ScriptedAppTransport([])
+      let result = await invoke(action, ["--allow-overlap"], fake)
+      XCTAssertEqual(result.exitCode, .usage)
+      XCTAssertEqual(result.stderr, "instance_invalid_options\n")
+      let requests = await fake.requests
+      XCTAssertTrue(requests.isEmpty)
+    }
+  }
+
   func testExecutionsClosedFieldsAndFailures() async throws {
     let fake = ScriptedAppTransport([bootstrap, reply(200, #"{"items":[{"sessionId":"s","status":"completed","extra":"discard"}],"truncated":false}"#)])
     let result = await invoke("executions", ["--limit", "1"], fake)

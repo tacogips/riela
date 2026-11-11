@@ -592,3 +592,164 @@ Each command's exit status and complete log go under `tmp/instance-cancel/`
   when it is the only one; a retry succeeds.
 - Process-spawning tests can leak processes. Every fixture records its pids,
   bounds its waits and SIGKILLs the recorded pids in tearDown.
+
+## 8. Post-merge integration with main (`4841a578` merged as `8ab7f848`)
+
+Main added the manual-run busy check (`design-manual-run-overlap-and-terminal-reserve.md`
+§3.1–§3.4: `LiveRootSessionProbe`, HTTP 409 `instance_busy` unless
+`allowOverlap`) and the terminal-reserve precondition. Three focused test areas
+fail on the merge commit. This section records the verified root cause and the
+fix boundary for each one. It does not change C1–C9 or main's busy semantics.
+
+### 8.1 Concurrent same-identity launches vs. `instance_busy`
+
+Verified: `launchConfiguredWorkflow(... allowOverlap: Bool = false)`
+(`Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift`) treats any
+`running` in-process launch with the same identity as busy, and so does
+`LiveRootSessionProbe` (created/running root session that holds its flock).
+`ConfiguredLaunchCancelTests.testConfiguredLaunchCancellationIsIdentityAndSessionScoped`
+starts two launches for identity `one` without `allowOverlap`. The 409 on the
+second launch is main's intended behavior, not a cancel defect.
+
+Decisions:
+
+- The test needs two concurrent executions, so the **second** launch passes
+  `allowOverlap: true`. The first launch keeps the default, which keeps the
+  first launch and the 202 assertion unchanged. Every existing cancel
+  assertion stays as it is.
+- The test adds busy-semantics assertions:
+  1. While both are running, a third launch without `allowOverlap` returns 409
+     `instance_busy`, and `runningSessionId` is the oldest blocker.
+  2. **Post-cancel liveness agreement.** After both sessions are cancelled and
+     the store reports `cancelled` for both, a launch for identity `one`
+     without `allowOverlap` returns 202. "After cancel" is defined as the
+     point where `instance cancel --wait` returns success, which is store
+     session status `cancelled` (`InstanceAppCommands.cancel`). The assertion
+     is made at that point, with no extra wait for launch-task teardown.
+- **Required code fix (DR-01).** The busy check has two sources (§3.3
+  rule 1: in-process launch `status == running`; rule 2: store probe). The
+  source order is confirmed:
+  1. `Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift`
+     persists the terminal `cancelled` status before its awaited
+     completion-event work and before the command returns.
+  2. Only then does `job.finish`
+     (`Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift`)
+     update the launch snapshot.
+  3. `instance cancel --wait` already returns as soon as the store reads
+     `cancelled` (`Sources/RielaCLI/InstanceAppCommands.swift`).
+
+  In that window, rule 1 refuses a same-identity launch with 409 for a
+  session the store calls terminal, which breaks the accepted criterion. The
+  fix is therefore required. It does not depend on whether a polling test
+  happens to hit the window.
+
+  Rule 1 is narrowed. An in-process `running` launch does not count as busy
+  when its `sessionId` is known **and** its persisted root session is
+  terminal (`cancelled`/`completed`/`failed`, read through the same read-only
+  store access the probe uses). This applies the §3.1 item 3 status
+  predicate to rule 1. It is not a new semantic.
+
+  These still block, unchanged:
+  - launches with no session id yet (`pending`);
+  - launches whose persisted session is `created`/`running`;
+  - launches whose persisted status cannot be read (store read error or
+    missing record). This is fail-closed for in-process launches. Rule 2
+    stays fail-open as main defined it;
+  - all rule 2 (store probe) blockers.
+- **Required deterministic regression coverage.** A test in
+  `ConfiguredLaunchCancelTests` sets up the window state directly instead of
+  relying on timing.
+  - Setup: an in-process launch registered for identity `one` with a snapshot
+    of `status: running` and a known `sessionId`. That root session is
+    persisted as `cancelled` in the temp store, with no live flock.
+  - Expected: a request for `one` without `allowOverlap` returns 202 when no
+    other blocker exists.
+
+  Companion cases in the same suite show that the check still returns 409
+  `instance_busy` for:
+  - a running launch with no session id (`runningSessionId: "pending"`);
+  - a running launch whose persisted session is `running` or `created`.
+
+  The test must fail before the correction and pass after it. The
+  two-live-launch overlap assertions (assertion 1) and every existing
+  cancellation assertion stay as they are. Assertion 2 is kept as an
+  end-to-end check, but it is not what justifies the fix.
+- Unchanged: `allowOverlap` wire shape, `--allow-overlap`, the 409 body, the
+  CLI `{error:instance_busy,sessionId,exitCode:1}` mapping, the cron overlap
+  probe, and the docs in `docs/app-instance-control.md`.
+
+### 8.2 `TaskCancellationIntegrationTests` selected-host stop proof
+
+Verified root cause: the regression comes from this branch, not from main.
+`git diff 293527c8 8ab7f848` touches only
+`DeterministicWorkflowRunner+LoopPolicy.swift` and `LoopTerminalCorridor.swift`
+under `Sources/RielaCore`, and touches nothing under `Sources/RielaAdapters`,
+`Sources/RielaWork` or `Sources/RielaServer`. The fixture
+(`TaskCancellationIntegrationTests+Fixtures.swift`,
+`assertSelectedHostCancellation`) runs a leader and a child that both do
+`trap '' TERM`, then waits at most **4 s** (`proofDeadline`) for the worker's
+executor to throw after Task cancellation. Before C8, `LocalProcess` sent
+SIGKILL 1 s after SIGTERM. C8 (`LocalProcessHandle.waitForCancellation`,
+`cancellationGrace: TimeInterval = 5` in `Sources/RielaAdapters/LocalProcess.swift`)
+deliberately keeps the leader alive for the full 5 s grace when it ignores
+SIGTERM. The executor therefore throws after more than 5 s, and the 4 s wait
+expires first. The task then stays `running` because the test never reaches
+the stop-gate release.
+
+Decision: keep C8's 5 s grace. It is documented user-facing behavior
+(`docs/app-instance-control.md` Cancel section: "SIGKILL after a 5-second
+grace period … up to 5 seconds instead of 1 second"), and the accepted scope
+requires the documented cancel behavior to stay unchanged. §7 already lists
+"Existing tests that assume 1 s must be checked". The fix is a test-intent
+correction, not an assertion change. The fixture's wait bound for the delayed
+stop receipt becomes the cancellation grace + hard bound + a scheduling
+margin. For example, a constant tied to the 5 s defaults (≥ 12 s). The bound
+stays in the same loop and still fails with "Worker did not reach its delayed
+stop receipt". Every assertion stays as it is: stop-gate paused, pending
+unacknowledged cancellation, job `cancelled` with `stoppedAt == nil`, no stop
+proof after worker loss, a single lease, both processes stopped, and durable
+`stoppedAt`. Plan rule: the implementer first confirms the hypothesis by
+running the test at `293527c8` (expected to fail the same way) and at
+`8ab7f848` with a temporarily raised wait (expected to pass). If either check
+contradicts the hypothesis, they stop and report instead of applying the
+change. `LocalProcess` code changes are out of scope unless that check
+exposes a real defect, such as the executor never throwing or the tree
+surviving past grace + hard bound.
+
+### 8.3 Definition-store schema generation
+
+Verified: the current runtime store generation is 12.
+`SQLiteSchemaMigration(fromGeneration: 11)` calls
+`SQLiteRuntimeExecutionRowsSchema.migrateToGeneration12`
+(`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift`).
+It was introduced on purpose by
+`design-docs/specs/design-session-storage-efficiency-and-default-gc.md` §3.2
+("generation 12, additive DDL only"). It does not come from the stale-definition
+design, and it already exists at `c6e127b6`. `WorkflowDefinitionStoreTests`
+predates it and still asserts `user_version == "11"`. Neither the migration
+nor the definition schema is broken: generation 12 adds only payload-ref DDL.
+
+Decision: update the tests rather than the code. Rename
+`testFreshStoreCreatesDefinitionSchemaAtGenerationEleven` to
+`...AtCurrentGeneration` and assert `user_version` against the store's
+current-generation constant, or the literal `"12"` if no constant is visible
+to the test. Make the same change for both stamps in
+`testGenerationNineMigratesInPlaceAndKeepsSession`, so the 9 → current
+migration path, including 11 → 12, stays covered. The definition-table and
+session-survival assertions stay as they are. No user-DB-affecting change.
+
+### 8.4 Verification and integration
+
+Logs and exit statuses go under `tmp/instance-cancel-integration/`. All
+commands run in `arch -arm64 /bin/zsh -lc`.
+
+- `swift build`.
+- `swift test --filter 'ConfiguredLaunchCancelTests|TaskCancellationIntegrationTests|WorkflowDefinitionStoreTests'`,
+  then the selected-host test repeated at least 3 times (timing check).
+- `swift test --filter 'Instance|Cancel|Overlap|TerminalReserv|LiveRootSession|LoopPolicy|DefinitionStore|WallClock'`:
+  0 unexpected failures.
+- `swiftlint` on changed files.
+- Integration: re-fetch `origin/main` immediately before integrating. If it
+  moved past `4841a578`, merge it again and re-run the focused filter.
+  Fast-forward `main` to the verified branch tip (no rewrite) and push `main`
+  and `feat/instance-cancel`. Never use bare `git stash`.

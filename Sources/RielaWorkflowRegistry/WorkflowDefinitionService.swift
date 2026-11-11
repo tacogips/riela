@@ -126,6 +126,132 @@ public struct WorkflowDefinitionService: Sendable {
 
   private let defaultHistoryRetention: Int
 
+  private struct SourceEvaluation {
+    var current: WorkflowDefinitionCurrent
+    var currentDoc: WorkflowDefinitionDocument
+    var report: WorkflowDefinitionSourceDriftReport
+    var fileBundle: ResolvedWorkflowBundle?
+    var fileDoc: WorkflowDefinitionDocument?
+  }
+
+  public func workflowNames() throws -> [String] { try store.workflowNames() }
+
+  public func inspectSourceDrift(
+    workflowName: String, workingDirectory: String, fileResolver: any WorkflowBundleResolving
+  ) throws -> WorkflowDefinitionSourceDriftReport? {
+    try evaluateSource(workflowName: workflowName, workingDirectory: workingDirectory, fileResolver: fileResolver)?.report
+  }
+
+  private func evaluateSource(
+    workflowName: String, workingDirectory: String, fileResolver: any WorkflowBundleResolving
+  ) throws -> SourceEvaluation? {
+    guard let current = try store.current(workflowName: workflowName) else { return nil }
+    let currentDoc = try document(current.document)
+    let currentDigest = try currentDoc.digest()
+    let baseline = (try? store.document(versionId: current.head.lastFileVersionId))
+      .flatMap { try? WorkflowDefinitionDocument.decode($0).digest() }
+    var bundle: ResolvedWorkflowBundle?
+    var fileDoc: WorkflowDefinitionDocument?
+    var digest: String?
+    var problem: WorkflowDefinitionSourceDriftResult?
+    var detail: String?
+    if !FileManager.default.fileExists(atPath: current.head.sourceDirectory) {
+      problem = .sourceUnavailable
+      detail = "Source directory is unavailable: \(current.head.sourceDirectory)"
+    } else {
+      do {
+        let resolved = try fileResolver.resolve(WorkflowResolutionOptions(
+          workflowName: workflowName, workflowDefinitionDir: current.head.sourceDirectory, workingDirectory: workingDirectory
+        ))
+        guard resolved.workflow.workflowId == workflowName else { throw invalidDefinition("file workflowId does not match registered workflow") }
+        let doc = try WorkflowDefinitionDocument.make(from: resolved)
+        let diagnostics = DefaultWorkflowValidator().validate(doc.runtime.workflow)
+          + doc.runtime.nodePayloads.keys.sorted().flatMap { validateAgentNodePayload(doc.runtime.nodePayloads[$0]!, path: "nodes.\($0)") }
+        if let error = diagnostics.first(where: { $0.severity == .error }) { throw invalidDefinition(error.message) }
+        digest = try doc.digest()
+        bundle = resolved
+        fileDoc = doc
+      } catch {
+        problem = .sourceInvalid
+        detail = String(String(describing: error).prefix(500))
+      }
+    }
+    let report = WorkflowDefinitionSourceDriftReport(
+      workflowName: workflowName, currentVersionId: current.head.currentVersionId,
+      lastFileVersionId: current.head.lastFileVersionId, sourceDirectory: current.head.sourceDirectory,
+      result: WorkflowDefinitionSourceDrift.classify(
+        fileDigest: digest, fileProblem: problem, baselineDigest: baseline, currentDigest: currentDigest,
+        currentVersionId: current.head.currentVersionId, lastFileVersionId: current.head.lastFileVersionId,
+        currentOperation: current.version.operation
+      ), fileDigest: digest, baselineDigest: baseline, currentDigest: currentDigest, detail: detail
+    )
+    return SourceEvaluation(current: current, currentDoc: currentDoc, report: report, fileBundle: bundle, fileDoc: fileDoc)
+  }
+
+  public func syncFromSourceIfUntouched(
+    workflowName: String, workingDirectory: String, actor: WorkflowDefinitionActor, fileResolver: any WorkflowBundleResolving
+  ) throws -> WorkflowDefinitionSourceSyncOutcome? {
+    guard let evaluation = try evaluateSource(workflowName: workflowName, workingDirectory: workingDirectory, fileResolver: fileResolver)
+    else { return nil }
+    let current = evaluation.current
+    let report = evaluation.report
+    guard report.result == .autoSync, let bundle = evaluation.fileBundle, let doc = evaluation.fileDoc,
+          let digest = report.fileDigest else {
+      let path: String? = switch report.result {
+      case .inSync, .autoSync: nil
+      case .drift: "definitionStore.sourceDrift"
+      case .sourceInvalid: "definitionStore.sourceInvalid"
+      case .sourceUnavailable: "definitionStore.sourceUnavailable"
+      }
+      return WorkflowDefinitionSourceSyncOutcome(
+        report: report, bundle: evaluation.currentDoc.resolvedBundle(head: current.head, version: current.version, storeRoot: storeRoot),
+        diagnostics: path.map { [WorkflowDefinitionSourceDrift.diagnostic(for: report, path: $0, syncedVersionId: nil, auditId: nil)] } ?? [],
+        syncedVersion: nil, audit: nil
+      )
+    }
+    let write = WorkflowDefinitionWrite(
+      workflowName: workflowName, operation: .import, documentData: try doc.canonicalData(), documentDigest: digest,
+      sourceDirectory: bundle.workflowDirectory, sourceScope: bundle.sourceScope.rawValue, provenance: bundle.provenance.rawValue,
+      actor: WorkflowDefinitionActor(kind: actor.kind, id: WorkflowDefinitionSourceDrift.autoSyncActorId),
+      reason: "auto-synced from \(current.head.sourceDirectory) on \(actor.id ?? actor.kind.rawValue) service run: file digest \(digest) differs from last file import \(current.head.lastFileVersionId)",
+      evidence: [], diff: diffDocuments(evaluation.currentDoc, doc), expectedCurrentVersionId: current.head.currentVersionId,
+      defaultHistoryRetention: defaultHistoryRetention
+    )
+    let result: WorkflowDefinitionCommitOutcome
+    do {
+      result = try store.commit(write)
+    } catch {
+      return try sourceConflict(workflowName: workflowName, report: report, digest: digest, detail: String(describing: error))
+    }
+    guard case let .created(version, audit) = result else {
+      return try sourceConflict(workflowName: workflowName, report: report, digest: digest, detail: "definition already registered")
+    }
+    let head = try store.head(workflowName: workflowName)
+    return WorkflowDefinitionSourceSyncOutcome(
+      report: report, bundle: doc.resolvedBundle(head: head, version: version, storeRoot: storeRoot),
+      diagnostics: [WorkflowDefinitionSourceDrift.diagnostic(for: report, path: "definitionStore.autoSynced",
+        syncedVersionId: version.versionId, auditId: audit.auditId)], syncedVersion: version, audit: audit
+    )
+  }
+
+  private func sourceConflict(
+    workflowName: String, report original: WorkflowDefinitionSourceDriftReport, digest: String, detail: String
+  ) throws -> WorkflowDefinitionSourceSyncOutcome? {
+    guard let current = try store.current(workflowName: workflowName) else { return nil }
+    let doc = try document(current.document)
+    var report = original
+    report.currentVersionId = current.head.currentVersionId
+    report.lastFileVersionId = current.head.lastFileVersionId
+    report.currentDigest = try doc.digest()
+    report.detail = detail
+    let diagnostics = report.currentDigest == digest ? [] : [WorkflowDefinitionSourceDrift.diagnostic(
+      for: report, path: "definitionStore.autoSyncConflict", syncedVersionId: nil, auditId: nil
+    )]
+    return WorkflowDefinitionSourceSyncOutcome(report: report,
+      bundle: doc.resolvedBundle(head: current.head, version: current.version, storeRoot: storeRoot),
+      diagnostics: diagnostics, syncedVersion: nil, audit: nil)
+  }
+
   public func lookup(workflowName: String) throws -> ResolvedWorkflowBundle? {
     guard let current = try store.current(workflowName: workflowName) else { return nil }
     return try document(current.document).resolvedBundle(head: current.head, version: current.version, storeRoot: storeRoot)

@@ -2,6 +2,8 @@ import Foundation
 import RielaAdapters
 import RielaAddons
 import RielaCore
+import RielaSQLite
+import RielaWorkflowRegistry
 
 public enum DoctorCheckStatus: String, Codable, Equatable, Sendable {
   case ok
@@ -26,6 +28,7 @@ public struct DoctorCommandResult: Codable, Equatable, Sendable {
   public var containerRuntimes: [DoctorContainerRuntime]
   public var backendCapabilities: [BackendCapability]
   public var hostTraits: [HostTrait]
+  public var definitionSources: [DoctorDefinitionSourceReport]
   public var summary: DoctorSummary
 }
 
@@ -72,6 +75,17 @@ public struct DoctorContainerRuntime: Codable, Equatable, Sendable {
   public var resolvedPath: String?
 }
 
+public struct DoctorDefinitionSourceReport: Codable, Equatable, Sendable {
+  public var storeRoot: String
+  public var workflowName: String?
+  public var currentVersionId: String?
+  public var lastFileVersionId: String?
+  public var sourceDirectory: String?
+  public var result: String
+  public var status: DoctorCheckStatus
+  public var message: String?
+}
+
 public struct DoctorSummary: Codable, Equatable, Sendable {
   public var status: DoctorCheckStatus
   public var packagesChecked: Int
@@ -80,6 +94,7 @@ public struct DoctorSummary: Codable, Equatable, Sendable {
   public var missingContainerRequirements: Int
   public var availableContainerRuntimes: Int
   public var availableBackends: Int
+  public var definitionSourceWarnings: Int
 }
 
 public struct DoctorCommand: Sendable {
@@ -188,8 +203,11 @@ public struct DoctorCommand: Sendable {
     )
     let backendCapabilities = localSnapshots.first?.backends ?? []
     let hostTraits = localSnapshots.first?.traits.sorted() ?? []
+    let definitionSources = definitionSourceReports(parsed: parsed, workingDirectory: workingDirectory.path)
+    let definitionSourceWarnings = definitionSources.filter { $0.status == .warning }.count
     let summaryStatus: DoctorCheckStatus =
-      missingEnvironment == 0 && missingRuntimeHints == 0 && missingContainerRequirements == 0 ? .ok : .warning
+      missingEnvironment == 0 && missingRuntimeHints == 0 && missingContainerRequirements == 0
+        && definitionSourceWarnings == 0 ? .ok : .warning
     return DoctorCommandResult(
       scope: parsed.scope.rawValue,
       workingDirectory: workingDirectory.path,
@@ -200,6 +218,7 @@ public struct DoctorCommand: Sendable {
       containerRuntimes: containerRuntimes,
       backendCapabilities: backendCapabilities,
       hostTraits: hostTraits,
+      definitionSources: definitionSources,
       summary: DoctorSummary(
         status: summaryStatus,
         packagesChecked: packageReports.count,
@@ -207,8 +226,87 @@ public struct DoctorCommand: Sendable {
         missingRuntimeHints: missingRuntimeHints,
         missingContainerRequirements: missingContainerRequirements,
         availableContainerRuntimes: availableContainerRuntimes,
-        availableBackends: backendCapabilities.filter { $0.availability == .available }.count
+        availableBackends: backendCapabilities.filter { $0.availability == .available }.count,
+        definitionSourceWarnings: definitionSourceWarnings
       )
+    )
+  }
+
+  private func definitionSourceReports(parsed: ParsedParityOptions, workingDirectory: String) -> [DoctorDefinitionSourceReport] {
+    let roots = WorkflowDefinitionStoreSelection.candidateRoots(
+      sessionStore: parsed.sessionStore, scope: parsed.scope, workingDirectory: workingDirectory
+    )
+    var reports: [DoctorDefinitionSourceReport] = []
+    var seen: Set<String> = []
+    for root in roots where seen.insert(root).inserted {
+      let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root)
+      guard FileManager.default.fileExists(atPath: path) else { continue }
+      do {
+        guard try definitionStorePrecheck(path: path) else { continue }
+        let resolver = FileSystemWorkflowBundleResolver()
+        let service = WorkflowDefinitionService(storeRoot: root, fileResolver: resolver)
+        for name in try service.workflowNames() {
+          do {
+            guard let report = try service.inspectSourceDrift(
+              workflowName: name, workingDirectory: workingDirectory, fileResolver: resolver
+            ) else { continue }
+            reports.append(definitionSourceReport(report, root: root))
+          } catch {
+            reports.append(unreadableDefinitionStore(root: root, workflowName: name, message: "\(error)"))
+          }
+        }
+      } catch {
+        reports.append(unreadableDefinitionStore(root: root, workflowName: nil, message: "\(error)"))
+      }
+    }
+    return reports
+  }
+
+  private struct DefinitionStorePrecheckError: Error, CustomStringConvertible {
+    var description: String
+  }
+
+  private func definitionStorePrecheck(path: String) throws -> Bool {
+    let db = try SQLiteDatabase.open(path: path, mode: .strictReadOnly, options: .readOnlyDefault)
+    let generation = try SQLiteSchemaMigrator.stampedGeneration(in: db)
+    guard generation == SQLiteWorkflowRuntimePersistenceStore.schemaGeneration else {
+      throw DefinitionStorePrecheckError(description: "Schema generation \(generation) differs from current generation \(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)")
+    }
+    guard try db.tableExists("definition_heads") else { return false }
+    let journalMode = try db.query("PRAGMA journal_mode").first?["journal_mode"]
+    guard journalMode?.lowercased() == "wal" else {
+      throw DefinitionStorePrecheckError(description: "Journal mode must be WAL (found \(journalMode ?? "unknown"))")
+    }
+    return true
+  }
+
+  private func unreadableDefinitionStore(root: String, workflowName: String?, message: String) -> DoctorDefinitionSourceReport {
+    DoctorDefinitionSourceReport(storeRoot: root, workflowName: workflowName, currentVersionId: nil,
+                                 lastFileVersionId: nil, sourceDirectory: nil, result: "storeUnreadable",
+                                 status: .unknown, message: message)
+  }
+
+  private func definitionSourceReport(_ report: WorkflowDefinitionSourceDriftReport, root: String) -> DoctorDefinitionSourceReport {
+    let result: String
+    let diagnosticPath: String
+    switch report.result {
+    case .inSync: result = "inSync"; diagnosticPath = ""
+    case .autoSync: result = "pendingAutoSync"; diagnosticPath = "definitionStore.pendingAutoSync"
+    case .drift: result = "drift"; diagnosticPath = "definitionStore.sourceDrift"
+    case .sourceInvalid: result = "sourceInvalid"; diagnosticPath = "definitionStore.sourceInvalid"
+    case .sourceUnavailable: result = "sourceUnavailable"; diagnosticPath = "definitionStore.sourceUnavailable"
+    }
+    var message: String?
+    if report.result != .inSync {
+      message = WorkflowDefinitionSourceDrift.diagnostic(
+        for: report, path: diagnosticPath, syncedVersionId: nil, auditId: nil
+      ).message
+      if report.result == .autoSync { message = (message ?? "") + " The next service run will import the file." }
+    }
+    return DoctorDefinitionSourceReport(
+      storeRoot: root, workflowName: report.workflowName, currentVersionId: report.currentVersionId,
+      lastFileVersionId: report.lastFileVersionId, sourceDirectory: report.sourceDirectory,
+      result: result, status: report.result == .inSync ? .ok : .warning, message: message
     )
   }
 
@@ -325,6 +423,14 @@ public struct DoctorCommand: Sendable {
     for runtime in result.containerRuntimes {
       let detail = runtime.resolvedPath ?? "not found"
       lines.append("- \(runtime.status.rawValue) \(runtime.command): \(detail)")
+    }
+    let sourceIssues = result.definitionSources.filter { $0.status != .ok }
+    if !sourceIssues.isEmpty {
+      lines.append("")
+      lines.append("Definition sources:")
+      for source in sourceIssues {
+        lines.append("- \(source.status.rawValue) \(source.workflowName ?? "store") (\(source.storeRoot)): \(source.result) — \(source.message ?? "")")
+      }
     }
     return lines.joined(separator: "\n") + "\n"
   }

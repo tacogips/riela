@@ -607,7 +607,10 @@ whole-step `deadlineMs` and a bounded `retry` policy (`maxAttempts`,
 `initialDelayMs`, `multiplier`, `maxDelayMs`, `jitter`). The existing
 `timeoutMs` stays the per-attempt timeout; `deadlineMs` also covers queue
 waits, Retry-After and backoff, so an HTTP timeout alone is not treated as a
-save-job deadline. A step is retried only when its failure is classified
+save-job deadline. Node and step timeouts (`nodeTimeoutMs`, `timeoutMs`,
+`deadlineMs`) count elapsed wall-clock time, including host sleep; see
+[step deadline and retry](docs/workflows/step-deadline-and-retry.md#timeout-clock).
+A step is retried only when its failure is classified
 retryable and its effect is not `unknown`. For Notion writes, 429/409
 rejections are retried and honor Retry-After. Ambiguous writes (missing or
 `unknown` `mutationOutcome`, or a failure after `createPage`/`appendBlocks`
@@ -813,8 +816,16 @@ Fanout `changeEvidence` keeps a bounded inline `observations` list and reports
 ## Workflow Definition Store (service vs one-time runs)
 
 Long-running service workflows use the SQLite definition store in the runtime
-records database. The workflow files seed the store on first use; later file
-edits do not replace a registered definition automatically. One-time
+records database. The workflow files seed the store on first use. At each
+service run start, a valid edited source auto-syncs an untouched head (head
+still equals the last file-imported version) as an audited `import` by actor
+`service-auto-sync`. An independently edited head is never overwritten: the
+run keeps it and emits a `definitionStore.sourceDrift` warning on stderr and in
+session diagnostics. Invalid or missing sources keep the stored head and warn
+(`definitionStore.sourceInvalid` / `sourceUnavailable`). `riela doctor` reports
+the same drift read-only under `Definition sources:`. Adopt the file over an
+edited head with `riela instance reload` or
+`riela workflow definition import <workflow> --force --reason <reason>`. One-time
 `riela workflow run` continues to read workflow files only and never reads or
 writes definition rows.
 

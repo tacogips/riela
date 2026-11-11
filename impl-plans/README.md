@@ -162,6 +162,34 @@ active until the dispatch run closes; it records the original plan paths.
 Combined-tree re-verification after the rebase onto main, the final commit and
 the push remain workflow steps.
 
+Stale service definitions and wall-clock deadlines (ART hourly-refresh outage,
+2026-11-10) are implemented and accepted on `fix/stale-definition-wall-deadline`.
+There is no GitHub issue. Plans `sdwd-01` … `sdwd-05` are archived under
+[`completed/sdwd-*.md`](completed/):
+[`sdwd-01-wall-clock-core`](completed/sdwd-01-wall-clock-core.md),
+[`sdwd-02-source-drift-service`](completed/sdwd-02-source-drift-service.md),
+[`sdwd-03-service-resolution-integration`](completed/sdwd-03-service-resolution-integration.md),
+[`sdwd-04-doctor-drift-report`](completed/sdwd-04-doctor-drift-report.md) and
+[`sdwd-05-wall-clock-adapters`](completed/sdwd-05-wall-clock-adapters.md).
+Service-mode resolution auto-syncs untouched heads from edited valid bundle
+files (audited `import`, actor `service-auto-sync`), warns on drift, invalid or
+missing sources, and `riela doctor` reports drift read-only after a strict
+read-only store precheck (IR-SDWD04-DOCTOR-RULING). LocalProcess, step
+supervisor, distributed worker, ACP and file-markdown deadlines fire at the
+absolute wall-clock `Date`. The designs are
+[`design-workflow-definition-store`](../design-docs/specs/design-workflow-definition-store.md)
+and
+[`design-wall-clock-deadlines`](../design-docs/specs/design-wall-clock-deadlines.md);
+user docs are in
+[`docs/workflow-definition-store.md`](../docs/workflow-definition-store.md#source-drift-and-auto-sync)
+and
+[`docs/workflows/step-deadline-and-retry.md`](../docs/workflows/step-deadline-and-retry.md#timeout-clock).
+Integration review passed 217 tests with 0 failures
+(`tmp/stale-definition/serial-reconcile-wave-005/`); the sdwd-04 doctor gates
+passed 30 tests. Browser E2E was skipped because no `web/` file changed. The
+dispatch manifest `active/stale-definition-dispatch.json` stays active until
+the dispatch run closes; it records the original plan paths.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

@@ -32,7 +32,7 @@ public extension RielaWebWorkflowRequestHandler {
         inner: fileResolver,
         sessionStore: context.sessionStoreRoot,
         actor: .init(kind: .api, id: "configured-run"),
-        mode: .lookupOrSeed
+        mode: .lookupOnly
       )
       let bundle: ResolvedWorkflowBundle
       if let stored = try storeResolver.lookup(resolution) {

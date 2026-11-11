@@ -124,8 +124,8 @@ Cases:
 
 ## Acceptance criteria
 
-- [ ] The new type and fields exist. Existing doctor tests pass unchanged.
-- [ ] All new cases are present and pass.
+- [x] The new type and fields exist. Existing doctor tests pass unchanged.
+- [x] All new cases are present and pass.
 
 ## Verification (arm64; logs plus `.exit` under the evidence root)
 
@@ -145,3 +145,7 @@ the files in writePaths. Log sibling build breaks and re-run.
 
 `impl-plans/progress/sdwd-04-doctor-drift-report.md` holds the commands,
 exit codes, log paths, hashes and the checked acceptance list.
+
+## Amendment 2026-11-11 (IR-SDWD04-DOCTOR-RULING)
+
+IR-SDWD04-DOCTOR-RULING: sdwd-04 was blocked twice with no DoctorCommand.swift change, so `riela doctor` has no definitionSources drift report. The worker's rebuttal of round 1 is correct: SQLiteDatabase.open(mode: .readOnly) falls back to SQLITE_OPEN_READWRITE (SQLiteDatabase.swift:174-181), and the later service open runs schema preparation. As design author, integration review now rules on design §8 'read-only'. It means no seed, import or auto-sync, no definition_* row writes, and never creating, migrating or discarding a store. A writable service open is permitted only after a .strictReadOnly precheck proves three things: the store is at SQLiteWorkflowRuntimePersistenceStore.schemaGeneration, has definition_heads, and is already in WAL journal mode. On such a store the open's schema preparation is idempotent, so it neither migrates nor discards. This is the same open path the existing read-only `riela workflow definition history|show|diff` commands already use. The TOCTOU replacement window is an accepted residual. No RielaCore or Registry change is authorized or needed.

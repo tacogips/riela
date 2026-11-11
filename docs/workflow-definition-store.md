@@ -10,7 +10,7 @@ initial definition; after seeding, the SQLite head is authoritative.
 
 | Run path | Definition and prompt source | Session record |
 | --- | --- | --- |
-| Service mode: GraphQL `executeWorkflow`, RielaApp configured runs, `riela events serve` (including cron and routines), and daemon workflows | SQLite definition store. On first use, the workflow files seed a head. Later edits to workflow, node, shared-node, base, or prompt files are ignored until an explicit import or update. | `definitionSource.kind = store`, with pinned `versionId`, `digest`, and `storeRoot` |
+| Service mode: GraphQL `executeWorkflow`, RielaApp configured runs, `riela events serve` (including cron and routines), and daemon workflows | SQLite definition store. On first use, the workflow files seed a head. Later valid file edits auto-sync when the head is untouched; independently edited heads are kept with a drift warning. | `definitionSource.kind = store`, with pinned `versionId`, `digest`, and `storeRoot` |
 | One-time `riela workflow run` and callers that do not select service mode | Workflow files only. The run does not read or write definition rows. | `definitionSource.kind = file`, with source path, scope, and digest |
 
 Service store selection uses an explicit session store when supplied; otherwise
@@ -24,6 +24,17 @@ Registry updates, editor saves, and `riela workflow register` or
 `riela workflow update` do not write the definition store. They remain
 file-based registry operations. Use the `riela workflow definition` commands
 below to inspect or change a stored definition.
+
+## Source drift and auto-sync
+
+At service run start, a valid changed source auto-syncs an untouched head as an
+audited `import` by actor `service-auto-sync`. An independently edited head is
+kept and emits `definitionStore.sourceDrift`; inspect it and use `riela instance
+reload` or `riela workflow definition import <workflow> --force --reason <reason>`
+to adopt the source. Invalid or missing sources also leave the stored head in use
+and produce a warning. Warnings appear on stderr and in session snapshot
+diagnostics. `riela doctor` reports source drift. Instance reload and force
+import retain their existing behavior.
 
 ## Seed, import, force, and restore
 

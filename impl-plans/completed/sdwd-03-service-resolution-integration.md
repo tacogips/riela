@@ -211,12 +211,12 @@ must keep passing unchanged.
 
 ## Acceptance criteria
 
-- [ ] All listed cases exist and pass.
-- [ ] `WorkflowDefinitionServiceResolutionTests` passes, and any
+- [x] All listed cases exist and pass.
+- [x] `WorkflowDefinitionServiceResolutionTests` passes, and any
       expectation changes are logged with justification.
-- [ ] `grep -n "lookupOrSeed" Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift`
+- [x] `grep -n "lookupOrSeed" Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift`
       returns nothing.
-- [ ] The docs section exists.
+- [x] The docs section exists.
 
 ## Verification (arm64; logs plus `.exit` files under the evidence root)
 

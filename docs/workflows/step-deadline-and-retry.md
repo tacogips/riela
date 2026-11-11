@@ -38,6 +38,13 @@ no automatic retry. A deadline without retry still bounds a single attempt. The
 attempt deadline is the earlier of the step deadline and attempt start plus the
 effective timeout; a non-positive effective timeout uses the step deadline.
 
+## Timeout clock
+
+`nodeTimeoutMs`, `timeoutMs` and `deadlineMs` measure elapsed wall-clock time,
+including host sleep. A run can time out as soon as a sleeping host wakes.
+Wall-clock adjustments, including NTP or manual changes, move the deadline.
+Timeout values and defaults are unchanged.
+
 ## Deadline coverage
 
 A local fanout branch entry waiting for a slot expires actively at its deadline.

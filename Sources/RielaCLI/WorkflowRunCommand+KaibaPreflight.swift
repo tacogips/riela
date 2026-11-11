@@ -20,6 +20,7 @@ struct PreparedResolvedWorkflowRun {
   let variables: JSONObject
   let execution: PreparedWorkflowRunExecution
   let definitionSource: WorkflowDefinitionSource
+  let definitionStoreWarnings: [String]
 }
 
 extension WorkflowRunCommand {
@@ -48,6 +49,8 @@ extension WorkflowRunCommand {
       effectiveResolver: effectiveResolver,
       pendingDefinitionSeed: &pendingDefinitionSeed
     )
+    let definitionStoreWarnings = bundle.diagnostics.filter { $0.path.hasPrefix("definitionStore.") }
+      .map { "warning: \($0.path): \($0.message)" }
     try applyEntryStep(options.entryStepId, to: &bundle)
     let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
     let execution = try await prepareRunExecution(
@@ -73,7 +76,8 @@ extension WorkflowRunCommand {
       bundle: bundle,
       variables: variables,
       execution: execution,
-      definitionSource: definitionSource
+      definitionSource: definitionSource,
+      definitionStoreWarnings: definitionStoreWarnings
     )
   }
 

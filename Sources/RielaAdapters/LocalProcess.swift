@@ -706,7 +706,13 @@ private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
 /// exits. A command must not escape that group (setsid/setpgid/daemonization);
 /// detached services require a separately owned lifecycle, not this runner.
 public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEventStreaming {
+  var deadlineScheduler: any WallClockDeadlineScheduling = SystemWallClockDeadlineScheduler()
+
   public init() {}
+
+  init(deadlineScheduler: any WallClockDeadlineScheduling) {
+    self.deadlineScheduler = deadlineScheduler
+  }
 
   public func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalProcessResult {
     try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
@@ -842,7 +848,6 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
           }
 
           if let deadline {
-            let delay = max(0, deadline.timeIntervalSinceNow)
             let workItem = DispatchWorkItem {
               completion.markTimedOut()
               pipes.closeForFailureOrTimeout()
@@ -854,7 +859,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
               // after this invocation has reclaimed its owned group.
             }
             completion.setDeadlineWorkItem(workItem)
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
+            deadlineScheduler.schedule(at: deadline, on: DispatchQueue.global(qos: .utility), workItem)
           }
           DispatchQueue.global(qos: .utility).async {
             stdinWriter.writeAndClose(onStarted: stdinWriterStartedHandler)

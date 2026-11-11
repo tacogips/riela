@@ -126,10 +126,10 @@ validators.
 ```swift
 public func workflowNames() throws -> [String]   // passthrough to store.workflowNames()
 public func inspectSourceDrift(workflowName: String, workingDirectory: String,
-  fileResolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver()) throws -> WorkflowDefinitionSourceDriftReport?
+  fileResolver: any WorkflowBundleResolving) throws -> WorkflowDefinitionSourceDriftReport?
 public func syncFromSourceIfUntouched(workflowName: String, workingDirectory: String,
   actor: WorkflowDefinitionActor,
-  fileResolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver()) throws -> WorkflowDefinitionSourceSyncOutcome?
+  fileResolver: any WorkflowBundleResolving) throws -> WorkflowDefinitionSourceSyncOutcome?
 ```
 
 **Shared evaluation (private).** It returns `nil` when there is no head.
@@ -253,7 +253,7 @@ bundle from `FileSystemWorkflowBundleResolver().resolve(...)`.
   exactly one import audit.
 - **Prepared-resolver isolation**: construct the service with
   `fileResolver: <a resolver that always returns the stale stored bundle>`.
-  Call `syncFromSourceIfUntouched` with the default `fileResolver`. The
+  Call `syncFromSourceIfUntouched` with an explicit `FileSystemWorkflowBundleResolver()`. The
   file's 21600000 is imported in both runtime and authoredFiles.
 - **`inspectSourceDrift`** on an untouched edited head → `autoSync`, and
   `definition_*` row counts are unchanged.
@@ -262,11 +262,11 @@ bundle from `FileSystemWorkflowBundleResolver().resolve(...)`.
 
 ## Acceptance criteria
 
-- [ ] The new file and service methods have exactly the contract
+- [x] The new file and service methods have exactly the contract
       signatures above.
-- [ ] No change to the existing method bodies in WorkflowDefinitionService.swift
+- [x] No change to the existing method bodies in WorkflowDefinitionService.swift
       (the diff is additive only).
-- [ ] All tests above are present and pass. The existing
+- [x] All tests above are present and pass. The existing
       `WorkflowDefinitionServiceTests`, `WorkflowDefinitionCommandTests`
       and `InstanceReloadSupportTests` pass.
 

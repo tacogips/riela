@@ -61,14 +61,15 @@ public struct DistributedWorkerNodeExecutor: Sendable {
       provider: "riela-worker", eventType: "remote.node_started", channel: .lifecycle,
       metadata: ["jobId": .string(job.id), "workspace": .string(request.workspace)]
     ))
+    let deadline = Date().addingTimeInterval(request.timeoutSeconds)
     let output = try await withThrowingTaskGroup(of: DistributedNodeOutput.self) { group in
       group.addTask {
         try await execute(request.invocation, workspace: workspace, context: .init(
-          deadline: Date().addingTimeInterval(request.timeoutSeconds), backendEventHandler: backendEventHandler
+          deadline: deadline, backendEventHandler: backendEventHandler
         ))
       }
       group.addTask {
-        try await Task.sleep(for: .seconds(request.timeoutSeconds))
+        try await wallClockSleep(until: deadline)
         throw AdapterExecutionError(.timeout, "worker execution deadline exceeded")
       }
       defer { group.cancelAll() }

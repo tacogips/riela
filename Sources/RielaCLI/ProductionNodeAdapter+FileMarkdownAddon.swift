@@ -583,7 +583,7 @@ private func withAnydocDeadline(
   return try await withThrowingTaskGroup(of: AnydocConversion.self) { group in
     group.addTask { try operation() }
     group.addTask {
-      try await Task.sleep(for: .seconds(remaining))
+      try await wallClockSleep(until: deadline)
       throw AdapterExecutionError(.timeout, "\(addonName) exceeded deadline while converting")
     }
     defer { group.cancelAll() }

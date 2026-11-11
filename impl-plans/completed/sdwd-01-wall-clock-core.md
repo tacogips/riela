@@ -142,12 +142,12 @@ No test may sleep for real longer than 2 s.
 
 ## Acceptance criteria
 
-- [ ] `Sources/RielaCore/WallClockDeadline.swift` exists with exactly the
+- [x] `Sources/RielaCore/WallClockDeadline.swift` exists with exactly the
       contract signatures above.
-- [ ] `grep -n "Task.sleep" Sources/RielaCore/WorkflowStepRetryPolicy.swift Sources/RielaCore/DistributedWorkerNodeExecutor.swift`
+- [x] `grep -n "Task.sleep" Sources/RielaCore/WorkflowStepRetryPolicy.swift Sources/RielaCore/DistributedWorkerNodeExecutor.swift`
       returns no deadline-enforcing match.
-- [ ] All `WallClockDeadlineTests` cases are present and pass.
-- [ ] The existing `StepRetry*` and `StepDeadline*` suites pass.
+- [x] All `WallClockDeadlineTests` cases are present and pass.
+- [x] The existing `StepRetry*` and `StepDeadline*` suites pass.
 
 ## Verification (arm64 shell; write the logs under the evidence root)
 

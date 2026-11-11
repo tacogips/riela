@@ -107,11 +107,11 @@ in `Tests/RielaAdaptersTests/LocalProcessAdmissionTests.swift` and
 
 ## Acceptance criteria
 
-- [ ] `grep -n "asyncAfter(deadline: .now() + delay" Sources/RielaAdapters/LocalProcess.swift`
+- [x] `grep -n "asyncAfter(deadline: .now() + delay" Sources/RielaAdapters/LocalProcess.swift`
       returns exactly one match, inside `scheduleKillIfRunning`.
-- [ ] No `Task.sleep` remains in the two modified deadline blocks.
-- [ ] All new tests pass. The existing LocalProcess* suites pass.
-- [ ] The docs section exists.
+- [x] No `Task.sleep` remains in the two modified deadline blocks.
+- [x] All new tests pass. The existing LocalProcess* suites pass.
+- [x] The docs section exists.
 
 ## Verification (arm64; logs plus `.exit` under the evidence root)
 

@@ -344,11 +344,8 @@ private final class GatewayDeadlineWatchdog: @unchecked Sendable {
     self.client = client
     self.sessionId = sessionId
     guard let deadline else { return }
-    let interval = deadline.timeIntervalSinceNow
     task = Task { [weak self] in
-      if interval > 0 {
-        try? await Task.sleep(for: .seconds(interval))
-      }
+      try? await wallClockSleep(until: deadline)
       guard !Task.isCancelled, let self else { return }
       self.lock.withLock { self.expired = true }
       try? await client.cancel(sessionId: sessionId)

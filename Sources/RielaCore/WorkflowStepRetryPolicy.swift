@@ -36,9 +36,7 @@ public struct SystemWorkflowRetryClock: WorkflowRetryClock {
   public init() {}
   public func now() -> Date { Date() }
   public func sleep(until: Date) async throws {
-    try Task.checkCancellation()
-    let seconds = until.timeIntervalSinceNow
-    if seconds > 0 { try await Task.sleep(for: .seconds(seconds)) }
+    try await wallClockSleep(until: until)
   }
 }
 

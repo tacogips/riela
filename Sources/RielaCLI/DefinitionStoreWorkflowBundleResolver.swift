@@ -13,6 +13,7 @@ public struct DefinitionStoreWorkflowBundleResolver: WorkflowBundleResolving {
   public let environment: [String: String]
   public let actor: WorkflowDefinitionActor
   public let mode: Mode
+  let sourceFileResolver: any WorkflowBundleResolving
 
   public init(
     inner: any WorkflowBundleResolving,
@@ -21,6 +22,13 @@ public struct DefinitionStoreWorkflowBundleResolver: WorkflowBundleResolving {
     actor: WorkflowDefinitionActor,
     mode: Mode
   ) {
+    self.init(inner: inner, sessionStore: sessionStore, environment: environment, actor: actor, mode: mode,
+              sourceFileResolver: FileSystemWorkflowBundleResolver())
+  }
+
+  init(inner: any WorkflowBundleResolving, sessionStore: String?, environment: [String: String],
+       actor: WorkflowDefinitionActor, mode: Mode, sourceFileResolver: any WorkflowBundleResolving) {
+    self.sourceFileResolver = sourceFileResolver
     self.inner = inner
     self.sessionStore = sessionStore
     self.environment = environment
@@ -39,6 +47,13 @@ public struct DefinitionStoreWorkflowBundleResolver: WorkflowBundleResolving {
       guard FileManager.default.fileExists(atPath: databasePath) else { continue }
       let service = WorkflowDefinitionService(storeRoot: root, fileResolver: inner)
       if var bundle = try service.lookup(workflowName: options.workflowName) {
+        if mode == .lookupOrSeed,
+           let outcome = try makeService(storeRoot: root, projectDirectory: options.workingDirectory)
+             .syncFromSourceIfUntouched(workflowName: options.workflowName, workingDirectory: options.workingDirectory,
+                                        actor: actor, fileResolver: sourceFileResolver) {
+          bundle = outcome.bundle
+          bundle.diagnostics.append(contentsOf: outcome.diagnostics)
+        }
         appendSourceDirectoryWarning(to: &bundle, options: options)
         return bundle
       }

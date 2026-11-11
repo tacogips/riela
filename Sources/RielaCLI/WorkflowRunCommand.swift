@@ -73,7 +73,7 @@ public struct WorkflowRunCommand: Sendable {
       let bundle = preparedRun.bundle
       let prepared = preparedRun.execution
       let definitionSource = preparedRun.definitionSource
-      gatewayValidationWarnings = prepared.gatewayValidationWarnings
+      gatewayValidationWarnings = preparedRun.definitionStoreWarnings + prepared.gatewayValidationWarnings
       let effectiveInstance = prepared.instance
       let effectiveVariables = effectiveInstance.configuration.defaultVariables
       let runContext = prepared.context
@@ -245,7 +245,7 @@ public struct WorkflowRunCommand: Sendable {
           storeRoot: storeRoot,
           telemetry: telemetry,
           jsonlRecorder: jsonlRecorder,
-          gatewayValidationWarnings: gatewayValidationWarnings,
+          gatewayValidationWarnings: gatewayValidationWarnings, definitionStoreWarnings: preparedRun.definitionStoreWarnings,
           canonicalPersistenceStore: durableRuntime.canonicalPersistenceStore
         )
       )
@@ -932,6 +932,7 @@ struct RunFinalizeContext {
   var telemetry: any RielaTelemetry
   var jsonlRecorder: WorkflowRunJSONLRecorder?
   var gatewayValidationWarnings: [String]
+  var definitionStoreWarnings: [String]
   var canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore?
 }
 
@@ -998,6 +999,9 @@ extension WorkflowRunCommand {
       try persist()
     }
     try afterTerminalPersistence?()
+    persistDefinitionStoreWarningsAfterTerminalPersistence(
+      warnings: context.definitionStoreWarnings, sessionId: finalResult.session.sessionId, storeRoot: context.storeRoot
+    )
     await dispatchLoopNotificationsAfterTerminalPersistence(
       finalResult: finalResult,
       loopEvidence: loopEvidence,

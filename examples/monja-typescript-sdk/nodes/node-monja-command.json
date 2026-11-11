@@ -6,8 +6,7 @@
   "command": {
     "scriptPath": "scripts/run-installed-command.sh",
     "arguments": [],
-    "environment": {},
-    "workingDirectory": "scripts"
+    "environment": {}
   },
   "input": {
     "description": "Provide workflowInput.graphql.query as a required string, workflowInput.graphql.operationName as an optional string, and workflowInput.graphql.variables as an optional JSON object. Credentials and transport configuration are inherited from the host environment, never from workflow input or argv."

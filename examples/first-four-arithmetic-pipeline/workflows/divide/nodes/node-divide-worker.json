@@ -13,8 +13,7 @@
     ],
     "envTemplate": {
       "ARITHMETIC_STAGE": "divide"
-    },
-    "workingDirectory": "scripts"
+    }
   },
   "output": {
     "description": "Return the division result as a JSON object."

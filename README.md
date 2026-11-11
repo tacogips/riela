@@ -148,6 +148,22 @@ aggregate tests inside AI nodes; retain tool-session handles until terminal
 exit and record complete logs. Long-lived services need an explicitly owned
 service/workflow lifecycle.
 
+A relative `workingDirectory` on a node, or on its `command` or `container`
+block, resolves against the run workspace root (`--working-dir` for
+`riela workflow run` and `riela package run`) before Riela starts any local
+agent, command or container backend. For example, `"tmp/work/src"` with
+`--working-dir /repo` runs in `/repo/tmp/work/src`. Riela normalizes `..`
+segments lexically and does not resolve symlinks. Absolute paths pass through
+unchanged, and the existing escape policy is unchanged. Execution records
+(`backendWorkingDirectory`) show the resolved absolute path. Steps with a
+`placement` still resolve paths against the remote worker's workspace.
+Migration note: a relative command `workingDirectory` no longer resolves
+against the workflow definition directory. A bundle that pairs
+`scriptPath: "scripts/x.sh"` with `workingDirectory: "scripts"` should drop
+`workingDirectory`, and the script should find its own files through
+`dirname "$0"`. The rule is in
+[design-workflow-json.md](design-docs/specs/design-workflow-json.md).
+
 Fresh workflow runs seed ID high-water marks from compact SQLite identity projections
 without loading unrelated session outputs or message payloads into their execution
 cache. Projections are updated with snapshot writes; database triggers invalidate them

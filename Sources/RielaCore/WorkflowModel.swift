@@ -686,6 +686,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
   public var arguments: [String]
   public var environment: [String: String]
   public var workingDirectory: String?
+  public var authoredWorkingDirectory: String?
   public var failureDiagnostics: WorkflowFailureDiagnostics?
   public var executionLocks: WorkflowCommandLocks?
   public var cancellationPolicy: WorkflowProcessCancellation?
@@ -697,7 +698,8 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     workingDirectory: String? = nil,
     failureDiagnostics: WorkflowFailureDiagnostics? = nil,
     executionLocks: WorkflowCommandLocks? = nil,
-    cancellationPolicy: WorkflowProcessCancellation? = nil
+    cancellationPolicy: WorkflowProcessCancellation? = nil,
+    authoredWorkingDirectory: String? = nil
   ) {
     self.executable = executable
     self.arguments = arguments
@@ -706,6 +708,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     self.failureDiagnostics = failureDiagnostics
     self.executionLocks = executionLocks
     self.cancellationPolicy = cancellationPolicy
+    self.authoredWorkingDirectory = authoredWorkingDirectory
   }
 
   enum CodingKeys: String, CodingKey {
@@ -713,6 +716,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case arguments
     case environment
     case workingDirectory
+    case authoredWorkingDirectory
     case failureDiagnostics
     case executionLocks
     case cancellationPolicy
@@ -726,6 +730,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case environment
     case envTemplate
     case workingDirectory
+    case authoredWorkingDirectory
     case failureDiagnostics
     case executionLocks
     case cancellationPolicy
@@ -746,6 +751,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
       ?? container.decodeIfPresent([String: String].self, forKey: .envTemplate)
       ?? [:]
     self.workingDirectory = workingDirectory
+    self.authoredWorkingDirectory = try container.decodeIfPresent(String.self, forKey: .authoredWorkingDirectory)
     self.failureDiagnostics = try container.decodeIfPresent(WorkflowFailureDiagnostics.self, forKey: .failureDiagnostics)
     self.executionLocks = try container.decodeIfPresent(WorkflowCommandLocks.self, forKey: .executionLocks)
     try self.executionLocks?.validate()
@@ -771,6 +777,7 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
   public var command: [String]
   public var environment: [String: String]
   public var workingDirectory: String?
+  public var authoredWorkingDirectory: String?
 
   public init(
     image: String,
@@ -778,7 +785,8 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
     runnerPath: String? = nil,
     command: [String] = [],
     environment: [String: String] = [:],
-    workingDirectory: String? = nil
+    workingDirectory: String? = nil,
+    authoredWorkingDirectory: String? = nil
   ) {
     self.image = image
     self.runnerKind = runnerKind
@@ -786,6 +794,7 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
     self.command = command
     self.environment = environment
     self.workingDirectory = workingDirectory
+    self.authoredWorkingDirectory = authoredWorkingDirectory
   }
 
   enum CodingKeys: String, CodingKey {
@@ -795,6 +804,7 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
     case command
     case environment
     case workingDirectory
+    case authoredWorkingDirectory
   }
 
   enum RielaContainerCodingKeys: String, CodingKey {
@@ -808,6 +818,7 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
     case environment
     case envTemplate
     case workingDirectory
+    case authoredWorkingDirectory
   }
 
   enum RielaContainerBuildCodingKeys: String, CodingKey {
@@ -831,6 +842,7 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
       ?? container.decodeIfPresent([String: String].self, forKey: .envTemplate)
       ?? [:]
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
+    self.authoredWorkingDirectory = try container.decodeIfPresent(String.self, forKey: .authoredWorkingDirectory)
   }
 }
 

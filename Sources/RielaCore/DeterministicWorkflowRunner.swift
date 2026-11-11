@@ -703,7 +703,8 @@ extension DeterministicWorkflowRunner {
       throw AdapterExecutionError(.policyBlocked, error.localizedDescription)
     }
     let adapterInput = AdapterExecutionInput(
-      node: executionPayload,
+      node: step.placement == nil
+        ? anchoringLocalWorkingDirectories(executionPayload, workspaceRoot: fanoutWorkspaceRoot) : executionPayload,
       promptText: promptGuard.prompts.promptText,
       freshPromptText: promptGuard.prompts.promptText,
       resumedPromptText: promptGuard.prompts.resumedPromptText,
@@ -830,17 +831,24 @@ extension DeterministicWorkflowRunner {
     }
 
     do {
+      let localPayload = step.placement == nil
+        ? anchoringLocalWorkingDirectories(payload, workspaceRoot: fanoutWorkspaceRoot) : payload
+      let stdioDirectory = (kind == .command ? localPayload.command?.workingDirectory : localPayload.container?.workingDirectory)
+        ?? localPayload.workingDirectory
+      let recordedDirectory = step.placement == nil
+        ? URL(fileURLWithPath: stdioDirectory ?? fanoutWorkspaceRoot?.path ?? FileManager.default.currentDirectoryPath,
+              isDirectory: true).standardizedFileURL.path
+        : resolvedBackendWorkingDirectory(
+          backend: payload.executionBackend, configuredWorkingDirectory: payload.workingDirectory,
+          workspaceRoot: fanoutWorkspaceRoot
+        )
       let startedExecution = try await recordStepStartedExecution(
         workflowId: workflow.workflowId,
         sessionId: sessionId,
         step: step,
         attempt: executionIndex,
         backend: payload.executionBackend,
-        backendWorkingDirectory: resolvedBackendWorkingDirectory(
-          backend: payload.executionBackend,
-          configuredWorkingDirectory: payload.workingDirectory,
-          workspaceRoot: fanoutWorkspaceRoot
-        ),
+        backendWorkingDirectory: recordedDirectory,
         inputSnapshot: ["variables": .object(request.variables), "resolvedInputPayload": .object(resolvedInputPayload)],
         effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
@@ -855,7 +863,7 @@ extension DeterministicWorkflowRunner {
           nodeId: step.nodeId,
           executionIndex: executionIndex,
           kind: kind,
-          node: payload,
+          node: localPayload,
           variables: request.variables,
           resolvedInputPayload: resolvedInputPayload,
           memoryRootDirectory: availableMemories.isEmpty ? nil : resolvedMemoryRootDirectory(request: request),

@@ -13,8 +13,7 @@
     ],
     "envTemplate": {
       "SHOWCASE_LANE": "command"
-    },
-    "workingDirectory": "scripts"
+    }
   },
   "output": {
     "description": "Return a compact summary of the command lane result."

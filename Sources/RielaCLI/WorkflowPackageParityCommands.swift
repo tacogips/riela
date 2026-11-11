@@ -455,7 +455,8 @@ public struct WorkflowPackageCommandRunner: Sendable {
       store: runtimeStore,
       adapter: adapter,
       stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(defaultWorkingDirectory: workingDirectory),
-      simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil
+      simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil,
+      fanoutWorkspaceRoot: workingDirectoryURL
     ).run(DeterministicWorkflowRunRequest(
       workflow: bundle.workflow,
       nodePayloads: bundle.nodePayloads,

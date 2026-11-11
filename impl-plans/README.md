@@ -37,6 +37,20 @@ evidence is implemented and accepted. Its plan is archived at
 the [progress log](progress/fanout-directory-change-tracking.md) records focused
 verification and review. Final commit and push remain workflow steps.
 
+Relative node `workingDirectory` resolution (2026-11-11) is implemented and
+accepted on `fix/node-cwd-relative`. The plan is archived at
+[`completed/node-cwd-relative-01-runner-resolution.md`](completed/node-cwd-relative-01-runner-resolution.md).
+Relative node, command and container working directories now resolve against
+the run workspace root (`--working-dir`) before local dispatch. Placed steps are
+unchanged. The [progress log](progress/ncr-01-runner-resolution.md) records
+verification and review. The user-facing rule is in the
+[README](../README.md) and in
+[design-workflow-json.md](../design-docs/specs/design-workflow-json.md). The
+dispatch manifest `active/node-cwd-relative-dispatch.json` stays active until
+the dispatch run closes. Option A is still waiting on the user's decision in
+[`qa-node-cwd-relative.md`](../design-docs/user-qa/qa-node-cwd-relative.md).
+The final commit and push remain workflow steps.
+
 Work handover and takeover (2026-10-01) is implemented and accepted on
 `feat/work-handover-and-takeover`. The umbrella plan is archived at
 [`completed/work-handover-and-takeover.md`](completed/work-handover-and-takeover.md),

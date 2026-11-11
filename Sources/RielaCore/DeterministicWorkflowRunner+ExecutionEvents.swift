@@ -12,10 +12,34 @@ struct WorkflowBackendEventEmissionContext: Sendable {
   var nodeExecutions: Int
 }
 
+func anchoredWorkingDirectory(_ path: String, workspaceRoot: URL?) -> String {
+  guard !path.hasPrefix("/"), let workspaceRoot else { return path }
+  return workspaceRoot.appendingPathComponent(path, isDirectory: true).standardizedFileURL.path
+}
+
+func anchoringLocalWorkingDirectories(_ payload: AgentNodePayload, workspaceRoot: URL?) -> AgentNodePayload {
+  var result = payload
+  result.workingDirectory = result.workingDirectory.map { anchoredWorkingDirectory($0, workspaceRoot: workspaceRoot) }
+  if var command = result.command {
+    command.workingDirectory = ((workspaceRoot == nil ? nil : command.authoredWorkingDirectory) ?? command.workingDirectory)
+      .map { anchoredWorkingDirectory($0, workspaceRoot: workspaceRoot) }
+    command.authoredWorkingDirectory = nil
+    result.command = command
+  }
+  if var container = result.container {
+    container.workingDirectory = ((workspaceRoot == nil ? nil : container.authoredWorkingDirectory) ?? container.workingDirectory)
+      .map { anchoredWorkingDirectory($0, workspaceRoot: workspaceRoot) }
+    container.authoredWorkingDirectory = nil
+    result.container = container
+  }
+  return result
+}
+
 /// The directory an execution record reports for a backend. A node without
 /// its own `workingDirectory` inherits the run's resolved workspace root (the
 /// CLI `--working-dir`), which is also what the production adapters default
 /// to; the process cwd is only the fallback when no workspace root is known.
+/// Relative configured values anchor to the workspace root.
 func resolvedBackendWorkingDirectory(
   backend: NodeExecutionBackend?,
   configuredWorkingDirectory: String?,
@@ -24,7 +48,8 @@ func resolvedBackendWorkingDirectory(
   guard backend != nil else {
     return nil
   }
-  let path = configuredWorkingDirectory ?? workspaceRoot?.path ?? FileManager.default.currentDirectoryPath
+  let path = configuredWorkingDirectory.map { anchoredWorkingDirectory($0, workspaceRoot: workspaceRoot) }
+    ?? workspaceRoot?.path ?? FileManager.default.currentDirectoryPath
   return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
 }
 

@@ -13,8 +13,7 @@
       "--",
       "--dry-run"
     ],
-    "envTemplate": {},
-    "workingDirectory": "scripts"
+    "envTemplate": {}
   },
   "output": {
     "description": "Homebrew Cask dry-run packaging plan with no credentials and no publish side effects."

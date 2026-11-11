@@ -614,11 +614,18 @@ stop, record the drift, and re-plan the edit against the fresh content.
 
 ## Implementation status 2026-11-11
 
-Implemented the local dispatch and package-run wiring. The assigned core and CLI
-filters passed (53 and 59 tests), the isolated build passed, and selected-file
-SwiftLint found zero violations. Actual command verification passed for inherited
-node cwd but exposed explicit command cwd resolving against the workflow directory
-in `Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift`. This path
-is outside the assigned write scope; implementation is blocked pending a checkpoint
-amendment. See `impl-plans/progress/ncr-01-runner-resolution.md` for evidence.
-Formal review and final handoff remain downstream.
+The amended loader metadata contract, local dispatch anchoring, execution records,
+package-run wiring, example migration, and regression coverage are implemented.
+The inherited and explicit command end-to-end gate passes. Final verification and
+its per-case evidence are recorded in `impl-plans/progress/ncr-01-runner-resolution.md`.
+Formal independent review, integration, commit, and push remain downstream.
+
+Completion 2026-11-11: the adversarial review and the test-integrity review
+both accepted the work with no high or mid findings. Results: 82 core tests and
+99 CLI tests with 0 failures, the e2e gate `continuation-command-check.sh` exited
+0, and lint is clean. The plan is complete and is archived to
+`impl-plans/completed/node-cwd-relative-01-runner-resolution.md`. The README now
+documents the user-facing rule. Still open: the user's decision on option A in
+`design-docs/user-qa/qa-node-cwd-relative.md`. The dispatch manifest
+`active/node-cwd-relative-dispatch.json` stays active until the dispatch run
+closes.

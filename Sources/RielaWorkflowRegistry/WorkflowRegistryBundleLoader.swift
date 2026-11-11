@@ -236,13 +236,21 @@ public struct WorkflowRegistryBundleLoader: Sendable {
     var payload = payload
     if var command = payload.command {
       command.executable = absoluteCommandPath(command.executable, relativeTo: workflowDirectory)
+      command.authoredWorkingDirectory = command.workingDirectory.flatMap {
+        !$0.hasPrefix("/") && !$0.hasPrefix("./") ? $0 : nil
+      }
       if let workingDirectory = command.workingDirectory {
         command.workingDirectory = absoluteCommandPath(workingDirectory, relativeTo: workflowDirectory)
       }
       payload.command = command
     }
-    if var container = payload.container, let workingDirectory = container.workingDirectory {
-      container.workingDirectory = absoluteCommandPath(workingDirectory, relativeTo: workflowDirectory)
+    if var container = payload.container {
+      container.authoredWorkingDirectory = container.workingDirectory.flatMap {
+        !$0.hasPrefix("/") && !$0.hasPrefix("./") ? $0 : nil
+      }
+      if let workingDirectory = container.workingDirectory {
+        container.workingDirectory = absoluteCommandPath(workingDirectory, relativeTo: workflowDirectory)
+      }
       payload.container = container
     }
     return payload

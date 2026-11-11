@@ -258,6 +258,12 @@ bindings:
   already available through `workflow.loop.concurrency`. This design does not
   duplicate it.
 
+Amendment (2026-11-11): the dispatcher also treats a live **manual**
+(named-instance) root session of the binding's workflow in the same session
+store as running when the scope is otherwise idle. In-process cron-vs-cron
+behavior is unchanged. See
+`design-docs/specs/design-manual-run-overlap-and-terminal-reserve.md` §3.2.
+
 ### 6.3 Due-tick evaluation
 
 `CronScheduleSource.dueTick(after:until:)` is replaced by

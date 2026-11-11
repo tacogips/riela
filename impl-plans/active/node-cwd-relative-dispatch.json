@@ -57,6 +57,10 @@
       {
         "decision": "Amendment 2026-11-11 (Step 5 NCR-R1): add WorkflowPackageParityCommands.swift to writePaths to pass fanoutWorkspaceRoot for `riela package run`; WorkflowStagedVerification.swift stays nil.",
         "rationale": "package run was the only production entry point without a workspace root; staged verification is scenario-only."
+      },
+      {
+        "decision": "Amendment 2026-11-11 round 1: authorize build artifact root tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch (writePaths + artifactRoots) and pass --scratch-path to swift build/test, --no-cache to swiftlint, with scratch cleanup and no worktree .build.",
+        "rationale": "Blocked plan ncr-01-runner-resolution (blocked-wave-scope-or-contract): the plan declared artifactRoots: [] while swift build defaults to .build outside declared roots. Gap resolved by the declared, gitignored artifact root; planId, source writePaths, D1-D6 and test matrix unchanged."
       }
     ],
     "intentionalTradeoffs": [
@@ -102,10 +106,13 @@
         "Sources/RielaCore/DeterministicWorkflowRunner.swift",
         "Sources/RielaCLI/WorkflowPackageParityCommands.swift",
         "Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift",
-        "impl-plans/progress/ncr-01-runner-resolution.md"
+        "impl-plans/progress/ncr-01-runner-resolution.md",
+        "tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch"
       ],
       "sharedPaths": [],
-      "artifactRoots": [],
+      "artifactRoots": [
+        "tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch"
+      ],
       "acceptanceCriteria": [
         "An agent node with workingDirectory 'sub/dir' run with workspace root /X reaches its backend with cwd /X/sub/dir (recording adapter test).",
         "A command node with a relative workingDirectory runs in <working-dir>/<rel>.",
@@ -115,11 +122,13 @@
         "swift build and focused swift test filters pass; swiftlint reports no new violations on changed files; progress log records each case, log paths and exit codes."
       ],
       "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests 2>&1 | tee tmp/node-cwd-relative/build.log; exit ${pipestatus[1]}'",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; exit \\${pipestatus[1]}\"",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; exit \\${pipestatus[1]}\"",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log'",
-        "git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift"
+        "mkdir -p tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch 2>&1 | tee tmp/node-cwd-relative/build.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; exit \\${pipestatus[1]}\"",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; exit \\${pipestatus[1]}\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --no-cache Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log'",
+        "git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift",
+        "du -sh tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch; find tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch | wc -l; rm -rf tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch; test ! -e .build && echo no-worktree-build"
       ]
     }
   ]

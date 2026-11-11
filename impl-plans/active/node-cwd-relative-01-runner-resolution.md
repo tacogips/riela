@@ -11,9 +11,13 @@
     "Sources/RielaCore/DeterministicWorkflowRunner.swift",
     "Sources/RielaCLI/WorkflowPackageParityCommands.swift",
     "Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift",
-    "impl-plans/progress/ncr-01-runner-resolution.md"
+    "impl-plans/progress/ncr-01-runner-resolution.md",
+    "tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch"
   ],
-  "sharedPaths": []
+  "sharedPaths": [],
+  "artifactRoots": [
+    "tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch"
+  ]
 }
 ```
 
@@ -240,24 +244,54 @@ Run everything from the worktree root
 `arch -arm64 /bin/zsh -lc '...'`. Write logs under `tmp/node-cwd-relative/`
 and record exit statuses in the progress log.
 
-1. `swift build --build-tests 2>&1 | tee tmp/node-cwd-relative/build.log; echo "exit=${pipestatus[1]}"`
+All SwiftPM output goes to the declared artifact root,
+`tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch`.
+
+- Every `swift build` / `swift test` command below MUST include
+  `--scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch`,
+  written as the literal path. Do not use a shell variable: a variable set
+  outside `arch -arm64 /bin/zsh -lc '...'` is not visible inside the wrapper.
+- `swift test --skip-build` must use the same scratch path, otherwise it
+  finds no products.
+- Never run SwiftPM without `--scratch-path`. Without it, SwiftPM writes the
+  worktree `.build`, which is undeclared. Never touch the main checkout's
+  `.build`.
+- Run `swiftlint` with `--no-cache`.
+
+The worktree has no existing `.build`, so the first build is a full cold
+build. Expect it to take a long time, and wait for it in the foreground to
+its terminal exit.
+
+These commands are byte-identical to the `verification` array of
+`impl-plans/active/node-cwd-relative-dispatch.json` (plan
+`ncr-01-runner-resolution`).
+
+0. `mkdir -p tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch`
+1. `arch -arm64 /bin/zsh -lc 'swift build --build-tests --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch 2>&1 | tee tmp/node-cwd-relative/build.log; exit ${pipestatus[1]}'`
    → exit 0.
-2. `swift test --skip-build --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; echo "exit=${pipestatus[1]}"`
+2. `arch -arm64 /bin/zsh -lc "swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; exit \${pipestatus[1]}"`
    → exit 0, and every new test is listed as passed.
-3. `swift test --skip-build --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; echo "exit=${pipestatus[1]}"`
+3. `arch -arm64 /bin/zsh -lc "swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; exit \${pipestatus[1]}"`
    → exit 0. These are CLI suites that run with a workspace root and with
    placement. `WorkflowCommandTests/testPackage` selects the `package run`
    suite in `Tests/RielaCLITests/WorkflowPackageArchiveCommandTests.swift`,
    which is an extension of `WorkflowCommandTests`. An example is
    `testPackagePackValidateInstallAndRunRielaPackageArchive`.
-4. `swiftlint lint Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log; echo "exit=${pipestatus[1]}"`
+4. `arch -arm64 /bin/zsh -lc 'swiftlint lint --no-cache Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log'`
    → no new violations in the changed lines.
-5. `git diff --stat` → only the five writePaths changed.
+5. `git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift`
+   → exactly `Sources/RielaCLI/WorkflowPackageParityCommands.swift`. Also run
+   `git diff --stat` → only the five source writePaths changed. The scratch
+   root is under gitignored `tmp/` and must not appear.
+6. Cleanup, after commands 1–4 have finished and their logs are written:
+   `du -sh tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch; find tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch | wc -l; rm -rf tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch; test ! -e .build && echo no-worktree-build`
+   → record the size and entry count in the progress log. The command must
+   print `no-worktree-build`.
 
-If a pre-existing failure appears in step 2 or 3, confirm it on the original
-HEAD `3a9c1dad` before calling it unrelated. Use a separate scratch path such
-as `--scratch-path tmp/node-cwd-relative/base-scratch`, or reason from the
-failure text, and record it.
+If a pre-existing failure appears in command 2 or 3, do not build a second
+baseline scratch (it would be undeclared). Classify the failure from its
+failure text, and from whether the failing test touches any changed symbol.
+Record the reasoning in the progress log.
 
 ## Acceptance / done criteria (mechanically checkable)
 
@@ -283,6 +317,42 @@ failure text, and record it.
 - Added the `package run` tests to verification command 3.
 
 `WorkflowStagedVerification.swift` is scenario-only and stays unchanged.
+
+## Amendment 2026-11-11 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (dependency "Approved build artifact location"): the plan declared
+`artifactRoots: []`, but `swift build` defaults to `.build`, which is
+undeclared. The checkpoint was `00c6d768`.
+
+Decision:
+
+- Authorize exactly one artifact root,
+  `tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch`. It is listed
+  in both `writePaths` and `artifactRoots`, it is not in `sharedPaths`, and it
+  is not inside any other source path.
+- Every `swift build` / `swift test` run passes `--scratch-path` to it.
+- `swiftlint` runs with `--no-cache`.
+- The baseline re-run on `3a9c1dad` is dropped. Failures are classified from
+  their failure text instead.
+- After verification, record `du -sh` and the entry count of the root, then
+  remove it.
+
+Unchanged: the source writePaths, the planId, the design decisions, and the
+test matrix.
+
+Follow-up from Step 5 review finding NCR-A1 (high):
+
+- The same amendment is now applied to the committed dispatch manifest,
+  `impl-plans/active/node-cwd-relative-dispatch.json`. In `plans[0]`:
+  - `writePaths` gains the build-scratch root.
+  - `artifactRoots` is exactly that root.
+  - `sharedPaths` stays `[]`.
+  - The `verification` array now uses the literal `--scratch-path` on
+    `swift build` and both `swift test` commands, `swiftlint --no-cache`,
+    the git diff check, and the cleanup / no-`.build` command.
+- The plan's Verification section no longer uses a `$S` shell variable,
+  because it is not visible inside `arch -arm64 /bin/zsh -lc`. It lists the
+  same literal commands as the manifest.
 
 ## Progress log
 

@@ -149,3 +149,42 @@ Decision:
 - Accepted dependencies, not re-planned: `instance-cancel-int-01-busy-terminal-session`
   and `instance-cancel-int-03-definition-store-generation` (accepted at
   integration review, wave 006).
+
+## Amendment 2026-11-11 (blocked-wave-scope-or-contract, round 2)
+
+Blocker: the current-tree `swift test` runs (Step 1.3, Step 3.1, Step 3.2)
+write SwiftPM products into the worktree `.build`. That location is outside
+this plan's only authorized artifact root.
+
+Decision (final amendment; the budget is now exhausted):
+
+- **New authorized artifact root**, added to `writePaths` **and**
+  `artifactRoots`:
+  `tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch`.
+  - Every current-tree `swift test` and `swift build` in this plan must pass
+    `--scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch`.
+    That keeps the worktree `.build` untouched; this plan does not write to
+    it.
+  - The round-1 root `.../archive-293527c8` stays declared. Its export was
+    already removed after the historical run, which succeeded as a negative
+    control (exit 1, "delayed stop receipt"). Do not re-run it.
+- Revised commands (logs and exit files stay in
+  `tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/`,
+  outside both roots). `S` stands for the scratch path above:
+  - Step 1.3 (unmodified HEAD, before editing):
+    `/usr/bin/arch -arm64 /bin/zsh -lc "swift test --scratch-path S --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof"`
+    > `head-before.log`, with its exit written to `head-before.exit`.
+    Expected: non-zero, with "Worker did not reach its delayed stop
+    receipt". If it passes instead, stop and report.
+  - Step 3.1: `swift test --scratch-path S --filter TaskCancellationIntegrationTests`
+    > `after.log` / `after.exit`. Expected: 0.
+  - Step 3.2: the same selected-host filter with `--scratch-path S`, run 3
+    times, writing `repeat-{1,2,3}.log/.exit`. Expected: all 0.
+  - Step 3.3: `swiftlint lint Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift`
+    is unchanged. It writes no build products; if needed, use `--no-cache`.
+- After Step 3 completes, record `du -sh S` in the progress log, then
+  remove `S`. Both artifact roots therefore end empty or absent.
+- Unchanged: the intent, non-goals, the confirm-before-edit rule, the
+  fixture-only change (proofDeadline ≥ 12 s), every assertion, and the
+  stop-and-report rule. The combined-tree focused filter belongs to
+  reconciliation and integration review, not to this plan.

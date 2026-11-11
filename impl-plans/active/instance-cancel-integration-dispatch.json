@@ -53,6 +53,10 @@
       {
         "decision": "Amendment 2026-11-11 round 1: plan instance-cancel-int-02-selected-host-stop-proof gains artifact root tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 (in writePaths and artifactRoots) for the git-archive export of 293527c8 and its SwiftPM .build; logs and exit files move to tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/ outside the root; Step 1.4 removal kept after at-293527c8.exit with du -sh recorded; int-01 and int-03 recorded as acceptedDependencies.",
         "rationale": "Blocked plan instance-cancel-int-02-selected-host-stop-proof (blocked-wave-scope-or-contract): the mandatory historical reproduction at 293527c8 had no authorized artifact root for build outputs. Resolved by an authorized root under gitignored tmp/; plan intent, non-goals, confirm-before-edit, fixture-only change and assertions unchanged. Accepted at step5-impl-plan-review comm-000035."
+      },
+      {
+        "decision": "Amendment 2026-11-11 round 2: plan instance-cancel-int-02-selected-host-stop-proof gains artifact root tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch (in writePaths and artifactRoots); every current-tree swift test/build in the plan (Steps 1.3, 3.1, 3.2) uses --scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch so the worktree .build is not written; swiftlint runs with --no-cache; du -sh of head-scratch is recorded and the root removed after Step 3; the round-1 archive-293527c8 root stays declared and the completed historical negative control (at-293527c8.log 'delayed stop receipt', exit 1, export removed) is not re-run; int-01 and int-03 remain acceptedDependencies.",
+        "rationale": "Blocked plan instance-cancel-int-02-selected-host-stop-proof (blocked-wave-scope-or-contract): current-tree SwiftPM build products would land in the worktree .build, outside the declared artifact roots. Resolved with an isolated scratch path under gitignored tmp/ and revised verification commands; intent, non-goals, confirm-before-edit, fixture-only proofDeadline >= 12 s change and assertions unchanged. Accepted at step5-impl-plan-review comm-000046; amendment budget now exhausted (2/2)."
       }
     ],
     "intentionalTradeoffs": [
@@ -108,11 +112,13 @@
       "writePaths": [
         "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
         "impl-plans/progress/instance-cancel-int-02-selected-host-stop-proof.md",
-        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8"
+        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8",
+        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch"
       ],
       "sharedPaths": [],
       "artifactRoots": [
-        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8"
+        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8",
+        "tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch"
       ],
       "acceptanceCriteria": [
         "Hypothesis confirmed first: static-main-diff empty, test fails at 293527c8 and at unmodified HEAD with 'delayed stop receipt'.",
@@ -120,13 +126,12 @@
         "TaskCancellationIntegrationTests exit 0 and the selected-host test passes 3 consecutive runs; swiftlint clean."
       ],
       "verification": [
-        "git diff --stat 293527c8 8ab7f848 -- Sources/RielaAdapters Sources/RielaWork Sources/RielaServer > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/static-main-diff.txt",
-        "mkdir -p tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 && git archive 293527c8 | tar -x -C tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"cd tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/archive-293527c8 && swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-before.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-before.exit",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/after.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/after.exit",
-        "for i in 1 2 3; do /usr/bin/arch -arm64 /bin/zsh -lc \"swift test --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/repeat-$i.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/repeat-$i.exit; done",
-        "/usr/bin/arch -arm64 /bin/zsh -lc \"swiftlint lint Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift\""
+        "grep -c 'delayed stop receipt' tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/at-293527c8.log",
+        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-before.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-before.exit",
+        "/usr/bin/arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch --filter TaskCancellationIntegrationTests\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/after.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/after.exit",
+        "for i in 1 2 3; do /usr/bin/arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof\" > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/repeat-$i.log 2>&1; echo $? > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/repeat-$i.exit; done",
+        "/usr/bin/arch -arm64 /bin/zsh -lc \"swiftlint lint --no-cache Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift\"",
+        "du -sh tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch > tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch-size.txt && rm -rf tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch"
       ]
     }
   ]

@@ -6,7 +6,8 @@
   "remote": "origin",
   "originalHead": "3a9c1dad928d562abdcc2fd93fd9de6d67898d5c",
   "designDocPaths": [
-    "design-docs/specs/design-workflow-json.md"
+    "design-docs/specs/design-workflow-json.md",
+    "design-docs/user-qa/qa-node-cwd-relative.md"
   ],
   "evidenceRoot": "tmp/node-cwd-relative",
   "reviewContext": {
@@ -17,7 +18,8 @@
       "Absolute values reach the backend byte-identical.",
       "Execution records (backendWorkingDirectory) report the resolved absolute path via resolvedBackendWorkingDirectory using the same anchoredWorkingDirectory helper.",
       "`riela package run` passes fanoutWorkspaceRoot: workingDirectoryURL so it gets the same root as workflow run (Step 5 finding NCR-R1).",
-      "Regression tests in Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift cover relative, '..', absolute, nil, command inherit/explicit, container, placement passthrough and nil-root cases."
+      "Regression tests in Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift cover relative, '..', absolute, nil, command inherit/explicit, container, placement passthrough and nil-root cases.",
+      "Registry loading records an optional Codable authoredWorkingDirectory on WorkflowCommandExecution/WorkflowContainerExecution for rewritten relative command/container working directories. Local dispatch anchors authoredWorkingDirectory ?? workingDirectory to the workspace root, and placed payloads stay unchanged. An explicit command workingDirectory 'explicit/dir' must run in <workspace>/explicit/dir (continuation-command-check.sh exits 0)."
     ],
     "nonGoals": [
       "No edits under Sources/RielaAdapters, Sources/RielaCore/DistributedWorkerNodeExecutor.swift, Sources/RielaCLI/WorkflowStagedVerification.swift, or other RielaCLI files besides WorkflowPackageParityCommands.swift.",
@@ -61,6 +63,10 @@
       {
         "decision": "Amendment 2026-11-11 round 1: authorize build artifact root tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch (writePaths + artifactRoots) and pass --scratch-path to swift build/test, --no-cache to swiftlint, with scratch cleanup and no worktree .build.",
         "rationale": "Blocked plan ncr-01-runner-resolution (blocked-wave-scope-or-contract): the plan declared artifactRoots: [] while swift build defaults to .build outside declared roots. Gap resolved by the declared, gitignored artifact root; planId, source writePaths, D1-D6 and test matrix unchanged."
+      },
+      {
+        "decision": "Amendment 2026-11-11 round 2: authorize Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift, Sources/RielaCore/WorkflowModel.swift, Tests/RielaCLITests/WorkflowBundleWorkingDirectoryLoadTests.swift and the four example command node JSONs; implement the accepted authoredWorkingDirectory contract (loader keeps its rewrites and records the authored relative value; local runner anchors authoredWorkingDirectory ?? workingDirectory to the workspace root; placed payloads unchanged); Sources/RielaCLI/WorkflowResolution.swift stays unauthorized and unchanged.",
+        "rationale": "Blocked plan ncr-01-runner-resolution (blocked-wave-scope-or-contract, implementation-dependency): an explicit relative command.workingDirectory was rewritten to the workflow definition directory by WorkflowRegistryBundleLoader.swift:235-245 before runner dispatch. Resolved by the accepted design revision (comm-000040; option A default pending design-docs/user-qa/qa-node-cwd-relative.md). The WorkflowResolution.swift absolutizedStdioPaths copy has no callers. planId is stable and earlier wave work is preserved. Verification is extended with registry, model, example and distributed filters plus the continuation-command-check.sh end-to-end gate."
       }
     ],
     "intentionalTradeoffs": [
@@ -92,7 +98,10 @@
       "Sources/RielaCLI/WorkflowRunCommand.swift",
       "Tests/RielaCoreTests/DeterministicWorkflowRunnerBackendEventTests.swift",
       "Tests/RielaCoreTests/DeterministicWorkflowRunnerTestSupport.swift",
-      "Tests/RielaCLITests/WorkflowPackageArchiveCommandTests.swift"
+      "Tests/RielaCLITests/WorkflowPackageArchiveCommandTests.swift",
+      "Sources/RielaCore/WorkflowModel.swift",
+      "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift",
+      "Sources/RielaCLI/WorkflowResolution.swift"
     ]
   },
   "acceptedDependencies": [],
@@ -107,7 +116,14 @@
         "Sources/RielaCLI/WorkflowPackageParityCommands.swift",
         "Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift",
         "impl-plans/progress/ncr-01-runner-resolution.md",
-        "tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch"
+        "tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch",
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift",
+        "Tests/RielaCLITests/WorkflowBundleWorkingDirectoryLoadTests.swift",
+        "examples/node-combinations-showcase/nodes/node-command-worker.json",
+        "examples/monja-typescript-sdk/nodes/node-monja-command.json",
+        "examples/apple-gateway-packaging-plan/nodes/node-packaging-plan.json",
+        "examples/first-four-arithmetic-pipeline/workflows/divide/nodes/node-divide-worker.json"
       ],
       "sharedPaths": [],
       "artifactRoots": [
@@ -115,7 +131,10 @@
       ],
       "acceptanceCriteria": [
         "An agent node with workingDirectory 'sub/dir' run with workspace root /X reaches its backend with cwd /X/sub/dir (recording adapter test).",
-        "A command node with a relative workingDirectory runs in <working-dir>/<rel>.",
+        "A command node with a relative workingDirectory runs in <working-dir>/<rel>, both when it inherits the node directory and when command/container.workingDirectory is explicit (local dispatch uses the loader-recorded authoredWorkingDirectory). The end-to-end gate continuation-command-check.sh exits 0.",
+        "Placed (remote) steps receive unchanged loader output: the bundle-absolute workingDirectory still maps to /worker/workflows/demo/sub and is still rejected without controllerRoot; a node shared by a local and a placed step is handled per invocation.",
+        "WorkflowRegistryBundleLoader.absolutizedStdioPaths keeps all existing rewrites and sets authoredWorkingDirectory only for rewritten relative values (nil otherwise, overriding authored input); WorkflowModel adds optional Codable authoredWorkingDirectory to WorkflowCommandExecution and WorkflowContainerExecution.",
+        "The four example command nodes no longer declare \"workingDirectory\": \"scripts\" and still pass RielaExampleParityTests / WorkflowValidateGatewayContextTests; Sources/RielaCLI/WorkflowResolution.swift is unchanged.",
         "Absolute workingDirectory values are unchanged; execution records report the resolved absolute path.",
         "`rg -n 'func anchoredWorkingDirectory' Sources/RielaCore` has 1 hit; `rg -n 'anchoringLocalWorkingDirectories' Sources/RielaCore/DeterministicWorkflowRunner.swift` has 2 hits.",
         "`git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift` lists exactly Sources/RielaCLI/WorkflowPackageParityCommands.swift with one added argument line.",
@@ -124,9 +143,10 @@
       "verification": [
         "mkdir -p tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch",
         "arch -arm64 /bin/zsh -lc 'swift build --build-tests --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch 2>&1 | tee tmp/node-cwd-relative/build.log; exit ${pipestatus[1]}'",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; exit \\${pipestatus[1]}\"",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; exit \\${pipestatus[1]}\"",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --no-cache Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log'",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests|WorkflowModelTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; exit \\${pipestatus[1]}\"",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --scratch-path tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage|WorkflowBundleWorkingDirectoryLoadTests|WorkflowDefinitionServiceTests|WorkflowDefinitionSourceDriftResolutionTests|RielaExampleParityTests|WorkflowValidateGatewayContextTests|DistributedNodeExecutionTests' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; exit \\${pipestatus[1]}\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --no-cache Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Sources/RielaCore/WorkflowModel.swift Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift Tests/RielaCLITests/WorkflowBundleWorkingDirectoryLoadTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log'",
+        "arch -arm64 /bin/zsh -lc '/bin/zsh tmp/node-cwd-relative/ncr-01-runner-resolution/continuation-command-check.sh > tmp/node-cwd-relative/ncr-01-runner-resolution/e2e-after.log 2>&1; exit $?'",
         "git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift",
         "du -sh tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch; find tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch | wc -l; rm -rf tmp/node-cwd-relative/ncr-01-runner-resolution/build-scratch; test ! -e .build && echo no-worktree-build"
       ]

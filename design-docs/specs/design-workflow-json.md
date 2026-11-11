@@ -1202,24 +1202,133 @@ console do not expose sandbox settings yet.
 ### `workingDirectory` resolution
 
 Node `workingDirectory`, `command.workingDirectory` and
-`container.workingDirectory` are host paths. The rule is:
+`container.workingDirectory` are host paths. A container working directory is
+the host cwd of the container runner process, not a guest path. The rule
+depends on where the value is written.
 
 - An absolute value is used as written. The only change is lexical
   standardization in execution records, which already happens today.
-- A relative value resolves against the run workspace root. That root is the
-  CLI `--working-dir`. It is the same root a node without `workingDirectory`
-  already inherits, and the runner holds it as `fanoutWorkspaceRoot`. The
-  result is `<workspaceRoot>/<rel>`, lexically standardized (`.` and `..`
-  are collapsed and symlinks are not resolved). A relative value never
-  resolves against the process cwd or the workflow definition directory.
-- `command.workingDirectory` and `container.workingDirectory` fall back to the
-  node's resolved `workingDirectory` when unset, and then to the workspace
-  root. This matches `DistributedWorkerNodeExecutor`. A container working
-  directory is the host cwd of the container runner process, not a guest
-  path, so it follows the same host rule.
+- A relative node-level `workingDirectory` resolves against the run
+  workspace root. That root is the CLI `--working-dir`. It is the same root a
+  node without `workingDirectory` already inherits, and the runner holds it
+  as `fanoutWorkspaceRoot`. The result is `<workspaceRoot>/<rel>`, lexically
+  standardized (`.` and `..` are collapsed and symlinks are not resolved). It
+  no longer resolves against the process cwd.
+- When `command.workingDirectory` or `container.workingDirectory` is unset,
+  it inherits the node's resolved `workingDirectory`, and then the workspace
+  root. A node `workingDirectory: "w"` therefore runs its command or
+  container in `<workspaceRoot>/w`. This matches `DistributedWorkerNodeExecutor`.
+- An explicitly authored relative `command.workingDirectory` or
+  `container.workingDirectory` also resolves to `<workspaceRoot>/<rel>`. This
+  is an accepted requirement: the workflow input says a command node with a
+  relative `workingDirectory` runs in `<working-dir>/<rel>`. It is the same
+  rule as `DistributedWorkerNodeExecutor`.
 - If the runner has no workspace root (library or test callers that do not
   pass `fanoutWorkspaceRoot`), the current behavior stays: the value passes
   through, and records fall back to the process cwd.
+
+Loader-to-runner boundary. Today the workflow bundle loader rewrites values
+before the runner ever sees them, so runner anchoring alone cannot meet the
+explicit-directory requirement.
+
+- What the loader does now:
+  - `WorkflowRegistryBundleLoader.absolutizedStdioPaths` is called from
+    `WorkflowRegistryBundleLoader.swift` (node payload load) and from
+    `WorkflowRegistryBundleLoader+SharedNodeRefs.swift` (shared node refs).
+  - It uses `absoluteCommandPath` to rewrite `command.executable`,
+    `command.workingDirectory` and `container.workingDirectory`.
+  - Any value with no `/` or `./` prefix becomes
+    `<workflowDirectory>/<path>`.
+  - The result: an explicit `command.workingDirectory: "explicit/dir"` runs
+    in the bundle directory, not the workspace. The run evidence is in
+    `tmp/node-cwd-relative/ncr-01-runner-resolution/continuation-command-check.log`
+    (explicit case failed) and `continuation-diagnostic.log`
+    (`OBSERVED=<workflowDirectory>/explicit/dir`).
+- Required separation, decided per invocation:
+  - `command.executable` (including the `scriptPath` form) is a bundle
+    asset. It keeps its bundle-relative load-time absolutization, unchanged.
+  - The loader output for placed (remote) steps must not change. Today the
+    loader turns an explicit `command.workingDirectory: "sub"` into
+    `/controller/workflows/demo/sub`. The worker's
+    `DistributedWorkerWorkspace.resolve` maps that through `controllerRoot`
+    to `/worker/workflows/demo/sub`. With no `controllerRoot` mapping, the
+    worker rejects the path with `invalidInput`. Passing the authored `sub`
+    to the worker instead would make it `/worker/sub` and would skip that
+    rejection, so remote semantics would change. Remote semantics are out of
+    scope.
+  - The loader therefore keeps writing the bundle-absolutized value into
+    `workingDirectory`, so placed dispatch, transport and worker mapping see
+    exactly what they see today. In the same pass it records the
+    pre-rewrite value in a new optional field, `authoredWorkingDirectory: String?`,
+    on `WorkflowCommandExecution` and `WorkflowContainerExecution`
+    (`Sources/RielaCore/WorkflowModel.swift`).
+  - The loader sets that field only when it actually rewrote a relative
+    value. Otherwise it sets the field to `nil`, overwriting anything an
+    author wrote there, so authors cannot set it. The field is `Codable` and
+    optional. It must survive encoding wherever loaded payloads are
+    persisted or snapshotted, and older payloads decode with it absent.
+  - The choice between local and placed is made when each step is
+    dispatched, never when the bundle loads. A node payload referenced by
+    both a local step and a placed step (including payloads loaded through
+    `+SharedNodeRefs`) carries both values. Each invocation picks one by its
+    own `step.placement`.
+  - Local dispatch (`step.placement == nil`):
+    `anchoringLocalWorkingDirectories` uses `authoredWorkingDirectory` when
+    it is present, otherwise `workingDirectory`, and anchors any relative
+    value to the workspace root.
+    - Explicit `"sub"` becomes `<workspaceRoot>/sub`.
+    - `./`-prefixed values are not rewritten by the loader, so they are
+      anchored the same way.
+    - Absolute authored values are unchanged.
+    - Direct runner callers that never go through the loader have no
+      `authoredWorkingDirectory`, and their relative values are anchored.
+  - Placed dispatch (`step.placement != nil`): the payload is forwarded
+    unchanged, as today, and `authoredWorkingDirectory` is ignored. Mapped
+    remote paths, the missing-`controllerRoot` rejection and worker-relative
+    `./` values all keep their current behavior.
+  - Absolute values and the no-escape-check policy are unchanged.
+- Code ownership the implementation plan must assign:
+  - `Sources/RielaCore/WorkflowModel.swift`: add the optional
+    `authoredWorkingDirectory` field to `WorkflowCommandExecution` and
+    `WorkflowContainerExecution`.
+  - `Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift`, in
+    `absolutizedStdioPaths`: keep every current rewrite, and set or clear
+    `authoredWorkingDirectory` as described above. Both call sites go
+    through this one function, so `+SharedNodeRefs` needs no edit.
+  - `Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift`
+    (`anchoringLocalWorkingDirectories`): local dispatch prefers
+    `authoredWorkingDirectory`.
+  - `Sources/RielaCLI/WorkflowResolution.swift` holds an
+    `absolutizedStdioPaths` copy that nothing calls (`grep` finds no
+    callers). It is not on the execution path and is left unchanged.
+  - The plan must confirm that no other payload source drops the field.
+    Candidates include definition-store rehydration and session resume or
+    rerun of loaded payloads. If one does, it is an implementation blocker,
+    not grounds to weaken acceptance.
+- Compatibility of shipped bundles. Four example command nodes set
+  `command.workingDirectory: "scripts"`:
+  - `examples/node-combinations-showcase/nodes/node-command-worker.json`
+  - `examples/monja-typescript-sdk/nodes/node-monja-command.json`
+  - `examples/apple-gateway-packaging-plan/nodes/node-packaging-plan.json`
+  - `examples/first-four-arithmetic-pipeline/workflows/divide/nodes/node-divide-worker.json`
+
+  None of their scripts depend on the cwd: `mock-command.sh`, `divide.sh` and
+  `mock-task-jsonl.sh` use no relative paths, and `run-installed-command.sh`
+  locates itself through `$0`. Under the new rule each would run in
+  `<working-dir>/scripts`. That directory usually does not exist, so the
+  spawn would fail.
+
+  The design migration is to delete the `"workingDirectory": "scripts"` line
+  from those four nodes. Their scripts are still found through the
+  bundle-relative `scriptPath`, so their behavior and outputs do not change.
+  Third-party bundles that rely on a bundle-relative run directory would
+  change behavior too. That compatibility choice is recorded as a pending
+  user decision in `design-docs/user-qa/qa-node-cwd-relative.md`.
+- Until that decision is made, the accepted requirement stays as written.
+  Keeping bundle-relative run directories is an exception, and it may only
+  be treated as accepted after the effective workflow scope is explicitly
+  amended. If the loader and example edits cannot be authorized, the plan
+  must report a scope blocker. It must not weaken the acceptance test.
 
 Resolution boundary and data flow:
 
@@ -1233,9 +1342,10 @@ Resolution boundary and data flow:
   inputs make the adapters' existing `?? defaultWorkingDirectory` and
   `URL(fileURLWithPath:)` handling correct with no edits.
 - Steps with `placement` (remote workers) are not rewritten on the
-  controller. The worker's `DistributedWorkerWorkspace.resolve` still maps
-  relative paths into the worker workspace, and its behavior is unchanged.
-  Rewriting them to controller-absolute paths would break that mapping.
+  controller. They receive exactly the loader output they receive today:
+  bundle-absolutized explicit command and container directories, and node or
+  `./` values passed through. The worker's `DistributedWorkerWorkspace.resolve`
+  keeps its mapping and rejection behavior unchanged.
 - `resolvedBackendWorkingDirectory` applies the same rule. Every
   step-execution record (`backendWorkingDirectory`) and the prompt-spill root
   therefore report `<workspaceRoot>/<rel>` instead of a path resolved against
@@ -1251,18 +1361,57 @@ where it is and is not reused locally, because reusing it would tighten local
 policy.
 
 Compatibility: when the process cwd equals `--working-dir`, which is the
-default for `riela workflow run`, behavior is unchanged except that agent
-backends now receive the absolute path they require. Workflows that relied on
-a relative path resolving against a different process cwd now resolve against
-the workspace root. That is the intended fix.
+default for `riela workflow run`, the node-level behavior is unchanged except
+that agent backends now receive the absolute path they require. Workflows
+that relied on a relative path resolving against a different process cwd now
+resolve against the workspace root. That is the intended fix.
 
-Verification: regression tests use temp dirs and a recording adapter or
-stdio executor. They check that a relative agent node `workingDirectory`
-reaches the adapter as `<root>/<rel>`. They check that a relative and an
-inherited command or container `workingDirectory` runs in `<root>/<rel>`.
-They check that absolute values are unchanged and that a `placement` step is
-passed through unresolved. They check that `backendWorkingDirectory` records
-the resolved absolute path.
+Explicit relative command and container directories move from the bundle
+directory to the workspace root. The four shipped examples migrate by
+dropping their cwd-independent `"workingDirectory": "scripts"` line. The
+third-party impact is tracked in `design-docs/user-qa/qa-node-cwd-relative.md`.
+
+Verification:
+
+- Runner-level regression tests use temp dirs and a recording adapter or
+  stdio executor. Payloads are given directly to the runner. The tests check:
+  - A relative agent node `workingDirectory` reaches the adapter as
+    `<root>/<rel>`.
+  - A node `workingDirectory` inherited by a command or container resolves
+    to `<root>/<rel>`.
+  - An explicit relative `command.workingDirectory` /
+    `container.workingDirectory` resolves to `<root>/<rel>`. This covers
+    payloads that carry `authoredWorkingDirectory: "sub"` next to a
+    bundle-absolute `workingDirectory`: local dispatch uses `<root>/sub`.
+  - Absolute values are unchanged.
+  - `backendWorkingDirectory` records the resolved absolute path.
+- Placement regression tests use a recording `DistributedNodeExecuting` and
+  distinct controller, bundle and worker roots. They check:
+  - A placed step receives the unchanged bundle-absolute `workingDirectory`
+    (`/controller/workflows/demo/sub`). `authoredWorkingDirectory` is never
+    used to rewrite it.
+  - Through `DistributedWorkerWorkspace` with `controllerRoot=/controller`,
+    the path still resolves to `/worker/workflows/demo/sub`.
+  - Without `controllerRoot`, it is still rejected with `invalidInput`.
+  - Absolute inputs are unchanged.
+  - One node payload referenced by a local step and a placed step in the same
+    workflow gets `<workspaceRoot>/sub` locally and the unchanged
+    bundle-absolute value remotely.
+- Registry-level tests check that bundle loading, including shared node
+  refs, still writes the bundle-absolute `workingDirectory` and
+  `command.executable`. For a rewritten relative value it sets
+  `authoredWorkingDirectory` to the authored value. For absolute and
+  `./`-prefixed values, and for author-supplied values of the field itself,
+  it leaves or resets the field to `nil`.
+- The end-to-end CLI gate is
+  `tmp/node-cwd-relative/ncr-01-runner-resolution/continuation-command-check.sh`,
+  run as `riela workflow run --workflow-definition-dir <wf> --working-dir <ws>`
+  with distinct workflow and workspace directories. Both the inherited and
+  the explicit relative command cases must run in `<ws>/<rel>`. The
+  previously failing explicit workspace-root assertion stays, and its earlier
+  exit-1 evidence is kept for comparison.
+- The four migrated examples still pass their existing mock-scenario /
+  validation checks.
 
 ## Structured Arguments
 

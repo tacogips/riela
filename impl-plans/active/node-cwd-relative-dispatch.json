@@ -1,0 +1,126 @@
+{
+  "taskId": "node-cwd-relative",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/node-cwd-relative",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "3a9c1dad928d562abdcc2fd93fd9de6d67898d5c",
+  "designDocPaths": [
+    "design-docs/specs/design-workflow-json.md"
+  ],
+  "evidenceRoot": "tmp/node-cwd-relative",
+  "reviewContext": {
+    "issueReference": "No GitHub issue. User-reported bug from the ART art-remediate live run on 2026-11-11: relative agent-node workingDirectory 'tmp/art-remediate/active/src' failed with 'agent-gateway error -32602: cwd must be an absolute path'.",
+    "userProblem": "An agent node with a relative workingDirectory, run via `riela workflow run --working-dir <root>`, passes the relative path unresolved to the local agent backend, which rejects it ('cwd must be an absolute path'). Command/container stdio executors resolve relative paths against the process cwd instead of the run workspace root, and execution records (resolvedBackendWorkingDirectory) have the same flaw.",
+    "requiredOutcomes": [
+      "Relative node workingDirectory, command.workingDirectory and container.workingDirectory resolve to <fanoutWorkspaceRoot>/<rel> (lexically standardized) before local dispatch in DeterministicWorkflowRunner (AdapterExecutionInput and WorkflowStdioNodeExecutionInput sites).",
+      "Absolute values reach the backend byte-identical.",
+      "Execution records (backendWorkingDirectory) report the resolved absolute path via resolvedBackendWorkingDirectory using the same anchoredWorkingDirectory helper.",
+      "`riela package run` passes fanoutWorkspaceRoot: workingDirectoryURL so it gets the same root as workflow run (Step 5 finding NCR-R1).",
+      "Regression tests in Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift cover relative, '..', absolute, nil, command inherit/explicit, container, placement passthrough and nil-root cases."
+    ],
+    "nonGoals": [
+      "No edits under Sources/RielaAdapters, Sources/RielaCore/DistributedWorkerNodeExecutor.swift, Sources/RielaCLI/WorkflowStagedVerification.swift, or other RielaCLI files besides WorkflowPackageParityCommands.swift.",
+      "No new workspace-escape/policyBlocked check; do not reuse DistributedWorkerWorkspace.resolve locally.",
+      "No symlink resolution; lexical standardizedFileURL only.",
+      "Do not fill nil working directories; executors already fall back.",
+      "Do not change riela/command-result add-on workingDirectory config.",
+      "No further docs edits; design-docs/specs/design-workflow-json.md already holds the rule."
+    ],
+    "constraints": [
+      "Work only in worktree /Users/taco/gits/tacogips/riela-worktrees/node-cwd; do not modify the main checkout or its .build.",
+      "Do not restart/kill/reconfigure RielaApp, modify ~/.riela/** or installed binaries; use temp dirs and fake backends in tests.",
+      "Keep absolute-path behavior and existing escape policies unchanged; additive and minimal.",
+      "Run swift build/test/swiftlint inside `arch -arm64 /bin/zsh -lc`."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "D1: resolve once in DeterministicWorkflowRunner before local dispatch; adapters unchanged.",
+        "rationale": "Adapters already handle absolute input correctly; one shared helper keeps backend cwd and execution records consistent."
+      },
+      {
+        "decision": "D2: steps with placement are passed through unresolved.",
+        "rationale": "Remote workers resolve relative paths against their own workspace via DistributedWorkerWorkspace.resolve; controller-absolute paths would break that mapping."
+      },
+      {
+        "decision": "D3/D4: no new escape check; '..' is anchored and lexically standardized, symlinks not resolved.",
+        "rationale": "Local runs have no escape check today; requirement says do not loosen or tighten existing policy."
+      },
+      {
+        "decision": "D5: resolvedBackendWorkingDirectory uses anchoredWorkingDirectory for non-nil configured values.",
+        "rationale": "Execution records must report the resolved absolute path that matches the dispatched cwd."
+      },
+      {
+        "decision": "D6: nil fanoutWorkspaceRoot keeps legacy pass-through.",
+        "rationale": "Library/test callers without a root keep current behavior; existing DeterministicWorkflowRunnerBackendEventTests relative case stays green unmodified."
+      },
+      {
+        "decision": "Amendment 2026-11-11 (Step 5 NCR-R1): add WorkflowPackageParityCommands.swift to writePaths to pass fanoutWorkspaceRoot for `riela package run`; WorkflowStagedVerification.swift stays nil.",
+        "rationale": "package run was the only production entry point without a workspace root; staged verification is scenario-only."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Fanout changeTracking becomes allowed under `riela package run`, matching `workflow run`.",
+      "WorkflowStagedVerification.swift keeps nil-root legacy behavior (scenario-only).",
+      "Workflows relying on a relative path resolving against a different process cwd now resolve against the workspace root."
+    ],
+    "supportedEdgeCases": [
+      "Relative path with '..' (anchored and standardized, not rejected).",
+      "Absolute path (unchanged byte-for-byte).",
+      "Nil workingDirectory (unchanged; record falls back to workspace root).",
+      "Command node inheriting node workingDirectory; explicit command.workingDirectory; container.workingDirectory.",
+      "Placement steps (not rewritten).",
+      "Runner with nil workspace root (legacy pass-through)."
+    ],
+    "outOfScopeEdgeCases": [
+      "Symlink canonicalization.",
+      "Workspace-escape enforcement for local runs.",
+      "riela/command-result add-on config workingDirectory.",
+      "Distributed worker resolution changes."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift",
+      "Sources/RielaCLI/WorkflowPackageParityCommands.swift",
+      "Sources/RielaCore/DistributedWorkerNodeExecutor.swift",
+      "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+      "Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift",
+      "Sources/RielaCLI/WorkflowRunCommand.swift",
+      "Tests/RielaCoreTests/DeterministicWorkflowRunnerBackendEventTests.swift",
+      "Tests/RielaCoreTests/DeterministicWorkflowRunnerTestSupport.swift",
+      "Tests/RielaCLITests/WorkflowPackageArchiveCommandTests.swift"
+    ]
+  },
+  "acceptedDependencies": [],
+  "plans": [
+    {
+      "planId": "ncr-01-runner-resolution",
+      "planPath": "impl-plans/active/node-cwd-relative-01-runner-resolution.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCLI/WorkflowPackageParityCommands.swift",
+        "Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift",
+        "impl-plans/progress/ncr-01-runner-resolution.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "An agent node with workingDirectory 'sub/dir' run with workspace root /X reaches its backend with cwd /X/sub/dir (recording adapter test).",
+        "A command node with a relative workingDirectory runs in <working-dir>/<rel>.",
+        "Absolute workingDirectory values are unchanged; execution records report the resolved absolute path.",
+        "`rg -n 'func anchoredWorkingDirectory' Sources/RielaCore` has 1 hit; `rg -n 'anchoringLocalWorkingDirectories' Sources/RielaCore/DeterministicWorkflowRunner.swift` has 2 hits.",
+        "`git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift` lists exactly Sources/RielaCLI/WorkflowPackageParityCommands.swift with one added argument line.",
+        "swift build and focused swift test filters pass; swiftlint reports no new violations on changed files; progress log records each case, log paths and exit codes."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests 2>&1 | tee tmp/node-cwd-relative/build.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'NodeWorkingDirectoryResolutionTests|DeterministicWorkflowRunnerBackendEventTests|AgentPromptGuardTests|PromptOverflowGuardIntegrationTests|SessionObservabilityTests|DeterministicWorkflowRunnerMemoryTests|FanoutArtifactEvidenceRunnerTests' 2>&1 | tee tmp/node-cwd-relative/test-core.log; exit \\${pipestatus[1]}\"",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'ScopedParityCallStepFanoutTests|WorkflowHostCapabilityTests|WorkflowCommandTests/testPackage' 2>&1 | tee tmp/node-cwd-relative/test-cli.log; exit \\${pipestatus[1]}\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Tests/RielaCoreTests/NodeWorkingDirectoryResolutionTests.swift 2>&1 | tee tmp/node-cwd-relative/lint.log'",
+        "git diff --name-only 3a9c1dad -- Sources/RielaAdapters Sources/RielaCLI Sources/RielaCore/DistributedWorkerNodeExecutor.swift"
+      ]
+    }
+  ]
+}

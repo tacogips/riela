@@ -1199,6 +1199,71 @@ Details: `docs/workflows/declarative-data-and-private-agents.md`,
 `docs/workflows/native-private-collection.md`. Workflow GraphQL and the web
 console do not expose sandbox settings yet.
 
+### `workingDirectory` resolution
+
+Node `workingDirectory`, `command.workingDirectory` and
+`container.workingDirectory` are host paths. The rule is:
+
+- An absolute value is used as written. The only change is lexical
+  standardization in execution records, which already happens today.
+- A relative value resolves against the run workspace root. That root is the
+  CLI `--working-dir`. It is the same root a node without `workingDirectory`
+  already inherits, and the runner holds it as `fanoutWorkspaceRoot`. The
+  result is `<workspaceRoot>/<rel>`, lexically standardized (`.` and `..`
+  are collapsed and symlinks are not resolved). A relative value never
+  resolves against the process cwd or the workflow definition directory.
+- `command.workingDirectory` and `container.workingDirectory` fall back to the
+  node's resolved `workingDirectory` when unset, and then to the workspace
+  root. This matches `DistributedWorkerNodeExecutor`. A container working
+  directory is the host cwd of the container runner process, not a guest
+  path, so it follows the same host rule.
+- If the runner has no workspace root (library or test callers that do not
+  pass `fanoutWorkspaceRoot`), the current behavior stays: the value passes
+  through, and records fall back to the process cwd.
+
+Resolution boundary and data flow:
+
+- Resolution happens once, in `DeterministicWorkflowRunner`, before local
+  dispatch. It covers the agent `AdapterExecutionInput.node` built in the
+  payload-node path and the `WorkflowStdioNodeExecutionInput.node` used for
+  command and container nodes. Local backends therefore always receive an
+  absolute cwd: the agent gateways (claude-code-agent, codex, cursor, ACP)
+  through `AgentGatewayNodeAdapter`, and the command/container processes
+  through `LocalWorkflowStdioNodeExecutor`. Adapters do not change. Absolute
+  inputs make the adapters' existing `?? defaultWorkingDirectory` and
+  `URL(fileURLWithPath:)` handling correct with no edits.
+- Steps with `placement` (remote workers) are not rewritten on the
+  controller. The worker's `DistributedWorkerWorkspace.resolve` still maps
+  relative paths into the worker workspace, and its behavior is unchanged.
+  Rewriting them to controller-absolute paths would break that mapping.
+- `resolvedBackendWorkingDirectory` applies the same rule. Every
+  step-execution record (`backendWorkingDirectory`) and the prompt-spill root
+  therefore report `<workspaceRoot>/<rel>` instead of a path resolved against
+  the process cwd. Records and the actual backend cwd come from one shared
+  helper, so they cannot diverge.
+- Resolution is idempotent: an absolute input stays the same path.
+
+Escape policy: local runs have no workspace-escape check on these fields
+today. `..` is accepted, and the only change is that it is now anchored to the
+workspace root instead of the process cwd. This design adds no rejection and
+removes none. The distributed worker's `policyBlocked` escape check stays
+where it is and is not reused locally, because reusing it would tighten local
+policy.
+
+Compatibility: when the process cwd equals `--working-dir`, which is the
+default for `riela workflow run`, behavior is unchanged except that agent
+backends now receive the absolute path they require. Workflows that relied on
+a relative path resolving against a different process cwd now resolve against
+the workspace root. That is the intended fix.
+
+Verification: regression tests use temp dirs and a recording adapter or
+stdio executor. They check that a relative agent node `workingDirectory`
+reaches the adapter as `<root>/<rel>`. They check that a relative and an
+inherited command or container `workingDirectory` runs in `<root>/<rel>`.
+They check that absolute values are unchanged and that a `placement` step is
+passed through unresolved. They check that `backendWorkingDirectory` records
+the resolved absolute path.
+
 ## Structured Arguments
 
 `argumentsTemplate` and `argumentBindings` let the runtime build structured arguments separately from prompt text.

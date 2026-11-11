@@ -68,6 +68,10 @@
       {
         "decision": "Amendment 2026-11-11 round 1: integration-paths-outside-writePaths. Accepted plans 01, 02, 04 and 09 move to acceptedDependencies and are not redispatched. Plan 05 owns Sources/RielaCLI/RielaClientFamilyArguments.swift (add `case cancel` only); plan 10 owns Sources/RielaCore/SurfaceCatalog+RowsConsole.swift (two webRoute POST rows) and drops RielaAppInstanceReloadRouteTests from its filter (rerun at serial reconcile). Existing-suite fixture roots become writePaths+artifactRoots of their single owning plan: tmp/specialist-supervisor/process-lifetime (03), tmp/instance-control/instance-control-05-child-admission-gate (06), tmp/instance-control/instance-control-06-parent-admission-runtime/fixtures (07), tmp/ds179/ds179-03-service-resolution (08). The worktree .build and self-cleaning tmp/<prefix>-<UUID> test byproducts are authorized shared verification output. The dispatch manifest stays owned by the dispatch flow, never a worker. No design change.",
         "rationale": "Blocked plans 03, 05, 06, 07, 08 (wave-2 fanout dispatch-plans-attempt-2-exec-37) reported implementation-dependency blockers: required aggregate suites write fixtures outside authorized roots (IR-SCOPE-FIXTURE-ROOTS), the parser enum file was unowned (IR-SCOPE-05-PARSER) and the web catalog file was unowned (IR-SCOPE-10-WEB-CATALOG). Accepted at step5-impl-plan-review comm-000058 (accept_checkpoint_amendment)."
+      },
+      {
+        "decision": "Amendment 2026-11-11 round 2: integration-paths-outside-writePaths. The only remaining unmatched path, impl-plans/active/instance-cancel-dispatch.json (finding IR-SCOPE-FIXTURE-ROOTS), is assigned to plan instance-cancel-03-localprocess-tree as readback-only nominal ownership (never edited by the worker; sha256 recorded at start and end; drift is stop-and-report). Round-1 assignments, plan IDs, acceptedDependencies (01, 02, 04, 09) and the design are unchanged.",
+        "rationale": "dispatch-plans comm-000064 (previousCheckpointCommit c262d69b) still listed the manifest as unmatched with no owner candidate. Accepted at step5-impl-plan-review comm-000066 (accept_checkpoint_amendment); plan 03 dated section at impl-plans/active/instance-cancel-03-localprocess-tree.md:194. Amendment budget now 2 of 2."
       }
     ],
     "intentionalTradeoffs": [
@@ -171,13 +175,18 @@
         "Tests/RielaAdaptersTests/LocalProcessCancellationTreeTests.swift",
         "impl-plans/progress/instance-cancel-03-localprocess-tree.md",
         "tmp/instance-cancel/instance-cancel-03-localprocess-tree",
-        "tmp/specialist-supervisor/process-lifetime"
+        "tmp/specialist-supervisor/process-lifetime",
+        "impl-plans/active/instance-cancel-dispatch.json"
       ],
       "sharedPaths": [],
       "sharedPathNotes": [
         {
           "path": "tmp/specialist-supervisor/process-lifetime",
           "intendedEdit": "Verification-only fixture root written by existing LocalProcessForegroundLifetimeTests (Tests/RielaAdaptersTests/LocalProcessForegroundLifetimeTests.swift:53); do not edit that test (amendment round 1)."
+        },
+        {
+          "path": "impl-plans/active/instance-cancel-dispatch.json",
+          "intendedEdit": "Readback-only nominal ownership (amendment round 2). The worker MUST NOT edit, rewrite, format or regenerate this file; record its sha256 at start and end in impl-plans/progress/instance-cancel-03-localprocess-tree.md; drift is stop-and-report."
         }
       ],
       "artifactRoots": [

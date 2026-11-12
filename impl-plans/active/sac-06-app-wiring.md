@@ -14,6 +14,7 @@
   - `Sources/RielaApp/EntryPoint+Menu.swift` (waiting-state menu only)
   - `impl-plans/progress/sac-06-app-wiring.md`
   - `tmp/serverless-app-control/build-sac-06` (artifact root only; private SwiftPM scratch path, see Amendment 2026-11-12)
+  - `Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift` (additive fixture fix only, see Amendment 2026-11-12 round 2)
 - artifactRoots: `tmp/serverless-app-control/build-sac-06`
 - sharedPaths: none
 - evidence: `tmp/serverless-app-control/sac-06/`
@@ -215,3 +216,65 @@ Decision:
 - Leave the scratch path in place after verification. Removing it belongs to
   serial finalization, not to this plan. No source, contract or design change
   is involved, and all other sections stay in force.
+
+## Amendment 2026-11-12 (integration-paths-outside-writePaths, round 2)
+
+Finding `IR-SAC06-MENU-REGRESSION-TEST` (mid, serial integration review):
+`RielaAppBehaviorRegressionTests.testStatusMenuUsesCompactSummaryItemsAtRuntime`
+fails on the combined tree (assertions at lines 449, 450, 451, 457). It builds
+`RielaApp()` without owner startup, so `ownerStartupComplete` stays `false`
+(`Sources/RielaApp/EntryPoint.swift:80`) and `rebuildMenu()`
+(`Sources/RielaApp/EntryPoint+Menu.swift:21`) returns the plan-mandated
+waiting-state menu (status + Quit). Evidence:
+`tmp/serverless-app-control/serial-reconcile-wave-006/test-targets-2.log`.
+The production behaviour is correct; the test fixture predates it.
+
+Decision (scope only; no design, contract or production change):
+- `Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift` is added
+  to this plan's `writePaths` (here and in
+  `impl-plans/active/serverless-app-control-dispatch.json`). sac-06 is its only
+  owner. No other plan writes it. It is a source path, not an artifact root.
+- Ordered changes:
+  1. In `testStatusMenuUsesCompactSummaryItemsAtRuntime`, set
+     `app.ownerStartupComplete = true` immediately before `app.rebuildMenu()`
+     (line 446). The test already uses `@testable import RielaApp` and sets the
+     internal `app.daemonCandidates` the same way.
+  2. Add one small test, for example
+     `testStatusMenuShowsOnlyStatusAndQuitBeforeOwnerStartup`: a fresh
+     `RielaApp()` with `ownerStartupComplete == false`, then `rebuildMenu()` →
+     the menu has no `Open Console...`, no `Launch on Login`, no `About Riela`,
+     contains `Quit`, and every non-separator, non-Quit item is disabled. This
+     pins the waiting state from §EntryPoint+Menu.swift.
+  3. Record build/test/lint exit codes and log paths in
+     `impl-plans/progress/sac-06-app-wiring.md`.
+- Forbidden:
+  - Do not change `EntryPoint+Menu.swift` waiting-state behaviour, the lock or
+    phase B ordering, or any other production file for this finding.
+  - Do not delete, skip, reorder or loosen any existing assertion
+    (lines 448–467 stay byte-identical). The diff of the test file must be
+    additions only.
+  - Do not call `startOwnerStartup()` or `runPhaseB()` in tests, and do not
+    touch `~/.riela/rielaapp` or `~/Library/Application Support`.
+  - Do not touch `RielaAppWebStartupTests` (dispositioned baseline failure) or
+    other plans' files.
+- Verification (evidence under `tmp/serverless-app-control/sac-06/`):
+  - `arch -arm64 /bin/zsh -lc 'swift build --scratch-path tmp/serverless-app-control/build-sac-06 --build-tests' > tmp/serverless-app-control/sac-06/build-amend2.log 2>&1`
+    must exit 0.
+  - `arch -arm64 /bin/zsh -lc "swift test --scratch-path tmp/serverless-app-control/build-sac-06 --skip-build --filter 'RielaAppBehaviorRegressionTests'" > tmp/serverless-app-control/sac-06/test-amend2.log 2>&1`
+    must exit 0 with `Executed N tests, with 0 failures`, N > 0 and including
+    the two menu tests.
+  - `arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift' > tmp/serverless-app-control/sac-06/lint-amend2.log 2>&1`
+    must exit 0.
+  - `git diff -U0 -- Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift > tmp/serverless-app-control/sac-06/test-diff-amend2.log`
+    must contain no `-` content lines (additions only).
+  - `shasum -a 256 Sources/RielaApp/EntryPoint+Menu.swift` run before the first
+    edit and again after verification must print the same digest (the file is
+    already uncommitted-modified by sac-06, so `git diff` cannot show this);
+    record both digests in the progress log.
+- Done when: the four commands above meet their criteria, and at the serial
+  gate `RielaAppSupportTests` has only the dispositioned
+  `RielaAppWebStartupTests` baseline failure left.
+
+## Implementation progress 2026-11-12
+
+App wiring, locked startup, channel lifecycle, and shared source/session-path delegation are implemented. The private scratch build passed after clearing a cloned module cache; the assigned suites passed 115 tests with no failures, and both plan lint and strict changed-file lint passed. Evidence and source hashes are recorded in `impl-plans/progress/sac-06-app-wiring.md` and `tmp/serverless-app-control/sac-06-app-wiring/`. Independent review and serial integration remain downstream.

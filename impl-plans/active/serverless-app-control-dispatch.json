@@ -55,6 +55,10 @@
       {
         "decision": "Amendment 2026-11-12 round 1: authorize SwiftPM build outputs as artifactRoots — sac-05 owns the shared .build (sole wave-2 writer, commands unchanged); sac-06/07/08 each own a private --scratch-path tmp/serverless-app-control/build-sac-0N seeded once read-only from .build via cp -cR; .build/debug/riela-dependent suites deferred to the serial integration gate",
         "rationale": "Blocked plan sac-05-control-channel (blocker: Authorized build-output location; artifactRoots was [] while verification runs swift build --build-tests / swift test --skip-build). Resolved for every pending building plan (sac-05..08) with disjoint artifact roots per wave; plan IDs, dependsOn, sources, contract and design unchanged; amendment sections appended to sac-05..08 plans."
+      },
+      {
+        "decision": "Amendment 2026-11-12 round 2 (integration-paths-outside-writePaths): Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift added to sac-06-app-wiring writePaths (sole owner) for finding IR-SAC06-MENU-REGRESSION-TEST: set app.ownerStartupComplete = true before rebuildMenu() in testStatusMenuUsesCompactSummaryItemsAtRuntime and add one waiting-state menu test; additions only.",
+        "rationale": "sac-06's plan-mandated waiting-state menu (EntryPoint+Menu.swift:21, ownerStartupComplete false until phaseB) makes the pre-existing test fixture, which never runs owner startup, fail at lines 449/450/451/457 on the combined tree (tmp/serverless-app-control/serial-reconcile-wave-006/test-targets-2.log). The production behaviour is correct; only the fixture needs the flag. Plan IDs, dependsOn, sources, contract and design unchanged; amendment section appended to sac-06."
       }
     ],
     "intentionalTradeoffs": [
@@ -266,7 +270,8 @@
         "Sources/RielaApp/EntryPoint+Environment.swift",
         "Sources/RielaApp/EntryPoint+Menu.swift",
         "impl-plans/progress/sac-06-app-wiring.md",
-        "tmp/serverless-app-control/build-sac-06"
+        "tmp/serverless-app-control/build-sac-06",
+        "Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift"
       ],
       "sharedPaths": [],
       "artifactRoots": [
@@ -280,6 +285,10 @@
         {
           "path": "Sources/RielaApp/EntryPoint+Menu.swift",
           "intendedEdit": "rebuildMenu shows only status + Quit while ownerStartupComplete is false"
+        },
+        {
+          "path": "Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift",
+          "intendedEdit": "Amendment round 2: set app.ownerStartupComplete = true before app.rebuildMenu() in testStatusMenuUsesCompactSummaryItemsAtRuntime and add one waiting-state menu test; additions only, no existing assertion removed or loosened"
         }
       ],
       "acceptanceCriteria": [
@@ -295,7 +304,10 @@
         "arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/serverless-app-control/build-sac-06 --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'\" > tmp/serverless-app-control/sac-06/test.log 2>&1",
         "grep -n 'loadDaemonStateReportingCorruption\\|prepareInitialDaemonProfile()\\|autostartDaemonWorkflows()' Sources/RielaApp/EntryPoint.swift > tmp/serverless-app-control/sac-06/phase-grep.log",
         "! grep -rn 'func reloadErrorResponse\\|func cancelErrorResponse' Sources/RielaApp",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaApp/RielaAppControlHost.swift Sources/RielaApp/RielaAppInstanceAPI.swift Sources/RielaApp/RielaAppInstanceReloadAPI.swift Sources/RielaApp/RielaAppInstanceCancelAPI.swift Sources/RielaApp/RielaAppConfiguredRunAPI.swift Sources/RielaApp/EntryPoint.swift Sources/RielaApp/EntryPoint+Environment.swift Sources/RielaApp/EntryPoint+Menu.swift' > tmp/serverless-app-control/sac-06/lint.log 2>&1"
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaApp/RielaAppControlHost.swift Sources/RielaApp/RielaAppInstanceAPI.swift Sources/RielaApp/RielaAppInstanceReloadAPI.swift Sources/RielaApp/RielaAppInstanceCancelAPI.swift Sources/RielaApp/RielaAppConfiguredRunAPI.swift Sources/RielaApp/EntryPoint.swift Sources/RielaApp/EntryPoint+Environment.swift Sources/RielaApp/EntryPoint+Menu.swift' > tmp/serverless-app-control/sac-06/lint.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/serverless-app-control/build-sac-06 --skip-build --filter 'RielaAppBehaviorRegressionTests'\" > tmp/serverless-app-control/sac-06/test-amend2.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift' > tmp/serverless-app-control/sac-06/lint-amend2.log 2>&1",
+        "git diff -U0 -- Tests/RielaAppSupportTests/RielaAppBehaviorRegressionTests.swift > tmp/serverless-app-control/sac-06/test-diff-amend2.log"
       ]
     },
     {

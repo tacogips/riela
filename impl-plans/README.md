@@ -283,6 +283,37 @@ because no `web/` file changed. Live cancel needs a one-time App upgrade
 `active/instance-cancel-dispatch.json` stays active until the dispatch run
 closes; it records the original plan paths.
 
+Server-less RielaApp control (2026-11-12) is implemented and accepted on
+`feat/serverless-app-control`. There is no GitHub issue. Plans `sac-01` …
+`sac-09` are archived under [`completed/sac-*.md`](completed/):
+[`sac-01-control-contract`](completed/sac-01-control-contract.md),
+[`sac-02-owner-lock-startup`](completed/sac-02-owner-lock-startup.md),
+[`sac-03-sources-and-projection`](completed/sac-03-sources-and-projection.md),
+[`sac-04-control-service`](completed/sac-04-control-service.md),
+[`sac-05-control-channel`](completed/sac-05-control-channel.md),
+[`sac-06-app-wiring`](completed/sac-06-app-wiring.md),
+[`sac-07-cli-instance-local-mode`](completed/sac-07-cli-instance-local-mode.md),
+[`sac-08-cli-environment-local-mode`](completed/sac-08-cli-environment-local-mode.md)
+and [`sac-09-docs`](completed/sac-09-docs.md). Without `--server`,
+`riela instance reload|run|cancel|executions` and
+`riela environment status|reload` use local mode: local SQLite reads, an
+owner-only Unix socket (`<app-root>/run/control.sock`) for live App operations,
+and a locked local reload under `run/app.lock` when no App runs. `--server URL`
+keeps the existing HTTP mode. The App HTTP handlers and the socket channel
+share `RielaAppInstanceControlService`, and the App defers profile startup
+until it holds `app.lock`. The design is
+[`design-serverless-app-control`](../design-docs/specs/design-serverless-app-control.md);
+user docs are in
+[`docs/app-instance-control.md`](../docs/app-instance-control.md#modes).
+The combined-tree aggregate (`tmp/serverless-app-control/serial-reconcile-wave-007/`)
+ran 2989 tests with 2 dispositioned failures: the pre-existing
+`RielaAppWebStartupTests` baseline failure and a
+`WorkflowCommandCrossWorkflowDispatchTests` load-timeout flake that passes on
+re-run. Browser E2E was skipped because no `web/` file changed. Local mode
+needs a one-time App upgrade; use `--server` with older Apps. The dispatch
+manifest `active/serverless-app-control-dispatch.json` stays active until the
+dispatch run closes; it records the original plan paths.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

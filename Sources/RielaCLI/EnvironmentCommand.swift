@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import RielaAppSupport
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -8,7 +9,7 @@ private struct EnvironmentArguments: ParsableArguments {
   @Argument var action: String
   @Option var instance: String
   @Option var profile: String
-  @Option var server: String = "http://127.0.0.1:8787"
+  @Option var server: String?
   @Option var output: String = "json"
 }
 
@@ -19,6 +20,10 @@ private struct EnvironmentBootstrap: Decodable {
 }
 
 struct EnvironmentCommand {
+  var environment: [String: String]?
+  #if os(macOS)
+  var probe: (@Sendable (URL) throws -> RielaAppLocalControlProbe.Outcome)?
+  #endif
   typealias Transport = @Sendable (URLRequest) async throws -> (Data, Int)
   var transport: Transport = { request in
     let configuration = URLSessionConfiguration.ephemeral
@@ -38,8 +43,11 @@ struct EnvironmentCommand {
       let args = try EnvironmentArguments.parse(arguments)
       guard ["status", "reload"].contains(args.action), args.output == "json",
         !args.instance.isEmpty, args.instance.utf8.count <= 1024,
-        !args.profile.isEmpty, args.profile.utf8.count <= 128,
-        let base = URLComponents(string: args.server), let scheme = base.scheme, let host = base.host,
+        !args.profile.isEmpty, args.profile.utf8.count <= 128 else {
+        throw CLIUsageError("environment_invalid_options")
+      }
+      guard let server = args.server else { return try await runLocal(args) }
+      guard let base = URLComponents(string: server), let scheme = base.scheme, let host = base.host,
         ["http", "https"].contains(scheme), base.user == nil, base.password == nil,
         base.query == nil, base.fragment == nil, base.path.isEmpty || base.path == "/",
         scheme == "https" || ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host) else {
@@ -58,7 +66,7 @@ struct EnvironmentCommand {
       if args.action == "reload" {
         var request = URLRequest(url: try url(path + "/actions"))
         request.httpMethod = "POST"
-        request.setValue(args.server.trimmingCharacters(in: CharacterSet(charactersIn: "/")), forHTTPHeaderField: "Origin")
+        request.setValue(server.trimmingCharacters(in: CharacterSet(charactersIn: "/")), forHTTPHeaderField: "Origin")
         request.setValue(bootstrap.csrfToken, forHTTPHeaderField: "x-riela-csrf")
         request.setValue(args.profile, forHTTPHeaderField: "x-riela-profile")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -76,8 +84,41 @@ struct EnvironmentCommand {
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .failure, stderr: error.message + "\n")
     } catch {
+      #if os(macOS)
+      if case let RielaAppControlChannelError.code(code) = error {
+        return CLICommandResult(exitCode: .failure, stderr: code.rawValue + "\n")
+      }
+      #endif
       return CLICommandResult(exitCode: .failure, stderr: "environment_request_failed\n")
     }
+  }
+
+  private func runLocal(_ args: EnvironmentArguments) async throws -> CLICommandResult {
+    #if os(macOS)
+    let root = RielaAppAPIClient.appRoot(environment: environment ?? CLIRuntimeEnvironment.mergedProcessEnvironment())
+    let outcome = try (probe ?? { try RielaAppLocalControlProbe.resolve(appRoot: $0) })(root)
+    guard case let .channel(client) = outcome else {
+      if case let .notRunning(lock) = outcome { lock.release() }
+      throw CLIUsageError("app_not_running: start RielaApp, or use --server")
+    }
+    func send(_ operation: RielaAppControlOperation) async throws -> Data {
+      let result = try await client.send(operation, profile: args.profile)
+      let body = try JSONEncoder().encode(result.body)
+      guard (200..<300).contains(result.status) else { throw Self.failure(status: result.status, body: body) }
+      return body
+    }
+    let bootstrap = try JSONDecoder().decode(RielaAppControlBootstrap.self, from: await send(.bootstrap))
+    guard bootstrap.profile == args.profile else { throw CLIUsageError("environment_profile_conflict") }
+    if args.action == "reload" {
+      let body = try JSONSerialization.data(withJSONObject: ["action": "reloadEnvironment",
+        "expectedProfile": args.profile, "expectedRevision": bootstrap.revision])
+      _ = try await send(.environmentReload(identity: args.instance, body: body))
+    }
+    let status = try Self.decodeStatus(try await send(.environmentStatus(identity: args.instance)))
+    return CLICommandResult(exitCode: .success, stdout: try Self.render(status))
+    #else
+    return CLICommandResult(exitCode: .usage, stderr: "app_server_required\n")
+    #endif
   }
 
   /// Re-encodes the finite status contract; never forwards arbitrary server output.

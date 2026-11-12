@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import RielaAppSupport
 import RielaCore
 
 private struct AppInstanceOptions: ParsableArguments {
@@ -22,12 +23,30 @@ private struct AppInstanceOptions: ParsableArguments {
 struct InstanceAppCommands: Sendable {
   var transport: RielaAppAPIClient.Transport?
   var sleep: @Sendable (UInt64) async throws -> Void
+  var environment: [String: String]?
+  #if os(macOS)
+  var probe: (@Sendable (URL) throws -> RielaAppLocalControlProbe.Outcome)?
+  #endif
 
+  #if os(macOS)
   init(transport: RielaAppAPIClient.Transport? = nil,
-       sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) {
+       sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
+       environment: [String: String]? = nil,
+       probe: (@Sendable (URL) throws -> RielaAppLocalControlProbe.Outcome)? = nil) {
     self.transport = transport
     self.sleep = sleep
+    self.environment = environment
+    self.probe = probe
   }
+  #else
+  init(transport: RielaAppAPIClient.Transport? = nil,
+       sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
+       environment: [String: String]? = nil) {
+    self.transport = transport
+    self.sleep = sleep
+    self.environment = environment
+  }
+  #endif
 
   func run(_ options: CLICommandOptions) async -> CLICommandResult {
     do {
@@ -59,31 +78,47 @@ struct InstanceAppCommands: Sendable {
           variables = try JSONSerialization.jsonObject(with: JSONEncoder().encode(object)) as? [String: Any] ?? [:]
         } catch { throw CLIUsageError("instance_invalid_variables") }
       }
-      let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+      let environment = environment ?? CLIRuntimeEnvironment.mergedProcessEnvironment()
       let root = RielaAppAPIClient.appRoot(environment: environment)
       let profile = try RielaAppAPIClient.expectedProfile(explicit: args.profile, appRoot: root)
-      let endpoint = try RielaAppAPIClient.resolveEndpoint(server: args.server, appRoot: root, environment: environment)
-      if args.server == nil, !Self.localInstanceExists(identity: identity, profile: profile, root: root) {
-        throw RielaAppAPIFailure(code: "instance_not_found", status: 404, body: Data())
+      let client: any RielaAppInstanceControlClient
+      if let server = args.server {
+        let endpoint = try RielaAppAPIClient.resolveEndpoint(server: server, appRoot: root, environment: environment)
+        var http = RielaAppAPIClient(endpoint: endpoint, profile: profile)
+        if let transport { http.transport = transport }
+        client = RielaAppHTTPInstanceControlClient(client: http)
+      } else {
+        #if os(macOS)
+        guard Self.localInstanceExists(identity: identity, profile: profile, root: root) else {
+          throw RielaAppAPIFailure(code: "instance_not_found", status: 404, body: Data())
+        }
+        client = RielaAppLocalInstanceControlClient(appRoot: root,
+          homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment)), profile: profile,
+          probe: probe ?? { try RielaAppLocalControlProbe.resolve(appRoot: $0) })
+        #else
+        throw CLIUsageError("app_server_required")
+        #endif
       }
-      var client = RielaAppAPIClient(endpoint: endpoint, profile: profile)
-      if let transport { client.transport = transport }
-      let encoded = identity.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
-      let path = "/api/v1/instances" + "/" + encoded
       switch action {
       case "reload":
-        return try await reload(client, path: path, args: args, reason: reason ?? "")
+        return try await reload(client, identity: identity, args: args, reason: reason ?? "")
       case "cancel":
-        return try await cancel(client, path: path, args: args, reason: reason ?? "")
+        return try await cancel(client, identity: identity, args: args, reason: reason ?? "")
       case "run":
-        return try await runInstance(client, path: path, args: args, variables: variables)
+        return try await runInstance(client, identity: identity, args: args, variables: variables)
       default:
-        return try await executions(client, path: path, identity: identity, limit: args.limit)
+        return try await executions(client, identity: identity, limit: args.limit)
       }
     } catch let error as CLIUsageError {
       return Self.failure(error.message, exitCode: .usage)
     } catch let error as RielaAppAPIFailure {
-      let hint = error.code == "app_unreachable" ? ": start the web server in RielaApp Console > Settings > Web Config server" : ""
+      let hint: String
+      switch error.code {
+      case "app_unreachable": hint = ": start the web server in RielaApp Console > Settings > Web Config server"
+      case "app_not_running": hint = ": start RielaApp, or use --server"
+      case "app_channel_unavailable": hint = ": another local riela operation or App startup is in progress; retry"
+      default: hint = ""
+      }
       return Self.failure(error.code, exitCode: .failure, stderr: error.code + hint)
     } catch {
       return Self.failure("app_request_failed", exitCode: .failure)
@@ -100,7 +135,7 @@ struct InstanceAppCommands: Sendable {
     return preferences[identity] != nil
   }
 
-  private func reload(_ client: RielaAppAPIClient, path: String, args: AppInstanceOptions,
+  private func reload(_ client: any RielaAppInstanceControlClient, identity: String, args: AppInstanceOptions,
                       reason: String) async throws -> CLICommandResult {
     var elapsed = 0
     let timeout = args.timeoutSeconds ?? 600
@@ -108,12 +143,12 @@ struct InstanceAppCommands: Sendable {
       URL(fileURLWithPath: $0, relativeTo: URL(fileURLWithPath: args.cwd, isDirectory: true)).standardizedFileURL.path
     }
     while true {
-      let bootstrap = try await client.bootstrap()
-      let body: [String: Any] = ["expectedProfile": client.profile, "expectedRevision": bootstrap.revision,
+      let revision = try await client.bootstrapRevision()
+      let body: [String: Any] = ["expectedProfile": client.profile, "expectedRevision": revision,
                                  "reason": reason, "workflowDirectory": directory as Any? ?? NSNull(),
                                  "interruptRunning": args.interruptRunning]
       do {
-        let data = try await client.post(path + "/reload", body: body, bootstrap: bootstrap)
+        let data = try await client.reload(identity: identity, body: body)
         let response = try JSONDecoder().decode(AppReloadResponse.self, from: data)
         return try Self.result(response, code: response.handoff == "lost" ? "reload_handoff_lost" : nil)
       } catch let failure as RielaAppAPIFailure {
@@ -134,16 +169,12 @@ struct InstanceAppCommands: Sendable {
     }
   }
 
-  private func cancel(_ client: RielaAppAPIClient, path: String, args: AppInstanceOptions,
+  private func cancel(_ client: any RielaAppInstanceControlClient, identity: String, args: AppInstanceOptions,
                       reason: String) async throws -> CLICommandResult {
-    let bootstrap = try await client.bootstrap()
-    let cancelPath = args.session.map {
-      path + "/executions/" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "") + "/cancel"
-    } ?? path + "/cancel"
+    _ = try await client.bootstrapRevision()
     let response: AppCancelResponse
     do {
-      let data = try await client.post(cancelPath, body: ["expectedProfile": client.profile, "reason": reason],
-                                       bootstrap: bootstrap)
+      let data = try await client.cancel(identity: identity, sessionId: args.session, body: ["expectedProfile": client.profile, "reason": reason])
       response = try JSONDecoder().decode(AppCancelResponse.self, from: data)
     } catch let failure as RielaAppAPIFailure {
       if failure.code == "ambiguous_running_sessions" {
@@ -158,11 +189,10 @@ struct InstanceAppCommands: Sendable {
     }
     var output = AppCancelOutput(response: response, status: nil)
     guard args.wait else { return try Self.result(output) }
-    let encodedSession = response.sessionId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
     var elapsed = 0
     let timeout = args.timeoutSeconds ?? 60
     while true {
-      let data = try await client.get(path + "/executions/" + encodedSession)
+      let data = try await client.executionDetail(identity: identity, sessionId: response.sessionId)
       output.status = try JSONDecoder().decode(AppExecutionDetail.self, from: data).session.status
       if output.status == "cancelled" { return try Self.result(output) }
       if output.status == "completed" || output.status == "failed" {
@@ -174,15 +204,15 @@ struct InstanceAppCommands: Sendable {
     }
   }
 
-  private func runInstance(_ client: RielaAppAPIClient, path: String, args: AppInstanceOptions,
+  private func runInstance(_ client: any RielaAppInstanceControlClient, identity: String, args: AppInstanceOptions,
                            variables: [String: Any]) async throws -> CLICommandResult {
-    let bootstrap = try await client.bootstrap()
-    var body: [String: Any] = ["expectedProfile": client.profile, "expectedRevision": bootstrap.revision,
+    let revision = try await client.bootstrapRevision()
+    var body: [String: Any] = ["expectedProfile": client.profile, "expectedRevision": revision,
                                "variables": variables]
     if args.allowOverlap { body["allowOverlap"] = true }
     let data: Data
     do {
-      data = try await client.post(path + "/runs", body: body, bootstrap: bootstrap)
+      data = try await client.run(identity: identity, body: body)
     } catch let failure as RielaAppAPIFailure where failure.status == 409 && failure.code == "instance_busy" {
       guard let busy = try? JSONDecoder().decode(AppInstanceBusyFailure.self, from: failure.body),
         let sessionId = busy.error.runningSessionId else { throw failure }
@@ -200,23 +230,20 @@ struct InstanceAppCommands: Sendable {
       let delay = min(args.pollIntervalSeconds, timeout - elapsed)
       try await sleep(UInt64(delay) * 1_000_000_000)
       elapsed += delay
-      let encodedLaunch = launch.id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
       do {
-        let next = try await client.get("/api/v1/workflow-editor/launches/" + encodedLaunch)
+        let next = try await client.launchStatus(launchId: launch.id)
         launch = try JSONDecoder().decode(AppLaunch.self, from: next)
       } catch let failure as RielaAppAPIFailure where failure.status == 404 && launch.sessionId != nil {
-        let encodedSession = launch.sessionId?.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
-        let data = try await client.get(path + "/executions/" + encodedSession)
+        let data = try await client.executionDetail(identity: identity, sessionId: launch.sessionId ?? "")
         let detail = try JSONDecoder().decode(AppExecutionDetail.self, from: data)
         launch.status = detail.session.status
       }
     }
   }
 
-  private func executions(_ client: RielaAppAPIClient, path: String, identity: String,
+  private func executions(_ client: any RielaAppInstanceControlClient, identity: String,
                           limit: Int) async throws -> CLICommandResult {
-    _ = try await client.bootstrap()
-    let data = try await client.get(path + "/executions")
+    let data = try await client.executions(identity: identity)
     let response = try JSONDecoder().decode(AppExecutions.self, from: data)
     let result = AppExecutionsOutput(identity: identity, profile: client.profile,
       items: Array(response.items.prefix(limit)), truncated: response.truncated || response.items.count > limit)
@@ -277,7 +304,7 @@ private struct AppReloadResponse: Codable {
   struct Definition: Codable { var outcome: String; var versionId: String?; var digest: String? }
   struct Bindings: Codable { var respawnRequired: Bool; var respawned: Bool }
   var profile: String
-  var revision: Int
+  var revision: Int?
   var identity: String
   var workflowId: String
   var workflowDirectory: String

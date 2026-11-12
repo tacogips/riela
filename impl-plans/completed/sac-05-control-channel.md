@@ -215,3 +215,11 @@ Decision:
   never show up in `git status`.
 - No source, contract, or design change is involved. All other sections stay
   in force.
+
+## Implementation progress 2026-11-12
+
+The server, client, probe, and focused tests are implemented. The arm64 build,
+three focused test runs, scoped SwiftLint gates, and no-persistence check passed;
+see `impl-plans/progress/sac-05-control-channel.md` for evidence and hashes.
+Formal independent review and downstream App/CLI wiring remain assigned to
+subsequent workflow steps.

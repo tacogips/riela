@@ -15,36 +15,11 @@ extension RielaApp {
     let parts = request.percentEncodedPath.split(separator: "/").map(String.init)
     guard parts.count == 5, Array(parts.prefix(3)) == ["api", "v1", "instances"], parts[4] == "reload" else { return nil }
     guard request.method == "POST" else { return .json(status: 405, .object(["error": .object(["code": .string("method_not_allowed"), "message": .string("Use POST.")])])) }
-    guard request.headers["x-riela-profile"] == daemonProfileName.rawValue else {
-      return reloadErrorResponse(.init(code: .configurationConflict))
-    }
-    guard let identity = parts[3].removingPercentEncoding,
-          let input = try? RielaAppInstanceReloadRequest.decodeStrict(request.body) else {
-      return reloadErrorResponse(.init(code: .invalidReloadRequest))
-    }
-    return await distributedControllerOperations.run { [self] in
-      guard !terminationShutdownStarted else { return reloadErrorResponse(.init(code: .instanceBusy)) }
-      let result = await RielaAppInstanceReloadCoordinator(ports: RielaAppReloadPorts(app: self, profileName: daemonProfileName))
-        .reload(identity: identity, request: input)
-      switch result {
-      case .success(let response):
-        guard let data = try? JSONEncoder().encode(response), let value = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-          return reloadErrorResponse(.init(code: .configurationIOFailure, committed: true))
-        }
-        return .json(status: 200, value)
-      case .failure(let error): return reloadErrorResponse(error)
-      }
-    }
+    let identity = parts[3].removingPercentEncoding
+    return await controlService.handle(.reload(identity: identity ?? "", body: identity == nil ? Data() : request.body),
+      profile: request.headers["x-riela-profile"] ?? "").httpResponse
   }
 
-  private func reloadErrorResponse(_ error: RielaAppInstanceReloadError) -> RielaHTTPResponse {
-    var object: JSONObject = ["error": .object(["code": .string(error.code.rawValue),
-      "message": .string(WorkflowWebProjectionPolicy().safeSummary(error.message))]), "committed": .bool(error.committed)]
-    if let partial = error.partial { object["partial"] = .string(partial) }
-    if let running = error.running { object["running"] = .number(Double(running)) }
-    if let queued = error.queued { object["queued"] = .number(Double(queued)) }
-    return .json(status: error.code.httpStatus, .object(object))
-  }
 }
 
 @MainActor

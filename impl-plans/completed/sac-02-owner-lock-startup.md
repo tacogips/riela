@@ -180,3 +180,10 @@ phaseB, bind and lock creation never happen: `app.lock` is absent.
 - All the tests above pass 3 times in a row.
 - The progress log records the exit codes, log paths and file hashes, using
   the drift rules from sac-01.
+
+## Implementation status
+
+Owner-lock and deferred-startup components and regression tests are implemented.
+The build and three consecutive focused test runs pass on the shared tree; see
+`impl-plans/progress/sac-02-owner-lock-startup.md` for evidence. Formal reviews
+and serial integration remain downstream.

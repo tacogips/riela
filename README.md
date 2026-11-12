@@ -87,7 +87,7 @@ control-plane commands, direct `call-step`/`workflow-call` execution,
 task-backed Work Runtime dispatch, and reviewed `workflow self-improve`
 mutation flows.
 
-For resident RielaApp instances, see the [instance control guide](docs/app-instance-control.md) for `instance reload`, `instance run`, `instance executions`, and `instance cancel` (cancel one running execution and its whole process tree without restarting the App or touching other executions).
+Without `--server`, instance and environment commands use local disk reads and an owner-only Unix socket to control RielaApp, without a web server; `--server URL` uses HTTP. See the [instance control guide](docs/app-instance-control.md) for reload, run, executions, and cancellation.
 
 Client command routing, subcommand validation, positional arguments, and typed
 option parsing use Apple's `swift-argument-parser`. Existing command names,
@@ -2011,11 +2011,18 @@ failures prevent execution and appear as safe errors in environment status.
 
 An instance loads once before its first execution. Later scheduled and manual
 runs reuse its in-memory snapshot, including when the credential store becomes
-locked. Use **Reload environment** in the App or web console, or target the
-App's HTTP server or a `riela serve` host (both run the same loaders and serve
-the same status and reload routes):
+locked. Use **Reload environment** in the App or web console, or the CLI. On
+macOS, without `--server`, the CLI talks to the running RielaApp over its
+owner-only local channel; no web server is needed, and it returns
+`app_not_running` when the App is not running. With `--server URL` it targets
+the App's HTTP server or a `riela serve` host over HTTP (both run the same
+loaders and serve the same status and reload routes). Without `--server` there
+is no HTTP fallback (see
+[instance control modes](docs/app-instance-control.md#modes)):
 
 ```bash
+riela environment status --instance INSTANCE_ID --profile default
+riela environment reload --instance INSTANCE_ID --profile default
 riela environment status --instance INSTANCE_ID --profile default --server http://127.0.0.1:8787
 riela environment reload --instance INSTANCE_ID --profile default --server http://127.0.0.1:8787
 ```

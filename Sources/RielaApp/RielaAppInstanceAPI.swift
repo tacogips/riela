@@ -9,18 +9,21 @@ extension RielaApp {
   func webInstanceResponse(for request: RielaHTTPRequest) async -> RielaHTTPResponse? {
     let parts = request.percentEncodedPath.split(separator: "/").map(String.init)
     if parts.count == 5, Array(parts.prefix(3)) == ["api", "v1", "instances"], parts[4] == "environment" {
-      guard request.method == "GET", request.headers["x-riela-profile"] == daemonProfileName.rawValue,
-            let identity = parts[3].removingPercentEncoding,
-            daemonInstances.contains(where: { $0.identity == identity }) else {
+      guard request.method == "GET", let identity = parts[3].removingPercentEncoding else {
         return instanceAPIError("profile_or_instance_conflict", "Select the current profile and instance.", status: 409)
       }
-      let runtimeIdentity = profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity)
-      return environmentResponse(await daemonRuntime.environmentStatus(identity: runtimeIdentity, profile: daemonProfileName.rawValue))
+      return await controlService.handle(.environmentStatus(identity: identity),
+        profile: request.headers["x-riela-profile"]).httpResponse
     }
     let creates = request.path == "/api/v1/instances" && request.method == "POST"
     let acts = parts.count == 5 && Array(parts.prefix(3)) == ["api", "v1", "instances"] && parts[4] == "actions"
     guard creates || acts else { return nil }
     guard request.method == "POST" else { return instanceAPIError("method_not_allowed", "Use POST.", status: 405) }
+    if acts, let identity = parts[3].removingPercentEncoding,
+       let input = try? JSONDecoder().decode(WorkflowInstanceActionInput.self, from: request.body),
+       input.action == .reloadEnvironment {
+      return await controlService.handle(.environmentReload(identity: identity, body: request.body), profile: nil).httpResponse
+    }
     return await distributedControllerOperations.run { [self] in
       guard !terminationShutdownStarted else {
         return instanceAPIError("instance_busy", "The app is shutting down.", status: 409)
@@ -68,32 +71,6 @@ extension RielaApp {
     }
     let selectedProfile = daemonProfileName
     let runtimeIdentity = profileRuntimeIdentity(profileName: selectedProfile, localIdentity: identity)
-    if input.action == .reloadEnvironment {
-      // Reload refreshes credentials only; it is not gated by start readiness
-      // (a loader-managed Kaiba token must be reloadable while start is blocked).
-      guard let resolved = resolveDaemonWorkflowInstance(identity: runtimeIdentity) else {
-        return instanceAPIError("instance_not_ready", "Configuration is not ready.", status: 422)
-      }
-      let configuration = daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference)
-      do {
-        _ = try await daemonRuntime.reloadEnvironment(for: resolved.candidate, configuration: configuration)
-        // An initially locked loader must not require an App restart after unlock;
-        // the start itself still passes readiness approval.
-        if resolved.preference.active, daemonRuntime.snapshot(for: runtimeIdentity).status != .running,
-           let approved = await approvedDaemonWorkflowInstance(identity: runtimeIdentity),
-           daemonProfileName == selectedProfile, !terminationShutdownStarted {
-          await daemonRuntime.start(approved.candidate,
-            configuration: daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
-            server: daemonServerConfiguration(profileName: selectedProfile),
-            sessionStoreRoot: daemonSessionStoreRoot(profileName: selectedProfile))
-        }
-        return environmentResponse(await daemonRuntime.environmentStatus(identity: runtimeIdentity, profile: selectedProfile.rawValue))
-      } catch {
-        var status = await daemonRuntime.environmentStatus(identity: runtimeIdentity, profile: selectedProfile.rawValue)
-        status.lastError = error as? RuntimeEnvironmentError ?? .sourceFailed
-        return environmentResponse(status, status: 422)
-      }
-    }
     if input.action.startsRuntime {
       guard await approvedDaemonWorkflowInstance(identity: runtimeIdentity) != nil else {
         return instanceAPIError("instance_not_ready", "Configuration is not ready. Check its runtime status.", status: 422)
@@ -138,14 +115,6 @@ extension RielaApp {
     }
     refreshDaemonWorkflowWindow()
     return .json(.object(["profile": .string(daemonProfileName.rawValue), "revision": .number(Double(webRevision))]))
-  }
-
-  private func environmentResponse(_ value: RuntimeEnvironmentStatus, status: Int = 200) -> RielaHTTPResponse {
-    guard let data = try? JSONEncoder().encode(value),
-          let object = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-      return instanceAPIError("environment_status_unavailable", "Environment status unavailable.", status: 500)
-    }
-    return .json(status: status, object)
   }
 
   private func instanceAPIError(_ code: String, _ message: String, status: Int) -> RielaHTTPResponse {

@@ -108,3 +108,8 @@ Nothing else changes.
 - The checks pass.
 - The progress log records the commands and exit codes, using the drift rules
   from sac-01.
+
+## Implementation progress
+
+- Step 6: guide and README changes implemented; plan-local documentation checks passed. See `impl-plans/progress/sac-09-docs.md` and `tmp/serverless-app-control/sac-09-docs/` for evidence.
+- Formal review, integration verification, and finalization remain downstream.

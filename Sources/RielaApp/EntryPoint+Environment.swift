@@ -104,8 +104,8 @@ extension RielaApp {
   }
 
   func daemonSessionStoreRoot(profileName: RielaAppProfileName) -> String {
-    webSessionStoreRootOverride ?? appHomeDirectory
-      .appendingPathComponent(".riela/profiles/\(profileName.rawValue)/sessions", isDirectory: true).path
+    webSessionStoreRootOverride ?? RielaAppProfileStore.sessionStoreRootURL(
+      homeDirectory: appHomeDirectory, profileName: profileName).path
   }
 
   private struct EnvironmentStatusSummary {

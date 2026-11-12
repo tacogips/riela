@@ -127,3 +127,7 @@ RielaAppSupport test uses; grep for `discoverSelectedWorkflowDirectory` in
 - The existing executions projection tests pass unmodified.
 - The progress log records exit codes, log paths and hashes, using the drift
   rules from sac-01.
+
+## Implementation status
+
+Source and focused tests implemented. The required build, 21 selected tests, scoped lint and unchanged-file check passed after the sibling compile repair. See `impl-plans/progress/sac-03-sources-and-projection.md` for evidence. Formal review and integration remain downstream.

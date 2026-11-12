@@ -145,3 +145,11 @@ Decision:
 - Leave the scratch path in place after verification. Removing it belongs to
   serial finalization, not to this plan. No source, contract or design change
   is involved, and all other sections stay in force.
+
+## Implementation progress 2026-11-12
+
+Local channel mode and explicit HTTP selection are implemented, with the seven
+focused local-mode cases and the existing HTTP invocations updated. The
+implementation evidence and gate results are recorded in
+`impl-plans/progress/sac-08-cli-environment-local-mode.md`. Formal reviews and
+combined-tree integration remain downstream workflow steps.

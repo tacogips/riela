@@ -76,6 +76,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var webWorkflowLaunches: [String: WebWorkflowLaunch] { webWorkflowRuntime.launches }
   var webSessionStoreRootOverride: String?
   private(set) var terminationShutdownStarted = false
+  var ownerLock: RielaAppOwnerLock?
+  var ownerStartupComplete = false
+  var controlChannel: RielaAppControlChannelServer?
 
   var appearanceSettingsStore: RielaAppAppearanceSettingsStore {
     RielaAppAppearanceSettingsStore(appRootURL: profileStore.appRootURL)
@@ -92,12 +95,18 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     appHomeDirectory = configuredHomeDirectory()
-    startRetention()
     profileStore = RielaAppProfileStore(
       appRootURL: launchOptions.appRoot ?? RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
     )
     rielaAppApplyColorScheme(appearanceSettingsStore.load().colorScheme)
     daemonProfileName = initialDaemonProfileName()
+    configureStatusItem()
+    rebuildMenu()
+    startOwnerStartup()
+  }
+
+  func runPhaseB() {
+    startRetention()
     do {
       try prepareInitialDaemonProfile()
     } catch {
@@ -118,7 +127,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       ))
     }
     logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonInstances.count) workflow instance(s)")
-    configureStatusItem()
     configureWebServer()
     Task {
       await startDistributedController()
@@ -145,6 +153,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       return .terminateNow
     }
     terminationShutdownStarted = true
+    controlChannel?.stop()
+    if let ownerLock {
+      RielaAppOwnerStartup.unlinkSocketIfOwned(RielaAppRunDirectory(appRoot: profileStore.appRootURL), lock: ownerLock)
+    }
+    guard ownerStartupComplete else { return .terminateNow }
     desktopController?.shutdown()
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
@@ -658,20 +671,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     profileName: RielaAppProfileName,
     state: RielaAppDaemonWorkflowState
   ) -> [RielaAppDaemonWorkflowCandidate] {
-    daemonDiscovery.discoverUserDaemonWorkflows(
-      appWorkflowRoot: RielaAppProfileStore.workflowRootURL(
-        appRootURL: profileStore.appRootURL,
-        profileName: profileName,
-        storageDirectory: state.workflowStorageDirectory
-      ),
-      appPackageRoot: RielaAppProfileStore.packageRootURL(
-        appRootURL: profileStore.appRootURL,
-        profileName: profileName,
-        storageDirectory: state.workflowStorageDirectory
-      ),
-      projectDirectories: state.projectDirectories,
-      additionalWorkflowDirectories: state.workflowDirectories
-    )
+    RielaAppProfileWorkflowSources.discover(appRootURL: profileStore.appRootURL,
+      profileName: profileName, state: state, projectRoot: launchOptions.projectRoot)
   }
 
   /// The profile's workflow storage, exported to workflow runs and the
@@ -806,7 +807,7 @@ extension RielaApp {
     launchOptions.homeDirectory(defaultHome: NSHomeDirectory())
   }
 
-  private func logDaemon(_ message: String) {
+  func logDaemon(_ message: String) {
     let line = "[RielaApp daemon] \(message)\n"
     if let data = line.data(using: .utf8) {
       FileHandle.standardError.write(data)

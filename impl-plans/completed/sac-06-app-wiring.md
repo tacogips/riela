@@ -278,3 +278,5 @@ Decision (scope only; no design, contract or production change):
 ## Implementation progress 2026-11-12
 
 App wiring, locked startup, channel lifecycle, and shared source/session-path delegation are implemented. The private scratch build passed after clearing a cloned module cache; the assigned suites passed 115 tests with no failures, and both plan lint and strict changed-file lint passed. Evidence and source hashes are recorded in `impl-plans/progress/sac-06-app-wiring.md` and `tmp/serverless-app-control/sac-06-app-wiring/`. Independent review and serial integration remain downstream.
+
+Integration repair: the ready-state menu fixture and new waiting-state test pass (16 regression tests); the rebuilt assigned suites pass 115 tests. The test diff is additions only and the production menu hash is unchanged. The serial aggregate gate remains downstream.

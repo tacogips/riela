@@ -247,3 +247,8 @@ settles. Never edit a sibling's files.
 - If a file you own changed unexpectedly between your edits (drift), stop,
   record it, and re-apply your intent from your immutable intent notes in the
   progress log. Never revert another plan's edits.
+
+## Implementation-stage progress
+
+- Contract and focused tests implemented; detailed evidence and verification are recorded in `impl-plans/progress/sac-01-control-contract.md`.
+- Formal review, integration, and final commit remain downstream workflow steps.

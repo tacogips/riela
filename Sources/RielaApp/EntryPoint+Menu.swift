@@ -18,6 +18,15 @@ extension RielaApp: NSMenuDelegate {
       statusMenuNeedsRebuild = true
       return
     }
+    if !ownerStartupComplete {
+      let menu = NSMenu()
+      menu.addItem(supplementaryMenuItem(status))
+      menu.addItem(menuItem("Quit", action: #selector(quitFromStatusMenu)))
+      menu.delegate = self
+      statusItem.menu = menu
+      statusMenuNeedsRebuild = false
+      return
+    }
     // Everything the console Settings can do (workflows, worker controller,
     // web server) lives there; the menu keeps only app-level actions.
     let menu = NSMenu()
@@ -48,7 +57,7 @@ extension RielaApp: NSMenuDelegate {
 
   func menuWillOpen(_ menu: NSMenu) {
     isStatusMenuOpen = true
-    refreshLaunchAtLoginStatus()
+    if ownerStartupComplete { refreshLaunchAtLoginStatus() }
   }
 
   func menuDidClose(_ menu: NSMenu) {

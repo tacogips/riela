@@ -298,3 +298,7 @@ Decision:
 - Leave the scratch path in place after verification. Removing it belongs to
   serial finalization, not to this plan. No source, contract or design change
   is involved, and all other sections stay in force.
+
+## Implementation progress 2026-11-12
+
+Implementation and focused behavioral verification completed; see `impl-plans/progress/sac-07-cli-instance-local-mode.md`. Formal review and serial integration remain pending.

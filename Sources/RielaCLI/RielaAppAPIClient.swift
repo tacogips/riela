@@ -107,12 +107,17 @@ struct RielaAppAPIClient: Sendable {
       throw RielaAppAPIFailure(code: "app_unreachable", status: 0, body: Data())
     }
     guard data.count <= 1_048_576 else { throw RielaAppAPIFailure(code: "app_response_too_large", status: status, body: Data()) }
-    guard (200..<300).contains(status) else {
-      let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
-      let code = envelope.flatMap { EnvironmentClientStatus.safeCode($0.error.code) } ?? "app_http_\(status)"
-      throw RielaAppAPIFailure(code: code, status: status, body: data)
-    }
+    guard (200..<300).contains(status) else { throw Self.failure(status: status, body: data) }
     return data
+  }
+
+  static func failure(status: Int, body: Data) -> RielaAppAPIFailure {
+    guard body.count <= 1_048_576 else {
+      return RielaAppAPIFailure(code: "app_response_too_large", status: status, body: Data())
+    }
+    let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: body)
+    let code = envelope.flatMap { EnvironmentClientStatus.safeCode($0.error.code) } ?? "app_http_\(status)"
+    return RielaAppAPIFailure(code: code, status: status, body: body)
   }
 }
 

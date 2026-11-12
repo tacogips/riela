@@ -106,7 +106,7 @@ public struct RielaAppInstanceReloadResponse: Codable, Equatable, Sendable {
     }
   }
   public var profile: String
-  public var revision: Int
+  public var revision: Int?
   public var identity: String
   public var workflowId: String
   public var workflowDirectory: String
@@ -116,7 +116,7 @@ public struct RielaAppInstanceReloadResponse: Codable, Equatable, Sendable {
   public var handoff: String
   public var runtimeStatus: String
   public var committed: Bool
-  public init(profile: String, revision: Int, identity: String, workflowId: String, workflowDirectory: String,
+  public init(profile: String, revision: Int?, identity: String, workflowId: String, workflowDirectory: String,
               sourceChanged: Bool, definition: Definition, eventBindings: EventBindings, handoff: String,
               runtimeStatus: String, committed: Bool) {
     self.profile = profile
@@ -237,4 +237,9 @@ public protocol RielaAppInstanceReloadPorts: Sendable {
   func replaceChild(identity: String, interrupt: Bool) async throws -> String
   func profile() async -> String
   func revision() async -> Int
+  func liveRevision() async -> Int?
+}
+
+public extension RielaAppInstanceReloadPorts {
+  func liveRevision() async -> Int? { await revision() }
 }

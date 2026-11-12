@@ -255,3 +255,10 @@ For the reload and cancel fakes, imitate
 - The existing reload and cancel tests are unchanged and green.
 - The progress log records exit codes, log paths and hashes, using the drift
   rules from sac-01.
+
+## Implementation progress
+
+- Shared control service and optional live reload revision implemented; App and channel wiring remain in their assigned downstream plans.
+- Verification and source identities are recorded in `impl-plans/progress/sac-04-control-service.md`. Formal review and serial integration remain pending.
+
+- Implementation and assigned regression assertions are complete; final verification passed. Independent review and serial integration remain pending.

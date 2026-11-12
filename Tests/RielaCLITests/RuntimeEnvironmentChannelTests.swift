@@ -96,7 +96,7 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
       XCTAssertEqual(request.httpMethod, "GET")
       return (Data(#"{"profile":"other","revision":1,"csrfToken":"not-for-output"}"#.utf8), 200)
     })
-    let result = await command.run(["reload", "--instance", "fixture", "--profile", "default"])
+    let result = await command.run(["reload", "--instance", "fixture", "--profile", "default", "--server", "http://127.0.0.1:8787"])
     XCTAssertEqual(result.exitCode, .failure)
     XCTAssertFalse((result.stdout + result.stderr).contains("not-for-output"))
     XCTAssertTrue(result.stderr.contains("profile_conflict"))
@@ -119,7 +119,7 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
       }
       return (Data(#"{"names":["API_KEY"],"configuredNames":["API_KEY"],"missingNames":[],"sourceIDs":["fixture"],"generation":2,"readiness":"ready","unexpectedSecret":"DO_NOT_FORWARD"}"#.utf8), 200)
     })
-    let result = await command.run(["reload", "--instance", "fixture", "--profile", "default"])
+    let result = await command.run(["reload", "--instance", "fixture", "--profile", "default", "--server", "http://127.0.0.1:8787"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     XCTAssertFalse(result.stdout.contains("DO_NOT_FORWARD"))
     let requests = await calls.values
@@ -148,7 +148,7 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
                  "environment_instance_changed"] {
       let command = environmentCommand(post: (statusBody(lastError: code), 422),
                                        status: (Data(), 500))
-      let result = await command.run(["reload", "--instance", "fixture", "--profile", "default"])
+      let result = await command.run(["reload", "--instance", "fixture", "--profile", "default", "--server", "http://127.0.0.1:8787"])
       XCTAssertEqual(result.exitCode, .failure)
       XCTAssertEqual(result.stderr, code + "\n")
       XCTAssertTrue(result.stdout.contains(#""generation":3"#), result.stdout)
@@ -170,7 +170,7 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
     ]
     for testCase in cases {
       let command = environmentCommand(post: testCase.post, status: testCase.status)
-      let result = await command.run(["reload", "--instance", "fixture", "--profile", "default"])
+      let result = await command.run(["reload", "--instance", "fixture", "--profile", "default", "--server", "http://127.0.0.1:8787"])
       XCTAssertEqual(result.exitCode, .failure)
       XCTAssertEqual(result.stderr, testCase.expected + "\n")
       XCTAssertFalse((result.stdout + result.stderr).contains("Secret Value"))
@@ -180,7 +180,7 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
 
   func testEnvironmentStatusDecodesUnknownLastErrorTolerantly() async throws {
     let command = environmentCommand(post: nil, status: (statusBody(lastError: "environment_restart_required"), 200))
-    let result = await command.run(["status", "--instance", "fixture", "--profile", "default"])
+    let result = await command.run(["status", "--instance", "fixture", "--profile", "default", "--server", "http://127.0.0.1:8787"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     XCTAssertTrue(result.stdout.contains(#""lastError":"environment_restart_required""#), result.stdout)
     XCTAssertFalse(result.stdout.contains("DO_NOT_FORWARD"))

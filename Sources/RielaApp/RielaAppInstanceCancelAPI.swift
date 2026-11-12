@@ -16,37 +16,13 @@ extension RielaApp {
     guard request.method == "POST" else {
       return .json(status: 405, .object(["error": .object(["code": .string("method_not_allowed"), "message": .string("Use POST.")])]))
     }
-    guard request.headers["x-riela-profile"] == daemonProfileName.rawValue else {
-      return cancelErrorResponse(.init(code: .configurationConflict))
-    }
-    guard let identity = parts[3].removingPercentEncoding,
-          let sessionId = explicit ? parts[5].removingPercentEncoding : "",
-          let input = try? RielaAppInstanceCancelRequest.decodeStrict(request.body) else {
-      return cancelErrorResponse(.init(code: .invalidCancelRequest))
-    }
-    return await distributedControllerOperations.run { [self] in
-      guard !terminationShutdownStarted else { return cancelErrorResponse(.init(code: .instanceBusy)) }
-      let coordinator = RielaAppInstanceCancelCoordinator(ports: RielaAppCancelPorts(app: self, profileName: daemonProfileName))
-      let result = explicit ? await coordinator.cancel(identity: identity, sessionId: sessionId, request: input)
-        : await coordinator.cancelSole(identity: identity, request: input)
-      switch result {
-      case .success(let response):
-        guard let data = try? JSONEncoder().encode(response), let value = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-          return cancelErrorResponse(.init(code: .cancelUnavailable))
-        }
-        return .json(status: 202, value)
-      case .failure(let error): return cancelErrorResponse(error)
-      }
-    }
+    let identity = parts[3].removingPercentEncoding
+    let sessionId = explicit ? parts[5].removingPercentEncoding : nil
+    let validPath = identity != nil && (!explicit || sessionId != nil)
+    return await controlService.handle(.cancel(identity: identity ?? "", sessionId: sessionId,
+      body: validPath ? request.body : Data()), profile: request.headers["x-riela-profile"] ?? "").httpResponse
   }
 
-  private func cancelErrorResponse(_ error: RielaAppInstanceCancelError) -> RielaHTTPResponse {
-    var object: JSONObject = ["error": .object(["code": .string(error.code.rawValue),
-      "message": .string(WorkflowWebProjectionPolicy().safeSummary(error.message))])]
-    if let ids = error.sessionIds { object["sessionIds"] = .array(ids.map(JSONValue.string)) }
-    if let pending = error.pendingRunCount { object["pendingRunCount"] = .number(Double(pending)) }
-    return .json(status: error.code.httpStatus, .object(object))
-  }
 }
 
 @MainActor

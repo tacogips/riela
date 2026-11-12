@@ -120,7 +120,7 @@ public struct RielaAppInstanceReloadCoordinator: Sendable {
   private func response(identity: String, candidate: RielaAppInstanceReloadCandidate, validated: RielaAppInstanceReloadValidated,
                         definition: RielaAppInstanceReloadResponse.Definition, needsRespawn: Bool, respawned: Bool,
                         handoff: String, runtimeStatus: String) async -> RielaAppInstanceReloadResponse {
-    await .init(profile: ports.profile(), revision: ports.revision(), identity: identity, workflowId: validated.workflowId,
+    await .init(profile: ports.profile(), revision: ports.liveRevision(), identity: identity, workflowId: validated.workflowId,
       workflowDirectory: candidate.workflowDirectory, sourceChanged: candidate.sourceChanged, definition: definition,
       eventBindings: .init(respawnRequired: needsRespawn, respawned: respawned), handoff: handoff,
       runtimeStatus: runtimeStatus, committed: true)

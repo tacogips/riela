@@ -443,6 +443,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
       )
     ]
 
+    app.ownerStartupComplete = true
     app.rebuildMenu()
 
     let menu = app.statusItem.menu
@@ -465,6 +466,18 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     })
     XCTAssertEqual(summaryItem.isEnabled, false)
     XCTAssertEqual(summaryItem.toolTip, summaryItem.title)
+  }
+
+  func testStatusMenuShowsOnlyStatusAndQuitBeforeOwnerStartup() throws {
+    let app = RielaApp()
+    XCTAssertFalse(app.ownerStartupComplete)
+    app.rebuildMenu()
+
+    let items = try XCTUnwrap(app.statusItem.menu?.items)
+    XCTAssertEqual(items.count, 2)
+    XCTAssertFalse(items[0].isEnabled)
+    XCTAssertEqual(items[1].title, "Quit")
+    XCTAssertFalse(items.contains { ["Open Console...", "Launch on Login", "About Riela"].contains($0.title) })
   }
 
   func testAddInstanceSelectionUsesInlinePaneAndNoWorkflowPopupAtRuntime() throws {

@@ -1,0 +1,185 @@
+# sac-06-app-wiring: RielaApp adapters, deferred locked startup, channel host
+
+- planId: `sac-06-app-wiring`
+- wave: 3, dependsOn: `sac-02-owner-lock-startup`, `sac-03-sources-and-projection`, `sac-04-control-service`, `sac-05-control-channel`
+- design: `design-docs/specs/design-serverless-app-control.md` §3.3, §3.4 (ownership invariant, deferred initialization), §3.5 (lifecycle)
+- writePaths:
+  - `Sources/RielaApp/RielaAppControlHost.swift` (new: `RielaAppControlPorts` adapter + channel host glue)
+  - `Sources/RielaApp/RielaAppInstanceAPI.swift`
+  - `Sources/RielaApp/RielaAppInstanceReloadAPI.swift` (handler only; keep `RielaAppReloadPorts` and `reloadStartRecord`)
+  - `Sources/RielaApp/RielaAppInstanceCancelAPI.swift` (handler only; keep `RielaAppCancelPorts`)
+  - `Sources/RielaApp/RielaAppConfiguredRunAPI.swift`
+  - `Sources/RielaApp/EntryPoint.swift`
+  - `Sources/RielaApp/EntryPoint+Environment.swift` (`daemonSessionStoreRoot` only)
+  - `Sources/RielaApp/EntryPoint+Menu.swift` (waiting-state menu only)
+  - `impl-plans/progress/sac-06-app-wiring.md`
+- sharedPaths: none
+- evidence: `tmp/serverless-app-control/sac-06/`
+
+## Intent and context
+
+This plan connects the shared pieces to the real App.
+
+1. The HTTP handlers become thin adapters over `RielaAppInstanceControlService`
+   (sac-04), so HTTP and the socket cannot drift.
+2. `applicationDidFinishLaunching` is split into phase A and phase B around
+   `RielaAppOwnerStartup` (sac-02). The App therefore never loads or writes
+   profile state without holding `run/app.lock`.
+3. The channel server (sac-05) is bound inside the locked startup and serves
+   the same service.
+4. `daemonWorkflowSources(profileName:state:)` and `daemonSessionStoreRoot`
+   delegate to the sac-03 functions.
+
+There is no RielaApp test target. Correctness is covered by:
+
+- the sac-04 service tests;
+- the sac-02 startup regression;
+- `swift build`;
+- the existing RielaAppSupport route tests.
+
+## Non-goals
+
+- Do not change `/actions` start, stop, restart or enable logic,
+  `POST /instances`, the router, CSRF or Host guards, or the web-server
+  controller.
+- No GraphQL changes.
+- Do not run, restart or reconfigure the installed RielaApp. Do not launch the
+  built App against the real home.
+
+## File-level changes
+
+### `RielaAppControlHost.swift`
+
+**`@MainActor struct RielaAppControlPorts: RielaAppInstanceControlPorts`**, with
+fields `app: RielaApp` and `profileName: RielaAppProfileName`.
+
+| Port | Implementation |
+| --- | --- |
+| `profile()` | `app.daemonProfileName.rawValue`. Read it live, because the profile can switch at runtime |
+| `bootstrap()` | `{profile, app.webRevision}` |
+| `isShuttingDown()` | `app.terminationShutdownStarted` |
+| `serialized(body)` | `await app.distributedControllerOperations.run { await body() }` |
+| `reloadPorts()` | `RielaAppReloadPorts(app:profileName:)` |
+| `cancelPorts()` | `RielaAppCancelPorts(app:profileName:)` |
+| `validateRevision` | calls `app.validateGraphQLConfigurationRevision`; on a `RielaConfigurationGraphQLError` returns a `RielaAppControlConflict` with `code.lowercased()`, `message`, and status 404 for `SOURCE_NOT_FOUND`, 400 for `INVALID_CONFIGURATION`, otherwise 409 (copied from the `RielaAppInstanceAPI.swift` catch); any other error → 500 `configuration_io_failure` "Could not save execution configuration." |
+| `instanceExists` | `app.daemonInstances.contains { $0.identity == identity }` |
+| `environmentStatus` | `app.daemonRuntime.environmentStatus(identity: runtimeIdentity, profile:)` |
+| `reloadEnvironment` | moves the body of the `.reloadEnvironment` branch of `performWebInstanceAction`, including the "start if active, not running and approved" step, and returns `.notReady` / `.reloaded(status)` / `.failed(status with lastError)` |
+| `launchConfiguredRun` | moves the body of `webConfiguredRunResponse` after its input guard (revision checks, approval, `prepareEnvironment`, context, `launchConfiguredWorkflow`, the catch mapping) and converts the returned `RielaHTTPResponse` with `RielaAppControlResult(httpResponse:)` |
+| `launchStatus` | builds a `RielaHTTPRequest` `GET /api/v1/workflow-editor/launches/<percent-encoded id>` with header `x-riela-profile: profile` and calls the same App function the router uses for that path (find it with `grep -rn webWorkflowEditorLaunch Sources`), then converts the response |
+
+**`extension RielaApp`**
+
+- `var controlService: RielaAppInstanceControlService`, built with
+  `RielaAppInstanceControlService(ports: RielaAppControlPorts(app: self, profileName: daemonProfileName))`.
+- `func startOwnerStartup()` creates `RielaAppRunDirectory(appRoot: profileStore.appRootURL)`
+  and a `RielaAppControlChannelServer` whose handler hops to the main actor and
+  calls `controlService.handle(op, profile: profile)`. Its log closure is
+  `logDaemon`. Then it calls `RielaAppOwnerStartup(run:, waitObserver: { status = "Waiting for a local riela CLI operation…" on main }).start(bindChannel: server.bind, phaseB: { lock in self.ownerLock = lock; self.ownerStartupComplete = true; self.runPhaseB() }, failed: { … })`.
+  - The `failed` closure shows `app_channel_insecure` in the status, logs, and
+    calls `NSApp.terminate(nil)`.
+  - A `bind` error (path too long or insecure socket) is logged as
+    `app_channel_path_too_long` or `app_channel_insecure`; phase B still runs.
+
+### `EntryPoint.swift`
+
+- Add stored properties: `var ownerLock: RielaAppOwnerLock?`,
+  `var ownerStartupComplete = false`, and `var controlChannel: RielaAppControlChannelServer?`.
+- **Phase A** (stays in `applicationDidFinishLaunching`):
+  1. `appHomeDirectory = …`
+  2. `profileStore = …`
+  3. color scheme
+  4. `daemonProfileName = initialDaemonProfileName()`
+  5. `configureStatusItem()`
+  6. `rebuildMenu()`
+  7. `startOwnerStartup()`
+
+  Check that `initialDaemonProfileName()` only reads; if it writes, move it to
+  phase B and use a placeholder name in phase A.
+- **Phase B** (`func runPhaseB()`, `@MainActor`): everything else, in the
+  current order: `startRetention()`, `prepareInitialDaemonProfile`,
+  `daemonDiscovery`, `daemonStore`, `daemonState = load…`,
+  `refreshDaemonInstanceCache`, telemetry, `logDaemon`, `configureWebServer`,
+  the distributed controller task, `rebuildMenu`, `refreshLaunchAtLoginStatus`,
+  the timer, `setStartRecordProvider`, imports, the open-flags, and autostart.
+- `daemonWorkflowSources(profileName:state:)` returns
+  `RielaAppProfileWorkflowSources.discover(appRootURL: profileStore.appRootURL, profileName:, state:, projectRoot: launchOptions.projectRoot)`.
+  The output must be identical.
+- `applicationShouldTerminate`: add `controlChannel?.stop()`, then, if
+  `ownerLock` is set, `RielaAppOwnerStartup.unlinkSocketIfOwned(run, lock:)`.
+  Do this before the existing awaits. Termination while phase B never ran must
+  not crash: guard every runtime stop that assumes loaded state, and skip
+  `webServerController` when it is nil.
+
+### `EntryPoint+Menu.swift`
+
+In `rebuildMenu()`, when `!ownerStartupComplete`, build only a disabled status
+item (the current `status`) plus Quit. No profile, instance, console, worker or
+web-server items. This prevents profile switches or edits before the lock.
+
+### `EntryPoint+Environment.swift`
+
+`daemonSessionStoreRoot(profileName:)` returns
+`webSessionStoreRootOverride ?? RielaAppProfileStore.sessionStoreRootURL(homeDirectory: appHomeDirectory, profileName:).path`.
+The path string must be identical to the old one.
+
+### HTTP adapters
+
+Each handler keeps its path, method and route matching exactly. It extracts
+`identity`/`sessionId` (with `removingPercentEncoding`) as today, then returns
+`await controlService.handle(op, profile: request.headers["x-riela-profile"]).httpResponse`.
+
+| File | Change |
+| --- | --- |
+| `RielaAppInstanceReloadAPI.swift` | `webInstanceReloadResponse` → `.reload(identity:body:)`. Delete `reloadErrorResponse` (moved into the service) |
+| `RielaAppInstanceCancelAPI.swift` | `webInstanceCancelResponse` → `.cancel(...)`. Delete `cancelErrorResponse` |
+| `RielaAppInstanceAPI.swift` | the environment GET → `.environmentStatus`. In the `/actions` path, when the decoded `WorkflowInstanceActionInput.action == .reloadEnvironment`, return `controlService.handle(.environmentReload(identity:body: request.body), profile: nil).httpResponse` **outside** the existing `distributedControllerOperations.run` block, because the service serializes itself. Every other action keeps the existing code. Delete the moved branch and `environmentResponse` only if they are unused |
+| `RielaAppConfiguredRunAPI.swift` | the handler → `.run(identity:body:)`. The moved logic now lives in `RielaAppControlPorts.launchConfiguredRun` |
+
+Method-not-allowed (405) and path-parse 400 responses stay in the adapters
+exactly as today, because they happen before any service call.
+
+## Pitfalls
+
+- **No unlocked state access.** After this change, `daemonState`,
+  `daemonStore`, `prepareInitialDaemonProfile` and autostart must never run
+  before `runPhaseB`. Grep `applicationDidFinishLaunching` after editing.
+- Do not wrap `/actions` `reloadEnvironment` in `distributedControllerOperations.run`
+  twice. Nested runs on the same serializer would deadlock.
+- `request.headers["x-riela-profile"]` is passed as-is (it may be nil). The
+  service applies the per-operation semantics.
+- Keep `RielaAppReloadPorts`, `RielaAppCancelPorts` and `reloadStartRecord`.
+  Tests and the reload coordinator depend on them.
+- The channel handler runs off the main actor. Hop with
+  `await MainActor.run { … }` or an `@MainActor` closure, and never block the
+  accept thread.
+- Do not touch `RielaAppWebRouter.swift`, `RielaAppWebServerController.swift`
+  or `RielaAppConfigurationGraphQLProvider.swift`.
+
+## Tests and verification (`tmp/serverless-app-control/sac-06/`)
+
+There is no App test target. Evidence comes from build, grep invariants and
+the shared suites.
+
+- `mkdir -p tmp/serverless-app-control/sac-06`
+- `arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-06/build.log 2>&1`
+  must exit 0, including the RielaApp target.
+- `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'" > tmp/serverless-app-control/sac-06/test.log 2>&1`
+  must exit 0.
+- `grep -n "loadDaemonStateReportingCorruption\|prepareInitialDaemonProfile()\|autostartDaemonWorkflows()" Sources/RielaApp/EntryPoint.swift > tmp/serverless-app-control/sac-06/phase-grep.log`.
+  Record in the progress log that every such call is inside `runPhaseB` or a
+  later user action, never in `applicationDidFinishLaunching`.
+- `! grep -n "func reloadErrorResponse\|func cancelErrorResponse" Sources/RielaApp`
+  must print nothing (the rendering moved).
+- `arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaApp/RielaAppControlHost.swift Sources/RielaApp/RielaAppInstanceAPI.swift Sources/RielaApp/RielaAppInstanceReloadAPI.swift Sources/RielaApp/RielaAppInstanceCancelAPI.swift Sources/RielaApp/RielaAppConfiguredRunAPI.swift Sources/RielaApp/EntryPoint.swift Sources/RielaApp/EntryPoint+Environment.swift Sources/RielaApp/EntryPoint+Menu.swift' > tmp/serverless-app-control/sac-06/lint.log 2>&1`
+
+## Done criteria
+
+- The build is green.
+- The listed suites are green.
+- The phase-grep invariant is recorded.
+- The HTTP handlers call `controlService.handle`, checked with
+  `grep -n controlService.handle Sources/RielaApp` showing reload, cancel, run,
+  environment and actions.
+- The progress log records exit codes, log paths and hashes, using the drift
+  rules from sac-01.

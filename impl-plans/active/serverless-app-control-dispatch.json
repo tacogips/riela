@@ -1,0 +1,392 @@
+{
+  "taskId": "serverless-app-control",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/serverless-app-control",
+  "baseBranch": "feat/serverless-app-control",
+  "remote": "origin",
+  "originalHead": "fd78a56b271bdad534f8ab24f1913f31b198f931",
+  "designDocPaths": [
+    "design-docs/specs/design-serverless-app-control.md",
+    "design-docs/user-qa/qa-serverless-app-control.md",
+    "design-docs/specs/design-instance-reload-run-cli.md"
+  ],
+  "evidenceRoot": "tmp/serverless-app-control",
+  "reviewContext": {
+    "issueReference": "none (no GitHub issue supplied; workflowInput from riela-manager dispatch comm-019851, session opus-terra-design-and-implement-review-loop-session-849)",
+    "userProblem": "riela instance reload/run/cancel/executions and riela environment status/reload only work over HTTP to the App web server; with the web server disabled they fail.",
+    "requiredOutcomes": [
+      "No --server: local mode (owner-only Unix socket for live ops, local SQLite reads, locked local reload when no App runs); --server <url>: unchanged HTTP.",
+      "One shared RielaAppInstanceControlService used by the App HTTP handlers and the socket channel, HTTP status/body byte-identical.",
+      "App holds run/app.lock whenever profile state is in memory or writable; deferred startup with no unlocked fallback; socket unlinked/bound only under the lock.",
+      "Channel: 0700 run dir, 0600 socket, getpeereid same-uid, length-prefixed JSON, 576 KiB request / 1 MiB response, 5 s read deadline, 30 s client timeout, idempotent request ids.",
+      "No App: live commands return app_not_running; executions and local reload still work.",
+      "No secrets on disk, in logs or in responses; environment status names/readiness only.",
+      "Docs describe modes, precedence, channel and codes."
+    ],
+    "nonGoals": [
+      "No env var for mode selection; no new path options; no in-process run flag.",
+      "No change to HTTP router/guards, other /actions, GraphQL, web server controller.",
+      "Do not run/restart/reconfigure the installed RielaApp; never touch ~/.riela/rielaapp or ~/Library/Application Support in tests."
+    ],
+    "constraints": [
+      "Work only in /Users/taco/gits/tacogips/riela-worktrees/serverless-control on branch feat/serverless-app-control; no worktrees, branches or concurrent git operations.",
+      "Run swift build/test/swiftlint inside arch -arm64 /bin/zsh -lc.",
+      "Evidence logs only under tmp/serverless-app-control/<plan-short>/.",
+      "Tests use /tmp/rac-<8hex> app roots and temp HOME only.",
+      "Existing tests InstanceAppCommandsTests, InstanceAppCancelCommandTests, RielaAppInstanceReload*/Cancel*/ExecutionsProjection tests stay unmodified; RuntimeEnvironmentChannelTests only gains --server on environment-client invocations."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Wave 1 pins contract types (sac-01), owner lock/startup (sac-02), shared source discovery + executions projection (sac-03) and docs (sac-09) with disjoint new files.",
+        "rationale": "Wave 2/3 plans compile against fixed shapes without editing shared files."
+      },
+      {
+        "decision": "RielaAppInstanceReloadResponse.revision becomes Int?; RielaAppInstanceReloadPorts gains liveRevision() with a default returning revision(); only local ports return nil.",
+        "rationale": "Local reload omits revision without changing the App's ports or HTTP output."
+      },
+      {
+        "decision": "RielaAppAPIClient.resolveEndpoint keeps its nil-server branch unchanged, but command flow never calls it without --server.",
+        "rationale": "Keeps testDiscoveryIsReadOnlyAndValidatesServer unchanged (acceptance: existing HTTP client tests unchanged) while removing implicit HTTP from command flow."
+      },
+      {
+        "decision": "Local reload when no App runs goes through RielaAppInstanceControlService with RielaAppLocalControlPorts while holding app.lock.",
+        "rationale": "Same validation, commit and error rendering as the App; lock gives exclusion per the accepted design."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Running-App reload stays inside the App (channel instance.reload) so validate -> admission close -> commit -> respawn stays one serialized sequence (design §3.2).",
+      "instance run/cancel and environment status/reload return app_not_running without an App; no in-process run flag because it would bypass App credentials and overlap/admission control (design §3.9).",
+      "The App never runs unlocked: a stopped CLI holding app.lock keeps the App waiting; normal holds are bounded by the 30 s pre-commit cap plus one commit (design §6).",
+      "Default behaviour change: commands without --server no longer fall back to implicit HTTP; callers must add --server (design §3.1, §4).",
+      "Channel may answer between bind and phaseB with a transient 404/422 (step5 review finding, low, accepted).",
+      "Wave-parallel per-plan package-wide builds share .build; mitigated by record-and-rerun and the serial integration gate (step5 review finding, low, accepted)."
+    ],
+    "supportedEdgeCases": [
+      "No App running: instance executions and instance reload work locally (reload under app.lock, no respawn, revision omitted); live commands return app_not_running.",
+      "App holds lock but socket not answering: app_channel_unavailable.",
+      "Insecure run dir or socket ownership/permissions: app_channel_insecure; socket path over 103 bytes: app_channel_path_too_long.",
+      "Oversized request: 413 request_too_large without reading body; malformed envelope: 400 invalid_request; same request id with different digest: 409 request_id_conflict; idempotency cache full: 503 channel_busy; no response in 30 s: app_channel_timeout; malformed/oversized response: app_channel_protocol_error.",
+      "instance run --wait polling falls back to local execution detail read when launch.status returns 404.",
+      "Startup racing a local reload: phaseB loads the relinked definition and a later save preserves it.",
+      "Non-macOS without --server: app_server_required (usage, exit 2)."
+    ],
+    "outOfScopeEdgeCases": [
+      "An App older than this change (no lock, no socket) running alongside local reload; documented one-time upgrade only, --server keeps working (design §4).",
+      "Instances whose workflow source only the running App can discover: local executions/reload report invalid_workflow_source; use --server (design §6).",
+      "In-process instance run from the CLI without an App (design §3.9, user-qa).",
+      "Environment variable based mode selection and new app-root/project-dir path options (design §3.1)."
+    ],
+    "sourcePaths": [
+      "Sources/RielaAppSupport",
+      "Sources/RielaApp",
+      "Sources/RielaCLI/RielaAppAPIClient.swift",
+      "Sources/RielaCLI/InstanceAppCommands.swift",
+      "Sources/RielaCLI/EnvironmentCommand.swift",
+      "Sources/RielaCLI/InstanceReloadSupport.swift",
+      "docs/app-instance-control.md",
+      "README.md"
+    ]
+  },
+  "acceptedDependencies": [],
+  "plans": [
+    {
+      "planId": "sac-01-control-contract",
+      "planPath": "impl-plans/active/sac-01-control-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAppSupport/RielaAppControlContract.swift",
+        "Tests/RielaAppSupportTests/RielaAppControlContractTests.swift",
+        "impl-plans/progress/sac-01-control-contract.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "RielaAppControlOperation, RielaAppControlResult, RielaAppControlBootstrap, RielaAppControlConflict, RielaAppEnvironmentReloadOutcome, RielaAppConfiguredRunInput, RielaAppInstanceControlPorts, RielaAppControlLimits, RielaAppControlErrorCode, request/response envelopes and RielaAppControlEnvelopeError exist with the plan's exact signatures.",
+        "Strict envelope decode enforces the exact 8-key set, lowercase UUID requestId, per-operation null rules and profile/identity byte limits; digest excludes requestId.",
+        "RielaAppControlContractTests pass."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-01",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-01/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppControlContractTests\" > tmp/serverless-app-control/sac-01/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaAppSupport/RielaAppControlContract.swift Tests/RielaAppSupportTests/RielaAppControlContractTests.swift' > tmp/serverless-app-control/sac-01/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-02-owner-lock-startup",
+      "planPath": "impl-plans/active/sac-02-owner-lock-startup.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAppSupport/RielaAppOwnerLock.swift",
+        "Sources/RielaAppSupport/RielaAppOwnerStartup.swift",
+        "Tests/RielaAppSupportTests/RielaAppOwnerStartupTests.swift",
+        "impl-plans/progress/sac-02-owner-lock-startup.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "RielaAppRunDirectory validates run/ (dir, not symlink, owner euid, mode&077==0) and socket file (socket, owner, mode&177==0).",
+        "RielaAppOwnerLock.tryAcquire/acquireBlocking use flock on run/app.lock (0600); in-process second tryAcquire returns nil until release.",
+        "RielaAppOwnerStartup never unlinks/binds the socket or runs phaseB before lock acquisition; insecure run/ calls failed and creates no lock.",
+        "Startup-versus-local-reload regression proves phaseB loads relink B and a later save preserves B; live owner's socket stand-in is untouched while the lock is held; tests pass 3 consecutive runs."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-02",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-02/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppOwnerStartupTests\" > tmp/serverless-app-control/sac-02/test-1.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppOwnerStartupTests\" > tmp/serverless-app-control/sac-02/test-2.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppOwnerStartupTests\" > tmp/serverless-app-control/sac-02/test-3.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaAppSupport/RielaAppOwnerLock.swift Sources/RielaAppSupport/RielaAppOwnerStartup.swift Tests/RielaAppSupportTests/RielaAppOwnerStartupTests.swift' > tmp/serverless-app-control/sac-02/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-03-sources-and-projection",
+      "planPath": "impl-plans/active/sac-03-sources-and-projection.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAppSupport/RielaAppProfileWorkflowSources.swift",
+        "Sources/RielaAppSupport/RielaAppInstanceExecutionsProjection.swift",
+        "Sources/RielaAppSupport/RielaWebAPIProjection.swift",
+        "Tests/RielaAppSupportTests/RielaAppProfileWorkflowSourcesTests.swift",
+        "impl-plans/progress/sac-03-sources-and-projection.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaAppSupport/RielaWebAPIProjection.swift",
+          "intendedEdit": "webExecutions success/error JSON delegates to RielaAppInstanceExecutionsProjection.list; nothing else in the file changes"
+        }
+      ],
+      "acceptanceCriteria": [
+        "RielaAppProfileWorkflowSources.discover/resolveSource and RielaAppProfileStore.sessionStoreRootURL exist, nonisolated, matching the App composition and path.",
+        "RielaAppInstanceExecutionsProjection.list (revision optional) and detailStatus exist; webExecutions output unchanged.",
+        "RielaAppInstanceExecutionsProjectionTests and RielaAppWebAPIRouteTests pass unmodified; no Sources/RielaApp edits."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-03",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-03/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'RielaAppProfileWorkflowSourcesTests|RielaAppInstanceExecutionsProjectionTests|RielaAppWebAPIRouteTests'\" > tmp/serverless-app-control/sac-03/test.log 2>&1",
+        "git diff --exit-code -- Tests/RielaAppSupportTests/RielaAppInstanceExecutionsProjectionTests.swift Sources/RielaApp",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaAppSupport/RielaAppProfileWorkflowSources.swift Sources/RielaAppSupport/RielaAppInstanceExecutionsProjection.swift Sources/RielaAppSupport/RielaWebAPIProjection.swift Tests/RielaAppSupportTests/RielaAppProfileWorkflowSourcesTests.swift' > tmp/serverless-app-control/sac-03/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-04-control-service",
+      "planPath": "impl-plans/active/sac-04-control-service.md",
+      "dependsOn": [
+        "sac-01-control-contract"
+      ],
+      "writePaths": [
+        "Sources/RielaAppSupport/RielaAppInstanceControlService.swift",
+        "Sources/RielaAppSupport/RielaAppInstanceReloadContract.swift",
+        "Sources/RielaAppSupport/RielaAppInstanceReloadCoordinator.swift",
+        "Tests/RielaAppSupportTests/RielaAppInstanceControlServiceTests.swift",
+        "impl-plans/progress/sac-04-control-service.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaAppSupport/RielaAppInstanceReloadContract.swift",
+          "intendedEdit": "revision Int -> Int? and liveRevision() port requirement with default implementation only"
+        },
+        {
+          "path": "Sources/RielaAppSupport/RielaAppInstanceReloadCoordinator.swift",
+          "intendedEdit": "response(...) uses ports.liveRevision(); no other change"
+        }
+      ],
+      "acceptanceCriteria": [
+        "RielaAppInstanceControlService.handle covers all 7 operations with status/body byte-identical to today's App handlers, including per-operation profile-nil semantics, shutdown codes and serialization.",
+        "Reload response omits revision only when liveRevision() is nil; App ports unchanged.",
+        "Existing reload/cancel contract, coordinator and route tests pass unmodified."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-04",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-04/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'RielaAppInstanceControlServiceTests|RielaAppInstanceReload|RielaAppInstanceCancel'\" > tmp/serverless-app-control/sac-04/test.log 2>&1",
+        "git diff --exit-code -- Tests/RielaAppSupportTests/RielaAppInstanceReloadCoordinatorTests.swift Tests/RielaAppSupportTests/RielaAppInstanceReloadContractTests.swift Tests/RielaAppSupportTests/RielaAppInstanceReloadRouteTests.swift Tests/RielaAppSupportTests/RielaAppInstanceCancelCoordinatorTests.swift",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaAppSupport/RielaAppInstanceControlService.swift Sources/RielaAppSupport/RielaAppInstanceReloadContract.swift Sources/RielaAppSupport/RielaAppInstanceReloadCoordinator.swift Tests/RielaAppSupportTests/RielaAppInstanceControlServiceTests.swift' > tmp/serverless-app-control/sac-04/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-05-control-channel",
+      "planPath": "impl-plans/active/sac-05-control-channel.md",
+      "dependsOn": [
+        "sac-01-control-contract",
+        "sac-02-owner-lock-startup"
+      ],
+      "writePaths": [
+        "Sources/RielaAppSupport/RielaAppControlChannelServer.swift",
+        "Sources/RielaAppSupport/RielaAppControlChannelClient.swift",
+        "Tests/RielaAppSupportTests/RielaAppControlChannelTests.swift",
+        "impl-plans/progress/sac-05-control-channel.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Server binds 0600 socket in a validated 0700 run dir, enforces getpeereid same-uid, length-prefixed framing, 576 KiB request (413 without reading body), 1 MiB response, read deadline, strict envelope (400), idempotency cache (replay, in-flight dedupe, request_id_conflict, channel_busy, TTL), body-free logs.",
+        "Client enforces path length, ownership, peer uid, 2 s connect, 30 s response timeout, single same-id retry only on close-before-response, protocol errors.",
+        "RielaAppLocalControlProbe: socket first, then lock (busy -> app_channel_unavailable, acquired -> notRunning(lock)); never deletes the socket.",
+        "RielaAppControlChannelTests pass 3 consecutive runs; no disk persistence in channel sources."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-05",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-05/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppControlChannelTests\" > tmp/serverless-app-control/sac-05/test-1.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppControlChannelTests\" > tmp/serverless-app-control/sac-05/test-2.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter RielaAppControlChannelTests\" > tmp/serverless-app-control/sac-05/test-3.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaAppSupport/RielaAppControlChannelServer.swift Sources/RielaAppSupport/RielaAppControlChannelClient.swift Tests/RielaAppSupportTests/RielaAppControlChannelTests.swift' > tmp/serverless-app-control/sac-05/lint.log 2>&1",
+        "! grep -n 'write(to\\|FileManager.default.createFile' Sources/RielaAppSupport/RielaAppControlChannelServer.swift Sources/RielaAppSupport/RielaAppControlChannelClient.swift"
+      ]
+    },
+    {
+      "planId": "sac-06-app-wiring",
+      "planPath": "impl-plans/active/sac-06-app-wiring.md",
+      "dependsOn": [
+        "sac-02-owner-lock-startup",
+        "sac-03-sources-and-projection",
+        "sac-04-control-service",
+        "sac-05-control-channel"
+      ],
+      "writePaths": [
+        "Sources/RielaApp/RielaAppControlHost.swift",
+        "Sources/RielaApp/RielaAppInstanceAPI.swift",
+        "Sources/RielaApp/RielaAppInstanceReloadAPI.swift",
+        "Sources/RielaApp/RielaAppInstanceCancelAPI.swift",
+        "Sources/RielaApp/RielaAppConfiguredRunAPI.swift",
+        "Sources/RielaApp/EntryPoint.swift",
+        "Sources/RielaApp/EntryPoint+Environment.swift",
+        "Sources/RielaApp/EntryPoint+Menu.swift",
+        "impl-plans/progress/sac-06-app-wiring.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaApp/EntryPoint+Environment.swift",
+          "intendedEdit": "daemonSessionStoreRoot delegates to RielaAppProfileStore.sessionStoreRootURL; nothing else"
+        },
+        {
+          "path": "Sources/RielaApp/EntryPoint+Menu.swift",
+          "intendedEdit": "rebuildMenu shows only status + Quit while ownerStartupComplete is false"
+        }
+      ],
+      "acceptanceCriteria": [
+        "RielaAppControlPorts implements RielaAppInstanceControlPorts over today's App calls; reload/cancel/run/environment HTTP handlers return controlService.handle(...).httpResponse with route matching, 405/400 path handling unchanged.",
+        "applicationDidFinishLaunching runs only phase A; all profile-state loading, preparation, web-server and instance autostart happen in runPhaseB after RielaAppOwnerStartup acquires app.lock; no timeout or unlocked fallback.",
+        "Channel server bound inside locked startup and serving controlService; termination stops it and unlinks the socket only with the held lock.",
+        "daemonWorkflowSources and daemonSessionStoreRoot delegate to sac-03 with identical output; swift build green including RielaApp; listed suites green."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-06",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-06/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'\" > tmp/serverless-app-control/sac-06/test.log 2>&1",
+        "grep -n 'loadDaemonStateReportingCorruption\\|prepareInitialDaemonProfile()\\|autostartDaemonWorkflows()' Sources/RielaApp/EntryPoint.swift > tmp/serverless-app-control/sac-06/phase-grep.log",
+        "! grep -rn 'func reloadErrorResponse\\|func cancelErrorResponse' Sources/RielaApp",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaApp/RielaAppControlHost.swift Sources/RielaApp/RielaAppInstanceAPI.swift Sources/RielaApp/RielaAppInstanceReloadAPI.swift Sources/RielaApp/RielaAppInstanceCancelAPI.swift Sources/RielaApp/RielaAppConfiguredRunAPI.swift Sources/RielaApp/EntryPoint.swift Sources/RielaApp/EntryPoint+Environment.swift Sources/RielaApp/EntryPoint+Menu.swift' > tmp/serverless-app-control/sac-06/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-07-cli-instance-local-mode",
+      "planPath": "impl-plans/active/sac-07-cli-instance-local-mode.md",
+      "dependsOn": [
+        "sac-01-control-contract",
+        "sac-02-owner-lock-startup",
+        "sac-03-sources-and-projection",
+        "sac-04-control-service",
+        "sac-05-control-channel"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/RielaAppLocalControl.swift",
+        "Sources/RielaCLI/RielaAppAPIClient.swift",
+        "Sources/RielaCLI/InstanceAppCommands.swift",
+        "Tests/RielaCLITests/InstanceAppLocalModeTests.swift",
+        "impl-plans/progress/sac-07-cli-instance-local-mode.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/RielaAppAPIClient.swift",
+          "intendedEdit": "extract static failure(status:body:) from fetch; resolveEndpoint unchanged"
+        }
+      ],
+      "acceptanceCriteria": [
+        "No --server: live ops via channel; executions/detail local reads; reload with no App runs through RielaAppInstanceControlService with RielaAppLocalControlPorts under app.lock (seeded, runtimeStatus stopped, handoff none, no revision); run/cancel without App -> app_not_running; lock always released.",
+        "--server: byte-identical HTTP behaviour; InstanceAppCommandsTests and InstanceAppCancelCommandTests unmodified and green.",
+        "Non-macOS without --server -> app_server_required; tests use injected /tmp/rac- roots only."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-07",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-07/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'InstanceAppLocalModeTests|InstanceAppCommandsTests|InstanceAppCancelCommandTests'\" > tmp/serverless-app-control/sac-07/test.log 2>&1",
+        "git diff --exit-code -- Tests/RielaCLITests/InstanceAppCommandsTests.swift Tests/RielaCLITests/InstanceAppCancelCommandTests.swift",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/RielaAppLocalControl.swift Sources/RielaCLI/RielaAppAPIClient.swift Sources/RielaCLI/InstanceAppCommands.swift Tests/RielaCLITests/InstanceAppLocalModeTests.swift' > tmp/serverless-app-control/sac-07/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-08-cli-environment-local-mode",
+      "planPath": "impl-plans/active/sac-08-cli-environment-local-mode.md",
+      "dependsOn": [
+        "sac-01-control-contract",
+        "sac-02-owner-lock-startup",
+        "sac-05-control-channel"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/EnvironmentCommand.swift",
+        "Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift",
+        "Tests/RielaCLITests/EnvironmentLocalModeTests.swift",
+        "impl-plans/progress/sac-08-cli-environment-local-mode.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift",
+          "intendedEdit": "append \"--server\", \"http://127.0.0.1:8787\" to environment-client invocations only; no assertion changes"
+        }
+      ],
+      "acceptanceCriteria": [
+        "No --server: environment status/reload via channel (bootstrap, environment.reload, environment.status) with closed-field rendering; no App -> app_not_running; lock busy -> app_channel_unavailable.",
+        "--server: unchanged HTTP flow; existing environment tests change only by the appended --server.",
+        "EnvironmentLocalModeTests, RuntimeEnvironmentChannelTests and ServeWebHostRuntimeEnvironmentTests pass."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-08",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-08/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'EnvironmentLocalModeTests|RuntimeEnvironmentChannelTests|ServeWebHostRuntimeEnvironmentTests'\" > tmp/serverless-app-control/sac-08/test.log 2>&1",
+        "git diff -U0 -- Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift > tmp/serverless-app-control/sac-08/existing-test-diff.log",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/EnvironmentCommand.swift Tests/RielaCLITests/EnvironmentLocalModeTests.swift Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift' > tmp/serverless-app-control/sac-08/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "sac-09-docs",
+      "planPath": "impl-plans/active/sac-09-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "docs/app-instance-control.md",
+        "README.md",
+        "impl-plans/progress/sac-09-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "README.md",
+          "intendedEdit": "one paragraph in the CLI section near the existing docs/app-instance-control.md link"
+        }
+      ],
+      "acceptanceCriteria": [
+        "docs/app-instance-control.md documents mode precedence (no env var), discovery, channel paths/permissions/limits, partition table, local reload semantics, behaviour changes, one-time upgrade and the new error codes.",
+        "README CLI paragraph links the guide; no RIELA_APP_SERVER or --in-process mentions."
+      ],
+      "verification": [
+        "mkdir -p tmp/serverless-app-control/sac-09",
+        "git diff --check -- docs/app-instance-control.md README.md > tmp/serverless-app-control/sac-09/diff-check.log 2>&1",
+        "grep -n 'app_not_running\\|control.sock\\|app.lock\\|--server' docs/app-instance-control.md > tmp/serverless-app-control/sac-09/grep.log",
+        "! grep -n 'RIELA_APP_SERVER\\|--in-process' docs/app-instance-control.md README.md"
+      ]
+    }
+  ]
+}

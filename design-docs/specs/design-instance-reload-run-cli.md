@@ -57,6 +57,11 @@ GraphQL surfaces for the new operations.
 
 ### D1. App endpoint and profile discovery (CLI, read-only)
 
+> Superseded 2026-11-12 by `design-serverless-app-control.md` §3.1.
+> Without `--server`, the CLI now uses local mode (owner-only Unix socket plus
+> local disk reads). The implicit `web-server.json` HTTP endpoint below is no
+> longer used. Profile discovery is unchanged.
+
 The new commands `instance reload|run|executions` (and nothing else) resolve the
 endpoint like this:
 

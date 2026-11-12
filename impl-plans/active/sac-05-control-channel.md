@@ -8,6 +8,8 @@
   - `Sources/RielaAppSupport/RielaAppControlChannelClient.swift` (new)
   - `Tests/RielaAppSupportTests/RielaAppControlChannelTests.swift` (new)
   - `impl-plans/progress/sac-05-control-channel.md`
+  - `.build` (artifact root only; SwiftPM build cache, see Amendment 2026-11-12)
+- artifactRoots: `.build`
 - sharedPaths: none
 - evidence: `tmp/serverless-app-control/sac-05/`
 
@@ -193,3 +195,23 @@ The probe never deletes `control.sock`.
 - Every test in the table passes 3 times.
 - The progress log records exit codes, log paths and hashes, using the drift
   rules from sac-01.
+
+## Amendment 2026-11-12 (blocked-wave-scope-or-contract, round 1)
+
+Blocker: "Authorized build-output location". The dispatch declared
+`artifactRoots: []`, but this plan's verification runs
+`swift build --build-tests` and `swift test --skip-build`, which write the
+SwiftPM cache in the repository `.build` directory.
+
+Decision:
+- `.build` is added to this plan's `writePaths` and declared as its only
+  `artifactRoots` entry. It is a generated build cache, not a source snapshot.
+  The runtime records it as a digest/count manifest only.
+- sac-05 is the only plan in its wave, so `.build` has exactly one writer
+  while sac-05 runs. Verification commands are unchanged.
+- Do not delete, clean, or `swift package reset` `.build`. Wave-3 plans
+  (sac-06/07/08) seed their private scratch paths from it.
+- Do not edit or commit anything under `.build`. It is gitignored, so it must
+  never show up in `git status`.
+- No source, contract, or design change is involved. All other sections stay
+  in force.

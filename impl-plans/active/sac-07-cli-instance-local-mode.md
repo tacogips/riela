@@ -9,6 +9,8 @@
   - `Sources/RielaCLI/InstanceAppCommands.swift`
   - `Tests/RielaCLITests/InstanceAppLocalModeTests.swift` (new)
   - `impl-plans/progress/sac-07-cli-instance-local-mode.md`
+  - `tmp/serverless-app-control/build-sac-07` (artifact root only; private SwiftPM scratch path, see Amendment 2026-11-12)
+- artifactRoots: `tmp/serverless-app-control/build-sac-07`
 - sharedPaths: none
 - evidence: `tmp/serverless-app-control/sac-07/`
 
@@ -248,9 +250,11 @@ handler, plus `RielaAppRunDirectory` under `/tmp/rac-<8hex>`, a temp HOME, and
 ## Verification (`tmp/serverless-app-control/sac-07/`)
 
 - `mkdir -p tmp/serverless-app-control/sac-07`
-- `arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-07/build.log 2>&1`
+- `[ -d tmp/serverless-app-control/build-sac-07/checkouts ] || { mkdir -p tmp/serverless-app-control/build-sac-07 && cp -cR .build/. tmp/serverless-app-control/build-sac-07/; }`
+  seeds the private scratch path once (APFS clone of the quiescent shared `.build`); must exit 0.
+- `arch -arm64 /bin/zsh -lc 'swift build --scratch-path tmp/serverless-app-control/build-sac-07 --build-tests' > tmp/serverless-app-control/sac-07/build.log 2>&1`
   must exit 0.
-- `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter 'InstanceAppLocalModeTests|InstanceAppCommandsTests|InstanceAppCancelCommandTests'" > tmp/serverless-app-control/sac-07/test.log 2>&1`
+- `arch -arm64 /bin/zsh -lc "swift test --scratch-path tmp/serverless-app-control/build-sac-07 --skip-build --filter 'InstanceAppLocalModeTests|InstanceAppCommandsTests|InstanceAppCancelCommandTests'" > tmp/serverless-app-control/sac-07/test.log 2>&1`
   must exit 0.
 - `git diff --exit-code -- Tests/RielaCLITests/InstanceAppCommandsTests.swift Tests/RielaCLITests/InstanceAppCancelCommandTests.swift`
   must exit 0.
@@ -266,3 +270,31 @@ handler, plus `RielaAppRunDirectory` under `/tmp/rac-<8hex>`, a temp HOME, and
 - No real app root is touched.
 - The progress log records exit codes, log paths and hashes, using the drift
   rules from sac-01.
+
+## Amendment 2026-11-12 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (raised on sac-05, applied to every pending plan that builds):
+"Authorized build-output location". `artifactRoots` was empty, so SwiftPM
+builds had no authorized output location.
+
+Decision:
+- This plan owns the private SwiftPM scratch path
+  `tmp/serverless-app-control/build-sac-07`. It is in `writePaths` and is the
+  plan's only `artifactRoots` entry, recorded as a digest/count manifest only,
+  never as content. sac-06, sac-07 and sac-08 run in the same wave, so each
+  gets its own scratch path. No two same-wave plans write one build directory.
+- This plan must NOT write the shared `.build`. That path belongs to sac-05
+  (wave 2). The only allowed access is the one-time read-only seed
+  `cp -cR .build/. tmp/serverless-app-control/build-sac-07/` (APFS clone,
+  skipped when `checkouts` already exists). Expect a large rebuild on first
+  use, because SwiftPM paths are absolute. The seed mainly reuses dependency
+  checkouts and avoids network fetches.
+- Every `swift build` and `swift test` command in this plan passes
+  `--scratch-path tmp/serverless-app-control/build-sac-07`. Do not add
+  `.build/debug/riela`-dependent suites, because they read the shared `.build`.
+  The filtered suites in Verification do not use it.
+- Evidence logs stay under `tmp/serverless-app-control/sac-07/`. Record the
+  scratch path and the seed command's exit code in the progress log.
+- Leave the scratch path in place after verification. Removing it belongs to
+  serial finalization, not to this plan. No source, contract or design change
+  is involved, and all other sections stay in force.

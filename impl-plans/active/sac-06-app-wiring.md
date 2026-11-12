@@ -13,6 +13,8 @@
   - `Sources/RielaApp/EntryPoint+Environment.swift` (`daemonSessionStoreRoot` only)
   - `Sources/RielaApp/EntryPoint+Menu.swift` (waiting-state menu only)
   - `impl-plans/progress/sac-06-app-wiring.md`
+  - `tmp/serverless-app-control/build-sac-06` (artifact root only; private SwiftPM scratch path, see Amendment 2026-11-12)
+- artifactRoots: `tmp/serverless-app-control/build-sac-06`
 - sharedPaths: none
 - evidence: `tmp/serverless-app-control/sac-06/`
 
@@ -162,9 +164,11 @@ There is no App test target. Evidence comes from build, grep invariants and
 the shared suites.
 
 - `mkdir -p tmp/serverless-app-control/sac-06`
-- `arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-06/build.log 2>&1`
+- `[ -d tmp/serverless-app-control/build-sac-06/checkouts ] || { mkdir -p tmp/serverless-app-control/build-sac-06 && cp -cR .build/. tmp/serverless-app-control/build-sac-06/; }`
+  seeds the private scratch path once (APFS clone of the quiescent shared `.build`); must exit 0.
+- `arch -arm64 /bin/zsh -lc 'swift build --scratch-path tmp/serverless-app-control/build-sac-06 --build-tests' > tmp/serverless-app-control/sac-06/build.log 2>&1`
   must exit 0, including the RielaApp target.
-- `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'" > tmp/serverless-app-control/sac-06/test.log 2>&1`
+- `arch -arm64 /bin/zsh -lc "swift test --scratch-path tmp/serverless-app-control/build-sac-06 --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'" > tmp/serverless-app-control/sac-06/test.log 2>&1`
   must exit 0.
 - `grep -n "loadDaemonStateReportingCorruption\|prepareInitialDaemonProfile()\|autostartDaemonWorkflows()" Sources/RielaApp/EntryPoint.swift > tmp/serverless-app-control/sac-06/phase-grep.log`.
   Record in the progress log that every such call is inside `runPhaseB` or a
@@ -183,3 +187,31 @@ the shared suites.
   environment and actions.
 - The progress log records exit codes, log paths and hashes, using the drift
   rules from sac-01.
+
+## Amendment 2026-11-12 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (raised on sac-05, applied to every pending plan that builds):
+"Authorized build-output location". `artifactRoots` was empty, so SwiftPM
+builds had no authorized output location.
+
+Decision:
+- This plan owns the private SwiftPM scratch path
+  `tmp/serverless-app-control/build-sac-06`. It is in `writePaths` and is the
+  plan's only `artifactRoots` entry, recorded as a digest/count manifest only,
+  never as content. sac-06, sac-07 and sac-08 run in the same wave, so each
+  gets its own scratch path. No two same-wave plans write one build directory.
+- This plan must NOT write the shared `.build`. That path belongs to sac-05
+  (wave 2). The only allowed access is the one-time read-only seed
+  `cp -cR .build/. tmp/serverless-app-control/build-sac-06/` (APFS clone,
+  skipped when `checkouts` already exists). Expect a large rebuild on first
+  use, because SwiftPM paths are absolute. The seed mainly reuses dependency
+  checkouts and avoids network fetches.
+- Every `swift build` and `swift test` command in this plan passes
+  `--scratch-path tmp/serverless-app-control/build-sac-06`. Do not add
+  `.build/debug/riela`-dependent suites, because they read the shared `.build`.
+  The filtered suites in Verification do not use it.
+- Evidence logs stay under `tmp/serverless-app-control/sac-06/`. Record the
+  scratch path and the seed command's exit code in the progress log.
+- Leave the scratch path in place after verification. Removing it belongs to
+  serial finalization, not to this plan. No source, contract or design change
+  is involved, and all other sections stay in force.

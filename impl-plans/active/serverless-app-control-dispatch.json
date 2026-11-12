@@ -51,6 +51,10 @@
       {
         "decision": "Local reload when no App runs goes through RielaAppInstanceControlService with RielaAppLocalControlPorts while holding app.lock.",
         "rationale": "Same validation, commit and error rendering as the App; lock gives exclusion per the accepted design."
+      },
+      {
+        "decision": "Amendment 2026-11-12 round 1: authorize SwiftPM build outputs as artifactRoots — sac-05 owns the shared .build (sole wave-2 writer, commands unchanged); sac-06/07/08 each own a private --scratch-path tmp/serverless-app-control/build-sac-0N seeded once read-only from .build via cp -cR; .build/debug/riela-dependent suites deferred to the serial integration gate",
+        "rationale": "Blocked plan sac-05-control-channel (blocker: Authorized build-output location; artifactRoots was [] while verification runs swift build --build-tests / swift test --skip-build). Resolved for every pending building plan (sac-05..08) with disjoint artifact roots per wave; plan IDs, dependsOn, sources, contract and design unchanged; amendment sections appended to sac-05..08 plans."
       }
     ],
     "intentionalTradeoffs": [
@@ -220,10 +224,13 @@
         "Sources/RielaAppSupport/RielaAppControlChannelServer.swift",
         "Sources/RielaAppSupport/RielaAppControlChannelClient.swift",
         "Tests/RielaAppSupportTests/RielaAppControlChannelTests.swift",
-        "impl-plans/progress/sac-05-control-channel.md"
+        "impl-plans/progress/sac-05-control-channel.md",
+        ".build"
       ],
       "sharedPaths": [],
-      "artifactRoots": [],
+      "artifactRoots": [
+        ".build"
+      ],
       "acceptanceCriteria": [
         "Server binds 0600 socket in a validated 0700 run dir, enforces getpeereid same-uid, length-prefixed framing, 576 KiB request (413 without reading body), 1 MiB response, read deadline, strict envelope (400), idempotency cache (replay, in-flight dedupe, request_id_conflict, channel_busy, TTL), body-free logs.",
         "Client enforces path length, ownership, peer uid, 2 s connect, 30 s response timeout, single same-id retry only on close-before-response, protocol errors.",
@@ -258,10 +265,13 @@
         "Sources/RielaApp/EntryPoint.swift",
         "Sources/RielaApp/EntryPoint+Environment.swift",
         "Sources/RielaApp/EntryPoint+Menu.swift",
-        "impl-plans/progress/sac-06-app-wiring.md"
+        "impl-plans/progress/sac-06-app-wiring.md",
+        "tmp/serverless-app-control/build-sac-06"
       ],
       "sharedPaths": [],
-      "artifactRoots": [],
+      "artifactRoots": [
+        "tmp/serverless-app-control/build-sac-06"
+      ],
       "sharedPathNotes": [
         {
           "path": "Sources/RielaApp/EntryPoint+Environment.swift",
@@ -280,8 +290,9 @@
       ],
       "verification": [
         "mkdir -p tmp/serverless-app-control/sac-06",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-06/build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'\" > tmp/serverless-app-control/sac-06/test.log 2>&1",
+        "[ -d tmp/serverless-app-control/build-sac-06/checkouts ] || { mkdir -p tmp/serverless-app-control/build-sac-06 && cp -cR .build/. tmp/serverless-app-control/build-sac-06/; }",
+        "arch -arm64 /bin/zsh -lc 'swift build --scratch-path tmp/serverless-app-control/build-sac-06 --build-tests' > tmp/serverless-app-control/sac-06/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/serverless-app-control/build-sac-06 --skip-build --filter 'RielaAppInstanceReload|RielaAppInstanceCancel|RielaAppInstanceControlServiceTests|RielaAppWebAPIRouteTests|RielaAppInstanceExecutionsProjectionTests|RielaAppOwnerStartupTests|RielaAppControlChannelTests|RuntimeEnvironment'\" > tmp/serverless-app-control/sac-06/test.log 2>&1",
         "grep -n 'loadDaemonStateReportingCorruption\\|prepareInitialDaemonProfile()\\|autostartDaemonWorkflows()' Sources/RielaApp/EntryPoint.swift > tmp/serverless-app-control/sac-06/phase-grep.log",
         "! grep -rn 'func reloadErrorResponse\\|func cancelErrorResponse' Sources/RielaApp",
         "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaApp/RielaAppControlHost.swift Sources/RielaApp/RielaAppInstanceAPI.swift Sources/RielaApp/RielaAppInstanceReloadAPI.swift Sources/RielaApp/RielaAppInstanceCancelAPI.swift Sources/RielaApp/RielaAppConfiguredRunAPI.swift Sources/RielaApp/EntryPoint.swift Sources/RielaApp/EntryPoint+Environment.swift Sources/RielaApp/EntryPoint+Menu.swift' > tmp/serverless-app-control/sac-06/lint.log 2>&1"
@@ -302,10 +313,13 @@
         "Sources/RielaCLI/RielaAppAPIClient.swift",
         "Sources/RielaCLI/InstanceAppCommands.swift",
         "Tests/RielaCLITests/InstanceAppLocalModeTests.swift",
-        "impl-plans/progress/sac-07-cli-instance-local-mode.md"
+        "impl-plans/progress/sac-07-cli-instance-local-mode.md",
+        "tmp/serverless-app-control/build-sac-07"
       ],
       "sharedPaths": [],
-      "artifactRoots": [],
+      "artifactRoots": [
+        "tmp/serverless-app-control/build-sac-07"
+      ],
       "sharedPathNotes": [
         {
           "path": "Sources/RielaCLI/RielaAppAPIClient.swift",
@@ -319,8 +333,9 @@
       ],
       "verification": [
         "mkdir -p tmp/serverless-app-control/sac-07",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-07/build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'InstanceAppLocalModeTests|InstanceAppCommandsTests|InstanceAppCancelCommandTests'\" > tmp/serverless-app-control/sac-07/test.log 2>&1",
+        "[ -d tmp/serverless-app-control/build-sac-07/checkouts ] || { mkdir -p tmp/serverless-app-control/build-sac-07 && cp -cR .build/. tmp/serverless-app-control/build-sac-07/; }",
+        "arch -arm64 /bin/zsh -lc 'swift build --scratch-path tmp/serverless-app-control/build-sac-07 --build-tests' > tmp/serverless-app-control/sac-07/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/serverless-app-control/build-sac-07 --skip-build --filter 'InstanceAppLocalModeTests|InstanceAppCommandsTests|InstanceAppCancelCommandTests'\" > tmp/serverless-app-control/sac-07/test.log 2>&1",
         "git diff --exit-code -- Tests/RielaCLITests/InstanceAppCommandsTests.swift Tests/RielaCLITests/InstanceAppCancelCommandTests.swift",
         "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/RielaAppLocalControl.swift Sources/RielaCLI/RielaAppAPIClient.swift Sources/RielaCLI/InstanceAppCommands.swift Tests/RielaCLITests/InstanceAppLocalModeTests.swift' > tmp/serverless-app-control/sac-07/lint.log 2>&1"
       ]
@@ -337,10 +352,13 @@
         "Sources/RielaCLI/EnvironmentCommand.swift",
         "Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift",
         "Tests/RielaCLITests/EnvironmentLocalModeTests.swift",
-        "impl-plans/progress/sac-08-cli-environment-local-mode.md"
+        "impl-plans/progress/sac-08-cli-environment-local-mode.md",
+        "tmp/serverless-app-control/build-sac-08"
       ],
       "sharedPaths": [],
-      "artifactRoots": [],
+      "artifactRoots": [
+        "tmp/serverless-app-control/build-sac-08"
+      ],
       "sharedPathNotes": [
         {
           "path": "Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift",
@@ -354,8 +372,9 @@
       ],
       "verification": [
         "mkdir -p tmp/serverless-app-control/sac-08",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/serverless-app-control/sac-08/build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'EnvironmentLocalModeTests|RuntimeEnvironmentChannelTests|ServeWebHostRuntimeEnvironmentTests'\" > tmp/serverless-app-control/sac-08/test.log 2>&1",
+        "[ -d tmp/serverless-app-control/build-sac-08/checkouts ] || { mkdir -p tmp/serverless-app-control/build-sac-08 && cp -cR .build/. tmp/serverless-app-control/build-sac-08/; }",
+        "arch -arm64 /bin/zsh -lc 'swift build --scratch-path tmp/serverless-app-control/build-sac-08 --build-tests' > tmp/serverless-app-control/sac-08/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --scratch-path tmp/serverless-app-control/build-sac-08 --skip-build --filter 'EnvironmentLocalModeTests|RuntimeEnvironmentChannelTests|ServeWebHostRuntimeEnvironmentTests'\" > tmp/serverless-app-control/sac-08/test.log 2>&1",
         "git diff -U0 -- Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift > tmp/serverless-app-control/sac-08/existing-test-diff.log",
         "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/EnvironmentCommand.swift Tests/RielaCLITests/EnvironmentLocalModeTests.swift Tests/RielaCLITests/RuntimeEnvironmentChannelTests.swift' > tmp/serverless-app-control/sac-08/lint.log 2>&1"
       ]

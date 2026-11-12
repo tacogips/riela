@@ -35,6 +35,16 @@ Patterns to follow:
 - `MediaPipelineAddons.swift:speechToText` `.command` branch, for running a command through `service.command`/`service.run` with a deadline.
 - `MediaPipelineService.swift:command(_:stage:)`, for binary lookup over `resolvedSearchPath`, which already includes `/opt/homebrew/bin`.
 
+## Amendment 2026-11-12 (session 854)
+
+A previous-run implementation exists (uncommitted):
+`tmp/stt-agent-gateway/partial-untracked/Sources/RielaCLI/{SpeechWhisperCpp.swift,MediaPipelineSpeechHTTP.swift}`,
+`.../Tests/RielaCLITests/SpeechWhisperCppAndHTTPTests.swift`, and the
+`MediaPipelineSpeechProviders.swift` hunk in `tmp/stt-agent-gateway/partial-wave-001-003.patch`.
+It may be reused after a symbol-by-symbol diff against this plan, including the Retry-After
+header rule above. Gateway v0.1.11 does not affect this plan. `sendClassified` is also the
+target of stt-04's migrated `MediaPipelineMediaLogicTests` cases, so keep its signature exact.
+
 ## Non-goals
 
 - Do not wire whisper-cpp into `speechToText` (stt-04). Do not edit `MediaPipelineAddons.swift`, `MediaPipelineService+Stages.swift`, `MediaPipelineService.swift`, or the stt-01 contract file.
@@ -69,7 +79,7 @@ Patterns to follow:
 - `extension MediaPipelineService { func sendClassified(_ request: URLRequest, maxAttempts: Int, label: String, deadline: Date?) async throws -> Data }`.
 - Use `SpeechRetry.run`. Each attempt calls `http(request)` once.
   - A 2xx response returns the body.
-  - Any other status throws `SpeechFailureClassifier.classify(httpStatus:body:retryAfter:label:)`.
+  - Any other status throws `SpeechFailureClassifier.classify(httpStatus:body:retryAfter:label:)`. Set `retryAfter` from the response `Retry-After` header when it is a non-negative delta-seconds number, otherwise nil. Ignore HTTP-date values; the 2^(n-1) backoff then applies, as design §4 allows.
   - A thrown non-cancellation error throws `.transport(label)`.
 
 ### `Sources/RielaCLI/MediaPipelineSpeechProviders.swift`
@@ -97,6 +107,7 @@ Use a file-private fake runner modeled on `SpeechFakeRunner` in `SpeechProviderA
 - `binary` set to an absolute fake path -> that executable is used.
 - deepgram stub 429 with body `{"error":{"code":"insufficient_quota"}}` -> 1 request, quotaExhausted.
 - deepgram 503 ×3 with `maxAttempts` 3 and Retry-After 0 -> 3 requests, serverError with httpStatus 503.
+- deepgram 429 `rate_limit_exceeded` with header `Retry-After: 7` -> the failure carries retryAfter 7 (assert on a single-attempt run, or with a recording sleep if injectable; do not sleep for real).
 - elevenlabs 402 -> quotaExhausted after 1 request.
 - google 200 -> parsing unchanged.
 

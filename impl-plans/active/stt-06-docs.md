@@ -34,6 +34,15 @@ The user-facing docs must describe the following:
 
 They also need a whisper-cpp example and an openai → whisper-cpp fallback example that is configured only in node config.
 
+## Amendment 2026-11-12 (session 854)
+
+The wording now follows the amended design (§2.1.1 gateway contract, §2.2 run-time host-only
+check, §4 retry and fallback classes). A previous-run docs hunk exists in
+`tmp/stt-agent-gateway/partial-wave-001-003.patch` (`docs/workflows/speech.md`,
+`docs/container-addons.md`). It may be reused, but it predates these amendments: add the
+gateway Retry-After, `rejected`-never-falls-back and templated-provider host-only sentences,
+and remove anything that says hosted providers lose Retry-After.
+
 ## Non-goals
 
 - Do not edit the `riela/text-to-speech` section, `docs/voice.md`, examples, or design docs.
@@ -50,8 +59,8 @@ They also need a whisper-cpp example and an openai → whisper-cpp fallback exam
   - deepgram, elevenlabs, google, apple, command: as today.
   - whisper-cpp: `whisperCpp.{model (required), binary, threads, extraArgs}`. Binary lookup goes through PATH, then `/opt/homebrew/bin/whisper-cli`. argv is `-m … -f … -l <lang|auto> -nt -np [-t N] [extraArgs]`. Plain-text stdout. No `addon.env`. Input formats are whatever the installed whisper-cli accepts.
 - Retry and failures:
-  - Retried: `rate-limited` (429), `server-error` (5xx), and `transport-error`, up to `maxAttempts`, using Retry-After or 1, 2, 4… s (capped at 60 s).
-  - Not retried: `quota-exhausted` (`insufficient_quota`, `credit_balance_exhausted`, `billing_hard_limit_reached`, `billing_not_active`, HTTP 402, Gemini per-day quota), `unavailable`, and `rejected`.
+  - Retried: `rate-limited` (429), `server-error` (5xx), and `transport-error`, up to `maxAttempts`, using Retry-After (also for openai/gemini/openrouter, where agent-gateway reports it) or 1, 2, 4… s (capped at 60 s). One attempt is one vendor request.
+  - Not retried: `quota-exhausted` (`insufficient_quota`, `credit_balance_exhausted`, `billing_hard_limit_reached`, `billing_not_active`, HTTP 402, Gemini per-day quota), `unavailable` (missing credential, missing whisper-cli/model, apple unavailable, local process failure), and `rejected` (auth failures 401/403, other 4xx, unsupported audio type such as aiff for gateway providers, unparseable responses). `rejected` never triggers fallback.
   - Show the failure message format `failureClass=… httpStatus=… providerProblem=…`, and state that it never includes secrets.
 - Fallback:
   - `fallback` (1–3 entries, allowed keys, shared `path`/`language`/`prompt`, not template-rendered).
@@ -61,7 +70,7 @@ They also need a whisper-cpp example and an openai → whisper-cpp fallback exam
   - The fingerprint fields per provider. One entry per audio file.
   - `cacheAcceptsFallback` (default false). With false, a transcript produced by a fallback provider is never reused and the primary is retried. With true, it is reused only if the file records the producer. Legacy files are reused only for the primary.
 - Host-only:
-  - whisper-cpp with `addon.container` or `addon.sandbox` is rejected by `workflow validate` and at run time.
+  - whisper-cpp with `addon.container` or `addon.sandbox` is rejected by `workflow validate` and at run time. The run-time check uses the rendered options before any container or sandbox starts, so a templated `provider` that resolves to `whisper-cpp` is also rejected (design §2.2).
   - Validation also rejects unknown providers, bad fallback entries, bad `fallbackOn`, and `addon.env` keys outside the chain allowlist.
 - Examples:
   - Keep the existing `command` whisper-cli example.

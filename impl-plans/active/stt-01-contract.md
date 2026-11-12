@@ -38,6 +38,19 @@ classification, stt-05 validation, stt-06 docs) and the wave-3 plan (stt-04
 orchestrator) can build on fixed shapes without editing this plan's files at the
 same time.
 
+## Amendment 2026-11-12 (session 854)
+
+- Gateway v0.1.11 does not change this contract. The one addition is
+  `SpeechFailureClassifier.isGeminiDailyQuota(_:)`, which stt-02 needs (design §2.1.1).
+- A previous-run implementation of this plan exists (uncommitted):
+  `tmp/stt-agent-gateway/partial-untracked/Sources/RielaCLI/SpeechToTextContract.swift`,
+  `.../SpeechTranscriptionAgentGateway.swift`,
+  `.../Tests/RielaCLITests/SpeechToTextContractTests.swift`, plus the stt-01 hunks for
+  `MediaPipelineSpeechProviders.swift`, `ProductionNodeAdapter.swift` and `MediaPipelineAddons.swift`
+  in `tmp/stt-agent-gateway/partial-wave-001-003.patch`. You may copy these into place, but
+  first diff every symbol against this plan and fix any drift. Apply only Sources/Tests hunks
+  for your own writePaths. Never apply the patch's design-docs or impl-plans hunks.
+
 ## Non-goals
 
 - No change to the runtime transcription flow, cache, or output (stt-04 owns those).
@@ -83,14 +96,17 @@ The data shapes are a contract and their names must be exact.
 - `enum SpeechFailureClassifier`
   - `static let quotaCodes: Set<String>` = `insufficient_quota`, `credit_balance_exhausted`,
     `billing_hard_limit_reached`, `billing_not_active`.
+  - `static func isGeminiDailyQuota(_ body: Data) -> Bool` returns true when the JSON has an
+    `error.details[]` entry whose `@type` ends in `google.rpc.QuotaFailure` and some
+    `violations[].quotaId` contains `PerDay`. Invalid JSON returns false. stt-02 reuses it
+    on the gateway `rawBody`, so this is a contract member.
   - `static func providerProblem(fromJSON body: Data) -> String?` returns the first of
     `error.code` (string only), `error.type`, `error.status`. If none is present it returns nil.
   - `static func classify(httpStatus: Int, body: Data?, retryAfter: Double?, label: String) -> SpeechProviderFailure`
     applies these rules in order:
     1. A provider problem in quotaCodes means quotaExhausted.
     2. HTTP 402 means quotaExhausted.
-    3. HTTP 429 with a Gemini `error.details[]` entry whose `@type` ends in
-       `google.rpc.QuotaFailure` and some `violations[].quotaId` contains `PerDay` means quotaExhausted.
+    3. HTTP 429 with `isGeminiDailyQuota(body) == true` means quotaExhausted.
     4. Any other 429 means rateLimited.
     5. 5xx means serverError.
     6. Any other status means rejected.
@@ -203,6 +219,7 @@ Classifier cases (input -> expected outcome):
 - 429 with `credit_balance_exhausted` -> quotaExhausted.
 - 429 with `rate_limit_exceeded` -> rateLimited.
 - 402 with no body -> quotaExhausted.
+- `isGeminiDailyQuota`: PerDay QuotaFailure body -> true; PerMinute -> false; invalid JSON -> false.
 - Gemini 429 with a PerDay QuotaFailure -> quotaExhausted. Gemini 429 with a PerMinute QuotaFailure -> rateLimited, providerProblem RESOURCE_EXHAUSTED.
 - 503 -> serverError. 401 -> rejected.
 - A body containing "sk-secret" -> the message does not contain it.

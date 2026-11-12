@@ -19,7 +19,7 @@
 
 Artifacts: none. Evidence goes in `tmp/stt-agent-gateway/stt-05/`.
 
-- Design: §7 (validation) and §2.2 host-only rule (rejected by validation *and* at run time).
+- Design: §7 (validation), §2.2 host-only rule (rejected by validation *and* at run time) including "Run-time host-only check" (effective options, before dispatch), and §8 run-time host-only regressions.
 - Progress log: `impl-plans/progress/stt-05-validation.md`.
 
 ## Intent and context
@@ -43,6 +43,14 @@ them, so the run-time host-only rejection must happen in `BuiltinAddonContainerR
 
 Patterns to follow:
 - `BuiltinGatewayRequestChecks+Extended.swift:xReaderIssues`, for mapping a thrown error to an `issue(<relativePath>, message)`.
+
+## Amendment 2026-11-12 (session 854): partial reuse
+
+A previous-run implementation exists in `tmp/stt-agent-gateway/partial-untracked/Tests/RielaCLITests/SpeechToTextValidationTests.swift`
+and in the `BuiltinGatewayRequestChecks+Extended.swift` / `BuiltinAddonContainerResolver.swift`
+hunks of `tmp/stt-agent-gateway/partial-wave-001-003.patch`. The validator part may be reused
+after a diff against this plan. The resolver hunk implements the old raw-options guard
+(STT-DESIGN-001) and must not be applied; write the effective-options check described below.
 
 ## Non-goals
 
@@ -72,11 +80,37 @@ Add `case "riela/speech-to-text": return speechToTextIssues(addon)`. Then:
 
 ### `Sources/RielaCLI/BuiltinAddonContainerResolver.swift`
 
-In `executeUnprocessed`, before the container settings are computed (after the `sandbox == nil || container == nil` guard and the early return to primary):
-- if `input.addon.name == "riela/speech-to-text"`, and the raw `config.options` parses with `SpeechToTextOptionsParser.parse` and `usesWhisperCpp` is true, throw `AdapterExecutionError(.policyBlocked, <same message>)`;
-- if the parse fails, do nothing and let the worker report it.
+Amended 2026-11-12 (STT-DESIGN-001, design §2.2 "Run-time host-only check"). The
+earlier version parsed the unrendered options and ignored parse failures, so a templated
+provider, or literal whisper-cpp combined with a templated numeric option, slipped past
+the check and ran in the worker after the isolation metadata had been stripped. Use the
+**effective** options instead.
 
-No other behavior change.
+In `executeUnprocessed`, place the check right after the `sandbox == nil || container == nil`
+guard and the early return to primary, so it runs before
+`prepareAppleGatewayContainerOperation`, image selection, admission, stripping
+(`workerInput.addon.container/sandbox = nil`, ~lines 138-140), and any runner call.
+Add a file-private helper `speechToTextHostOnlyCheck(_ input:)` that:
+- returns at once unless `input.addon.name == "riela/speech-to-text"`;
+- computes the effective options exactly like `MediaPipelineContext.finish`
+  (`MediaPipelineAddons.swift:71-89`):
+  - remove the raw keys `command` and `fallback` from `config.options`;
+  - render the rest with `renderAddonConfig(.object(rawConfig), variables: addonVariables(for: templateInput))` (public, `Sources/RielaAddonSupport/WorkflowAddonSupport.swift:42-67`);
+  - merge the raw values back, unrendered;
+- if rendering throws, or the rendered config has no `options` object, throws
+  `AdapterExecutionError(.invalidInput, "invalid speech-to-text option 'options'")`;
+- throws `AdapterExecutionError(.policyBlocked, "speech-to-text provider 'whisper-cpp' runs on the host; remove addon.container/addon.sandbox")`
+  when either:
+  - the effective `options.provider` is `.string("whisper-cpp")`, or
+  - the raw `options.fallback` is an array containing an object whose `provider` is `.string("whisper-cpp")`;
+- decides this with the direct scan above, **not** through `SpeechToTextOptionsParser.parse`,
+  so a parse failure cannot bypass the check. Parse errors for other providers are still
+  reported by the worker, as today.
+
+Do not edit `MediaPipelineAddons.swift`; it is owned by stt-04. Use `["command", "fallback"]`,
+the keys stt-04 sets as `rawOptionKeys`, as a file-private constant here and note the
+coupling in the progress log. No other behaviour change: apple, raw command and fallback,
+valid templated options, and openai-only container/sandbox dispatch are untouched.
 
 ## Pitfalls
 
@@ -107,7 +141,15 @@ Call `BuiltinGatewayRequestChecks.issues` directly, plus one end-to-end case thr
 - `env {"DEEPGRAM_API_KEY":…}` with openai and no fallback -> an env issue. With fallback `[{provider:"deepgram"}]` -> no env issue.
 - whisper-cpp primary or fallback plus `addon.container` -> host-only issue. The same config without container -> no issue.
 - A valid openai, command, or apple config -> no issues. Each existing config shape from `docs/workflows/speech.md` -> no issues.
-- `BuiltinAddonContainerResolver` with a recording runner (see `BuiltinAddonContainerResolverTests.swift:testMediaAddonsSelectVideoImageWhenBaseImageIsSelected`) and a whisper-cpp config plus `container` -> policyBlocked, and the runner is never invoked. An openai config plus container still dispatches to the video image.
+- `BuiltinAddonContainerResolver` run-time host-only regressions (design §8), using a recording runner and a recording primary resolver (see `BuiltinAddonContainerResolverTests.swift:testMediaAddonsSelectVideoImageWhenBaseImageIsSelected`). Run each case once with `addon.container` and once with `addon.sandbox`. Each must throw the exact host-only `policyBlocked` message with zero runner calls and zero primary calls:
+  - literal `provider:"whisper-cpp"`, `whisperCpp:{model:"m.bin"}`;
+  - `provider:"{{input.p}}"` with `addon.inputs` making it render to `"whisper-cpp"` (the static validator returns no issue for this config; assert that too);
+  - literal `provider:"whisper-cpp"` with `maxAttempts:"{{input.n}}"` and `whisperCpp:{model:"m.bin", threads:"{{input.t}}"}`;
+  - `provider:"openai"` with a raw `fallback:[{provider:"whisper-cpp", whisperCpp:{model:"m.bin"}}]`.
+- Preserved behaviour:
+  - an openai-only config plus container still dispatches to the video image (runner invoked once);
+  - an openai-only config plus sandbox does not throw the host-only message;
+  - a raw `fallback` entry with `command:["x","{{path}}"]` still reaches the runner with `{{path}}` unrendered in the transported config.
 
 ## Verification (evidence in `tmp/stt-agent-gateway/stt-05/`)
 

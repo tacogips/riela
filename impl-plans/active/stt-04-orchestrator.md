@@ -4,13 +4,14 @@
 {
   "planId": "stt-04-orchestrator",
   "planPath": "impl-plans/active/stt-04-orchestrator.md",
-  "dependsOn": ["stt-01-contract", "stt-03-whisper-and-http"],
+  "dependsOn": ["stt-01-contract", "stt-02-gateway-mapping", "stt-03-whisper-and-http"],
   "wave": 3,
   "writePaths": [
     "Sources/RielaCLI/MediaPipelineAddons.swift",
     "Sources/RielaCLI/MediaPipelineService+Stages.swift",
     "Tests/RielaCLITests/SpeechProviderAddonTests.swift",
     "Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift",
+    "Tests/RielaCLITests/MediaPipelineMediaLogicTests.swift",
     "Tests/RielaCLITests/SpeechToTextFallbackTests.swift",
     "impl-plans/progress/stt-04-orchestrator.md"
   ],
@@ -115,6 +116,30 @@ Delete `transcribeChunk` and `MediaPipelineSTTOptions`, but first confirm with `
   - No-fallback openai success -> the output has no `fallbackFrom` key, and its key set equals `{status, provider, model, language, text, path, cached}`.
   - A missing `OPENAI_API_KEY` with no fallback -> policyBlocked with today's message. With `fallback:[whisper-cpp]` -> whisper-cpp text, and `fallbackFrom[0].failureClass == unavailable`.
   - A fallback entry `command` argv with `{{path}}` -> rendered by the add-on, not by the template engine (raw `fallback`).
+- `MediaPipelineMediaLogicTests.swift` (amendment 2026-11-12, session 854; design §8). The file
+  calls `transcribeChunk` and `MediaPipelineSTTOptions` (lines 84-200), so deleting those
+  symbols breaks the test build. Edit only the three tests that use them, without lowering
+  coverage:
+  - `testMultipartSTTRetriesAndNormalizesBaseURL`: delete. Base-URL `/v1` normalization is
+    covered by stt-02 `SpeechAgentGatewayMappingTests`; multipart shape and retry by
+    `SpeechWhisperCppAndHTTPTests` and `SpeechToTextContractTests`. Record the mapping in the
+    progress log.
+  - `testMultipartSTTAcceptsExactDecimalTwentyFiveMegabyteLimit`: keep the name; assert on
+    `SpeechAudioUpload.read` directly (25_000_000 bytes accepted, 25_000_001 throws the existing
+    25 MB error).
+  - `testProcessTimeoutIsPreservedAndNetworkRetryStopsAtMaximumAttempts`: keep the
+    process-timeout half unchanged; replace the `transcribeChunk` halves with `sendClassified`
+    through the same `RetryableMediaPipelineHTTPStub`. Every retried stub response must carry
+    `Retry-After: 0`, because `sendClassified` has no injectable sleep (design §8). Transport-error
+    retries have no header, so give that case `maxAttempts` 2 and accept the single 1 s backoff,
+    or assert it through `SpeechRetry` with a recording sleep: one transient failure then success -> 2
+    requests; transport failure with maxAttempts 2 -> exactly 2 requests; 401 with body
+    `api-secret must not be shown` -> `rejected`, 1 request, message without `api-secret`.
+  - Leave `testDifferenceHashAndDedupeUse256Bits`, `testSilenceBoundaryChoiceRemainderMergeAndCarryForward`
+    and `testProcessEnvironmentLookupAndRedactedStderrTail` untouched.
+- Dependency note: stt-04 wires openai/gemini/openrouter to `speechTranscriptionGateway`; it is
+  dispatched only after stt-02 is accepted, otherwise the placeholder seam would make every
+  existing `provider: openai` workflow fail closed.
 
 ## Pitfalls
 
@@ -129,7 +154,8 @@ Delete `transcribeChunk` and `MediaPipelineSTTOptions`, but first confirm with `
 - `mkdir -p tmp/stt-agent-gateway/stt-04`
 - `arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-04/build.log 2>&1` -> exit 0.
 - `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter 'SpeechToTextFallbackTests|SpeechProviderAddonTests|MediaPipeline|SpeechToTextContractTests|SpeechWhisperCppAndHTTPTests'" > tmp/stt-agent-gateway/stt-04/test.log 2>&1` -> exit 0, 0 failures.
-- `arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/MediaPipelineAddons.swift Sources/RielaCLI/MediaPipelineService+Stages.swift Tests/RielaCLITests/SpeechProviderAddonTests.swift Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift Tests/RielaCLITests/SpeechToTextFallbackTests.swift' > tmp/stt-agent-gateway/stt-04/lint.log 2>&1` -> 0 new violations.
+- `arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/MediaPipelineAddons.swift Sources/RielaCLI/MediaPipelineService+Stages.swift Tests/RielaCLITests/SpeechProviderAddonTests.swift Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift Tests/RielaCLITests/MediaPipelineMediaLogicTests.swift Tests/RielaCLITests/SpeechToTextFallbackTests.swift' > tmp/stt-agent-gateway/stt-04/lint.log 2>&1` -> 0 new violations.
+- `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter MediaPipelineMediaLogicTests" > tmp/stt-agent-gateway/stt-04/media-logic.log 2>&1` -> exit 0.
 - `git grep -n "transcribeChunk\|MediaPipelineSTTOptions" Sources Tests` -> no matches.
 
 ## Done criteria

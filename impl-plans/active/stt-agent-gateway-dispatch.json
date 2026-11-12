@@ -4,14 +4,14 @@
   "implementationBranch": "feat/stt-via-agent-gateway",
   "baseBranch": "feat/stt-via-agent-gateway",
   "remote": "origin",
-  "originalHead": "fd78a56b271bdad534f8ab24f1913f31b198f931",
+  "originalHead": "81942935fb777bd7e66e3009a97b654327b45e02",
   "designDocPaths": [
     "design-docs/specs/design-speech-to-text-agent-gateway.md",
     "design-docs/specs/design-voice-assistant.md"
   ],
   "evidenceRoot": "tmp/stt-agent-gateway",
   "reviewContext": {
-    "issueReference": "none; dispatch comm-019860, intake comm-019861, design review comm-019863/comm-019865, plan review comm-019867/comm-019869, revised plan comm-019868, session opus-terra-design-and-implement-review-loop-session-852",
+    "issueReference": "none; checkpoint 17ee627f + agent-gateway v0.1.11 pin 81942935; continuation session opus-terra-design-and-implement-review-loop-session-854 (plan review comm-020006, STT-DESIGN-001 and STT-PLAN-854-001 resolved); original session-852 dispatch comm-019860, intake comm-019861",
     "userProblem": "riela/speech-to-text calls OpenAI through Riela's own HTTP client and retries every failure the same way, so quota exhaustion gets retried and the vendor problem code is never reported. Local engines need hand-written argv, and falling back to another provider takes routing nodes.",
     "requiredOutcomes": [
       "openai/gemini/openrouter transcribe via agent-gateway (ProductionGatewayExecutor.transcribe + GatewayTranscriptionParams); key referenced by env name.",
@@ -23,7 +23,7 @@
       "docs/workflows/speech.md documents everything, with whisper-cpp and openai->whisper-cpp examples."
     ],
     "nonGoals": [
-      "No agent-gateway pin change and no Package.resolved change.",
+      "No agent-gateway pin change beyond the committed v0.1.11 (c659e9f) and no Package.resolved change.",
       "deepgram/elevenlabs/google are not moved to the gateway.",
       "No change to TTS, Home Assistant, MediaPipelineService.send, or apple behavior.",
       "Do not restart or reconfigure RielaApp; no real network or vendor calls in tests."
@@ -40,12 +40,16 @@
         "rationale": "The wave-2 plans (stt-02/03/05/06) build on fixed shapes and their write sets stay disjoint."
       },
       {
-        "decision": "The stt-02 precondition requires cited evidence from the pinned gateway that status/code/Retry-After survive and that each call sends one vendor request; if not, that provider is marked blocked: scope-amendment-required with no degraded mapping.",
-        "rationale": "Design §2.1 (review finding STT-DESIGN-001)."
+        "decision": "stt-02 maps the agent-gateway v0.1.11 (c659e9f) structured GatewayTranscriptionFailure (classification, httpStatus, retryAfterSeconds, vendorErrorType/Code, redacted 16 KiB rawBody) and GatewayRPCError codes onto SpeechProviderFailure per design §2.1.1; Riela adds billing_* quota codes and Gemini PerDay QuotaFailure on top of the gateway classification; authFailed/invalidRequest/unknown are rejected and never fall back.",
+        "rationale": "Design §2.1.1 (amendment 2026-11-12, session 854). The session-852 scope-amendment blocker (500-byte body truncation, dropped Retry-After) is resolved by the pin; the transport is not injectable, so request counts are stub GatewayTranscribing calls backed by the cited one-request-per-call code."
       },
       {
-        "decision": "The run-time whisper-cpp host-only rejection lives in BuiltinAddonContainerResolver (stt-05), because the worker receives the addon with container/sandbox stripped.",
-        "rationale": "BuiltinAddonContainerResolver.swift sets workerInput.addon.container/sandbox = nil (~lines 139-140)."
+        "decision": "stt-04 owns Tests/RielaCLITests/MediaPipelineMediaLogicTests.swift and depends on stt-02.",
+        "rationale": "The file calls the removed transcribeChunk/MediaPipelineSTTOptions; without stt-02 the placeholder seam would make provider openai fail closed (design §8)."
+      },
+      {
+        "decision": "The run-time whisper-cpp host-only rejection lives in BuiltinAddonContainerResolver (stt-05), because the worker receives the addon with container/sandbox stripped. It evaluates host-rendered effective options (raw command/fallback preserved) and rejects by direct provider scan before any dispatch, so templated values or parser failures cannot bypass it.",
+        "rationale": "BuiltinAddonContainerResolver.swift sets workerInput.addon.container/sandbox = nil (~lines 138-140); MediaPipelineContext.finish renders options inside the worker (MediaPipelineAddons.swift:71-93); review finding STT-DESIGN-001 (comm-019998)."
       },
       {
         "decision": "stt-04 runs in wave 3 after stt-03, because it calls whisperCppTranscribe and uses classified HTTP providers, and it deletes transcribeChunk only after the call site is gone.",
@@ -68,7 +72,7 @@
       "whisper-cpp anywhere in the chain plus addon.container/addon.sandbox is rejected at validate and run time (§2.2)."
     ],
     "outOfScopeEdgeCases": [
-      "Pinned agent-gateway cannot preserve status/vendor code or limit to one vendor request: no degraded mapping; stt-02 blocks with scope-amendment-required (§2.1, R1).",
+      "Quota identifiers beyond the gateway's 16 KiB redacted rawBody (§9 R1).",
       "Audio format conversion for whisper-cpp (inputs are whatever whisper-cli accepts).",
       "Moving deepgram/elevenlabs/google to the gateway; TTS, Home Assistant, apple behavior changes.",
       "Live vendor or real whisper.cpp runs in tests; Linux media container egress changes (R3)."
@@ -105,7 +109,7 @@
       "artifactRoots": [],
       "acceptanceCriteria": [
         "All contract types and members exist with the exact names in the plan.",
-        "Parser, classifier, and retry tests pass; existing SpeechProviderAddonTests and MediaPipeline* suites pass unchanged.",
+        "Parser, classifier (including SpeechFailureClassifier.isGeminiDailyQuota), and retry tests pass; existing SpeechProviderAddonTests and MediaPipeline* suites pass unchanged.",
         "MediaPipelineAddons.swift diff is a single switch arm; no AgentGatewayAppCore import."
       ],
       "verification": [
@@ -128,8 +132,8 @@
       "sharedPaths": [],
       "artifactRoots": [],
       "acceptanceCriteria": [
-        "Step 0 gateway API evidence is recorded with file:line citations.",
-        "Either the mapping passes the production-boundary tests (quota: 1 vendor request with httpStatus/providerProblem preserved; 429 x maxAttempts 3 = 3 vendor requests; 503 preserved), or the plan is marked blocked: scope-amendment-required with evidence.",
+        "Step 0 confirms the design §2.1.1 v0.1.11 citations (file:line) against .build/checkouts/agent-gateway at c659e9f.",
+        "The mapping passes every design §8 production-boundary test with a stub GatewayTranscribing throwing real GatewayTranscriptionFailure/GatewayRPCError values (quota: 1 call with httpStatus/providerProblem; 429 retryAfterSeconds 0 x maxAttempts 3 = 3 calls; Gemini stub with realistic vendorErrorCode \"429\"/vendorErrorType RESOURCE_EXHAUSTED -> providerProblem RESOURCE_EXHAUSTED (PerDay -> quota-exhausted); OpenRouter 402 with code \"402\" -> quota-exhausted, no providerProblem; providerProblem = non-numeric vendorErrorCode else vendorErrorType; 503 preserved; -32011 unavailable; no key/rawBody text in messages).",
         "Package.resolved is unchanged."
       ],
       "verification": [
@@ -156,7 +160,7 @@
       "artifactRoots": [],
       "acceptanceCriteria": [
         "whisperCppTranscribe argv/order, auto language, unavailable/transport mapping tests pass.",
-        "deepgram/elevenlabs/google use sendClassified; quota gives 1 request; 5xx retries maxAttempts; request shapes unchanged.",
+        "deepgram/elevenlabs/google use sendClassified; quota gives 1 request; 5xx retries maxAttempts; delta-seconds Retry-After header becomes retryAfter; request shapes unchanged.",
         "MediaPipelineService.swift and MediaPipelineService+Stages.swift are unchanged."
       ],
       "verification": [
@@ -181,7 +185,8 @@
       "artifactRoots": [],
       "acceptanceCriteria": [
         "Validation issues for unknown provider, bad fallback entries, bad or orphaned fallbackOn, env outside the union allowlist, and whisper-cpp with container/sandbox; no issues for valid configs or for any templated rendered option (provider, model, maxAttempts, timeoutSeconds, onDevice, cacheAcceptsFallback, whisperCpp scalars), while raw fallback/command and literal fallbackOn are still checked (design §7, STT-PLAN-001).",
-        "BuiltinAddonContainerResolver throws policyBlocked for whisper-cpp plus container without invoking the runner; openai plus container still uses the video image."
+        "BuiltinAddonContainerResolver runs the host-only check on EFFECTIVE options (finish-equivalent rendering via renderAddonConfig/addonVariables, raw command/fallback preserved) right after the sandbox/container guard, before image selection, isolation stripping, admission or any runner call; the decision is a direct scan of the effective provider and raw fallback providers, never gated on SpeechToTextOptionsParser success (design §2.2, STT-DESIGN-001).",
+        "Container AND sandbox regressions each throw the exact host-only policyBlocked message with zero runner/primary calls for: templated provider rendering to whisper-cpp; literal whisper-cpp with templated maxAttempts/whisperCpp.threads; openai with raw fallback [whisper-cpp]. openai-only plus container still dispatches to the video image; openai-only plus sandbox is not host-only-rejected; raw fallback command {{path}} stays unrendered."
       ],
       "verification": [
         "mkdir -p tmp/stt-agent-gateway/stt-05",
@@ -203,6 +208,7 @@
       "artifactRoots": [],
       "acceptanceCriteria": [
         "speech.md documents providers/models, gateway transport, retry and non-retry classes, failure fields, whisper-cpp, fallback/fallbackOn/fallbackFrom, cache fingerprint and cacheAcceptsFallback, validation, the host-only rule, and whisper-cpp plus openai->whisper-cpp examples.",
+        "Docs state gateway Retry-After for openai/gemini/openrouter, rejected (incl. 401/403, unsupported aiff) never falls back, and the run-time host-only check catches a templated provider resolving to whisper-cpp.",
         "All new JSON examples parse; the text-to-speech section is unchanged."
       ],
       "verification": [
@@ -214,12 +220,13 @@
     {
       "planId": "stt-04-orchestrator",
       "planPath": "impl-plans/active/stt-04-orchestrator.md",
-      "dependsOn": ["stt-01-contract", "stt-03-whisper-and-http"],
+      "dependsOn": ["stt-01-contract", "stt-02-gateway-mapping", "stt-03-whisper-and-http"],
       "writePaths": [
         "Sources/RielaCLI/MediaPipelineAddons.swift",
         "Sources/RielaCLI/MediaPipelineService+Stages.swift",
         "Tests/RielaCLITests/SpeechProviderAddonTests.swift",
         "Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift",
+        "Tests/RielaCLITests/MediaPipelineMediaLogicTests.swift",
         "Tests/RielaCLITests/SpeechToTextFallbackTests.swift",
         "impl-plans/progress/stt-04-orchestrator.md"
       ],
@@ -229,13 +236,15 @@
         "openai via the stubbed gateway keeps the exact output key set; no mediaPipelineHTTP request for openai.",
         "Quota: 1 call, non-retryable, message has httpStatus/providerProblem; 429 retries maxAttempts; fallback to whisper-cpp records fallbackFrom; fallbackOn respected.",
         "Cache: primary-fingerprint hit (legacy included); fallback hit only with cacheAcceptsFallback and producer metadata; legacy fallback-only match is a miss; existing identity fingerprints unchanged.",
-        "transcribeChunk and MediaPipelineSTTOptions are removed; no test reaches the production gateway."
+        "transcribeChunk and MediaPipelineSTTOptions are removed; no test reaches the production gateway.",
+        "MediaPipelineMediaLogicTests no longer references removed symbols; 25 MB limit asserted on SpeechAudioUpload.read (25_000_000 accepted, 25_000_001 rejected); sendClassified retry bound and 401 no-secret asserted; its other three tests unchanged."
       ],
       "verification": [
         "mkdir -p tmp/stt-agent-gateway/stt-04",
         "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-04/build.log 2>&1",
         "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechToTextFallbackTests|SpeechProviderAddonTests|MediaPipeline|SpeechToTextContractTests|SpeechWhisperCppAndHTTPTests'\" > tmp/stt-agent-gateway/stt-04/test.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/MediaPipelineAddons.swift Sources/RielaCLI/MediaPipelineService+Stages.swift Tests/RielaCLITests/SpeechProviderAddonTests.swift Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift Tests/RielaCLITests/SpeechToTextFallbackTests.swift' > tmp/stt-agent-gateway/stt-04/lint.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/MediaPipelineAddons.swift Sources/RielaCLI/MediaPipelineService+Stages.swift Tests/RielaCLITests/SpeechProviderAddonTests.swift Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift Tests/RielaCLITests/MediaPipelineMediaLogicTests.swift Tests/RielaCLITests/SpeechToTextFallbackTests.swift' > tmp/stt-agent-gateway/stt-04/lint.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter MediaPipelineMediaLogicTests\" > tmp/stt-agent-gateway/stt-04/media-logic.log 2>&1",
         "! git grep -n \"transcribeChunk\\|MediaPipelineSTTOptions\" Sources Tests"
       ]
     }

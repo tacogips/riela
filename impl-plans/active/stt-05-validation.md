@@ -10,6 +10,7 @@
     "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
     "Sources/RielaCLI/BuiltinAddonContainerResolver.swift",
     "Tests/RielaCLITests/SpeechToTextValidationTests.swift",
+    "Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift",
     "impl-plans/progress/stt-05-validation.md"
   ],
   "sharedPaths": [],
@@ -43,6 +44,40 @@ them, so the run-time host-only rejection must happen in `BuiltinAddonContainerR
 
 Patterns to follow:
 - `BuiltinGatewayRequestChecks+Extended.swift:xReaderIssues`, for mapping a thrown error to an `issue(<relativePath>, message)`.
+
+## Amendment 2026-11-12 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (wave-003, `tmp/opus-terra-waves/opus-terra-design-and-implement-review-loop-session-854/wave-003/wave-summary.json`):
+`BuiltinAddonContainerResolverTests.testMediaAddonsSelectVideoImageWhenBaseImageIsSelected`
+runs `riela/speech-to-text` with `container: .init()` and no `config`. The new host-only check
+correctly throws `invalidInput "invalid speech-to-text option 'options'"`, as design §2.2 step 3
+requires. The suite therefore shows 21 tests with 1 failure
+(`tmp/stt-agent-gateway/stt-05-validation/test-redispatch.log`).
+
+Decisions:
+- `Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift` is added to this plan's
+  `writePaths`, here and in the dispatch manifest. stt-05 is its only owner; stt-04 does not touch it.
+- The only edit allowed in that file: in `testMediaAddonsSelectVideoImageWhenBaseImageIsSelected`,
+  give the `riela/speech-to-text` iteration an addon `config` of
+  `{"options": {"path": "audio.wav", "provider": "openai"}}`. Plain literal strings are enough,
+  because the host-only check only renders the options and the file does not need to exist.
+  Leave `config` nil for the other three add-on names. Keep the assertion that the video image
+  is selected unchanged.
+- Forbidden: changing the production check in `BuiltinAddonContainerResolver.swift` to tolerate
+  missing options; skipping, deleting or weakening any other test in that file; and editing any
+  other test in that file.
+- The existing stt-05 implementation in the tree (resolver check, validator,
+  `SpeechToTextValidationTests`) is kept. Re-read each file, record pre/post hashes, and change only
+  what this amendment requires.
+- `.build/` is the shared, gitignored SwiftPM build cache, not owned by any plan. Running
+  `swift build` / `swift test` is authorized and does not count as a write. Do not declare
+  `.build` in `artifactRoots`, and do not use a separate `--scratch-path`.
+
+Resume verification (logs in `tmp/stt-agent-gateway/stt-05/`):
+- `arch -arm64 /bin/zsh -lc 'swift build --build-tests'` -> exit 0.
+- `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter 'SpeechToTextValidationTests|BuiltinAddonContainerResolverTests'"`
+  -> exit 0 with 0 failures. The image-selection test passes and all host-only regressions pass.
+- Strict lint on the four changed Swift files, including `BuiltinAddonContainerResolverTests.swift` -> 0 violations.
 
 ## Amendment 2026-11-12 (session 854): partial reuse
 
@@ -156,9 +191,11 @@ Call `BuiltinGatewayRequestChecks.issues` directly, plus one end-to-end case thr
 - `mkdir -p tmp/stt-agent-gateway/stt-05`
 - `arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-05/build.log 2>&1` -> exit 0.
 - `arch -arm64 /bin/zsh -lc "swift test --skip-build --filter 'SpeechToTextValidationTests|BuiltinAddonContainerResolverTests'" > tmp/stt-agent-gateway/stt-05/test.log 2>&1` -> exit 0, 0 failures.
-- `arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift Sources/RielaCLI/BuiltinAddonContainerResolver.swift Tests/RielaCLITests/SpeechToTextValidationTests.swift' > tmp/stt-agent-gateway/stt-05/lint.log 2>&1` -> 0 new violations.
+- `arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift Sources/RielaCLI/BuiltinAddonContainerResolver.swift Tests/RielaCLITests/SpeechToTextValidationTests.swift Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift' > tmp/stt-agent-gateway/stt-05/lint.log 2>&1` -> 0 new violations.
 
 ## Done criteria
 
 - The tests above pass.
 - The progress log has commands, exit codes, test counts, and pre/post hashes. Follow the stt-01 drift rules.
+
+Implementation progress: validation and the pre-dispatch effective-options host-only guard are implemented. Verification and formal review status are recorded in `impl-plans/progress/stt-05-validation.md`; formal review remains downstream.

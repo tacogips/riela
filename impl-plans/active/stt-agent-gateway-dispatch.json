@@ -54,6 +54,10 @@
       {
         "decision": "stt-04 runs in wave 3 after stt-03, because it calls whisperCppTranscribe and uses classified HTTP providers, and it deletes transcribeChunk only after the call site is gone.",
         "rationale": "Keeps the build green between waves and keeps one owner per file within each wave."
+      },
+      {
+        "decision": "Amendment 2026-11-12 round 1: stt-05 adds Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift to writePaths (sole owner) and may only give the riela/speech-to-text iteration of testMediaAddonsSelectVideoImageWhenBaseImageIsSelected the config {options:{path:\"audio.wav\",provider:\"openai\"}}, keeping the video-image assertion and the strict production host-only check; stt-04 is explicitly authorized to build/test in the shared gitignored SwiftPM .build cache without declaring it in artifactRoots or using an alternate --scratch-path.",
+        "rationale": "Blocked plans stt-05-validation (out-of-scope fixture failing with the design §2.2 invalidInput error) and stt-04-orchestrator (build-output ownership with empty artifactRoots) from wave-003 (reason blocked-wave-scope-or-contract); stt-04 writePaths, dependsOn and plan content unchanged; .build/ is ignored by .gitignore:7; stt-01/02/03/06 accepted."
       }
     ],
     "intentionalTradeoffs": [
@@ -179,6 +183,7 @@
         "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
         "Sources/RielaCLI/BuiltinAddonContainerResolver.swift",
         "Tests/RielaCLITests/SpeechToTextValidationTests.swift",
+        "Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift",
         "impl-plans/progress/stt-05-validation.md"
       ],
       "sharedPaths": [],
@@ -186,13 +191,14 @@
       "acceptanceCriteria": [
         "Validation issues for unknown provider, bad fallback entries, bad or orphaned fallbackOn, env outside the union allowlist, and whisper-cpp with container/sandbox; no issues for valid configs or for any templated rendered option (provider, model, maxAttempts, timeoutSeconds, onDevice, cacheAcceptsFallback, whisperCpp scalars), while raw fallback/command and literal fallbackOn are still checked (design §7, STT-PLAN-001).",
         "BuiltinAddonContainerResolver runs the host-only check on EFFECTIVE options (finish-equivalent rendering via renderAddonConfig/addonVariables, raw command/fallback preserved) right after the sandbox/container guard, before image selection, isolation stripping, admission or any runner call; the decision is a direct scan of the effective provider and raw fallback providers, never gated on SpeechToTextOptionsParser success (design §2.2, STT-DESIGN-001).",
-        "Container AND sandbox regressions each throw the exact host-only policyBlocked message with zero runner/primary calls for: templated provider rendering to whisper-cpp; literal whisper-cpp with templated maxAttempts/whisperCpp.threads; openai with raw fallback [whisper-cpp]. openai-only plus container still dispatches to the video image; openai-only plus sandbox is not host-only-rejected; raw fallback command {{path}} stays unrendered."
+        "Container AND sandbox regressions each throw the exact host-only policyBlocked message with zero runner/primary calls for: templated provider rendering to whisper-cpp; literal whisper-cpp with templated maxAttempts/whisperCpp.threads; openai with raw fallback [whisper-cpp]. openai-only plus container still dispatches to the video image; openai-only plus sandbox is not host-only-rejected; raw fallback command {{path}} stays unrendered.",
+        "Amendment round 1: BuiltinAddonContainerResolverTests.testMediaAddonsSelectVideoImageWhenBaseImageIsSelected gives only the riela/speech-to-text iteration config {options:{path:\"audio.wav\",provider:\"openai\"}} and still asserts the video image; no other test in that file changes; the combined 'SpeechToTextValidationTests|BuiltinAddonContainerResolverTests' run exits 0 with 0 failures."
       ],
       "verification": [
         "mkdir -p tmp/stt-agent-gateway/stt-05",
         "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-05/build.log 2>&1",
         "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechToTextValidationTests|BuiltinAddonContainerResolverTests'\" > tmp/stt-agent-gateway/stt-05/test.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift Sources/RielaCLI/BuiltinAddonContainerResolver.swift Tests/RielaCLITests/SpeechToTextValidationTests.swift' > tmp/stt-agent-gateway/stt-05/lint.log 2>&1"
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift Sources/RielaCLI/BuiltinAddonContainerResolver.swift Tests/RielaCLITests/SpeechToTextValidationTests.swift Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift' > tmp/stt-agent-gateway/stt-05/lint.log 2>&1"
       ]
     },
     {

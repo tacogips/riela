@@ -141,6 +141,30 @@ Delete `transcribeChunk` and `MediaPipelineSTTOptions`, but first confirm with `
   dispatched only after stt-02 is accepted, otherwise the placeholder seam would make every
   existing `provider: openai` workflow fail closed.
 
+## Amendment 2026-11-12 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (wave-003): "Build-output ownership". `artifactRoots` is empty, while the required
+`swift build` / `swift test` commands write to `.build/`.
+
+Decision (explicit authorization; no new ownership):
+- `.build/` is the repository's shared, gitignored SwiftPM build cache. No plan owns it, and it
+  is not a source path. Every earlier plan in this manifest (stt-01, 02, 03, 05, 06) built and
+  tested there. Running the verification commands below is authorized and does not count as a
+  write.
+- Do not add `.build` to `writePaths` or `artifactRoots`, because it would exceed the
+  artifact-scan limits. Do not use an alternate `--scratch-path`, because that would re-resolve
+  dependencies and bypass the pinned checkout.
+- Evidence logs go to `tmp/stt-agent-gateway/stt-04/`, which is gitignored.
+- `writePaths`, `dependsOn` and the plan content are unchanged. All three dependencies (stt-01, 02, 03) are accepted.
+- `Tests/RielaCLITests/BuiltinAddonContainerResolverTests.swift` belongs to stt-05; do not edit it.
+  The stt-04 test filter does not include that suite. If that suite fails, record it in the
+  progress log as a sibling-owned issue and do not fix it.
+
+Proceed with the full file-level changes and tests above. No partial stt-04 code exists in
+`tmp/stt-agent-gateway/`, so implement from scratch against the accepted stt-01, 02 and 03
+symbols: `SpeechToTextOptionsParser`, `SpeechRetry`, `speechTranscriptionGateway`,
+`whisperCppTranscribe` and `sendClassified`.
+
 ## Pitfalls
 
 - Build the identity of existing providers key-for-key as today. Use a fixed regression vector: compute the fp for a known config before and after, and hard-code the expected hex in the test.

@@ -49,6 +49,27 @@ progress logs under `progress/xs-0*.md` record verification and review. The
 dispatch manifest `active/x-collect-author-sampling-dispatch.json` stays active
 until the dispatch run closes.
 
+Speech-to-text via agent-gateway (2026-11-12) is implemented and accepted on
+`feat/stt-via-agent-gateway`. With agent-gateway pinned to v0.1.11,
+`riela/speech-to-text` sends openai, gemini and openrouter requests through
+agent-gateway. Quota exhaustion is not retried. Failures carry
+`failureClass`, `httpStatus` and `providerProblem`. The add-on also gets a
+built-in host-only `whisper-cpp` provider, a fallback chain set only in node
+config (`fallback`/`fallbackOn`, output `fallbackFrom`), a provider-aware
+`.stt.json` cache, and validation rules for these options. The design is
+[design-speech-to-text-agent-gateway.md](../design-docs/specs/design-speech-to-text-agent-gateway.md).
+The plans are archived at
+[`completed/stt-01-contract.md`](completed/stt-01-contract.md),
+[`completed/stt-02-gateway-mapping.md`](completed/stt-02-gateway-mapping.md),
+[`completed/stt-03-whisper-and-http.md`](completed/stt-03-whisper-and-http.md),
+[`completed/stt-04-orchestrator.md`](completed/stt-04-orchestrator.md),
+[`completed/stt-05-validation.md`](completed/stt-05-validation.md) and
+[`completed/stt-06-docs.md`](completed/stt-06-docs.md). The progress logs under
+`progress/stt-0*.md` record verification and review. The user guide is
+[docs/workflows/speech.md](../docs/workflows/speech.md). The dispatch manifest
+`active/stt-agent-gateway-dispatch.json` stays active until the dispatch run
+closes.
+
 Relative node `workingDirectory` resolution (2026-11-11) is implemented and
 accepted on `fix/node-cwd-relative`. The plan is archived at
 [`completed/node-cwd-relative-01-runner-resolution.md`](completed/node-cwd-relative-01-runner-resolution.md).

@@ -125,3 +125,5 @@ Use a file-private fake runner modeled on `SpeechFakeRunner` in `SpeechProviderA
 - `send` is unchanged.
 - The three providers use `sendClassified`.
 - The progress log has commands, exit codes, test counts, and pre/post hashes. Follow the stt-01 drift rules.
+
+Implementation progress: assigned runner and HTTP changes are implemented and verified; see `impl-plans/progress/stt-03-whisper-and-http.md`. Formal review and downstream orchestration remain pending.

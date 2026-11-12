@@ -81,55 +81,18 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
     }
   }
 
-  func testMultipartSTTRetriesAndNormalizesBaseURL() async throws {
-    let root = try makeTestDirectory("stt")
-    let audio = root.appendingPathComponent("audio.mp3")
-    try Data([1, 2, 3, 4]).write(to: audio)
-    let stub = MediaPipelineHTTPStub()
-    let service = MediaPipelineService(
-      runner: FoundationLocalProcessRunner(), workingDirectory: root,
-      http: { request in try await stub.send(request) })
-    let options = MediaPipelineSTTOptions(
-      model: "gpt-4o-transcribe", language: "ja", prompt: "vocabulary", maxAttempts: 2)
-    let text = try await service.transcribeChunk(
-      audio, options: options, apiKey: "secret-value", baseURL: "https://api.example.test/v1/",
-      deadline: nil, timeoutSeconds: 9)
-    XCTAssertEqual(text, "recognized speech")
-    let requests = await stub.requests
-    XCTAssertEqual(requests.count, 2)
-    let multipart = try XCTUnwrap(
-      requests.last?.httpBody.flatMap { String(data: $0, encoding: .utf8) })
-    for field in [
-      "name=\"model\"", "name=\"file\"", "name=\"response_format\"", "name=\"language\"",
-      "name=\"prompt\"", "gpt-4o-transcribe", "audio/mpeg", "vocabulary"
-    ] {
-      XCTAssertTrue(multipart.contains(field), "missing multipart field \(field)")
-    }
-    XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer secret-value")
-    XCTAssertEqual(
-      requests.last?.url?.absoluteString, "https://api.example.test/v1/audio/transcriptions")
-    XCTAssertEqual(requests.last?.timeoutInterval, 9)
-  }
-
-  func testMultipartSTTAcceptsExactDecimalTwentyFiveMegabyteLimit() async throws {
+  func testMultipartSTTAcceptsExactDecimalTwentyFiveMegabyteLimit() throws {
     let root = try makeTestDirectory("stt-size-limit")
     let audio = root.appendingPathComponent("audio.mp3")
     XCTAssertTrue(FileManager.default.createFile(atPath: audio.path, contents: Data()))
     let file = try FileHandle(forWritingTo: audio)
     try file.truncate(atOffset: 25_000_000)
+    XCTAssertEqual(try SpeechAudioUpload.read(audio).count, 25_000_000)
+    try file.truncate(atOffset: 25_000_001)
     try file.close()
-    let service = MediaPipelineService(
-      runner: FoundationLocalProcessRunner(), workingDirectory: root,
-      http: { _ in
-        .init(status: 200, body: Data("{\"text\":\"recognized speech\"}".utf8), retryAfter: nil)
-      })
-    let options = MediaPipelineSTTOptions(
-      model: "gpt-4o-transcribe", language: nil, prompt: nil, maxAttempts: 1)
-
-    let transcript = try await service.transcribeChunk(
-      audio, options: options, apiKey: "secret-value", baseURL: "https://api.example.test",
-      deadline: nil, timeoutSeconds: 9)
-    XCTAssertEqual(transcript, "recognized speech")
+    XCTAssertThrowsError(try SpeechAudioUpload.read(audio)) { error in
+      XCTAssertTrue(String(describing: error).contains("25 MB"))
+    }
   }
 
   func testProcessTimeoutIsPreservedAndNetworkRetryStopsAtMaximumAttempts() async throws {
@@ -154,17 +117,14 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
       // Cancellation should cross the process boundary unchanged.
     }
 
-    let audio = root.appendingPathComponent("audio.mp3")
-    try Data([1, 2, 3]).write(to: audio)
-    let retrying = RetryableMediaPipelineHTTPStub(failures: 1)
+    let request = URLRequest(url: try XCTUnwrap(URL(string: "https://api.example.test")))
+    let retrying = RetryableMediaPipelineHTTPStub(failures: 1, status: 429)
     let retryService = MediaPipelineService(
       runner: FoundationLocalProcessRunner(), workingDirectory: root,
       http: { request in try await retrying.send(request) })
-    let options = MediaPipelineSTTOptions(model: "model", language: nil, prompt: nil, maxAttempts: 2)
-    let transcript = try await retryService.transcribeChunk(
-      audio, options: options, apiKey: "api-secret", baseURL: "https://api.example.test",
-      deadline: nil, timeoutSeconds: 2)
-    XCTAssertEqual(transcript, "recognized speech")
+    let response = try await retryService.sendClassified(
+      request, maxAttempts: 2, label: "stt", deadline: nil)
+    XCTAssertEqual(String(data: response, encoding: .utf8), "recognized speech")
     let retriedCount = await retrying.count
     XCTAssertEqual(retriedCount, 2)
 
@@ -173,30 +133,28 @@ final class MediaPipelineMediaLogicTests: XCTestCase {
       runner: FoundationLocalProcessRunner(), workingDirectory: root,
       http: { request in try await failing.send(request) })
     do {
-      _ = try await giveUpService.transcribeChunk(
-        audio, options: options, apiKey: "api-secret", baseURL: "https://api.example.test",
-        deadline: nil, timeoutSeconds: 2)
+      _ = try await giveUpService.sendClassified(request, maxAttempts: 2, label: "stt", deadline: nil)
       XCTFail("expected retries to stop at maxAttempts")
-    } catch {
-      XCTAssertFalse(String(describing: error).contains("api-secret"))
+    } catch let error as SpeechProviderFailure {
+      XCTAssertEqual(error.failureClass, .transportError)
     }
     let failedCount = await failing.count
     XCTAssertEqual(failedCount, 2)
 
+    let unauthorized = RetryableMediaPipelineHTTPStub(failures: 4, status: 401)
     let httpFailureService = MediaPipelineService(
       runner: FoundationLocalProcessRunner(), workingDirectory: root,
-      http: { _ in
-        .init(status: 401, body: Data("api-secret must not be shown".utf8), retryAfter: nil)
-      })
+      http: { request in try await unauthorized.send(request) })
     do {
-      _ = try await httpFailureService.transcribeChunk(
-        audio, options: options, apiKey: "api-secret", baseURL: "https://api.example.test",
-        deadline: nil, timeoutSeconds: 2)
+      _ = try await httpFailureService.sendClassified(request, maxAttempts: 2, label: "stt", deadline: nil)
       XCTFail("expected HTTP failure")
-    } catch {
-      XCTAssertFalse(String(describing: error).contains("api-secret"))
-      XCTAssertTrue(String(describing: error).contains("HTTP 401"))
+    } catch let error as SpeechProviderFailure {
+      XCTAssertEqual(error.failureClass, .rejected)
+      XCTAssertEqual(error.httpStatus, 401)
+      XCTAssertFalse(error.message.contains("api-secret"))
     }
+    let unauthorizedCount = await unauthorized.count
+    XCTAssertEqual(unauthorizedCount, 1)
   }
 }
 
@@ -235,22 +193,18 @@ private struct ThrowingMediaPipelineRunner: LocalProcessRunning {
 private actor RetryableMediaPipelineHTTPStub {
   private(set) var count = 0
   private let failures: Int
-  init(failures: Int) { self.failures = failures }
-  func send(_ request: URLRequest) throws -> MediaPipelineHTTPResponse {
-    count += 1
-    if count <= failures { throw MediaPipelineTestError.unexpectedHTTP }
-    return .init(status: 200, body: Data("{\"text\":\"recognized speech\"}".utf8), retryAfter: nil)
+  private let status: Int?
+  init(failures: Int, status: Int? = nil) {
+    self.failures = failures
+    self.status = status
   }
-}
-
-private actor MediaPipelineHTTPStub {
-  private(set) var requests: [URLRequest] = []
-  private var count = 0
   func send(_ request: URLRequest) throws -> MediaPipelineHTTPResponse {
-    requests.append(request)
     count += 1
-    if count == 1 { return .init(status: 429, body: Data("secret-value".utf8), retryAfter: 0) }
-    return .init(status: 200, body: Data("{\"text\":\"recognized speech\"}".utf8), retryAfter: nil)
+    if count <= failures {
+      guard let status else { throw MediaPipelineTestError.unexpectedHTTP }
+      return .init(status: status, body: Data("api-secret must not be shown".utf8), retryAfter: 0)
+    }
+    return .init(status: 200, body: Data("recognized speech".utf8), retryAfter: nil)
   }
 }
 

@@ -26,33 +26,44 @@ final class SpeechProviderAddonTests: XCTestCase {
 
   private func resolver(
     _ environment: [String: String], http: SpeechHTTPRecorder? = nil,
-    runner: (any LocalProcessRunning)? = nil
+    runner: (any LocalProcessRunning)? = nil,
+    gateway: @escaping SpeechTranscriptionGateway = { _ in
+      XCTFail("unexpected transcription gateway call")
+      throw MediaPipelineError.stage("stt", "unexpected gateway call")
+    }
   ) -> BuiltinWorkflowAddonResolver {
     let recorder = http ?? SpeechHTTPRecorder()
     return BuiltinWorkflowAddonResolver(
       environment: environment, workingDirectory: root,
       containerProcessRunner: runner ?? SpeechFakeRunner(),
-      mediaPipelineHTTP: { request in await recorder.send(request) })
+      mediaPipelineHTTP: { request in await recorder.send(request) },
+      speechTranscriptionGateway: gateway)
   }
 
   // MARK: speech-to-text
 
   func testOpenAIUploadFollowsFileExtensionAndKeepsOutputContract() async throws {
     let audio = try audioFile("clip.wav")
-    let http = SpeechHTTPRecorder(responses: [#"{"text":"hello"}"#])
-    let output = try await resolver(["OPENAI_API_KEY": "k"], http: http).execute(
-      sttInput(["path": .string(audio.path)], env: ["OPENAI_API_KEY"]), context: .init())
+    let http = SpeechHTTPRecorder()
+    let gateway = SpeechGatewayRecorder(text: "hello")
+    let output = try await resolver(
+      ["OPENAI_API_KEY": "k"], http: http, gateway: { await gateway.transcribe($0) }
+    ).execute(sttInput(["path": .string(audio.path)], env: ["OPENAI_API_KEY"]), context: .init())
     let fields = try XCTUnwrap(payloadObject(output, "speechToText"))
     XCTAssertEqual(fields["provider"], .string("openai"))
     XCTAssertEqual(fields["model"], .string("gpt-4o-transcribe"))
     XCTAssertEqual(fields["text"], .string("hello"))
     XCTAssertEqual(fields["status"], .string("completed"))
-    let request = try await firstRequest(http)
-    XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/audio/transcriptions")
-    XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer k")
-    let body = String(bytes: request.httpBody ?? Data(), encoding: .utf8) ?? ""
-    XCTAssertTrue(body.contains(#"filename="audio.wav""#), body)
-    XCTAssertTrue(body.contains("Content-Type: audio/wav"), body)
+    XCTAssertEqual(Set(fields.keys), Set(["status", "provider", "model", "language", "text", "path", "cached"]))
+    let calls = await gateway.requests
+    let request = try XCTUnwrap(calls.first)
+    XCTAssertEqual(calls.count, 1)
+    XCTAssertEqual(request.model, "gpt-4o-transcribe")
+    XCTAssertEqual(request.apiKeyEnvironmentName, "OPENAI_API_KEY")
+    XCTAssertEqual(request.environment["OPENAI_API_KEY"], "k")
+    XCTAssertEqual(request.audioFile, audio.standardizedFileURL)
+    let httpCalls = await http.requests
+    XCTAssertTrue(httpCalls.isEmpty)
   }
 
   func testDeepgramRequestShapeAndParsing() async throws {
@@ -181,8 +192,10 @@ final class SpeechProviderAddonTests: XCTestCase {
   func testCommandProviderRendersPlaceholdersAndCachesByProvider() async throws {
     let audio = try audioFile("clip.wav")
     let runner = SpeechFakeRunner(stdout: "  local transcript \n")
-    let http = SpeechHTTPRecorder(responses: [#"{"text":"remote"}"#])
-    let local = resolver(["COMMAND_MODEL_DIR": "/models", "OPENAI_API_KEY": "k"], http: http, runner: runner)
+    let gateway = SpeechGatewayRecorder(text: "remote")
+    let local = resolver(
+      ["COMMAND_MODEL_DIR": "/models", "OPENAI_API_KEY": "k"], runner: runner,
+      gateway: { await gateway.transcribe($0) })
     let options: JSONObject = [
       "path": .string(audio.path), "provider": .string("command"), "language": .string("ja"),
       "command": .array([
@@ -520,5 +533,16 @@ actor SpeechFakeRunner: LocalProcessRunning {
     targets += args.filter { $0.contains("/.partial-") }
     for target in targets { try? Data("audio".utf8).write(to: URL(fileURLWithPath: target)) }
     return .init(stdout: stdout, stderr: status == 0 ? "" : "boom", terminationStatus: status)
+  }
+}
+
+private actor SpeechGatewayRecorder {
+  private(set) var requests: [SpeechTranscriptionRequest] = []
+  let text: String
+
+  init(text: String) { self.text = text }
+  func transcribe(_ request: SpeechTranscriptionRequest) -> String {
+    requests.append(request)
+    return text
   }
 }

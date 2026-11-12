@@ -399,6 +399,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var appleGatewayRunner: AppleGatewayRunner?
   var containerProcessRunner: any LocalProcessRunning
   var mediaPipelineHTTP: MediaPipelineHTTP
+  var speechTranscriptionGateway: SpeechTranscriptionGateway
   var definitionRunContext: BuiltinDefinitionRunContext?
   var artifactRootURL: URL?
 
@@ -424,6 +425,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     appleGatewayRunner: AppleGatewayRunner? = nil,
     containerProcessRunner: any LocalProcessRunning = FoundationLocalProcessRunner(),
     mediaPipelineHTTP: @escaping MediaPipelineHTTP = mediaPipelineNativeHTTP,
+    speechTranscriptionGateway: @escaping SpeechTranscriptionGateway = agentGatewaySpeechTranscription,
     definitionRunContext: BuiltinDefinitionRunContext? = nil,
     artifactRootURL: URL? = nil
   ) {
@@ -446,6 +448,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.appleGatewayRunner = appleGatewayRunner
     self.containerProcessRunner = containerProcessRunner
     self.mediaPipelineHTTP = mediaPipelineHTTP
+    self.speechTranscriptionGateway = speechTranscriptionGateway
     self.definitionRunContext = definitionRunContext
     self.artifactRootURL = artifactRootURL?.standardizedFileURL
   }

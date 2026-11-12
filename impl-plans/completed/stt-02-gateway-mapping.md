@@ -131,3 +131,8 @@ Cover every bullet of design §8 "production-boundary mapping tests":
 - All three providers are mapped and the tests above pass.
 - `git grep -n "transcribeChunk" Sources/RielaCLI/SpeechTranscriptionAgentGateway.swift` returns nothing.
 - Pre/post SHA-256 of the owned files is recorded. Follow the same fresh-read and drift rules as stt-01.
+
+## Implementation progress
+
+- Gateway mapping and stub boundary tests implemented; see `impl-plans/progress/stt-02-gateway-mapping.md` for contract citations and current verification. Formal review and downstream orchestration remain pending.
+- Implementation criteria verified: build and 7 focused tests pass; selected-file lint passes; `Package.resolved` is unchanged. Independent review remains pending.

@@ -5,6 +5,8 @@ import RielaKaibaAddons
 extension BuiltinGatewayRequestChecks {
   static func extendedIssues(_ addon: WorkflowNodeAddonRef, leaf: JSONObject) -> [WorkflowGatewayRequestIssue] {
     switch addon.name {
+    case "riela/speech-to-text":
+      return speechToTextIssues(addon)
     case "riela/x-gateway-reader", "riela/x-gateway-read":
       return xReaderIssues(addon.name, leaf: leaf)
     case "riela/gmail-gateway-read":
@@ -17,6 +19,47 @@ extension BuiltinGatewayRequestChecks {
       guard KaibaAddonCatalog.handles(addon.name), leaf["arguments"] != nil else { return [] }
       return KaibaNestedArgumentRules.issues(addonName: addon.name, config: leaf, inputs: addon.inputs)
     }
+  }
+
+  private static func speechToTextIssues(_ addon: WorkflowNodeAddonRef) -> [WorkflowGatewayRequestIssue] {
+    guard case let .object(options)? = addon.config?["options"],
+          !SpeechToTextOptionsParser.isTemplated(options["provider"]) else { return [] }
+    var literal = options
+    for (key, value) in options where key != "fallback" && key != "command" {
+      if SpeechToTextOptionsParser.isTemplated(value) {
+        literal[key] = key == "model" ? .string("templated") : nil
+      }
+    }
+    if SpeechToTextOptionsParser.isTemplated(options["whisperCpp"]) {
+      literal["whisperCpp"] = .object(["model": .string("templated")])
+    } else if case var .object(whisper)? = options["whisperCpp"] {
+      for key in ["binary", "threads"] where SpeechToTextOptionsParser.isTemplated(whisper[key]) {
+        whisper[key] = nil
+      }
+      if SpeechToTextOptionsParser.isTemplated(whisper["model"]) { whisper["model"] = .string("templated") }
+      if case let .array(args)? = whisper["extraArgs"], args.contains(where: SpeechToTextOptionsParser.isTemplated) {
+        whisper["extraArgs"] = nil
+      }
+      literal["whisperCpp"] = .object(whisper)
+    }
+    let chain: SpeechToTextChain
+    do {
+      chain = try SpeechToTextOptionsParser.parse(literal)
+    } catch MediaPipelineError.invalidOption(let name) {
+      return [issue("options.\(name)", "invalid speech-to-text option '\(name)'")]
+    } catch {
+      return [issue("options", "invalid speech-to-text options")]
+    }
+    let allowed = chain.environmentAllowlist
+    let rejected = (addon.env ?? [:]).keys.filter {
+      !allowed.keys.contains($0) && !(allowed.allowsCommandPrefix && $0.hasPrefix("COMMAND_") && $0.count > 8)
+    }.sorted()
+    var issues: [WorkflowGatewayRequestIssue] = []
+    if !rejected.isEmpty { issues.append(issue("env", "addon.env contains disallowed keys: \(rejected.joined(separator: ", "))")) }
+    if chain.usesWhisperCpp && (addon.container != nil || addon.sandbox != nil) {
+      issues.append(issue("options.provider", "speech-to-text provider 'whisper-cpp' runs on the host; remove addon.container/addon.sandbox"))
+    }
+    return issues
   }
 
   private static func xReaderIssues(_ addonName: String, leaf: JSONObject) -> [WorkflowGatewayRequestIssue] {

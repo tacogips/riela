@@ -1,5 +1,6 @@
 import Foundation
 import RielaAdapters
+import RielaAddonSupport
 import RielaCore
 import RielaKaibaAddons
 import RielaKaibaSupport
@@ -59,6 +60,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")
     }
     guard sandbox != nil || input.addon.container != nil else { return try await primary.execute(input, context: context) }
+    try speechToTextHostOnlyCheck(input)
     let input = try prepareAppleGatewayContainerOperation(input, workingDirectory: workingDirectory)
     if input.addon.name == "riela/private-workflow" {
       return try await PrivateWorkflowHost(environment: environment, workingDirectory: workingDirectory, runner: runner)
@@ -432,5 +434,42 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       mounts.append(.init(source: source, target: target, readOnly: mount.readOnly))
     }
     return mounts
+  }
+}
+
+private func speechToTextHostOnlyCheck(_ input: WorkflowAddonExecutionInput) throws {
+  guard input.addon.name == "riela/speech-to-text" else { return }
+  var rawConfig = input.addon.config ?? [:]
+  var preserved: JSONObject = [:]
+  if case .object(var options)? = rawConfig["options"] {
+    for key in ["command", "fallback"] {
+      if let value = options.removeValue(forKey: key) { preserved[key] = value }
+    }
+    rawConfig["options"] = .object(options)
+  }
+  var templateInput = input
+  templateInput.addon.config = rawConfig
+  let options: JSONObject
+  do {
+    guard case .object(let config) = try renderAddonConfig(
+      .object(rawConfig), variables: addonVariables(for: templateInput)),
+      case .object(var rendered)? = config["options"] else {
+      throw AdapterExecutionError(.invalidInput, "invalid speech-to-text option 'options'")
+    }
+    rendered.merge(preserved) { _, raw in raw }
+    options = rendered
+  } catch {
+    throw AdapterExecutionError(.invalidInput, "invalid speech-to-text option 'options'")
+  }
+  let primaryIsWhisper = options["provider"] == .string("whisper-cpp")
+  let fallbackIsWhisper: Bool
+  if case .array(let fallback)? = options["fallback"] {
+    fallbackIsWhisper = fallback.contains { entry in
+      guard case .object(let fields) = entry else { return false }
+      return fields["provider"] == .string("whisper-cpp")
+    }
+  } else { fallbackIsWhisper = false }
+  if primaryIsWhisper || fallbackIsWhisper {
+    throw AdapterExecutionError(.policyBlocked, "speech-to-text provider 'whisper-cpp' runs on the host; remove addon.container/addon.sandbox")
   }
 }

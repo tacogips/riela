@@ -252,3 +252,7 @@ Retry cases (with recorded `sleep` and a fixed `now`):
 - Before every edit, re-read the file fresh and record its SHA-256 and a one-line intent in the evidence directory.
 - After every edit, record the SHA-256 again. If the pre-hash does not match your last post-hash, the file drifted: stop, re-read it, and re-apply only your intent.
 - Write only the progress log listed for this plan.
+
+## Implementation progress (2026-11-12)
+
+Contract, placeholder seam, and focused tests implemented; build, 45 selected tests, and selected-file lint passed. Formal review and integration remain downstream. See `impl-plans/progress/stt-01-contract.md` for evidence.

@@ -198,4 +198,4 @@ Call `BuiltinGatewayRequestChecks.issues` directly, plus one end-to-end case thr
 - The tests above pass.
 - The progress log has commands, exit codes, test counts, and pre/post hashes. Follow the stt-01 drift rules.
 
-Implementation progress: validation and the pre-dispatch effective-options host-only guard are implemented. Verification and formal review status are recorded in `impl-plans/progress/stt-05-validation.md`; formal review remains downstream.
+Implementation progress: validation, the pre-dispatch effective-options host-only guard, and the amended image-selection fixture are implemented. Required build, combined tests, and selected-file lint pass; details and hashes are recorded in `impl-plans/progress/stt-05-validation.md`. Formal review remains downstream.

@@ -103,9 +103,11 @@ then Docker, then Podman, and accepts a runtime name and base image as its first
 two arguments.
 
 The downloader add-on and speech-to-text with a remote provider (`openai`,
-`deepgram`, `elevenlabs`, `google`) require network egress. Set
+`gemini`, `openrouter`, `deepgram`, `elevenlabs`, `google`) require network egress. Set
 `networkPolicy` to `egress-allowed` for those stages. The speech-to-text
-`apple` provider is macOS-only and cannot run in a container, and
+`apple` provider is macOS-only and cannot run in a container. `whisper-cpp`
+runs only on the host and is rejected with `addon.container` or `addon.sandbox`;
+hosted providers in the media image still need `egress-allowed`. The
 `riela/text-to-speech` runs on the host with no default image. Audio segmentation and
 video frame extraction can use `networkPolicy: "denied"` when their input files
 are already present. The workflow working directory is the only directory

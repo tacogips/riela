@@ -68,17 +68,21 @@ struct MultipartFormBody {
   }
 }
 
-enum SpeechToTextProvider: String, CaseIterable {
-  case openai, deepgram, elevenlabs, google, apple, command
+enum SpeechToTextProvider: String, CaseIterable, Sendable {
+  case openai, deepgram, elevenlabs, google, apple, command, gemini, openrouter
+  case whisperCpp = "whisper-cpp"
 
-  var isRemote: Bool { ![.apple, .command].contains(self) }
+  var viaAgentGateway: Bool { [.openai, .gemini, .openrouter].contains(self) }
+  var requiresModel: Bool { [.gemini, .openrouter].contains(self) }
+
+  var isRemote: Bool { ![.apple, .command, .whisperCpp].contains(self) }
 
   var defaultModel: String? {
     switch self {
     case .openai: "gpt-4o-transcribe"
     case .deepgram: "nova-3"
     case .elevenlabs: "scribe_v1"
-    case .google, .apple, .command: nil
+    case .google, .apple, .command, .gemini, .openrouter, .whisperCpp: nil
     }
   }
 
@@ -89,7 +93,9 @@ enum SpeechToTextProvider: String, CaseIterable {
     case .deepgram: ["DEEPGRAM_API_KEY", "DEEPGRAM_BASE_URL"]
     case .elevenlabs: ["ELEVENLABS_API_KEY", "ELEVENLABS_BASE_URL"]
     case .google: ["GOOGLE_SPEECH_API_KEY", "GOOGLE_SPEECH_BASE_URL"]
-    case .apple, .command: []
+    case .gemini: ["GEMINI_API_KEY", "GEMINI_BASE_URL"]
+    case .openrouter: ["OPENROUTER_API_KEY", "OPENROUTER_BASE_URL"]
+    case .apple, .command, .whisperCpp: []
     }
   }
 
@@ -99,7 +105,9 @@ enum SpeechToTextProvider: String, CaseIterable {
     case .deepgram: "DEEPGRAM_API_KEY"
     case .elevenlabs: "ELEVENLABS_API_KEY"
     case .google: "GOOGLE_SPEECH_API_KEY"
-    case .apple, .command: nil
+    case .gemini: "GEMINI_API_KEY"
+    case .openrouter: "OPENROUTER_API_KEY"
+    case .apple, .command, .whisperCpp: nil
     }
   }
 
@@ -109,7 +117,9 @@ enum SpeechToTextProvider: String, CaseIterable {
     case .deepgram: "DEEPGRAM_BASE_URL"
     case .elevenlabs: "ELEVENLABS_BASE_URL"
     case .google: "GOOGLE_SPEECH_BASE_URL"
-    case .apple, .command: nil
+    case .gemini: "GEMINI_BASE_URL"
+    case .openrouter: "OPENROUTER_BASE_URL"
+    case .apple, .command, .whisperCpp: nil
     }
   }
 
@@ -119,7 +129,7 @@ enum SpeechToTextProvider: String, CaseIterable {
     case .deepgram: "https://api.deepgram.com"
     case .elevenlabs: "https://api.elevenlabs.io"
     case .google: "https://speech.googleapis.com"
-    case .apple, .command: nil
+    case .apple, .command, .whisperCpp, .gemini, .openrouter: nil
     }
   }
 }
@@ -256,8 +266,8 @@ extension MediaPipelineService {
     request.setValue("Token \(input.apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue(SpeechAudioUpload(input.file).contentType, forHTTPHeaderField: "Content-Type")
     return try SpeechToTextResponse.deepgram(
-      await send(
-        request, maxAttempts: input.maxAttempts, stage: "stt", label: "Deepgram transcription",
+      await sendClassified(
+        request, maxAttempts: input.maxAttempts, label: "Deepgram transcription",
         deadline: deadline))
   }
 
@@ -277,8 +287,8 @@ extension MediaPipelineService {
     request.setValue(input.apiKey, forHTTPHeaderField: "xi-api-key")
     request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
     return try SpeechToTextResponse.elevenLabs(
-      await send(
-        request, maxAttempts: input.maxAttempts, stage: "stt", label: "ElevenLabs transcription",
+      await sendClassified(
+        request, maxAttempts: input.maxAttempts, label: "ElevenLabs transcription",
         deadline: deadline))
   }
 
@@ -305,8 +315,8 @@ extension MediaPipelineService {
     request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     return try SpeechToTextResponse.google(
-      await send(
-        request, maxAttempts: input.maxAttempts, stage: "stt", label: "Google Speech recognition",
+      await sendClassified(
+        request, maxAttempts: input.maxAttempts, label: "Google Speech recognition",
         deadline: deadline))
   }
 }

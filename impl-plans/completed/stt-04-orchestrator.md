@@ -187,3 +187,7 @@ symbols: `SpeechToTextOptionsParser`, `SpeechRetry`, `speechTranscriptionGateway
 - All the listed tests pass.
 - The output shape is unchanged without fallback.
 - The progress log has commands, exit codes, test counts, and pre/post hashes. Follow the stt-01 fresh-read and drift rules.
+
+## Implementation status
+
+Implemented and verified in the shared tree; see `impl-plans/progress/stt-04-orchestrator.md` for source hashes and gate results. Formal review and final integration remain downstream.

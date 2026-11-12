@@ -18,8 +18,10 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
       let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
         primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
         workingDirectory: root, runner: runner)
+      let config: [String: JSONValue]? = name == "riela/speech-to-text"
+        ? ["options": .object(["path": .string("audio.wav"), "provider": .string("openai")])] : nil
       _ = try await resolver.execute(.init(workflowId: "video", stepId: "step-\(index)", nodeId: "node-\(index)",
-        addon: .init(name: name, version: "1", container: .init())), context: .init())
+        addon: .init(name: name, version: "1", config: config, container: .init())), context: .init())
       let configurations = await runner.configurations
       let arguments = try XCTUnwrap(configurations.first?.arguments)
       XCTAssertTrue(arguments.contains("riela-video-addons:local"), "\(name) should select the video image")

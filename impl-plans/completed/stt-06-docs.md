@@ -96,3 +96,9 @@ In the paragraph around line 105 that lists speech-to-text providers in containe
 - The JSON examples parse.
 - `git diff docs/workflows/speech.md` shows no change to the text-to-speech section.
 - The progress log has the commands, exit codes, and pre/post hashes.
+
+## Implementation progress (stt-06)
+
+Documentation changes and JSON/TTS-preservation checks are complete; the required
+focused documentation test and formal downstream reviews are recorded in
+`impl-plans/progress/stt-06-docs.md`.

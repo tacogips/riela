@@ -41,8 +41,12 @@ riela workflow run <workflow> --variables '{"task": "..."}'
   transcription into reusable stages; see
   [the video pipeline guide](docs/workflows/video-pipeline.md). Speech-to-text
   and `riela/text-to-speech` switch between OpenAI, Deepgram, ElevenLabs,
-  Google, VOICEVOX, Apple on-device speech and local commands; see
-  [speech add-ons](docs/workflows/speech.md).
+  Google, VOICEVOX, Apple on-device speech and local commands. Speech-to-text
+  sends OpenAI, Gemini and OpenRouter requests through agent-gateway. It stops
+  at once when the vendor quota is used up and retries rate limits and server
+  errors. It also has a built-in host-only `whisper-cpp` provider, and a node
+  can list fallback providers in its config (`options.fallback`,
+  `options.fallbackOn`). See [speech add-ons](docs/workflows/speech.md).
 - **Edit, share and scale.** Edit workflows as graphs in the app, publish and
   install them as packages, run recurring routines, and spread steps across
   distributed workers.

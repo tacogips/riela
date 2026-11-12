@@ -201,7 +201,7 @@ extension BuiltinWorkflowAddonResolver {
     name: "riela/speech-to-text", bindsCLIVariablesAsInputs: false
   ) { resolver, input, context in
     try await MediaPipelineContext(resolver: resolver, stage: "speech-to-text").finish(
-      input, context, rawOptionKeys: ["command"]
+      input, context, rawOptionKeys: ["command", "fallback"]
     ) { options, _ in
       try await resolver.speechToText(
         options, bindings: input.addon.env ?? [:], deadline: context.deadline)
@@ -418,105 +418,166 @@ extension BuiltinWorkflowAddonResolver {
     -> JSONObject {
     let c = MediaPipelineContext(resolver: self, stage: "speech-to-text")
     let service = c.service
-    guard let rawPath = try c.string(values, "path") else {
-      throw MediaPipelineStageError.option("path")
-    }
+    guard let rawPath = try c.string(values, "path") else { throw MediaPipelineStageError.option("path") }
     let audio = c.path(rawPath)
-    guard let providerName = try c.string(values, "provider", "openai"),
-      let provider = SpeechToTextProvider(rawValue: providerName)
-    else { throw MediaPipelineStageError.option("provider") }
-    let model = try c.string(values, "model", provider.defaultModel)
-    // A blank language (for example an unset template value) lets the provider detect it.
-    let language = try c.string(values, "language").flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-    let prompt = try c.string(values, "prompt")
-    let attempts = Int(try c.number(values, "maxAttempts", 3, 1...8))
-    let timeout = try c.number(values, "timeoutSeconds", 300, 1...3600)
-    let onDevice = try c.bool(values, "onDevice", false)
-    let argv = provider == .command ? try commandArgv(values["command"]) : []
-    if provider != .command, values["command"] != nil {
-      throw MediaPipelineStageError.option("command")
+    let language = try c.string(values, "language").flatMap {
+      $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0
     }
+    let prompt = try c.string(values, "prompt")
+    let enabled = try c.bool(values, "cache", true)
+    let chain = try SpeechToTextOptionsParser.parse(values)
     try validateSpeechEnvironment(
-      bindings, stage: "speech-to-text", provider: provider.rawValue,
-      allowed: provider.allowedEnvironment, allowsCommandPrefix: provider == .command)
+      bindings, stage: "speech-to-text", provider: chain.primary.provider.rawValue,
+      allowed: chain.environmentAllowlist.keys,
+      allowsCommandPrefix: chain.environmentAllowlist.allowsCommandPrefix)
     let data: Data
-    if provider.isRemote {
+    if chain.primary.provider.isRemote {
       data = try SpeechAudioUpload.read(audio)
     } else {
-      guard FileManager.default.fileExists(atPath: audio.path),
-        let local = try? Data(contentsOf: audio, options: .mappedIfSafe)
-      else { throw MediaPipelineStageError.stage("stt", "audio file is missing") }
+      guard let local = try? Data(contentsOf: audio, options: .mappedIfSafe) else {
+        throw MediaPipelineStageError.stage("stt", "audio file is missing")
+      }
       data = local
     }
     let env = try resolveAddonEnvironment(bindings, runtimeEnvironment: environment)
-    var apiKey = ""
-    if let keyName = provider.apiKeyName {
-      guard let value = env[keyName], !value.isEmpty else {
-        throw AdapterExecutionError(.policyBlocked, "speech-to-text requires addon.env.\(keyName)")
-      }
-      apiKey = value
-    }
-    let baseURL = provider.baseURLName.flatMap { env[$0] } ?? provider.defaultBaseURL
-    var identity: JSONObject = [
-      "provider": .string(provider.rawValue), "model": model.map(JSONValue.string) ?? .null,
-      "language": language.map(JSONValue.string) ?? .null,
-      "prompt": prompt.map(JSONValue.string) ?? .null,
-      "contentSHA256": .string(JSONCanonical.sha256Hex(data))
-    ]
-    if let baseURL { identity["baseURL"] = .string(baseURL) }
-    if provider == .command { identity["command"] = .array(argv.map(JSONValue.string)) }
-    if provider == .apple { identity["onDevice"] = .bool(onDevice) }
-    let cacheFile = URL(fileURLWithPath: audio.path + ".stt.json")
-    let fingerprint = try c.fingerprint(.object(identity))
-    func result(_ text: String, cached: Bool) -> JSONObject {
-      [
-        "speechToText": .object([
-          "status": .string("completed"), "provider": .string(provider.rawValue),
-          "model": model.map(JSONValue.string) ?? .null,
-          "language": language.map(JSONValue.string) ?? .null, "text": .string(text),
-          "path": .string(audio.path), "cached": .bool(cached)
-        ])
+    let contentHash = JSONCanonical.sha256Hex(data)
+    func fingerprint(_ config: SpeechProviderConfig) throws -> String {
+      let provider = config.provider
+      var identity: JSONObject = [
+        "provider": .string(provider.rawValue), "model": config.model.map(JSONValue.string) ?? .null,
+        "language": language.map(JSONValue.string) ?? .null, "prompt": prompt.map(JSONValue.string) ?? .null,
+        "contentSHA256": .string(contentHash)
       ]
+      if let base = provider.baseURLName.flatMap({ env[$0] }) ?? provider.defaultBaseURL {
+        identity["baseURL"] = .string(base)
+      }
+      if provider == .command { identity["command"] = .array(config.command.map(JSONValue.string)) }
+      if provider == .apple { identity["onDevice"] = .bool(config.onDevice) }
+      if let whisper = config.whisperCpp {
+        identity["whisperCpp"] = .object([
+          "binary": whisper.binary.map(JSONValue.string) ?? .null, "model": .string(whisper.model),
+          "threads": whisper.threads.map { .integer(Int64($0)) } ?? .null,
+          "extraArgs": .array(whisper.extraArgs.map(JSONValue.string))
+        ])
+      }
+      return try c.fingerprint(.object(identity))
     }
-    let enabled = try c.bool(values, "cache", true)
+    let fingerprints = try chain.providers.map(fingerprint)
+    let cacheFile = URL(fileURLWithPath: audio.path + ".stt.json")
+    func result(_ text: String, provider: JSONValue, model: JSONValue, history: JSONValue?, cached: Bool) -> JSONObject {
+      var output: JSONObject = [
+        "status": .string("completed"), "provider": provider, "model": model,
+        "language": language.map(JSONValue.string) ?? .null, "text": .string(text),
+        "path": .string(audio.path), "cached": .bool(cached)
+      ]
+      if let history { output["fallbackFrom"] = history }
+      return ["speechToText": .object(output)]
+    }
     if enabled, let cached = try? Data(contentsOf: cacheFile),
       let object = try? JSONDecoder().decode(JSONValue.self, from: cached),
-      case .object(let fields) = object, fields["optionsFingerprint"]?.stringValue == fingerprint,
+      case .object(let fields) = object, let fp = fields["optionsFingerprint"]?.stringValue,
       let text = fields["text"]?.stringValue {
-      return result(text, cached: true)
+      if fp == fingerprints[0] {
+        return result(text, provider: .string(chain.primary.provider.rawValue),
+                      model: chain.primary.model.map(JSONValue.string) ?? .null, history: nil, cached: true)
+      }
+      if chain.cacheAcceptsFallback, fingerprints.dropFirst().contains(fp),
+        let provider = fields["provider"], provider.stringValue != nil, let model = fields["model"] {
+        return result(text, provider: provider, model: model, history: fields["fallbackFrom"], cached: true)
+      }
     }
-    let remote = RemoteSpeechRequest(
-      file: audio, data: data, model: model, language: language, apiKey: apiKey,
-      baseURL: baseURL ?? "", maxAttempts: attempts, timeoutSeconds: timeout)
-    let text: String
-    switch provider {
-    case .openai:
-      text = try await service.transcribeChunk(
-        audio,
-        options: .init(
-          model: model ?? "gpt-4o-transcribe", language: language, prompt: prompt,
-          maxAttempts: attempts),
-        apiKey: apiKey, baseURL: remote.baseURL, deadline: deadline, timeoutSeconds: timeout)
-    case .deepgram: text = try await service.deepgramTranscribe(remote, deadline: deadline)
-    case .elevenlabs: text = try await service.elevenLabsTranscribe(remote, deadline: deadline)
-    case .google: text = try await service.googleTranscribe(remote, deadline: deadline)
-    case .apple:
-      text = try await AppleSpeechRecognition.transcribe(
-        file: audio, language: language, onDevice: onDevice, timeoutSeconds: timeout)
-    case .command:
-      let arguments = renderCommandArguments(
-        argv, values: ["path": audio.path, "language": language ?? ""])
-      let executable = try service.command(arguments[0], stage: "stt")
-      let commandDeadline = min(deadline ?? .distantFuture, Date().addingTimeInterval(timeout))
-      let output = try await service.run(
-        executable, Array(arguments.dropFirst()), stage: "stt", deadline: commandDeadline,
-        environmentOverlay: env.filter { $0.key.hasPrefix("COMMAND_") })
-      text = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    var failures: [(SpeechProviderConfig, SpeechProviderFailure)] = []
+    for (index, config) in chain.providers.enumerated() {
+      let provider = config.provider
+      do {
+        if provider.isRemote && index > 0 && data.count > SpeechAudioUpload.uploadLimit {
+          throw SpeechProviderFailure(failureClass: .rejected, httpStatus: nil, providerProblem: nil,
+                                      retryAfter: nil, message: "audio file exceeds the 25 MB upload limit")
+        }
+        var key = ""
+        if let keyName = provider.apiKeyName {
+          guard let value = env[keyName], !value.isEmpty else {
+            if chain.fallback.isEmpty {
+              throw AdapterExecutionError(.policyBlocked, "speech-to-text requires addon.env.\(keyName)")
+            }
+            throw SpeechProviderFailure(failureClass: .unavailable, httpStatus: nil, providerProblem: nil,
+                                        retryAfter: nil, message: "addon.env.\(keyName) is not set")
+          }
+          key = value
+        }
+        let baseURL = provider.baseURLName.flatMap { env[$0] }
+        let text: String
+        if provider.viaAgentGateway, let model = config.model, let keyName = provider.apiKeyName {
+          let providerEnvironment = env.filter { provider.allowedEnvironment.contains($0.key) }
+          let request = SpeechTranscriptionRequest(
+            provider: provider, model: model, apiKeyEnvironmentName: keyName,
+            environment: service.processEnvironment.merging(providerEnvironment) { _, value in value },
+            baseURL: baseURL, audioFile: audio, language: language, prompt: prompt,
+            timeoutSeconds: config.timeoutSeconds)
+          text = try await SpeechRetry.run(maxAttempts: config.maxAttempts, deadline: deadline) { _ in
+            try await speechTranscriptionGateway(request)
+          }
+        } else {
+          let remote = RemoteSpeechRequest(file: audio, data: data, model: config.model, language: language,
+            apiKey: key, baseURL: baseURL ?? provider.defaultBaseURL ?? "", maxAttempts: config.maxAttempts,
+            timeoutSeconds: config.timeoutSeconds)
+          switch provider {
+          case .deepgram: text = try await service.deepgramTranscribe(remote, deadline: deadline)
+          case .elevenlabs: text = try await service.elevenLabsTranscribe(remote, deadline: deadline)
+          case .google: text = try await service.googleTranscribe(remote, deadline: deadline)
+          case .whisperCpp:
+            guard let options = config.whisperCpp else { throw MediaPipelineStageError.option("whisperCpp") }
+            text = try await service.whisperCppTranscribe(audio: audio, options: options, language: language,
+              timeoutSeconds: config.timeoutSeconds, deadline: deadline)
+          case .apple:
+            text = try await AppleSpeechRecognition.transcribe(file: audio, language: language,
+              onDevice: config.onDevice, timeoutSeconds: config.timeoutSeconds)
+          case .command:
+            let arguments = renderCommandArguments(config.command, values: ["path": audio.path, "language": language ?? ""])
+            let executable = try service.command(arguments[0], stage: "stt")
+            let commandDeadline = min(deadline ?? .distantFuture, Date().addingTimeInterval(config.timeoutSeconds))
+            let output = try await service.run(executable, Array(arguments.dropFirst()), stage: "stt",
+              deadline: commandDeadline, environmentOverlay: env.filter { $0.key.hasPrefix("COMMAND_") })
+            text = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+          case .openai, .gemini, .openrouter: throw MediaPipelineStageError.option("model")
+          }
+        }
+        let history: JSONValue? = failures.isEmpty ? nil : .array(failures.map { config, failure in
+          var entry: JSONObject = ["provider": .string(config.provider.rawValue),
+            "model": config.model.map(JSONValue.string) ?? .null, "failureClass": .string(failure.failureClass.rawValue)]
+          if let status = failure.httpStatus { entry["httpStatus"] = .integer(Int64(status)) }
+          if let problem = failure.providerProblem { entry["providerProblem"] = .string(c.redacted(problem)) }
+          return .object(entry)
+        })
+        let model = config.model.map(JSONValue.string) ?? .null
+        var cache: JSONObject = ["optionsFingerprint": .string(fingerprints[index]), "text": .string(text),
+                                 "provider": .string(provider.rawValue), "model": model]
+        if let history { cache["fallbackFrom"] = history }
+        try? JSONEncoder().encode(JSONValue.object(cache)).write(to: cacheFile, options: .atomic)
+        return result(text, provider: .string(provider.rawValue), model: model, history: history, cached: false)
+      } catch is CancellationError { throw CancellationError() } catch {
+        let failure: SpeechProviderFailure
+        if let classified = error as? SpeechProviderFailure { failure = classified } else if !chain.fallback.isEmpty, let adapter = error as? AdapterExecutionError,
+                adapter.code == .timeout || (provider == .apple && adapter.code == .policyBlocked) {
+          failure = .init(failureClass: adapter.code == .timeout ? .transportError : .unavailable,
+                          httpStatus: nil, providerProblem: nil, retryAfter: nil, message: adapter.message)
+        } else if !chain.fallback.isEmpty, let stage = error as? MediaPipelineError,
+                  case .stage(_, let message) = stage {
+          failure = .init(failureClass: provider == .command ? .unavailable : .rejected,
+                          httpStatus: nil, providerProblem: nil, retryAfter: nil, message: message)
+        } else { throw error }
+        failures.append((config, failure))
+        if index + 1 < chain.providers.count && chain.fallbackOn.contains(failure.failureClass) { continue }
+        let clauses = failures.map { cfg, item in
+          "'\(cfg.provider.rawValue)' \(c.redacted(item.fields)): \(c.redacted(item.message))"
+        }
+        let message = failures.count == 1 ? "speech-to-text provider '\(config.provider.rawValue)' failed: \(c.redacted(failure.fields)): \(c.redacted(failure.message))" :
+          "speech-to-text fallback chain failed: " + clauses.joined(separator: "; ")
+        let retryable: Bool? = [.quotaExhausted, .unavailable, .rejected].contains(failure.failureClass) ? false : nil
+        throw AdapterExecutionError(.providerError, message, isRetryable: retryable)
+      }
     }
-    try? JSONEncoder().encode(
-      JSONValue.object(["optionsFingerprint": .string(fingerprint), "text": .string(text)])
-    ).write(to: cacheFile, options: .atomic)
-    return result(text, cached: false)
+    throw AdapterExecutionError(.providerError, "speech-to-text fallback chain failed")
   }
 }
 

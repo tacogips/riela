@@ -267,6 +267,7 @@ let package = Package(
         "CRielaPublicWeb",
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
+        .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
         .product(name: "GoogleGatewayAuth", package: "google-gateway-auth"),
         .product(name: "XGatewayCore", package: "x-gateway"),

@@ -6,13 +6,6 @@ import RielaCore
   import FoundationNetworking
 #endif
 
-struct MediaPipelineSTTOptions: Sendable {
-  let model: String
-  let language: String?
-  let prompt: String?
-  let maxAttempts: Int
-}
-
 struct MediaFrameExtractionOptions: Sendable {
   let intervalSeconds: Double
   let dedupeThreshold: Double
@@ -20,40 +13,6 @@ struct MediaFrameExtractionOptions: Sendable {
 }
 
 extension MediaPipelineService {
-  func transcribeChunk(
-    _ file: URL, options: MediaPipelineSTTOptions, apiKey: String, baseURL: String,
-    deadline: Date?, timeoutSeconds: Double
-  ) async throws -> String {
-    let fileData = try SpeechAudioUpload.read(file)
-    let upload = SpeechAudioUpload(file)
-    var form = MultipartFormBody()
-    form.field("model", options.model)
-    form.field("response_format", "json")
-    if let language = options.language { form.field("language", language) }
-    if let prompt = options.prompt { form.field("prompt", prompt) }
-    form.file("file", filename: upload.filename, contentType: upload.contentType, data: fileData)
-    let normalizedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-      .replacingOccurrences(of: "/v1", with: "", options: [.backwards, .anchored])
-    guard let endpoint = URL(string: normalizedBase + "/v1/audio/transcriptions") else {
-      throw MediaPipelineError.stage("stt", "invalid OpenAI base URL")
-    }
-    var request = URLRequest(url: endpoint)
-    request.timeoutInterval = timeoutSeconds
-    request.httpMethod = "POST"
-    request.httpBody = form.finalized()
-    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-    request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
-    let body = try await send(
-      request, maxAttempts: options.maxAttempts, stage: "stt", label: "transcription service",
-      deadline: deadline)
-    guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-      let text = json["text"] as? String
-    else {
-      throw MediaPipelineError.stage("stt", "invalid transcription response")
-    }
-    return text
-  }
-
   /// Sends a request with bounded retries on 429/5xx and transport failures,
   /// returning the body of the first 2xx response.
   func send(

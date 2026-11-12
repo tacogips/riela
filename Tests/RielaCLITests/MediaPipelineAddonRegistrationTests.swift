@@ -116,10 +116,10 @@ extension MediaPipelineAddonTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let audio = root.appendingPathComponent("segment.mp3")
     try Data("fixture audio bytes".utf8).write(to: audio)
-    let transport = MediaPipelineHTTPFixture()
+    let transport = MediaPipelineGatewayFixture()
     let resolver = BuiltinWorkflowAddonResolver(
       environment: ["OPENAI_API_KEY": "fake-key"], workingDirectory: root,
-      mediaPipelineHTTP: { request in await transport.send(request) })
+      speechTranscriptionGateway: { request in await transport.transcribe(request) })
     let config: JSONObject = [
       "options": .object([
         "path": .string(audio.path), "language": .string("ja"), "timeoutSeconds": .integer(12)
@@ -141,7 +141,7 @@ extension MediaPipelineAddonTests {
     XCTAssertEqual(speechToTextFields(changed)?["cached"], .bool(false))
     let afterOptionChange = await transport.count
     XCTAssertEqual(afterOptionChange, 2)
-    let requestTimeouts = await transport.timeouts
+    let requestTimeouts = await transport.requests.map(\.timeoutSeconds)
     XCTAssertEqual(requestTimeouts, [12, 12])
   }
 
@@ -152,17 +152,17 @@ extension MediaPipelineAddonTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let audio = root.appendingPathComponent("segment.mp3")
     try Data("fixture audio bytes".utf8).write(to: audio)
-    let transport = MediaPipelineHTTPFixture()
+    let transport = MediaPipelineGatewayFixture()
     let resolver = BuiltinWorkflowAddonResolver(
       environment: ["OPENAI_API_KEY": "fake-key"], workingDirectory: root,
-      mediaPipelineHTTP: { request in await transport.send(request) })
+      speechTranscriptionGateway: { request in await transport.transcribe(request) })
     let output = try await resolver.execute(
       mediaSpeechInput(config: ["options": .object(["path": .string(audio.path), "language": .string(" ")])]),
       context: .init())
     XCTAssertEqual(speechToTextFields(output)?["language"], .null)
-    let bodies = await transport.bodies
-    XCTAssertEqual(bodies.count, 1)
-    XCTAssertFalse(bodies[0].contains("name=\"language\""))
+    let requests = await transport.requests
+    XCTAssertEqual(requests.count, 1)
+    XCTAssertNil(requests.first?.language)
   }
 
   func testSpeechToTextNamesUnsupportedProviderOption() async throws {
@@ -195,11 +195,11 @@ extension MediaPipelineAddonTests {
     try Data("aaaa".utf8).write(to: audio)
     let fixedModificationDate = Date(timeIntervalSince1970: 1_700_000_000)
     try FileManager.default.setAttributes([.modificationDate: fixedModificationDate], ofItemAtPath: audio.path)
-    let transport = MediaPipelineHTTPFixture()
+    let transport = MediaPipelineGatewayFixture()
     func resolver(_ baseURL: String) -> BuiltinWorkflowAddonResolver {
       BuiltinWorkflowAddonResolver(
         environment: ["OPENAI_API_KEY": "fake-key", "OPENAI_BASE_URL": baseURL],
-        workingDirectory: root, mediaPipelineHTTP: { request in await transport.send(request) })
+        workingDirectory: root, speechTranscriptionGateway: { request in await transport.transcribe(request) })
     }
     let config: JSONObject = ["options": .object(["path": .string(audio.path), "maxAttempts": .integer(1)])]
     _ = try await resolver("https://one.example.test").execute(mediaSpeechInput(config: config, baseURL: true), context: .init())
@@ -226,9 +226,7 @@ extension MediaPipelineAddonTests {
     try FileManager.default.createDirectory(atPath: audio.path + ".stt.json", withIntermediateDirectories: true)
     let resolver = BuiltinWorkflowAddonResolver(
       environment: ["OPENAI_API_KEY": "fake-key"], workingDirectory: root,
-      mediaPipelineHTTP: { _ in
-        .init(status: 200, body: Data("{\"text\":\"paid transcript\"}".utf8), retryAfter: nil)
-      })
+      speechTranscriptionGateway: { _ in "paid transcript" })
     let output = try await resolver.execute(
       mediaSpeechInput(config: ["options": .object(["path": .string(audio.path)])]), context: .init())
     XCTAssertEqual(speechToTextFields(output)?["text"], .string("paid transcript"))
@@ -331,22 +329,13 @@ private func speechToTextFields(_ output: AdapterExecutionOutput) -> JSONObject?
   return fields
 }
 
-private actor MediaPipelineHTTPFixture {
-  private(set) var count = 0
-  private(set) var timeouts: [Double] = []
-  private(set) var bodies: [String] = []
-  func send(_ request: URLRequest) -> MediaPipelineHTTPResponse {
-    count += 1
-    timeouts.append(request.timeoutInterval)
-    bodies.append(request.httpBody.flatMap { String(bytes: $0, encoding: .utf8) } ?? "")
-    XCTAssertEqual(request.httpMethod, "POST")
-    return .init(status: 200, body: Data("{\"text\":\"fixture transcript\"}".utf8), retryAfter: nil)
+private actor MediaPipelineGatewayFixture {
+  private(set) var requests: [SpeechTranscriptionRequest] = []
+  var count: Int { requests.count }
+  func transcribe(_ request: SpeechTranscriptionRequest) -> String {
+    requests.append(request)
+    return "fixture transcript"
   }
-}
-
-private actor MediaPipelineRequestCounter {
-  private(set) var count = 0
-  func increment() { count += 1 }
 }
 
 private struct MediaProbeFixtureRunner: LocalProcessRunning {
@@ -397,18 +386,12 @@ extension MediaPipelineAddonTests {
         ], workingDirectoryURL: root), stdin: "", deadline: nil)
     XCTAssertEqual(generated.terminationStatus, 0, generated.stderr)
 
-    let requests = MediaPipelineRequestCounter()
-    let server = RielaLocalHTTPServer(routeHandler: AnyRielaHTTPRouteHandler { _ in
-      await requests.increment()
-      return .json(.object(["text": .string("fixture transcript")]))
-    })
-    let port = try await server.startForTesting()
-    addTeardownBlock { await server.stop() }
-    let baseURL = "http://127.0.0.1:\(port)"
+    let requests = MediaPipelineGatewayFixture()
     let artifactRoot = root.appendingPathComponent("artifact-store", isDirectory: true)
     let resolver = BuiltinWorkflowAddonResolver(
-      environment: ["OPENAI_API_KEY": "fake-key", "OPENAI_BASE_URL": baseURL],
-      workingDirectory: root, containerProcessRunner: runner, artifactRootURL: artifactRoot)
+      environment: ["OPENAI_API_KEY": "fake-key", "OPENAI_BASE_URL": "https://example.test"],
+      workingDirectory: root, containerProcessRunner: runner,
+      speechTranscriptionGateway: { await requests.transcribe($0) }, artifactRootURL: artifactRoot)
     let audioOutput = try await resolver.execute(
       WorkflowAddonExecutionInput(
         workflowId: "media-compose", stepId: "audio", nodeId: "audio",

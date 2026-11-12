@@ -89,6 +89,12 @@ The upload Content-Type follows the file extension (`wav`, `mp3`, `m4a`,
 fingerprint includes the provider. Output stays
 `{"speechToText": {status, provider, model, language, text, path, cached}}`.
 
+Superseded in part by `design-speech-to-text-agent-gateway.md`: `openai`
+(plus new `gemini`/`openrouter`) now transcribe through agent-gateway, a
+built-in `whisper-cpp` provider, failure classification with non-retryable
+quota exhaustion, a config-only `fallback`/`fallbackOn` chain (adds optional
+`speechToText.fallbackFrom`), and static validation.
+
 ## `riela/text-to-speech`
 
 ```json

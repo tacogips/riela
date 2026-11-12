@@ -1,0 +1,248 @@
+{
+  "taskId": "stt-agent-gateway",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/stt-via-agent-gateway",
+  "baseBranch": "feat/stt-via-agent-gateway",
+  "remote": "origin",
+  "originalHead": "fd78a56b271bdad534f8ab24f1913f31b198f931",
+  "designDocPaths": [
+    "design-docs/specs/design-speech-to-text-agent-gateway.md",
+    "design-docs/specs/design-voice-assistant.md"
+  ],
+  "evidenceRoot": "tmp/stt-agent-gateway",
+  "reviewContext": {
+    "issueReference": "none; dispatch comm-019860, intake comm-019861, design review comm-019863/comm-019865, plan review comm-019867/comm-019869, revised plan comm-019868, session opus-terra-design-and-implement-review-loop-session-852",
+    "userProblem": "riela/speech-to-text calls OpenAI through Riela's own HTTP client and retries every failure the same way, so quota exhaustion gets retried and the vendor problem code is never reported. Local engines need hand-written argv, and falling back to another provider takes routing nodes.",
+    "requiredOutcomes": [
+      "openai/gemini/openrouter transcribe via agent-gateway (ProductionGatewayExecutor.transcribe + GatewayTranscriptionParams); key referenced by env name.",
+      "Quota exhaustion makes one vendor request and is non-retryable; 429/5xx/transport errors retry up to maxAttempts with Retry-After or exponential backoff; failures carry failureClass/httpStatus/providerProblem with no secrets.",
+      "Built-in whisper-cpp provider (options.whisperCpp), host only.",
+      "Config-only fallback/fallbackOn chain; output records fallbackFrom.",
+      "Provider-aware .stt.json cache with cacheAcceptsFallback; legacy files are reused only for the primary.",
+      "workflow validate rejects unknown providers, bad fallback entries, bad fallbackOn, env outside the allowlist, and whisper-cpp with container/sandbox.",
+      "docs/workflows/speech.md documents everything, with whisper-cpp and openai->whisper-cpp examples."
+    ],
+    "nonGoals": [
+      "No agent-gateway pin change and no Package.resolved change.",
+      "deepgram/elevenlabs/google are not moved to the gateway.",
+      "No change to TTS, Home Assistant, MediaPipelineService.send, or apple behavior.",
+      "Do not restart or reconfigure RielaApp; no real network or vendor calls in tests."
+    ],
+    "constraints": [
+      "Backward compatible: existing options, defaults, command placeholders, fingerprint identity, and no-fallback output shape are unchanged.",
+      "Run swift build/test/swiftlint inside `arch -arm64 /bin/zsh -lc`.",
+      "Evidence goes only under the gitignored tmp/stt-agent-gateway/<plan>/.",
+      "Do not modify unrelated files."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Wave-1 contract plan stt-01 pins SpeechToTextProvider cases, SpeechFailureClass/SpeechProviderFailure/SpeechFailureClassifier, SpeechRetry, SpeechToTextChain/Parser, SpeechTranscriptionRequest, the SpeechTranscriptionGateway seam on BuiltinWorkflowAddonResolver, and a placeholder production closure.",
+        "rationale": "The wave-2 plans (stt-02/03/05/06) build on fixed shapes and their write sets stay disjoint."
+      },
+      {
+        "decision": "The stt-02 precondition requires cited evidence from the pinned gateway that status/code/Retry-After survive and that each call sends one vendor request; if not, that provider is marked blocked: scope-amendment-required with no degraded mapping.",
+        "rationale": "Design §2.1 (review finding STT-DESIGN-001)."
+      },
+      {
+        "decision": "The run-time whisper-cpp host-only rejection lives in BuiltinAddonContainerResolver (stt-05), because the worker receives the addon with container/sandbox stripped.",
+        "rationale": "BuiltinAddonContainerResolver.swift sets workerInput.addon.container/sandbox = nil (~lines 139-140)."
+      },
+      {
+        "decision": "stt-04 runs in wave 3 after stt-03, because it calls whisperCppTranscribe and uses classified HTTP providers, and it deletes transcribeChunk only after the call site is gone.",
+        "rationale": "Keeps the build green between waves and keeps one owner per file within each wave."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "MediaPipelineSpeechProviders.swift is written by stt-01 (wave 1) and then stt-03 (wave 2); SpeechTranscriptionAgentGateway.swift by stt-01 then stt-02; MediaPipelineAddons.swift by stt-01 (one switch arm) then stt-04. All pairs are ordered by dependsOn.",
+      "Wave-2 plans share one working tree and build cache; a half-finished edit in one can break another's build, so each plan records the failure, reruns, and reports it.",
+      "Cache writes stay unconditional (as today) even with cache:false."
+    ],
+    "supportedEdgeCases": [
+      "OPENAI_BASE_URL with or without a trailing /v1 is normalized as transcribeChunk did (design §2.1).",
+      "Quota exhaustion: OpenAI insufficient_quota/credit_balance_exhausted/billing_*, any HTTP 402, Gemini 429 with a PerDay QuotaFailure -> quota-exhausted, 1 vendor request, moves to the next fallback at once (§4, §5).",
+      "Retry-After honoured, else 2^(attempt-1)s, clamped 0...60s, bounded by maxAttempts and the node deadline (§4).",
+      "whisper-cpp: empty language -> -l auto; missing binary/model -> unavailable; non-zero exit -> unavailable with redacted stderr tail; timeout -> transport-error (§2.2).",
+      "Missing required env key: policyBlocked without fallback, unavailable inside a chain (§3).",
+      "Cache: legacy primary-fingerprint files still hit; a legacy entry matching only a fallback identity is a miss even with cacheAcceptsFallback (§6).",
+      "Templated ({{...}}) option values are skipped by validation; raw fallback/command and literal fallbackOn are still checked (§7).",
+      "whisper-cpp anywhere in the chain plus addon.container/addon.sandbox is rejected at validate and run time (§2.2)."
+    ],
+    "outOfScopeEdgeCases": [
+      "Pinned agent-gateway cannot preserve status/vendor code or limit to one vendor request: no degraded mapping; stt-02 blocks with scope-amendment-required (§2.1, R1).",
+      "Audio format conversion for whisper-cpp (inputs are whatever whisper-cli accepts).",
+      "Moving deepgram/elevenlabs/google to the gateway; TTS, Home Assistant, apple behavior changes.",
+      "Live vendor or real whisper.cpp runs in tests; Linux media container egress changes (R3)."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCLI/MediaPipelineAddons.swift",
+      "Sources/RielaCLI/MediaPipelineSpeechProviders.swift",
+      "Sources/RielaCLI/MediaPipelineService.swift",
+      "Sources/RielaCLI/MediaPipelineService+Stages.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter.swift",
+      "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
+      "Sources/RielaCLI/BuiltinAddonContainerResolver.swift",
+      "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+      "Package.swift",
+      "docs/workflows/speech.md"
+    ]
+  },
+  "acceptedDependencies": [],
+  "plans": [
+    {
+      "planId": "stt-01-contract",
+      "planPath": "impl-plans/active/stt-01-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/SpeechToTextContract.swift",
+        "Sources/RielaCLI/MediaPipelineSpeechProviders.swift",
+        "Sources/RielaCLI/SpeechTranscriptionAgentGateway.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/MediaPipelineAddons.swift",
+        "Tests/RielaCLITests/SpeechToTextContractTests.swift",
+        "impl-plans/progress/stt-01-contract.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "All contract types and members exist with the exact names in the plan.",
+        "Parser, classifier, and retry tests pass; existing SpeechProviderAddonTests and MediaPipeline* suites pass unchanged.",
+        "MediaPipelineAddons.swift diff is a single switch arm; no AgentGatewayAppCore import."
+      ],
+      "verification": [
+        "mkdir -p tmp/stt-agent-gateway/stt-01",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-01/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechToTextContractTests|SpeechProviderAddonTests|MediaPipeline'\" > tmp/stt-agent-gateway/stt-01/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/SpeechToTextContract.swift Sources/RielaCLI/MediaPipelineSpeechProviders.swift Sources/RielaCLI/SpeechTranscriptionAgentGateway.swift Sources/RielaCLI/ProductionNodeAdapter.swift Sources/RielaCLI/MediaPipelineAddons.swift Tests/RielaCLITests/SpeechToTextContractTests.swift' > tmp/stt-agent-gateway/stt-01/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "stt-02-gateway-mapping",
+      "planPath": "impl-plans/active/stt-02-gateway-mapping.md",
+      "dependsOn": ["stt-01-contract"],
+      "writePaths": [
+        "Sources/RielaCLI/SpeechTranscriptionAgentGateway.swift",
+        "Package.swift",
+        "Tests/RielaCLITests/SpeechAgentGatewayMappingTests.swift",
+        "impl-plans/progress/stt-02-gateway-mapping.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Step 0 gateway API evidence is recorded with file:line citations.",
+        "Either the mapping passes the production-boundary tests (quota: 1 vendor request with httpStatus/providerProblem preserved; 429 x maxAttempts 3 = 3 vendor requests; 503 preserved), or the plan is marked blocked: scope-amendment-required with evidence.",
+        "Package.resolved is unchanged."
+      ],
+      "verification": [
+        "mkdir -p tmp/stt-agent-gateway/stt-02",
+        "arch -arm64 /bin/zsh -lc 'swift package resolve' > tmp/stt-agent-gateway/stt-02/resolve.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-02/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechAgentGatewayMappingTests|SpeechToTextContractTests'\" > tmp/stt-agent-gateway/stt-02/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/SpeechTranscriptionAgentGateway.swift Tests/RielaCLITests/SpeechAgentGatewayMappingTests.swift' > tmp/stt-agent-gateway/stt-02/lint.log 2>&1",
+        "git diff --exit-code -- Package.resolved"
+      ]
+    },
+    {
+      "planId": "stt-03-whisper-and-http",
+      "planPath": "impl-plans/active/stt-03-whisper-and-http.md",
+      "dependsOn": ["stt-01-contract"],
+      "writePaths": [
+        "Sources/RielaCLI/SpeechWhisperCpp.swift",
+        "Sources/RielaCLI/MediaPipelineSpeechHTTP.swift",
+        "Sources/RielaCLI/MediaPipelineSpeechProviders.swift",
+        "Tests/RielaCLITests/SpeechWhisperCppAndHTTPTests.swift",
+        "impl-plans/progress/stt-03-whisper-and-http.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "whisperCppTranscribe argv/order, auto language, unavailable/transport mapping tests pass.",
+        "deepgram/elevenlabs/google use sendClassified; quota gives 1 request; 5xx retries maxAttempts; request shapes unchanged.",
+        "MediaPipelineService.swift and MediaPipelineService+Stages.swift are unchanged."
+      ],
+      "verification": [
+        "mkdir -p tmp/stt-agent-gateway/stt-03",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-03/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechWhisperCppAndHTTPTests|SpeechProviderAddonTests'\" > tmp/stt-agent-gateway/stt-03/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/SpeechWhisperCpp.swift Sources/RielaCLI/MediaPipelineSpeechHTTP.swift Sources/RielaCLI/MediaPipelineSpeechProviders.swift Tests/RielaCLITests/SpeechWhisperCppAndHTTPTests.swift' > tmp/stt-agent-gateway/stt-03/lint.log 2>&1",
+        "git diff --exit-code -- Sources/RielaCLI/MediaPipelineService+Stages.swift Sources/RielaCLI/MediaPipelineService.swift"
+      ]
+    },
+    {
+      "planId": "stt-05-validation",
+      "planPath": "impl-plans/active/stt-05-validation.md",
+      "dependsOn": ["stt-01-contract"],
+      "writePaths": [
+        "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
+        "Sources/RielaCLI/BuiltinAddonContainerResolver.swift",
+        "Tests/RielaCLITests/SpeechToTextValidationTests.swift",
+        "impl-plans/progress/stt-05-validation.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Validation issues for unknown provider, bad fallback entries, bad or orphaned fallbackOn, env outside the union allowlist, and whisper-cpp with container/sandbox; no issues for valid configs or for any templated rendered option (provider, model, maxAttempts, timeoutSeconds, onDevice, cacheAcceptsFallback, whisperCpp scalars), while raw fallback/command and literal fallbackOn are still checked (design §7, STT-PLAN-001).",
+        "BuiltinAddonContainerResolver throws policyBlocked for whisper-cpp plus container without invoking the runner; openai plus container still uses the video image."
+      ],
+      "verification": [
+        "mkdir -p tmp/stt-agent-gateway/stt-05",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-05/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechToTextValidationTests|BuiltinAddonContainerResolverTests'\" > tmp/stt-agent-gateway/stt-05/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift Sources/RielaCLI/BuiltinAddonContainerResolver.swift Tests/RielaCLITests/SpeechToTextValidationTests.swift' > tmp/stt-agent-gateway/stt-05/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "stt-06-docs",
+      "planPath": "impl-plans/active/stt-06-docs.md",
+      "dependsOn": ["stt-01-contract"],
+      "writePaths": [
+        "docs/workflows/speech.md",
+        "docs/container-addons.md",
+        "impl-plans/progress/stt-06-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "speech.md documents providers/models, gateway transport, retry and non-retry classes, failure fields, whisper-cpp, fallback/fallbackOn/fallbackFrom, cache fingerprint and cacheAcceptsFallback, validation, the host-only rule, and whisper-cpp plus openai->whisper-cpp examples.",
+        "All new JSON examples parse; the text-to-speech section is unchanged."
+      ],
+      "verification": [
+        "mkdir -p tmp/stt-agent-gateway/stt-06",
+        "grep -n \"whisper-cpp\\|fallbackOn\\|cacheAcceptsFallback\\|providerProblem\\|quota-exhausted\\|gemini\\|openrouter\" docs/workflows/speech.md > tmp/stt-agent-gateway/stt-06/grep.log",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter MediaPipelineWorkflowDocumentationTests\" > tmp/stt-agent-gateway/stt-06/doctest.log 2>&1"
+      ]
+    },
+    {
+      "planId": "stt-04-orchestrator",
+      "planPath": "impl-plans/active/stt-04-orchestrator.md",
+      "dependsOn": ["stt-01-contract", "stt-03-whisper-and-http"],
+      "writePaths": [
+        "Sources/RielaCLI/MediaPipelineAddons.swift",
+        "Sources/RielaCLI/MediaPipelineService+Stages.swift",
+        "Tests/RielaCLITests/SpeechProviderAddonTests.swift",
+        "Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift",
+        "Tests/RielaCLITests/SpeechToTextFallbackTests.swift",
+        "impl-plans/progress/stt-04-orchestrator.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "openai via the stubbed gateway keeps the exact output key set; no mediaPipelineHTTP request for openai.",
+        "Quota: 1 call, non-retryable, message has httpStatus/providerProblem; 429 retries maxAttempts; fallback to whisper-cpp records fallbackFrom; fallbackOn respected.",
+        "Cache: primary-fingerprint hit (legacy included); fallback hit only with cacheAcceptsFallback and producer metadata; legacy fallback-only match is a miss; existing identity fingerprints unchanged.",
+        "transcribeChunk and MediaPipelineSTTOptions are removed; no test reaches the production gateway."
+      ],
+      "verification": [
+        "mkdir -p tmp/stt-agent-gateway/stt-04",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/stt-agent-gateway/stt-04/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'SpeechToTextFallbackTests|SpeechProviderAddonTests|MediaPipeline|SpeechToTextContractTests|SpeechWhisperCppAndHTTPTests'\" > tmp/stt-agent-gateway/stt-04/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/MediaPipelineAddons.swift Sources/RielaCLI/MediaPipelineService+Stages.swift Tests/RielaCLITests/SpeechProviderAddonTests.swift Tests/RielaCLITests/MediaPipelineAddonRegistrationTests.swift Tests/RielaCLITests/SpeechToTextFallbackTests.swift' > tmp/stt-agent-gateway/stt-04/lint.log 2>&1",
+        "! git grep -n \"transcribeChunk\\|MediaPipelineSTTOptions\" Sources Tests"
+      ]
+    }
+  ],
+  "integrationVerification": [
+    "arch -arm64 /bin/zsh -lc 'swift build' > tmp/stt-agent-gateway/integration/build.log 2>&1",
+    "arch -arm64 /bin/zsh -lc \"swift test --filter 'SpeechProviderAddonTests|MediaPipeline|SpeechToText|SpeechAgentGatewayMappingTests|SpeechWhisperCppAndHTTPTests|BuiltinAddonContainerResolverTests'\" > tmp/stt-agent-gateway/integration/test.log 2>&1",
+    "arch -arm64 /bin/zsh -lc 'swiftlint' > tmp/stt-agent-gateway/integration/lint.log 2>&1"
+  ]
+}

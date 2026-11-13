@@ -111,6 +111,46 @@ final class TerminalRetentionPolicyTests: XCTestCase {
     XCTAssertEqual(try fixture.db.query("SELECT * FROM workflow_runtime_snapshots").count, 2)
   }
 
+  func testCanonicalChildEnvelopeUsesSnapshotLineageForExpiry() throws {
+    let f = try fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["parent", "child"] { try insert(f, id) }
+    try f.db.execute("UPDATE workflow_runtime_snapshots SET parent_session_id='parent',root_session_id='parent' WHERE workflow_execution_id='child'")
+    try f.db.execute("""
+      UPDATE cli_workflow_sessions SET record_json=jsonb(
+        '{"workflowName":"news","sessionStorage":"canonical","session":{"workflowId":"news","status":"completed"}}')
+      """)
+    let preview = try run(f, results: .init(maxAge: 86_400), resultsState: .active, dryRun: true)
+    XCTAssertEqual(preview.results.selectedCount, 1)
+    XCTAssertTrue(preview.results.protected.isEmpty)
+    let applied = try run(f, results: .init(maxAge: 86_400), resultsState: .active)
+    XCTAssertEqual(applied.results.removedCount, 1)
+    XCTAssertTrue(try f.db.query("SELECT * FROM workflow_runtime_snapshots").isEmpty)
+    XCTAssertTrue(try f.db.query("SELECT * FROM workflow_messages").isEmpty)
+  }
+
+  func testCanonicalEnvelopeStillProtectsMissingSnapshotAndConflictingStatus() throws {
+    let f = try fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["missing", "conflicting"] { try insert(f, id) }
+    try f.db.execute("DELETE FROM workflow_runtime_snapshots WHERE workflow_execution_id='missing'")
+    try f.db.execute("""
+      UPDATE cli_workflow_sessions SET record_json=jsonb(
+        '{"workflowName":"news","sessionStorage":"canonical","session":{"workflowId":"news","status":"running"}}')
+      """)
+    let report = try run(f, results: .init(maxAge: 86_400), resultsState: .active, dryRun: true)
+    XCTAssertEqual(report.results.selectedCount, 0)
+    XCTAssertEqual(report.results.protected["canonicalSnapshotMissing"], 1)
+    XCTAssertEqual(report.results.protected["nonterminalOrConflictingStatus"], 1)
+  }
+
+  func testLegacyChildRecordWithConflictingLineageRemainsProtected() throws {
+    let f = try fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["parent", "child"] { try insert(f, id) }
+    try f.db.execute("UPDATE workflow_runtime_snapshots SET parent_session_id='parent',root_session_id='parent' WHERE workflow_execution_id='child'")
+    let report = try run(f, results: .init(maxAge: 86_400), resultsState: .active, dryRun: true)
+    XCTAssertEqual(report.results.selectedCount, 0)
+    XCTAssertEqual(report.results.protected["conflictingLineage"], 1)
+  }
+
   func testSecondaryOwnershipFailureKeepsPendingAndContinuesWithSiblingFamilies() throws {
     let fixture = try fixture(); defer { try? FileManager.default.removeItem(at: fixture.root) }
     for id in ["a", "b"] { try insert(fixture, id) }

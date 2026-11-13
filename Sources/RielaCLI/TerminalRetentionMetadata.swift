@@ -18,10 +18,13 @@ enum TerminalRetentionMetadata {
     if try db.tableExists("cli_workflow_sessions") {
       for row in try db.query("""
         SELECT session_id AS id, workflow_id, status,
+          json_extract(record_json, '$.sessionStorage') AS storage,
           json_extract(record_json, '$.session.parentSessionId') AS parent_id,
           coalesce(json_extract(record_json, '$.session.rootSessionId'),session_id) AS root_id,
           updated_at, length(CAST(record_json AS BLOB)) AS bytes FROM \(TerminalRetentionIndexes.source("cli_workflow_sessions", in: db))
-        """) { try merge(row, into: &sessions, dates: dates) }
+        """) {
+        try merge(row, into: &sessions, dates: dates, canonicalEnvelope: row["storage"] == "canonical")
+      }
     }
     if try db.tableExists("workflow_messages") {
       for row in try db.query("""
@@ -86,14 +89,17 @@ enum TerminalRetentionMetadata {
     return sessions.values.sorted { $0.id < $1.id }
   }
 
-  private static func merge(_ row: SQLiteRow, into sessions: inout [String: TerminalRetentionSession], dates: DateDecoder) throws {
+  private static func merge(_ row: SQLiteRow, into sessions: inout [String: TerminalRetentionSession],
+                            dates: DateDecoder, canonicalEnvelope: Bool = false) throws {
     guard let id = row["id"], let workflow = row["workflow_id"], let status = row["status"],
           let root = row["root_id"], let bytes = row["bytes"].flatMap(Int64.init), bytes >= 0 else {
       throw TerminalRetentionPlanError.invalidPolicyOrMetadata
     }
     let parent = row["parent_id"], updated = row["updated_at"].flatMap(dates.date)
     if var existing = sessions[id] {
-      if existing.workflowId != workflow || existing.parentId != parent || existing.rootId != root {
+      // Canonical CLI envelopes deliberately omit lineage. Only the runtime
+      // snapshot owns it; legacy full records still have to agree with it.
+      if existing.workflowId != workflow || (!canonicalEnvelope && (existing.parentId != parent || existing.rootId != root)) {
         existing.protection = "conflictingLineage"
       }
       existing.statuses.insert(status)
@@ -102,7 +108,8 @@ enum TerminalRetentionMetadata {
       sessions[id] = existing
     } else {
       sessions[id] = .init(id: id, workflowId: workflow, parentId: parent, rootId: root,
-                           statuses: [status], updatedAt: updated, payloadBytes: bytes)
+                           statuses: [status], updatedAt: updated, payloadBytes: bytes,
+                           protection: canonicalEnvelope ? "canonicalSnapshotMissing" : nil)
     }
   }
 

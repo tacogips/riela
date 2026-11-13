@@ -34,10 +34,12 @@ enum TerminalRetentionIndexes {
       coalesce(json_extract(record_json,'$.session.rootSessionId'),session_id),updated_at,length(CAST(record_json AS BLOB))
       """),
     ("workflow_messages", "workflow_execution_id,\(messageBytes)"),
-    ("workflow_nested_invocations", "\(child),\(parent),\(nestedBytes),\(settled)")
+    ("workflow_nested_invocations", "\(child),\(parent),\(nestedBytes),\(settled)"),
+    ("workflow_runtime_payloads", "root_session_id,byte_count")
   ]
 
-  static func prepare(_ db: SQLiteDatabase) throws {
+  static func prepare(_ db: SQLiteDatabase, dryRun: Bool = false) throws {
+    guard !dryRun else { return }
     try db.transaction { db in
       if try db.tableExists("workflow_nested_invocations") {
         try db.execute("DROP INDEX IF EXISTS idx_retention_metadata_v1_workflow_nested_invocations")

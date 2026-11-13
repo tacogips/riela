@@ -93,6 +93,7 @@ struct TerminalRetentionExecutor {
       throw TerminalRetentionError.foreignDatabase
     }
     guard familyLimit > 0 else { throw TerminalRetentionPlanError.invalidPolicyOrMetadata }
+    try TerminalRetentionIndexes.prepare(db, dryRun: dryRun)
     let now = clock()
     let original = try metadata(db, paths: paths)
     var resultReport = results.map { policy in
@@ -503,13 +504,14 @@ struct TerminalRetentionExecutor {
   private func orphanMessageSets(_ db: SQLiteDatabase) throws -> [OrphanMessageSet] {
     guard try db.tableExists("workflow_messages"), try db.tableExists("session_retention_tombstones"),
           try db.tableColumnNames("workflow_messages").contains("created_at") else { return [] }
+    let dates = TerminalRetentionMetadata.DateDecoder()
     return try db.query("""
       SELECT m.workflow_execution_id AS id, t.workflow_id, max(m.created_at) AS created_at,
         sum(length(CAST(m.payload_json AS BLOB))+length(CAST(m.artifact_refs_json AS BLOB))) AS bytes
       FROM workflow_messages m JOIN session_retention_tombstones t ON t.session_id=m.workflow_execution_id
       GROUP BY m.workflow_execution_id,t.workflow_id ORDER BY id
       """).compactMap { row in
-        guard let id = row["id"], let workflow = row["workflow_id"], let created = row["created_at"].flatMap(TerminalRetentionMetadata.date),
+        guard let id = row["id"], let workflow = row["workflow_id"], let created = row["created_at"].flatMap(dates.date),
               let bytes = row["bytes"].flatMap(Int64.init), bytes >= 0 else { return nil }
         return OrphanMessageSet(id: id, workflowId: workflow, createdAt: created, bytes: bytes)
       }

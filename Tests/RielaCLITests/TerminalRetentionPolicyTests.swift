@@ -151,6 +151,22 @@ final class TerminalRetentionPolicyTests: XCTestCase {
     XCTAssertEqual(report.results.protected["conflictingLineage"], 1)
   }
 
+  func testPolicyPreparesCoveringPayloadIndexOnlyWhenApplied() throws {
+    let f = try fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+    try insert(f, "recent", age: 3600)
+    try f.db.execute("CREATE TABLE workflow_runtime_payloads(root_session_id TEXT,byte_count INTEGER)")
+    try f.db.execute("INSERT INTO workflow_runtime_payloads VALUES('recent',100)")
+    _ = try run(f, results: .init(maxAge: 86_400), resultsState: .active, dryRun: true)
+    XCTAssertTrue(try f.db.query("SELECT name FROM sqlite_master WHERE name LIKE 'idx_retention_metadata_%'").isEmpty)
+    let applied = try run(f, results: .init(maxAge: 86_400), resultsState: .active)
+    XCTAssertEqual(applied.results.removedCount, 0)
+    let plan = try f.db.query("""
+      EXPLAIN QUERY PLAN SELECT root_session_id,sum(byte_count)
+      FROM workflow_runtime_payloads INDEXED BY idx_retention_metadata_v1_workflow_runtime_payloads GROUP BY root_session_id
+      """)
+    XCTAssertTrue(plan.contains { ($0["detail"] ?? "").contains("COVERING INDEX") }, "\(plan)")
+  }
+
   func testSecondaryOwnershipFailureKeepsPendingAndContinuesWithSiblingFamilies() throws {
     let fixture = try fixture(); defer { try? FileManager.default.removeItem(at: fixture.root) }
     for id in ["a", "b"] { try insert(fixture, id) }

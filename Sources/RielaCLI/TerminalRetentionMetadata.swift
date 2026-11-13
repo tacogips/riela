@@ -116,7 +116,7 @@ enum TerminalRetentionMetadata {
   static func date(_ text: String) -> Date? { DateDecoder().date(text) }
 
   /// Invocation-local formatter objects; no timestamps or rows are cached.
-  private struct DateDecoder {
+  struct DateDecoder {
     private let fractional: ISO8601DateFormatter
     private let whole: ISO8601DateFormatter
 

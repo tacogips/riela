@@ -1,0 +1,81 @@
+{
+  "workflowId": "notion-gateway-json-sync",
+  "description": "Search one cursor-controlled Notion page and create a child page using JSON operations and transforms.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 30000
+  },
+  "entryStepId": "query",
+  "nodes": [
+    {
+      "id": "query",
+      "addon": {
+        "name": "riela/notion-gateway-read",
+        "version": "1",
+        "env": {
+          "NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY", "required": false}
+        },
+        "config": {
+          "operation": "searchPages",
+          "arguments": {
+            "query": "{{workflowInput.query}}",
+            "startCursor": "{{workflowInput.cursor}}",
+            "pageSize": 10
+          },
+          "selection": ["results.id", "results.title", "has_more", "next_cursor"],
+          "postprocess": [
+            {"pick": "/data/searchPages/results"},
+            {"map": {
+              "id": "/id",
+              "title": {"path": "/properties/title/title/0/plain_text", "default": "Untitled"}
+            }},
+            {"take": 10},
+            {"pick": "/0/title"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "prepare",
+      "addon": {
+        "name": "riela/json-transform",
+        "version": "1",
+        "config": {
+          "input": {
+            "arguments": {
+              "parentId": "00000000-0000-0000-0000-000000000001",
+              "title": "{{input.processed}}",
+              "markdown": "{{input.processed}}"
+            }
+          },
+          "steps": [
+            {"project": {"arguments": "/arguments"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "create",
+      "addon": {
+        "name": "riela/notion-gateway-write",
+        "version": "1",
+        "env": {
+          "NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY", "required": false}
+        },
+        "config": {
+          "operation": "createPage",
+          "arguments": "{{input.value.arguments}}",
+          "selection": ["id", "url"],
+          "postprocess": [
+            {"pick": "/data/createPage/id"}
+          ]
+        }
+      }
+    }
+  ],
+  "steps": [
+    {"id": "query", "nodeId": "query", "role": "worker", "transitions": [{"toStepId": "prepare"}]},
+    {"id": "prepare", "nodeId": "prepare", "role": "worker", "transitions": [{"toStepId": "create"}]},
+    {"id": "create", "nodeId": "create", "role": "worker"}
+  ]
+}

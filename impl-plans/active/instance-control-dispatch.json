@@ -1,0 +1,303 @@
+{
+  "taskId": "instance-control",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/instance-reload-run-cli",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "0ec062c9feb4753d61bd65627cade1f1d4d245c9",
+  "designDocPaths": [
+    "design-docs/specs/design-instance-reload-run-cli.md",
+    "design-docs/specs/design-workflow-instance-unification.md",
+    "design-docs/specs/design-workflow-definition-store.md",
+    "design-docs/specs/design-rielaapp-web-server-lifecycle-packaging.md"
+  ],
+  "evidenceRoot": "tmp/instance-control",
+  "acceptedDependencies": [
+    {
+      "planId": "instance-control-01-contracts",
+      "planPath": "impl-plans/active/instance-control-01-contracts.md",
+      "commit": "f0f423aa7eb86fe3f6e8f91ff841694a0e5b951f",
+      "provides": "Accepted in wave 1 (the implementation is in the feat/instance-reload-run-cli working tree and is integrated serially): the WorkflowServeAdmission wire with WorkflowServingController.admissionControl forwarding, plus the RielaAppInstanceReloadContract request/code/error/response DTOs, start record, fingerprints and RielaAppInstanceReloadPorts."
+    },
+    {
+      "planId": "instance-control-02-executions-projection",
+      "planPath": "impl-plans/active/instance-control-02-executions-projection.md",
+      "commit": "f0f423aa7eb86fe3f6e8f91ff841694a0e5b951f",
+      "provides": "Accepted in wave 1 (the implementation is in the working tree and is integrated serially): additive startedAt/endedAt in GET /api/v1/instances/{identity}/executions."
+    },
+    {
+      "planId": "instance-control-03-webserver-autostart",
+      "planPath": "impl-plans/active/instance-control-03-webserver-autostart.md",
+      "commit": "0b6cdaccacf63cf0993fad8db5823f021530257d",
+      "provides": "Accepted in wave 2 (provisional pending serial integration; implementation in the working tree): RielaAppWebServerSettings.shouldStartAtLaunch(launchFlag:) and the startIfRequested(by:) guard. The lane B scratch root tmp/instance-control/swiftpm-lane-b is seeded and warm for plans 08 -> 06."
+    },
+    {
+      "planId": "instance-control-04-cli-commands",
+      "planPath": "impl-plans/active/instance-control-04-cli-commands.md",
+      "commit": "ca369733a0b7d4de101fc0da752fce27d53f035e",
+      "provides": "Accepted and committed in ca369733: App-profile identity resolution for show and the new commands (instance_app_scope_read_only for update/remove), RielaAppAPIClient endpoint/profile discovery with csrf/profile headers, size cap and safe error mapping, and riela instance reload/run/executions with closed JSON outputs and exit codes."
+    },
+    {
+      "planId": "instance-control-05-child-admission-gate",
+      "planPath": "impl-plans/active/instance-control-05-child-admission-gate.md",
+      "commit": "ca369733a0b7d4de101fc0da752fce27d53f035e",
+      "provides": "Accepted and committed in ca369733: actor EventAdmissionGate behind --runtime-environment-channel, closed-gate skipped/rejected reload-handoff receipts, and admission frame routing with admission-ack in RuntimeEnvironmentChannel."
+    },
+    {
+      "planId": "instance-control-06-parent-admission-runtime",
+      "planPath": "impl-plans/active/instance-control-06-parent-admission-runtime.md",
+      "commit": "ca369733a0b7d4de101fc0da752fce27d53f035e",
+      "provides": "Accepted and committed in ca369733: FoundationEventServeProcessHandle.admissionControl, plus RielaAppDaemonWorkflowRuntime setStartRecordProvider, installedStartRecord, isChildRunning, admissionControl(identity:frame:) and replaceChild."
+    },
+    {
+      "planId": "instance-control-08-reload-coordinator",
+      "planPath": "impl-plans/active/instance-control-08-reload-coordinator.md",
+      "commit": "ca369733a0b7d4de101fc0da752fce27d53f035e",
+      "provides": "Accepted and committed in ca369733: port-driven RielaAppInstanceReloadCoordinator (validate, respawn decision, admission barrier, import, relink, refresh, confirm, replace; handoff lost without replace) over RielaAppInstanceReloadPorts."
+    }
+  ],
+  "reviewContext": {
+    "issueReference": "none (no GitHub issue); workflowInput.requestedBehavior of workflowExecutionId opus-terra-design-and-implement-review-loop-session-1 is the source of truth; plans accepted by step5-impl-plan-review comm-000010",
+    "userProblem": "An operator or automated agent (the later ART output monitor) must, using only the riela CLI and without restarting RielaApp.app (0.3.1, profile default), reload a resident App workflow instance definition/source/event bindings, trigger a manual configured run with App-held credentials, and inspect recent executions as JSON. Today `riela instance` has only list|show|create|update|remove, list identities fail in show (no App-profile branch in findInPrecedence), `restart` kills in-flight runs and never re-reads the definition store head or a moved source directory, and the App listener is not on 19091 despite web-server.json isEnabled:true because startIfRequested only honours --start-web-server (design §2).",
+    "requiredOutcomes": [
+      "Identities printed by `riela instance list` are accepted by `riela instance show` and the new commands; App-only identities are read-only for update/remove with instance_app_scope_read_only; selected-workflow: workflowId normalization (design D3; plan 04).",
+      "`riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N]` drives a new desktop-only POST /api/v1/instances/{identity}/reload that validates before any write, force/seed-imports the definition head, relinks a changed source, refreshes the cache and replaces the events-serve child only when the installed start record differs, behind a child admission barrier; in-flight runs untouched unless --interrupt-running; JSON output with closed response fields (design D4; plans 01, 05-09).",
+      "`riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N]` posts to the existing /runs API, prints launchId/sessionId/status and optionally waits for completion (design D5; plan 04).",
+      "`riela instance executions <identity> [--limit N]` prints recent executions with sessionId, status, startedAt, endedAt, updatedAt, currentStepId as JSON; the App projection adds startedAt/endedAt additively (design D5, D6; plans 02, 04).",
+      "CLI auto-discovers the App endpoint (<appRoot>/web-server.json, default 19091) and active profile (<appRoot>/active-profile.json) read-only, overridable by --server/--profile; root cause fixed: App autostarts the listener when persisted isEnabled is true (design D1, D2; plans 03, 04).",
+      "Focused unit/integration tests for argument validation, request construction, error mapping, reload swap semantics, admission gate races and identity normalization; swift build and the focused filters pass.",
+      "Docs docs/app-instance-control.md, README pointer, riela-workflow-run skill pointer, and the one-time App upgrade prerequisite (design D7; plan 10)."
+    ],
+    "nonGoals": [
+      "The ART output monitor workflow (a later separate run in the ART repo).",
+      "Any change to `riela environment` defaults/output, `riela serve` host routes, /actions, /runs or /environment semantics.",
+      "A file-based control queue (the HTTP path is possible).",
+      "Editing App instances through `riela instance update`/`remove`.",
+      "GraphQL/SDL surfaces for the new operations; web console UI changes."
+    ],
+    "constraints": [
+      "Work only in this worktree on feat/instance-reload-run-cli; never modify the main checkout /Users/taco/gits/tacogips/riela (another workflow uses its .build/debug/riela).",
+      "Never restart, kill, reconfigure or replace /Applications/RielaApp.app; never write ~/.riela/rielaapp/*, ~/.riela/profiles/* or installed binaries; live checks are read-only probes (instance list/show/executions); reload/run writes are covered by tests and mocks only.",
+      "Do not touch credentials or kinko; never print environment values or the csrf token; frames/acks carry no environment values.",
+      "Keep CSRF, x-riela-profile and expectedRevision semantics; loopback-only plain http (127.0.0.1 Host for discovered endpoints).",
+      "Run swift build/test/swiftlint from the repository root through arch -arm64 /bin/zsh -lc in the foreground with focused --filter suites; tee complete logs and pipestatus exit codes under tmp/instance-control/<planId>/ (untracked).",
+      "Workers share one working tree: no git commit/stash/checkout/reset; fresh-read files and record pre/post SHA-256; edit only own writePaths and the noted sharedPaths edits; sibling-only compile errors are recorded as sibling-blocked and re-run later.",
+      "Tests isolate HOME and RIELA_APP_ROOT under <cwd>/tmp so no test reads or writes the real App profiles.",
+      "Do not modify unrelated files; full build, full suite and lint run in the serial integration step."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Use the existing loopback App HTTP API (bootstrap -> csrf, x-riela-profile, expectedRevision) through a new RielaAppAPIClient rather than a file-based control queue.",
+        "rationale": "The running 0.3.1 App can start its listener without restart from Console > Settings; HTTP keeps existing auth semantics (design §2, D1)."
+      },
+      {
+        "decision": "Root-cause fix: start the listener at launch when launchOptions.startsWebServer || settings.isEnabled.",
+        "rationale": "Implements lifecycle design §2.2; isEnabled is only set by an explicit user Start, so no new exposure; one-time App upgrade documented (D2)."
+      },
+      {
+        "decision": "App instances are resolved by show/new commands after project -> user precedence; update/remove on App-only identities fail as read-only instead of writing shadow project instances.",
+        "rationale": "daemon-workflows.json is held in App memory and never re-read; CLI writes would not reach the running App (D3)."
+      },
+      {
+        "decision": "New explicit reload route instead of reusing `restart`: validate candidate before any write, import with head-aware seed/force (DR-002), relink source, refresh cache, and respawn the events-serve child only when the installed start record (dir, event root, event-root digest, trigger-defaults fingerprint) differs (DR-003).",
+        "rationale": "restart kills in-flight runs and re-reads neither the definition store head nor a moved source; definition-only reloads need no respawn because every run resolves through the definition store (D4)."
+      },
+      {
+        "decision": "Child-side actor-serialized admission gate driven by admission-close/confirm/open frames over the existing --runtime-environment-channel, with a 120 s lease; closed-gate cron fires and non-cron events are recorded as skipped/rejected reload-handoff receipts (replayable).",
+        "rationale": "Parent-side snapshots race with cron ticks; admit and close on one actor guarantee a dispatch is either counted or refused (D4 step 6)."
+      },
+      {
+        "decision": "Port-driven RielaAppInstanceReloadCoordinator in RielaAppSupport, reusable validation/import/fingerprint library in RielaCLI, App glue in RielaApp.",
+        "rationale": "Package.swift layering: RielaApp depends on RielaCLI and RielaAppSupport; the coordinator is fully testable with fakes, the library with real SQLite stores in RielaCLITests (plans 07-09)."
+      },
+      {
+        "decision": "Confirm expired/non-idle after commit returns HTTP 200 handoff:lost without replacing the child; the CLI maps it to exit 1 reload_handoff_lost and the installed record does not advance, so the next reload retries the respawn.",
+        "rationale": "Never replace a child while work may be running unless --interrupt-running; recovery stays deterministic (D4 step 8, DR-003)."
+      },
+      {
+        "decision": "Three dependency waves: W1 {01 contracts, 02 executions projection, 03 webserver autostart, 04 CLI commands}; W2 {05 child gate, 06 parent runtime, 07 reload library, 08 coordinator} on 01; W3 {09 App route on 01/06/07/08, 10 docs on 04/09}.",
+        "rationale": "Plan 01 pins all shared types so W2 plans run in parallel; every shared file has a single owner."
+      },
+      {
+        "decision": "Amendment 2026-11-10 round 1: SwiftPM build output is authorized as artifactRoots in two serialized build lanes. Lane A owns .build and runs 04 -> 05 -> 07, then 09 -> 10. Lane B owns tmp/instance-control/swiftpm-lane-b and runs 03 -> 08 -> 06. Lane B is seeded with APFS clones of .build/checkouts, repositories and artifacts plus a path-rewritten workspace-state.json, and every lane-B swift build/test passes --scratch-path tmp/instance-control/swiftpm-lane-b. The added dependsOn edges exist only for resource ordering. Before the first lane-B build, df -k . must show at least 10485760 KiB available; otherwise the plan records a disk-space blocker and deletes nothing. No source writePaths, contracts or design changed.",
+        "rationale": "The blocked plans 03, 04, 05, 06, 07 and 08 (instance-control-03-webserver-autostart, -04-cli-commands, -05-child-admission-gate, -06-parent-admission-runtime, -07-reload-support-library, -08-reload-coordinator) were dispatched with artifactRoots [], so their required swift build/test output in .build was unauthorized. Each artifact root now equals one of its plan's writePaths and is absent from sharedPaths, and no two same-level plans share a root. Per-plan scratch roots were rejected because only about 31 GiB was free and six cold debug builds at 3-4 GB each could fill the disk. The previous checkpoint was f0f423aa7eb86fe3f6e8f91ff841694a0e5b951f. Plans 01 and 02 were accepted in wave 1 and are recorded as acceptedDependencies."
+      },
+      {
+        "decision": "Amendment 2026-11-10 round 2 (integration-paths-outside-writePaths): Sources/RielaCLI/RielaCLIApplication.swift is owned by plan 04 writePaths and removed from its sharedPaths. The only authorized hunks are the .instance dispatch case and the static instance usage line(s). Plan 03 is accepted and recorded as an acceptedDependency (plan 08 keeps its resource-ordering edge, which is now satisfied).",
+        "rationale": "Help is intercepted before routing and taken from the static usage text at RielaCLIApplication.swift:354, so plan 04's help criterion cannot be met without editing that line (finding IR-W3-04-HELP-SCOPE-AND-INCOMPLETE). No other pending plan writes this file (plan 05 explicitly excludes it). The previous checkpoint was 0b6cdaccacf63cf0993fad8db5823f021530257d. No design or contract change."
+      },
+      {
+        "decision": "Continuation 2026-11-10 (checkpoint on ca369733): plans 04, 05, 06 and 08 are recorded as acceptedDependencies at ca369733. The remaining plans are 07 (Amendment A3: named InstanceReloadCandidateValidation result, accepted equivalent race verification, strict changed-file lint, ScopedParityCommands.swift dropped from sharedPaths), 09 (aligned with the accepted ports and runtime hooks) and 10 (docs). All three are serialized on lane A .build as 07 -> 09 -> 10.",
+        "rationale": "ca369733 committed accepted plans 01-06 and 08. Plan 07 was partial: the tuple return at InstanceReloadSupport.swift:13-16 trips large_tuple. Step5 plan review accepted 07, 09 and 10 and the manifest DAG. No design or contract change. originalHead, taskId and evidenceRoot are preserved."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Children started without --runtime-environment-channel cannot do a non-interrupting handoff; reload returns instance_handoff_unavailable unless --interrupt-running.",
+      "A narrow fingerprint race remains if an out-of-band definition update lands before the child starts.",
+      "Force import discards store-only definition edits (audited with the operator reason).",
+      "instance run/executions work against App 0.3.1 once the listener is started from Settings; reload and startedAt/endedAt need a one-time App upgrade; live end-to-end reload is unverifiable until then.",
+      "Wave siblings share one working tree and .build; mitigated by sibling-blocked recording, re-runs and serial integration; plan 05 requires 3 consecutive green runs."
+    ],
+    "supportedEdgeCases": [
+      "Identity present in project and App (project wins); identity in two App profiles (ambiguousIdentity unless --profile).",
+      "Missing or corrupt web-server.json (default port 19091, file untouched); bootstrap profile mismatch (app_profile_conflict, no write).",
+      "App 0.3.1 without /reload (app_reload_unsupported); unreachable App (app_unreachable with Settings hint); unsafe server error codes (app_http_<status>).",
+      "Definition-only reload while a run is active (no admission frames, handoff none).",
+      "Binding/triggerDefaults change with running or queued work (instance_run_in_flight, --wait-idle retries, --interrupt-running).",
+      "Admission lease expiry / confirm expired (handoff lost, record not advanced, later reload recovers).",
+      "Fresh store (seeded), unchanged files (unchanged), concurrent seeder (forced retry), staleHead (definition_conflict, no write).",
+      "Invalid workflow.json, workflow id mismatch, invalid .riela-events bindings, unknown node patch id (422, no write).",
+      "Relink failure after import (configuration_io_failure, committed true, partial definition); child start failure (instance_start_failed, committed true).",
+      "Run launch with null sessionId (polling), launch record expired (executions-detail fallback), wait timeout, failed run.",
+      "Old session snapshots without createdAt (startedAt null)."
+    ],
+    "outOfScopeEdgeCases": [
+      "Non-macOS endpoint discovery (requires --server).",
+      "Spawning real events-serve children or mutating the live App in tests.",
+      "Remote (non-loopback) plain-http App endpoints.",
+      "Reloading instances in profiles other than the App's active profile without --profile."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCLI/EnvironmentCommand.swift",
+      "Sources/RielaCLI/FileWorkflowInstanceStore.swift",
+      "Sources/RielaCLI/InstanceCommands.swift",
+      "Sources/RielaCLI/EventReadOnly.swift",
+      "Sources/RielaCLI/EventLiveServe.swift",
+      "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+      "Sources/RielaCLI/RuntimeEnvironmentChannel.swift",
+      "Sources/RielaApp/RielaAppConfiguredRunAPI.swift",
+      "Sources/RielaApp/RielaAppInstanceAPI.swift",
+      "Sources/RielaApp/RielaAppWebServerController.swift",
+      "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+      "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
+      "Sources/RielaAppSupport/RielaWebAPIProjection.swift",
+      "Sources/RielaAppSupport/WorkflowInstanceRequests.swift",
+      "Sources/RielaServer/WorkflowServingController.swift",
+      "Sources/RielaWorkflowRegistry/WorkflowDefinitionService.swift"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "instance-control-07-reload-support-library",
+      "planPath": "impl-plans/active/instance-control-07-reload-support-library.md",
+      "dependsOn": [
+        "instance-control-01-contracts",
+        "instance-control-05-child-admission-gate"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/InstanceReloadSupport.swift",
+        "Tests/RielaCLITests/InstanceReloadSupportTests.swift",
+        "impl-plans/active/instance-control-07-reload-support-library.md",
+        ".build"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        ".build"
+      ],
+      "amendment": "2026-11-10 blocked-wave-scope-or-contract round 1: lane A tail (after 05, resource ordering only); owns .build as SwiftPM artifact root; verification commands unchanged. Amendment A3 (ca369733): named result struct InstanceReloadCandidateValidation replaces the tuple; accepted equivalent race verification; strict changed-file lint. Step-4 continuation: ScopedParityCommands.swift dropped from sharedPaths (untouched by ca369733, not needed).",
+      "acceptanceCriteria": [
+        "validateCandidate returns public struct InstanceReloadCandidateValidation {bundle, triggerDefaultsFingerprint, eventRootDigest}; no tuple, typealias or swiftlint:disable; strict changed-file lint exits 0.",
+        "InstanceReloadSupport.validateCandidate classifies failures as invalid_workflow_definition, workflow_id_mismatch or invalid_event_bindings, applies node patches, and returns the bundle with trigger-defaults and event-root fingerprints; no write on any validation failure.",
+        "InstanceReloadSupport.importDefinition seeds with no head, force-updates with a head, returns unchanged for equal digests, retries once on a differing concurrent seed, and maps staleHead/headMissing to definition_conflict and I/O to definition_store_failure; audited with actor api/instance-reload and the reason.",
+        "installedTriggerDefaultsFingerprint (lookup-only store head wins, else files, nil on error) and startRecord exist; WorkflowDefinitionService contracts and events validate output unchanged.",
+        "Focused tests and swiftlint exit 0 with logs recorded in the plan progress log."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-control/instance-control-07-reload-support-library && arch -arm64 /bin/zsh -lc 'swift test --filter \"InstanceReloadSupportTests|WorkflowDefinitionServiceTests\" 2>&1 | tee tmp/instance-control/instance-control-07-reload-support-library/test.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/InstanceReloadSupport.swift Tests/RielaCLITests/InstanceReloadSupportTests.swift 2>&1 | tee tmp/instance-control/instance-control-07-reload-support-library/lint.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaCLI/InstanceReloadSupport.swift Tests/RielaCLITests/InstanceReloadSupportTests.swift 2>&1 | tee tmp/instance-control/instance-control-07-reload-support-library/strict.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "instance-control-09-app-reload-route",
+      "planPath": "impl-plans/active/instance-control-09-app-reload-route.md",
+      "dependsOn": [
+        "instance-control-01-contracts",
+        "instance-control-06-parent-admission-runtime",
+        "instance-control-07-reload-support-library",
+        "instance-control-08-reload-coordinator"
+      ],
+      "writePaths": [
+        "Sources/RielaApp/RielaAppInstanceReloadAPI.swift",
+        "Tests/RielaAppSupportTests/RielaAppInstanceReloadRouteTests.swift",
+        "impl-plans/active/instance-control-09-app-reload-route.md",
+        ".build"
+      ],
+      "sharedPaths": [
+        "Sources/RielaApp/RielaAppWebAPI.swift",
+        "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift",
+        "Sources/RielaApp/EntryPoint.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaApp/RielaAppWebAPI.swift",
+          "intendedEdit": "Add exactly one dispatch line for webInstanceReloadResponse before the webConfiguredRunResponse dispatch."
+        },
+        {
+          "path": "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift",
+          "intendedEdit": "Add one desktopOnly entry POST /api/v1/instances/{identity}/reload owned by Sources/RielaApp/RielaAppInstanceReloadAPI.swift with ownerMarker parts[4] == \"reload\"."
+        },
+        {
+          "path": "Sources/RielaApp/EntryPoint.swift",
+          "intendedEdit": "Add one awaited daemonRuntime.setStartRecordProvider call using InstanceReloadSupport.startRecord before the first daemon instance start."
+        }
+      ],
+      "artifactRoots": [
+        ".build"
+      ],
+      "amendment": "2026-11-10 blocked-wave-scope-or-contract round 1: runs after both lanes (06 and 07 tails); owns .build as SwiftPM artifact root; verification commands unchanged.",
+      "acceptanceCriteria": [
+        "Desktop-only POST /api/v1/instances/{identity}/reload is routed through RielaAppWebRouter security guards, checks x-riela-profile, decodes strictly, runs inside distributedControllerOperations, and encodes success or the error envelope with committed/partial/running/queued and safe messages.",
+        "RielaAppReloadPorts implements every port over App state (rediscovery never uses the cached candidate, relink preserves active/available and increments webRevision); the start-record provider is installed before any daemon auto-start.",
+        "Route tests (table entry, 400/405/409/404, seeded then unchanged, sourceChanged relink in temp daemon-workflows.json, workflow_id_mismatch with byte-identical config and unchanged store, provider wiring) pass; swift build and swiftlint exit 0; logs recorded in the plan progress log."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-control/instance-control-09-app-reload-route && arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaAppInstanceReloadRouteTests|RielaAppWebAPIRouteTests|ConfiguredWorkflowLaunchTests\" 2>&1 | tee tmp/instance-control/instance-control-09-app-reload-route/test.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift build 2>&1 | tee tmp/instance-control/instance-control-09-app-reload-route/build.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaApp/RielaAppInstanceReloadAPI.swift Sources/RielaApp/RielaAppWebAPI.swift Sources/RielaAppSupport/RielaWebAPIRouteTable.swift Sources/RielaApp/EntryPoint.swift Tests/RielaAppSupportTests/RielaAppInstanceReloadRouteTests.swift 2>&1 | tee tmp/instance-control/instance-control-09-app-reload-route/lint.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "instance-control-10-docs",
+      "planPath": "impl-plans/active/instance-control-10-docs.md",
+      "dependsOn": [
+        "instance-control-04-cli-commands",
+        "instance-control-09-app-reload-route"
+      ],
+      "writePaths": [
+        "docs/app-instance-control.md",
+        "Resources/skills/riela-workflow-run/SKILL.md",
+        "impl-plans/active/instance-control-10-docs.md",
+        ".build"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-rielaapp-web-server-lifecycle-packaging.md"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "README.md",
+          "intendedEdit": "Add one bullet or short paragraph in the CLI section linking docs/app-instance-control.md; no restructuring."
+        },
+        {
+          "path": "design-docs/specs/design-rielaapp-web-server-lifecycle-packaging.md",
+          "intendedEdit": "Append one note line under the §2.2 'On app launch, isEnabled: true triggers startup' bullet recording the 2026-11-10 implementation by design-instance-reload-run-cli.md D2."
+        }
+      ],
+      "artifactRoots": [
+        ".build"
+      ],
+      "amendment": "2026-11-10 blocked-wave-scope-or-contract round 1: runs after 09; owns .build as SwiftPM artifact root for SurfaceParitySkillTests; verification commands unchanged.",
+      "acceptanceCriteria": [
+        "docs/app-instance-control.md covers overview, prerequisites (App 0.3.1 Settings start and the one-time App upgrade), endpoint/profile discovery, identities, reload/run/executions flags with JSON examples and exit codes copied from InstanceAppCommands.swift, reload semantics, the full error code table matching RielaAppInstanceReloadCode raw values, and security notes.",
+        "README and the riela-workflow-run skill gain short pointers (skill frontmatter unchanged); the lifecycle design §2.2 gains the one implementation note line.",
+        "Grep and skill-test verification recorded in the plan progress log, including the error-code cross-check."
+      ],
+      "verification": [
+        "mkdir -p tmp/instance-control/instance-control-10-docs && grep -n -e \"instance reload\" -e \"instance run\" -e \"instance executions\" -e \"one-time\" docs/app-instance-control.md README.md Resources/skills/riela-workflow-run/SKILL.md > tmp/instance-control/instance-control-10-docs/grep.log; echo exit=$?",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParitySkillTests 2>&1 | tee tmp/instance-control/instance-control-10-docs/skill-test.log; exit ${pipestatus[1]}'"
+      ]
+    }
+  ]
+}

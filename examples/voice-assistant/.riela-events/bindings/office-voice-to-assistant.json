@@ -1,0 +1,21 @@
+{
+  "id": "office-voice-to-assistant",
+  "sourceId": "office-voice-inbox",
+  "match": {
+    "eventType": "file.change.created"
+  },
+  "workflowName": "voice-assistant",
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "room": "office",
+      "file": "{{event.input.file}}"
+    },
+    "mirrorToHumanInput": false
+  },
+  "execution": {
+    "async": true,
+    "dedupeWindowMs": 600000,
+    "concurrencyKey": "voice-office"
+  }
+}

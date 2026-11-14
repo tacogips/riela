@@ -1,0 +1,66 @@
+{
+  "review": [
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "needs_work": true
+      },
+      "payload": {
+        "needs_work": true,
+        "loopGate": {
+          "gateId": "implementation-review",
+          "stepId": "review",
+          "decision": "needs_work",
+          "blockingFindings": [
+            {
+              "id": "flaky-retry-loop",
+              "severity": "high",
+              "filePath": "Sources/Retry.swift",
+              "message": "Retry loop still spins without backoff."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "needs_work": true
+      },
+      "payload": {
+        "needs_work": true,
+        "loopGate": {
+          "gateId": "implementation-review",
+          "stepId": "review",
+          "decision": "needs_work",
+          "blockingFindings": [
+            {
+              "id": "missing-backoff-test",
+              "severity": "medium",
+              "filePath": "Tests/RetryTests.swift",
+              "message": "Backoff behavior added but still lacks a regression test."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "needs_work": false
+      },
+      "payload": {
+        "needs_work": false,
+        "loopGate": {
+          "gateId": "implementation-review",
+          "stepId": "review",
+          "decision": "accepted",
+          "blockingFindings": []
+        }
+      }
+    }
+  ]
+}

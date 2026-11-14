@@ -1,0 +1,44 @@
+{
+  "id": "wrike-webhook-to-kanban",
+  "sourceId": "wrike-webhooky-stream",
+  "workflowName": "wrike-project-kanban-agent",
+  "match": {
+    "eventType": "webhook.record"
+  },
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "request": "A Wrike webhook event arrived; run one kanban pass over the project todo column and completed-task mentions.",
+      "projectFolderId": "REPLACE_WITH_PROJECT_FOLDER_ID",
+      "todoStatusId": "REPLACE_WITH_TODO_CUSTOM_STATUS_ID",
+      "doingStatusId": "REPLACE_WITH_DOING_CUSTOM_STATUS_ID",
+      "doneStatusId": "REPLACE_WITH_DONE_CUSTOM_STATUS_ID",
+      "selfContactId": "REPLACE_WITH_SELF_CONTACT_ID",
+      "webhookReceivedAt": "{{event.input.receivedAt}}",
+      "webhookPayload": "{{event.input.payload}}"
+    },
+    "mirrorToHumanInput": false
+  },
+  "execution": {
+    "async": false,
+    "dedupeWindowMs": 5000,
+    "maxConcurrentPerKey": 1,
+    "concurrencyKey": "{{event.sourceId}}"
+  },
+  "taskPlanning": {
+    "enabled": false
+  },
+  "mailboxBridge": {
+    "output": {
+      "reply": {
+        "mode": "none"
+      },
+      "progress": {
+        "mode": "none"
+      },
+      "control": {
+        "mode": "none"
+      }
+    }
+  }
+}

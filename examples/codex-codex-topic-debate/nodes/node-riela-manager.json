@@ -1,0 +1,8 @@
+{
+  "id": "riela-manager",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/riela-manager.md",
+  "variables": {}
+}

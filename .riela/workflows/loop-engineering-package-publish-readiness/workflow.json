@@ -1,0 +1,18 @@
+{
+  "workflowId": "loop-engineering-package-publish-readiness",
+  "description": "Add publish dry-run readiness diagnostics for loop-engineering workflow packages.",
+  "defaults": { "maxLoopIterations": 2, "nodeTimeoutMs": 1200000 },
+  "entryStepId": "intake-or-plan",
+  "nodes": [
+    { "id": "intake-or-plan", "nodeFile": "nodes/node-intake-or-plan.json" },
+    { "id": "work", "nodeFile": "nodes/node-work.json" },
+    { "id": "review", "nodeFile": "nodes/node-review.json" },
+    { "id": "workflow-output", "nodeFile": "nodes/node-workflow-output.json" }
+  ],
+  "steps": [
+    { "id": "intake-or-plan", "nodeId": "intake-or-plan", "role": "worker" },
+    { "id": "work", "nodeId": "work", "role": "worker" },
+    { "id": "review", "nodeId": "review", "role": "worker" },
+    { "id": "workflow-output", "nodeId": "workflow-output", "role": "worker" }
+  ]
+}

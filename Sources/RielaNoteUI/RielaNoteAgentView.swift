@@ -1,0 +1,152 @@
+import SwiftUI
+
+public struct RielaNoteAgentView: View {
+  @ObservedObject private var viewModel: RielaNoteAgentViewModel
+  private let onOpenCitation: (String) -> Void
+
+  public init(
+    viewModel: RielaNoteAgentViewModel,
+    onOpenCitation: @escaping (String) -> Void = { _ in }
+  ) {
+    self.viewModel = viewModel
+    self.onOpenCitation = onOpenCitation
+  }
+
+  public var body: some View {
+    VStack(spacing: 0) {
+      toolbar
+      if let errorMessage = viewModel.errorMessage {
+        errorBanner(errorMessage)
+      }
+      Divider()
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 14) {
+          ForEach(viewModel.turns) { turn in
+            RielaNoteAgentTurnView(turn: turn, onOpenCitation: onOpenCitation)
+          }
+        }
+        .padding()
+        .frame(maxWidth: 900, alignment: .leading)
+        .frame(maxWidth: .infinity)
+      }
+      Divider()
+      composer
+    }
+    .navigationTitle("Agent")
+  }
+
+  private var toolbar: some View {
+    HStack(spacing: 12) {
+      Toggle("Temp chat (not saved)", isOn: $viewModel.isTemporaryChat)
+        .toggleStyle(.switch)
+      Spacer()
+      if let notebookId = viewModel.autoSaveNotebookId {
+        Label(notebookId, systemImage: "tray.full")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      Button {
+        viewModel.startNewConversation()
+      } label: {
+        Label("New chat", systemImage: "plus.bubble")
+      }
+      .disabled(!viewModel.canStartNewConversation)
+      Button {
+        Task {
+          await viewModel.saveTemporaryConversation()
+        }
+      } label: {
+        Label("Save", systemImage: "square.and.arrow.down")
+      }
+      .disabled(!viewModel.canSaveTemporaryConversation)
+    }
+    .padding(.horizontal)
+    .padding(.vertical, 10)
+  }
+
+  private func errorBanner(_ message: String) -> some View {
+    HStack(spacing: 8) {
+      Label("Agent error", systemImage: "exclamationmark.triangle")
+        .fontWeight(.semibold)
+      Text(message)
+        .lineLimit(2)
+      Spacer()
+    }
+    .font(.caption)
+    .foregroundStyle(.red)
+    .padding(.horizontal)
+    .padding(.vertical, 8)
+    .background(.red.opacity(0.08))
+  }
+
+  private var composer: some View {
+    HStack(alignment: .bottom, spacing: 10) {
+      TextField("Ask Riela Note", text: $viewModel.draftMessage, axis: .vertical)
+        .textFieldStyle(.roundedBorder)
+        .lineLimit(1...5)
+        .onSubmit {
+          Task {
+            await viewModel.submitDraft()
+          }
+        }
+      Button {
+        Task {
+          await viewModel.submitDraft()
+        }
+      } label: {
+        if case .loading = viewModel.state {
+          Label("Sending", systemImage: "hourglass")
+        } else {
+          Label("Send", systemImage: "paperplane.fill")
+        }
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(!viewModel.canSubmit)
+      .keyboardShortcut(.return, modifiers: [])
+    }
+    .padding()
+  }
+}
+
+struct RielaNoteAgentTurnView: View {
+  var turn: RielaNoteAgentTurn
+  var onOpenCitation: (String) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      message(label: "You", markdown: turn.userMarkdown, systemImage: "person")
+      message(label: "Agent", markdown: turn.assistantMarkdown, systemImage: "sparkles")
+      if !turn.citations.isEmpty {
+        citationStrip
+      }
+    }
+    .padding(12)
+    .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  private func message(label: String, markdown: String, systemImage: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Label(label, systemImage: systemImage)
+        .font(.caption)
+        .fontWeight(.semibold)
+        .foregroundStyle(.secondary)
+      RielaNoteMarkdownText(markdown: markdown)
+        .font(.body)
+        .lineSpacing(3)
+    }
+  }
+
+  private var citationStrip: some View {
+    FlowLayout(spacing: 8) {
+      ForEach(turn.citations) { citation in
+        Button {
+          onOpenCitation(citation.noteId)
+        } label: {
+          Label(citation.title ?? citation.noteId, systemImage: "link")
+            .lineLimit(1)
+        }
+        .buttonStyle(.bordered)
+      }
+    }
+  }
+}

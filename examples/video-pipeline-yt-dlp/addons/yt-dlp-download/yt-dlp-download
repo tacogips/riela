@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+import hashlib
+import ipaddress
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+
+
+class StageError(Exception):
+    """A failure whose stage and fixed reason are safe to report (no URLs or tool output)."""
+
+    def __init__(self, stage, reason):
+        super().__init__(stage + ': ' + reason)
+
+
+def fail(stage, reason):
+    raise StageError(stage, reason)
+
+
+def main():
+    data = json.loads(sys.stdin.readline())
+    options = data['nodePayload']['config']['options']
+    if not isinstance(options, dict) or set(options) - {'url', 'allowedHosts', 'maxFileSizeMB', 'maxDurationSeconds', 'format', 'cache'}:
+        fail('options', 'unsupported or invalid options')
+    url = options.get('url')
+    if not isinstance(url, str):
+        fail('url', 'URL is required')
+    parts = urlsplit(url)
+    host = parts.hostname
+    if parts.scheme.lower() not in ('http', 'https') or not host or parts.username is not None or parts.password is not None:
+        fail('url', 'invalid URL')
+    host = host.lower().rstrip('.')
+    if host == 'localhost' or host.endswith('.localhost') or host.endswith('.local'):
+        fail('url', 'local host is forbidden')
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and not ip.is_global:
+        fail('url', 'non-public address is forbidden')
+    allowed = options.get('allowedHosts')
+    if allowed is not None:
+        if not isinstance(allowed, list) or any(not isinstance(h, str) or not h for h in allowed):
+            fail('options', 'invalid allowedHosts')
+        if not any(host == h.lower() or host.endswith('.' + h.lower()) for h in allowed):
+            fail('url', 'host is not allowed')
+    size = options.get('maxFileSizeMB', 2048)
+    duration_limit = options.get('maxDurationSeconds', 7200)
+    fmt = options.get('format', 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]/b')
+    cache = options.get('cache', True)
+    if type(size) is not int or not 1 <= size <= 1000000 or type(duration_limit) not in (int, float) or not 1 <= duration_limit <= 172800 or not isinstance(fmt, str) or not fmt or type(cache) is not bool:
+        fail('options', 'invalid option value')
+    url = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ''))
+    root = os.environ.get('RIELA_ARTIFACT_DIR')
+    if not root or not os.path.isabs(root):
+        fail('artifact', 'absolute artifact directory is required')
+    output = Path(root) / 'media-download' / hashlib.sha256(url.encode()).hexdigest()[:24]
+    output.mkdir(parents=True, exist_ok=True)
+    manifest = output / 'media-download-manifest.json'
+    fingerprint = hashlib.sha256(json.dumps({'url': url, 'maxFileSizeMB': size, 'format': fmt}, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if cache and manifest.is_file():
+        try:
+            saved = json.loads(manifest.read_text())
+            payload = saved['payload']
+            if (saved['fingerprint'] == fingerprint and Path(payload['mediaDownload']['path']).is_file()
+                    and 0 < payload['mediaDownload']['durationSeconds'] <= duration_limit):
+                payload['mediaDownload']['cached'] = True
+                print(json.dumps(payload, separators=(',', ':')))
+                return
+        except (ValueError, KeyError, TypeError, OSError):
+            pass
+    ffmpeg = shutil.which('ffmpeg')
+    if not ffmpeg:
+        fail('metadata', 'ffmpeg unavailable')
+    cache_dir = output / '.yt-dlp-cache'
+    cache_dir.mkdir(exist_ok=True)
+    deno = shutil.which('deno')
+    base = ['yt-dlp', '--ignore-config'] + (['--js-runtimes', 'deno:' + deno] if deno else []) + ['--cache-dir', str(cache_dir)]
+
+    def run(args, stage):
+        try:
+            result = subprocess.run(base + args, capture_output=True, text=True)
+        except (OSError, subprocess.SubprocessError):
+            fail(stage, 'could not run yt-dlp')
+        if result.returncode != 0:
+            # yt-dlp stderr can echo URLs and credentials, so only the exit status is reported.
+            fail(stage, 'yt-dlp exited with status ' + str(result.returncode))
+        return result.stdout
+    try:
+        metadata = json.loads(run(['--no-playlist', '-O', '%(.{id,title,duration,is_live,live_status})j', url], 'metadata'))
+    except ValueError:
+        fail('metadata', 'invalid yt-dlp metadata')
+    if not isinstance(metadata, dict):
+        fail('metadata', 'invalid yt-dlp metadata')
+    duration = metadata.get('duration')
+    if metadata.get('is_live') or metadata.get('live_status') in ('is_live', 'is_upcoming'):
+        fail('metadata', 'live streams are forbidden')
+    if type(duration) not in (int, float) or not 0 < duration <= duration_limit:
+        fail('metadata', 'invalid or excessive duration')
+    for path in output.glob('video.*'):
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+    lines = run(['--no-playlist', '--max-filesize', str(size) + 'M', '--ffmpeg-location', ffmpeg, '-f', fmt, '--merge-output-format', 'mp4', '-o', str(output / 'video.%(ext)s'), '--print', 'after_move:filepath', '--no-simulate', url], 'download').splitlines()
+    path = Path(lines[-1]) if lines else Path('/')
+    if not path.is_absolute() or not path.is_file() or path.resolve().parent != output.resolve():
+        fail('download', 'no media file in the artifact directory; it may have exceeded maxFileSizeMB')
+    payload = {'mediaDownload': {'status': 'downloaded', 'url': url, 'videoId': metadata.get('id'), 'title': metadata.get('title'), 'durationSeconds': duration, 'path': str(path), 'outputDir': str(output), 'cached': False}}
+    manifest.write_text(json.dumps({'fingerprint': fingerprint, 'payload': payload}, separators=(',', ':')))
+    print(json.dumps(payload, separators=(',', ':')))
+
+
+try:
+    main()
+except StageError as error:
+    print('yt-dlp-download: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+except Exception:
+    print('yt-dlp-download: request: invalid input or processing failed', file=sys.stderr)
+    sys.exit(1)

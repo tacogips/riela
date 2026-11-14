@@ -1,0 +1,382 @@
+{
+  "taskId": "youtube-processing-builtins",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "9ab7058eb717549dcfc0f9cad8de2d1de3814d69",
+  "designDocPaths": [
+    "design-docs/specs/design-youtube-processing-builtins.md",
+    "design-docs/specs/design-native-source-collection.md",
+    "design-docs/specs/design-bounded-fanout-join-workflow-execution.md",
+    "design-docs/user-qa/qa-youtube-processing-builtins.md"
+  ],
+  "evidenceRoot": "tmp/youtube-processing-builtins",
+  "reviewContext": {
+    "issueReference": "No GitHub issue. Request: workflowInput.requestedOutcome of runtime session opus-terra-design-and-implement-review-loop-session-558 (comm-010583, intake comm-010584); design accepted at comm-010586; plans accepted by step5-impl-plan-review at comm-010590 after revision comm-010589 (prior findings YPB-S5-M1, YPB-S5-L1, YPB-S5-L2 resolved).",
+    "userProblem": "ART works around five gaps: (A) no built-in YouTube read gateway; (B) fanout joins see only each branch's last output, so the speech-to-text transcript is read from a private cache file; (C) durable-queue pending returns one item and has no attempt cap; (D) youtube-collect cannot drop live, upcoming or long videos; (E) riela/media-download hard-codes yt-dlp inside the runtime.",
+    "requiredOutcomes": [
+      "riela/youtube-gateway-read v1 provides subscriptions.list, videos.list, channels.list and playlistItems.list with pageToken/maxResults pagination. It is macOS-only, reads credentials only through the YOUTUBE_GATEWAY_* env allowlist, is validated, documented, and has a mock-scenario example.",
+      "fanout.includeStepOutputs adds stepOutputs to completed branch records for both same-workflow and toWorkflowId fanouts. Invalid ids fail validation. When the field is absent the join is byte-identical. The bound is 8,000,000 bytes. It has tests and a mock example.",
+      "durable-queue pending supports limit (items, itemsTruncated) and maxAttempts (exhausted, exhaustedCount). The default output is unchanged.",
+      "youtube-collect supports excludeLive and maxDurationSeconds and reports excluded {count, live, duration}. The default output is unchanged.",
+      "The mediaDownload contract is documented. media/yt-dlp-download v1 ships as a package container add-on in examples/video-pipeline-yt-dlp, and installs, validates and mock-runs. riela/media-download still runs, and validate warns with migration guidance."
+    ],
+    "nonGoals": [
+      "No VERSION, rielaVersion, formula or release change. No change to the ART repository or to ~/.riela.",
+      "No YouTube write operations, no auto-pagination, no persistence schema change, no new add-on resolver, and no delegation from riela/media-download.",
+      "No change to the Package.swift or Package.resolved youtube-gateway pin."
+    ],
+    "constraints": [
+      "Every swift build, swift test and swiftlint run uses arch -arm64 /bin/zsh -lc, with logs under tmp/youtube-processing-builtins/<planId>/.",
+      "All work happens in the same working directory on main. Workers create no worktrees, run no git write operations, record fresh-read pre/post SHA-256 for owned files, and redo edits after detecting drift.",
+      "Tests make no live network calls. Package installs in tests set HOME (and RIELA_WORKFLOW_HOME) to a tmp directory.",
+      "Code that uses YouTubeGatewayCore stays inside #if canImport(YouTubeGatewayCore); the parsing and validation layers are SDK-free.",
+      "Credentials never appear in source, docs, examples, outputs or diagnostics."
+    ],
+    "designDecisionsAndRationale": [
+      "A uses the google-service typed-operation engine (operation + arguments, riela-owned request enum, client protocol) because pinned YouTubeGatewayCore 33006f3 exposes a typed YouTubeClient and no GraphQL schema catalog; registration, validation placement, macOS gating and docs/example layout follow notion/x-gateway-read. ContainerGatewayAddonExecutor does not apply because YouTube is linked in-process.",
+      "B derives stepOutputs only from durable child-session accepted outputs so resumed parents rebuild identical joins; includeStepOutputs is carried on WorkflowFanoutDispatchDirective at every construction site; the size bound equals the contextFrom bound (8,000,000 bytes).",
+      "B cross-workflow step ids are validated in CLI workflow validate, where FileSystemWorkflowCalleeResolver exists; Core validates shape and same-workflow ids.",
+      "C keeps pending a read-only transaction with the existing comparator; exhausted rows stay pending and are retired through finish.",
+      "D filters run after videos.list enrichment and apply to every record; excluded videos are not failures and are not replaced.",
+      "E uses the shipped package node-add-on mechanism (riela-package.json addons[] with container execution, projected to ~/.riela/addons/<ns>/<name>/<version>/) as the equivalent host-provided resolver instead of the unimplemented addon.json layout; riela/media-download keeps its implementation and only gains a validation warning."
+    ],
+    "intentionalTradeoffs": [
+      "riela/media-download does not delegate to the container add-on, so existing ART runs need no container runtime, at the cost of two downloader implementations for one release.",
+      "Workflows outside the owning package that reference media/yt-dlp-download resolve at runtime through the shared store, but workflow validate requires package ownership or a dependency lock (existing behavior, covered by the migration docs).",
+      "youtube-gateway-read has no auto-pagination; callers pass pageToken.",
+      "youtube-collect may return fewer than maxPerChannel videos when filters exclude some.",
+      "W1/W2 plans share one working directory on main; concurrent whole-package builds may block on siblings, mitigated by the bounded shared-wave build protocol and serial integration repair."
+    ],
+    "supportedEdgeCases": [
+      "includeStepOutputs naming a step that ran twice (latest accepted payload), a step that never ran (omitted), collect-partial failed branches (no stepOutputs), toWorkflowId fanouts with and without resumeStepId, and resume after a branch-terminal checkpoint.",
+      "durable-queue limit above the pending count, all rows exhausted (found false), limit plus maxAttempts combined, near-256 KiB requests triggering itemsTruncated, and an absent queue directory.",
+      "youtube-collect null durations kept, live plus over-long attributed to live only, explicit video references filtered, and excludeLive false alone emitting no excluded key.",
+      "youtube-gateway-read templated arguments, blank or non-allowlisted credential env, HTTP 401/403 quota/500 without body leakage, and Linux builds compiling with a policy error at execution.",
+      "yt-dlp-download cache hit, private/local host rejection, live stream and over-long rejection, the unsupported ytDlpPath option, and python3 absent (XCTSkip)."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live YouTube API calls and live yt-dlp container downloads (tests use no network or container runtime).",
+      "YouTube write operations (subscription insert/delete) and automatic pagination.",
+      "Persistence schema changes, a new add-on resolver, or the addon.json scoped layout.",
+      "Linux execution of youtube-gateway-read beyond compiling and returning a policy error; the Linux build is review-only locally.",
+      "Edits to the ART repository, ~/.riela, running RielaApp instances, VERSION, rielaVersion, the Homebrew formula or a release."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-youtube-processing-builtins.md",
+      "design-docs/specs/design-native-source-collection.md",
+      "design-docs/specs/design-bounded-fanout-join-workflow-execution.md",
+      "design-docs/user-qa/qa-youtube-processing-builtins.md",
+      "impl-plans/active/youtube-processing-builtins-01-durable-queue-pending.md",
+      "impl-plans/active/youtube-processing-builtins-02-youtube-collect-filters.md",
+      "impl-plans/active/youtube-processing-builtins-03-fanout-step-outputs-core.md",
+      "impl-plans/active/youtube-processing-builtins-04-yt-dlp-download-package.md",
+      "impl-plans/active/youtube-processing-builtins-05-video-pipeline-docs.md",
+      "impl-plans/active/youtube-processing-builtins-06-media-download-deprecation.md",
+      "impl-plans/active/youtube-processing-builtins-07-fanout-cli-validation-example.md",
+      "impl-plans/active/youtube-processing-builtins-08-youtube-gateway-read.md",
+      "impl-plans/active/youtube-processing-builtins-09-example-catalog-finalize.md",
+      "Sources/RielaCLI/ProductionNodeAdapter+DurableQueue.swift",
+      "Sources/RielaCLI/YouTubeCollection.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+      "Sources/RielaCore/RuntimePublication.swift",
+      "Sources/RielaCore/WorkflowValidation.swift",
+      "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+      "Sources/RielaAddons/RielaAddons.swift",
+      "Sources/RielaWorkflowRegistry/CLIRuntimeEnvironment.swift",
+      "containers/video-addons/Containerfile",
+      "docs/workflows/video-pipeline.md",
+      "docs/builtin-gateway-json.md"
+    ],
+    "codexAgentReferences": []
+  },
+  "sharedWaveBuildProtocol": "Plans ypb-01 to ypb-08 carry an identical 'Shared-wave build protocol'. If build or test diagnostics are only in non-owned files, never edit, revert or reformat them: log a blocked-by-sibling row (file, first diagnostic, log path, UTC time), then make up to 6 foreground re-runs about 60 s apart. The SwiftPM '.build' lock message means wait for exit. Diagnostics in owned files are always the plan's to fix. A persistent block becomes a deferred-to-integration record and the worker stops. Serial repair follows the wave join, and integrationVerification is the authoritative gate.",
+  "waves": [
+    {"wave": "W1", "planIds": ["ypb-01-durable-queue-pending", "ypb-02-youtube-collect-filters", "ypb-03-fanout-step-outputs-core", "ypb-04-yt-dlp-download-package", "ypb-05-video-pipeline-docs"]},
+    {"wave": "W2", "planIds": ["ypb-06-media-download-deprecation", "ypb-07-fanout-cli-validation-example", "ypb-08-youtube-gateway-read"]},
+    {"wave": "W3", "planIds": ["ypb-09-example-catalog-finalize"]}
+  ],
+  "plans": [
+    {
+      "planId": "ypb-01-durable-queue-pending",
+      "planPath": "impl-plans/active/youtube-processing-builtins-01-durable-queue-pending.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/ProductionNodeAdapter+DurableQueue.swift",
+        "Tests/RielaCLITests/DurableQueueTests.swift",
+        "docs/workflows/durable-queue.md",
+        "impl-plans/progress/ypb-01-durable-queue-pending.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "pending without options returns exactly {found, identity, request}, unchanged from today; existing DurableQueueTests stay green unmodified.",
+        "pending with limit (integer 1-100) adds ordered items [{identity, request, attempts}] using the existing comparator plus itemsTruncated bounded by DurableQueueJournal.maximumBytes; identity equals items[0].identity.",
+        "pending with maxAttempts (1-1,000,000,000) excludes rows with attempts >= maxAttempts from selection and reports exhausted [{identity, attempts}] in identity-byte order plus exhaustedCount; completed rows are never exhausted.",
+        "Out-of-range or non-integer limit/maxAttempts, or either option on admit/attempted/finish, fail with durableQueueInvalid; pending on an absent queue directory creates no files.",
+        "docs/workflows/durable-queue.md documents limit and maxAttempts; Sources/RielaCLI/DurableQueueJournal.swift is unchanged.",
+        "After the final owned edit, swift build and the focused swift test reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-01",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-01/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter DurableQueueTests > tmp/youtube-processing-builtins/ypb-01/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache \"Sources/RielaCLI/ProductionNodeAdapter+DurableQueue.swift\" Tests/RielaCLITests/DurableQueueTests.swift > tmp/youtube-processing-builtins/ypb-01/swiftlint.log 2>&1'",
+        "git diff --quiet -- Sources/RielaCLI/DurableQueueJournal.swift"
+      ]
+    },
+    {
+      "planId": "ypb-02-youtube-collect-filters",
+      "planPath": "impl-plans/active/youtube-processing-builtins-02-youtube-collect-filters.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/YouTubeCollection.swift",
+        "Tests/RielaCLITests/YouTubeCollectionTests.swift",
+        "docs/workflows/youtube-collection.md",
+        "impl-plans/progress/ypb-02-youtube-collect-filters.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Without new options the riela/youtube-collect output keys are exactly {videos, failures, requests}, byte-identical to today.",
+        "excludeLive drops live/upcoming records; maxDurationSeconds (1-604,800) drops records with non-null durationSeconds above it and keeps null durations; both apply to explicit videos and channel uploads.",
+        "When either option is set the output adds excluded {count, live, duration} in output order; a record matching both is attributed to live only; the key is present even when nothing is excluded.",
+        "Invalid option types or ranges fail with youtubeCollectionInvalid; handleYouTubeRequestError and youtubeFailureMessage are module-internal for ypb-08; Sources/RielaCLI/ProductionNodeAdapter+YouTubeCollect.swift is unchanged.",
+        "docs/workflows/youtube-collection.md documents both options.",
+        "After the final owned edit, swift build and the focused swift test reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-02",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-02/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter YouTubeCollectionTests > tmp/youtube-processing-builtins/ypb-02/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/YouTubeCollection.swift Tests/RielaCLITests/YouTubeCollectionTests.swift > tmp/youtube-processing-builtins/ypb-02/swiftlint.log 2>&1'",
+        "grep -n \"^func handleYouTubeRequestError\\|^func youtubeFailureMessage\" Sources/RielaCLI/YouTubeCollection.swift",
+        "git diff --quiet -- \"Sources/RielaCLI/ProductionNodeAdapter+YouTubeCollect.swift\""
+      ]
+    },
+    {
+      "planId": "ypb-03-fanout-step-outputs-core",
+      "planPath": "impl-plans/active/youtube-processing-builtins-03-fanout-step-outputs-core.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift",
+        "Sources/RielaCore/WorkflowValidation.swift",
+        "Sources/RielaCore/WorkflowRawValidation.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerFanoutTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerFanoutResumeTests.swift",
+        "impl-plans/progress/ypb-03-fanout-step-outputs-core.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "WorkflowStepFanout gains optional includeStepOutputs; when present every completed branch record carries stepOutputs {stepId: latest accepted payload from the branch child session}, omitting steps that never produced an accepted output; failed and cancelled records are unchanged.",
+        "When absent, encoded WorkflowStepFanout has no includeStepOutputs key and join records, message bytes and receipts are byte-identical to today.",
+        "includeStepOutputs is carried on WorkflowFanoutDispatchDirective at all three construction sites (RuntimePublication.swift once, DeterministicWorkflowRunner+NestedReservations.swift twice); cross-workflow fanouts populate stepOutputs from the callee child session; a resumed parent rebuilds an identical join with no receipt conflict.",
+        "stepOutputs totaling more than 8,000,000 bytes fail with fanoutDispatchFailed naming the branch index and step, and no join message is appended.",
+        "Raw and typed validation require a non-empty array of unique non-empty strings; Core validation rejects unknown ids and the join step id for same-workflow fanouts at workflow.steps.<id>.transitions[<i>].fanout.includeStepOutputs[<j>]; toWorkflowId fanouts get no Core id error.",
+        "Existing fanout suites pass unmodified apart from appended tests.",
+        "After the final owned edit, swift build and the focused swift test runs reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-03",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-03/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"DeterministicWorkflowRunnerFanoutTests|DeterministicWorkflowRunnerFanoutResumeTests|WorkflowFanoutMapReduceTests|WorkflowFanoutObservationBoundTests|FanoutArtifactEvidenceRunnerTests\" > tmp/youtube-processing-builtins/ypb-03/test-fanout.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter PartialFanoutResumeTests > tmp/youtube-processing-builtins/ypb-03/test-cli-fanout.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/RuntimePublication.swift \"Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift\" \"Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift\" Sources/RielaCore/WorkflowValidation.swift Sources/RielaCore/WorkflowRawValidation.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerFanoutTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerFanoutResumeTests.swift > tmp/youtube-processing-builtins/ypb-03/swiftlint.log 2>&1'",
+        "grep -c \"includeStepOutputs: fanout.includeStepOutputs\" Sources/RielaCore/RuntimePublication.swift \"Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift\""
+      ]
+    },
+    {
+      "planId": "ypb-04-yt-dlp-download-package",
+      "planPath": "impl-plans/active/youtube-processing-builtins-04-yt-dlp-download-package.md",
+      "dependsOn": [],
+      "writePaths": [
+        "examples/video-pipeline-yt-dlp",
+        "Tests/RielaCLITests/VideoPipelineYtDlpPackageTests.swift",
+        "impl-plans/progress/ypb-04-yt-dlp-download-package.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "examples/video-pipeline-yt-dlp is a workflow package with no top-level workflow.json; riela-package.json declares container add-on media/yt-dlp-download v1 with a self-contained Containerfile pinned to the same yt-dlp/Deno versions and SHA-256 values as containers/video-addons/Containerfile, a Python 3 stdlib entrypoint, workflow/workflow.json, workflow/mock-scenario.json and README.md.",
+        "riela package validate passes; project-scope and user-scope installs succeed with HOME and RIELA_WORKFLOW_HOME overridden under tmp and project the add-on to <home>/.riela/addons/media/yt-dlp-download/1/; the installed workflow validates without unresolved add-on diagnostics and its mock scenario feeds mediaDownload.path into riela/audio-segments.",
+        "The entrypoint emits exactly one {mediaDownload: {...}} JSON line, caches by url/maxFileSizeMB/format, and rejects private/local hosts, live streams, over-long durations and unsupported options (ytDlpPath) with non-zero exit and empty stdout; the script test calls XCTSkip without python3.",
+        "No __pycache__ under the package, checksum refreshed after every package edit, and no network or container runtime needed in tests.",
+        "After the final owned edit, swift build and the focused swift test reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-04",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-04/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && HOME=/Users/taco/gits/tacogips/riela/tmp/youtube-processing-builtins/ypb-04/home .build/debug/riela package validate examples/video-pipeline-yt-dlp --output json > tmp/youtube-processing-builtins/ypb-04/package-validate.json 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter VideoPipelineYtDlpPackageTests > tmp/youtube-processing-builtins/ypb-04/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Tests/RielaCLITests/VideoPipelineYtDlpPackageTests.swift > tmp/youtube-processing-builtins/ypb-04/swiftlint.log 2>&1'",
+        "test ! -e examples/video-pipeline-yt-dlp/workflow.json",
+        "find examples/video-pipeline-yt-dlp -name __pycache__"
+      ]
+    },
+    {
+      "planId": "ypb-05-video-pipeline-docs",
+      "planPath": "impl-plans/active/youtube-processing-builtins-05-video-pipeline-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "docs/workflows/video-pipeline.md",
+        "docs/container-addons.md",
+        "Tests/RielaCLITests/MediaPipelineWorkflowDocumentationTests.swift",
+        "impl-plans/progress/ypb-05-video-pipeline-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "docs/workflows/video-pipeline.md documents the tool-neutral mediaDownload v1 contract, 'Plugging in a different downloader', and a '## Migrating from riela/media-download' heading matching the deprecation message.",
+        "The existing three json blocks stay first, in order and unchanged; new json blocks are appended after them; the documentation test's expected block count is updated and the first two blocks still validate successfully.",
+        "docs/container-addons.md video section marks riela/media-download deprecated and describes the media/yt-dlp-download package container add-on and its egress capability.",
+        "No credentials or tokenized URLs in docs.",
+        "After the final owned edit, the focused swift test reaches exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-05",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter MediaPipelineWorkflowDocumentationTests > tmp/youtube-processing-builtins/ypb-05/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Tests/RielaCLITests/MediaPipelineWorkflowDocumentationTests.swift > tmp/youtube-processing-builtins/ypb-05/swiftlint.log 2>&1'",
+        "grep -c \"^## Migrating from riela/media-download$\" docs/workflows/video-pipeline.md",
+        "grep -c \"media/yt-dlp-download\" docs/container-addons.md"
+      ]
+    },
+    {
+      "planId": "ypb-06-media-download-deprecation",
+      "planPath": "impl-plans/active/youtube-processing-builtins-06-media-download-deprecation.md",
+      "dependsOn": ["ypb-03-fanout-step-outputs-core"],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowDeprecatedAddonValidation.swift",
+        "Tests/RielaCoreTests/MediaDownloadDeprecationValidationTests.swift",
+        "Tests/RielaCLITests/MediaDownloadDeprecationWarningTests.swift",
+        "impl-plans/progress/ypb-06-media-download-deprecation.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/WorkflowValidation.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCore/WorkflowValidation.swift",
+          "intendedEdit": "Add exactly one line, diagnostics += deprecatedAddonDiagnostics(node.addon, nodeId: node.id), inside the nodeRegistry loop of DefaultWorkflowValidator.validate(_ workflow:). This runs after ypb-03, which owns the file in W1."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "DefaultWorkflowValidator emits exactly one warning per riela/media-download node at workflow.nodes.<id>.addon.name with the pinned message naming media/yt-dlp-download and 'Migrating from riela/media-download'; no error diagnostics.",
+        "riela/audio-segments, riela/video-frames and riela/speech-to-text emit no deprecation warning; riela workflow validate stays exit success with valid true.",
+        "Sources/RielaCore/WorkflowValidation.swift gains exactly one line, the deprecatedAddonDiagnostics(node.addon, nodeId: node.id) call, relative to the ypb-03 post-hash; riela/media-download runtime behavior is unchanged.",
+        "After the final owned edit, swift build and the focused swift test reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-06",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-06/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"MediaDownloadDeprecationValidationTests|MediaDownloadDeprecationWarningTests|MediaPipelineWorkflowDocumentationTests|MediaPipelineAddonRegistrationTests|BuiltinAddonContainerResolverTests\" > tmp/youtube-processing-builtins/ypb-06/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCore/WorkflowDeprecatedAddonValidation.swift Sources/RielaCore/WorkflowValidation.swift Tests/RielaCoreTests/MediaDownloadDeprecationValidationTests.swift Tests/RielaCLITests/MediaDownloadDeprecationWarningTests.swift > tmp/youtube-processing-builtins/ypb-06/swiftlint.log 2>&1'",
+        "git diff -U0 -- Sources/RielaCore/WorkflowValidation.swift"
+      ]
+    },
+    {
+      "planId": "ypb-07-fanout-cli-validation-example",
+      "planPath": "impl-plans/active/youtube-processing-builtins-07-fanout-cli-validation-example.md",
+      "dependsOn": ["ypb-03-fanout-step-outputs-core"],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Tests/RielaCLITests/FanoutIncludeStepOutputsTests.swift",
+        "examples/fanout-include-step-outputs",
+        "docs/workflows/json-data-processing.md",
+        "impl-plans/progress/ypb-07-fanout-cli-validation-example.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "CLI workflow validate resolves toWorkflowId callees for fanouts using includeStepOutputs (also without resumeStepId) and reports an error at ...fanout.includeStepOutputs[<j>] naming the missing step and callee; valid callee ids produce no diagnostic.",
+        "Fanouts without includeStepOutputs produce byte-identical validate output and trigger no callee resolution; existing cross-workflow dispatch tests pass.",
+        "docs/workflows/json-data-processing.md documents includeStepOutputs next to contextFrom.",
+        "examples/fanout-include-step-outputs (same-workflow, two-step riela/json-compose branch) validates and its mock scenario run completes with stepOutputs.transcribe.transcript per branch.",
+        "After the final owned edit, swift build and the focused swift test reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-07",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-07/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"FanoutIncludeStepOutputsTests|WorkflowCommandCrossWorkflowDispatchTests|PartialFanoutResumeTests\" > tmp/youtube-processing-builtins/ypb-07/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && .build/debug/riela workflow validate fanout-include-step-outputs --workflow-definition-dir examples --output json > tmp/youtube-processing-builtins/ypb-07/validate.json 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && .build/debug/riela workflow run fanout-include-step-outputs --workflow-definition-dir examples --mock-scenario examples/fanout-include-step-outputs/mock-scenario.json --session-store tmp/youtube-processing-builtins/ypb-07/sessions --max-steps 50 --output json > tmp/youtube-processing-builtins/ypb-07/run.json 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/WorkflowValidateInspectCommands.swift Tests/RielaCLITests/FanoutIncludeStepOutputsTests.swift > tmp/youtube-processing-builtins/ypb-07/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ypb-08-youtube-gateway-read",
+      "planPath": "impl-plans/active/youtube-processing-builtins-08-youtube-gateway-read.md",
+      "dependsOn": ["ypb-02-youtube-collect-filters"],
+      "writePaths": [
+        "Sources/RielaCLI/ProductionNodeAdapter+YouTubeGatewayAddons.swift",
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Sources/RielaCLI/BuiltinStatefulAddonRegistry.swift",
+        "Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift",
+        "Tests/RielaCLITests/YouTubeGatewayReadAddonTests.swift",
+        "Tests/RielaAddonsTests/RielaBuiltinAddonCatalogTests.swift",
+        "docs/builtin-gateway-json.md",
+        "examples/youtube-gateway-read",
+        "impl-plans/progress/ypb-08-youtube-gateway-read.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "riela/youtube-gateway-read v1 is registered once in the builtin catalog and the stateful registry, macOS-only under #if canImport(YouTubeGatewayCore) with an SDK-free parse/validation layer.",
+        "Supports read-only subscriptions.list, videos.list, channels.list and playlistItems.list with pageToken/maxResults pagination, passing nextPageToken through in the {status, addon, stepId, operation, data} envelope.",
+        "Invalid operations or arguments (write ops, conflicting or missing filters, out-of-range maxResults, unknown arguments, invalid parts) fail as policyBlocked through BuiltinGatewayRequestChecks.issues; templated arguments get name-only checks.",
+        "Credentials come only from the YOUTUBE_GATEWAY_* env allowlist (YOUTUBE_GATEWAY_TOKEN_STORE_JSON convention); non-allowlisted targets and blank values are policyBlocked without echoing values; HTTP 401/403/500 map to error categories without leaking response bodies.",
+        "docs/builtin-gateway-json.md documents the add-on; examples/youtube-gateway-read validates and its mock scenario completes; Package.swift, Package.resolved, Sources/RielaCLI/ProductionNodeAdapter.swift and Sources/RielaCLI/YouTubeCollection.swift are unchanged.",
+        "After the final owned edit, swift build and the focused swift test reach exit 0 with 0 failures at least once (only exception: a recorded deferred-to-integration entry whose diagnostics are all in non-owned files); the swiftlint --strict log is empty; the progress log records pre/post SHA-256 and a verification table with exit statuses and log paths."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-08",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/ypb-08/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"YouTubeGatewayReadAddonTests|RielaBuiltinAddonCatalogTests|BuiltinStatefulAddonRegistryTests|BuiltinGatewayJSONRequestTests|CatalogWorkflowGatewayValidationTests|WorkflowGatewayValidationTests|YouTubeCollectionTests\" > tmp/youtube-processing-builtins/ypb-08/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && .build/debug/riela workflow validate youtube-gateway-read --workflow-definition-dir examples --output json > tmp/youtube-processing-builtins/ypb-08/validate.json 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && .build/debug/riela workflow run youtube-gateway-read --workflow-definition-dir examples --mock-scenario examples/youtube-gateway-read/mock-scenario.json --session-store tmp/youtube-processing-builtins/ypb-08/sessions --max-steps 20 --output json > tmp/youtube-processing-builtins/ypb-08/run.json 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache \"Sources/RielaCLI/ProductionNodeAdapter+YouTubeGatewayAddons.swift\" Sources/RielaAddons/RielaAddons.swift Sources/RielaCLI/BuiltinStatefulAddonRegistry.swift \"Sources/RielaCLI/BuiltinGatewayRequestChecks+Extended.swift\" Tests/RielaCLITests/YouTubeGatewayReadAddonTests.swift Tests/RielaAddonsTests/RielaBuiltinAddonCatalogTests.swift > tmp/youtube-processing-builtins/ypb-08/swiftlint.log 2>&1'",
+        "git diff --quiet -- Package.swift Package.resolved Sources/RielaCLI/ProductionNodeAdapter.swift Sources/RielaCLI/YouTubeCollection.swift"
+      ]
+    },
+    {
+      "planId": "ypb-09-example-catalog-finalize",
+      "planPath": "impl-plans/active/youtube-processing-builtins-09-example-catalog-finalize.md",
+      "dependsOn": ["ypb-07-fanout-cli-validation-example", "ypb-08-youtube-gateway-read"],
+      "writePaths": [
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "impl-plans/progress/ypb-09-example-catalog-finalize.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "rielaExampleWorkflowNames() includes fanout-include-step-outputs and youtube-gateway-read in sorted order; examples/video-pipeline-yt-dlp is not registered.",
+        "ExampleCatalog.expectedMockScenarioCount equals the counted mock-scenario examples (50 expected; any difference justified in the progress log).",
+        "RielaExampleParityTests passes with every mock-scenario example running through the Swift CLI; the swiftlint log is empty; the progress log has hashes and the verification table."
+      ],
+      "verification": [
+        "mkdir -p tmp/youtube-processing-builtins/ypb-09",
+        "ls examples/*/workflow.json | wc -l > tmp/youtube-processing-builtins/ypb-09/counts.txt",
+        "ls examples/*/mock-scenario.json | wc -l >> tmp/youtube-processing-builtins/ypb-09/counts.txt",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter RielaExampleParityTests > tmp/youtube-processing-builtins/ypb-09/test-parity.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Tests/RielaCLITests/RielaExampleCatalog.swift Tests/RielaCLITests/RielaExampleParityTests.swift > tmp/youtube-processing-builtins/ypb-09/swiftlint.log 2>&1'"
+      ]
+    }
+  ],
+  "integrationVerification": [
+    "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/youtube-processing-builtins/integration/build.log 2>&1'",
+    "arch -arm64 /bin/zsh -lc \"cd /Users/taco/gits/tacogips/riela && swift test --filter 'YouTubeGatewayReadAddonTests|RielaBuiltinAddonCatalogTests|BuiltinStatefulAddonRegistryTests|BuiltinGatewayJSONRequestTests|CatalogWorkflowGatewayValidationTests|WorkflowGatewayValidationTests' > tmp/youtube-processing-builtins/integration/test-gateway.log 2>&1\"",
+    "arch -arm64 /bin/zsh -lc \"cd /Users/taco/gits/tacogips/riela && swift test --filter 'DeterministicWorkflowRunnerFanoutTests|DeterministicWorkflowRunnerFanoutResumeTests|PartialFanoutResumeTests|FanoutIncludeStepOutputsTests|WorkflowCommandCrossWorkflowDispatchTests' > tmp/youtube-processing-builtins/integration/test-fanout.log 2>&1\"",
+    "arch -arm64 /bin/zsh -lc \"cd /Users/taco/gits/tacogips/riela && swift test --filter 'DurableQueueTests|YouTubeCollectionTests' > tmp/youtube-processing-builtins/integration/test-queue-collect.log 2>&1\"",
+    "arch -arm64 /bin/zsh -lc \"cd /Users/taco/gits/tacogips/riela && swift test --filter 'MediaPipelineAddonRegistrationTests|MediaPipelineMediaLogicTests|MediaPipelineWorkflowDocumentationTests|MediaDownloadDeprecationValidationTests|MediaDownloadDeprecationWarningTests|VideoPipelineYtDlpPackageTests|BuiltinAddonContainerResolverTests' > tmp/youtube-processing-builtins/integration/test-media.log 2>&1\"",
+    "arch -arm64 /bin/zsh -lc \"cd /Users/taco/gits/tacogips/riela && swift test --filter RielaExampleParityTests > tmp/youtube-processing-builtins/integration/test-parity.log 2>&1\"",
+    "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && git diff --name-only 9ab7058eb717549dcfc0f9cad8de2d1de3814d69 -- \"*.swift\" | xargs swiftlint lint --strict --quiet --no-cache > tmp/youtube-processing-builtins/integration/swiftlint.log 2>&1'",
+    "git diff --quiet 9ab7058eb717549dcfc0f9cad8de2d1de3814d69 -- Package.swift Package.resolved VERSION"
+  ]
+}

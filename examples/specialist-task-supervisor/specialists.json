@@ -1,0 +1,21 @@
+{
+  "specialists": [
+    {
+      "id": "local-specialist",
+      "capacity": 1,
+      "domain": "local development workflow supervision",
+      "allowedOriginIds": ["REPLACE_WITH_EXACT_CATALOG_ORIGIN_ID"]
+    }
+  ],
+  "classifier": {
+    "endpoint": "https://classifier.example.invalid/v1/specialist-decisions",
+    "providerIdentity": "operator-configured-classifier",
+    "secretEnvironment": "RIELA_SPECIALIST_CLASSIFIER_TOKEN",
+    "deadlineSeconds": 30
+  },
+  "tracker": {
+    "provider": "wrike",
+    "mappingVersion": "v1",
+    "note": "Configure trusted gateway credentials outside this example."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "room_id": "!vendor-onboarding:matrix.example",
+  "type": "m.room.message",
+  "event_id": "$enterprise-vendor-event-1",
+  "sender": "@vendor-owner:matrix.example",
+  "origin_server_ts": 1785682801000,
+  "content": {
+    "msgtype": "m.text",
+    "body": "Review this vendor onboarding request with the finance and legal specialists."
+  }
+}

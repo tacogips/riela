@@ -1,0 +1,55 @@
+name: Linux amd64 build
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-amd64-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build riela on Linux amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build release CLI in Swift amd64 container
+        env:
+          SWIFT_IMAGE: swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "$SWIFT_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              test "$(uname -m)" = "x86_64"
+              swift --version
+              apt-get update >/dev/null
+              apt-get install -y libsqlite3-dev >/dev/null
+              # SwiftPM can fetch stale macOS-only pins before resolving the
+              # Linux manifest. Do not grant private-repository credentials.
+              swift -e '\''import Foundation
+                let file = URL(fileURLWithPath: "Package.resolved")
+                var lock = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+                let pins = lock["pins"] as! [[String: Any]]
+                lock["pins"] = pins.filter { $0["identity"] as? String != "notion-gateway" }
+                lock.removeValue(forKey: "originHash")
+                try JSONSerialization.data(withJSONObject: lock, options: [.prettyPrinted, .sortedKeys]).write(to: file)
+              '\''
+              swift build -c release --product riela --triple x86_64-unknown-linux-gnu
+            '

@@ -1,0 +1,12 @@
+{
+  "id": "implementation-review",
+  "description": "Produce the structured review gate result for the baseline/regression operations example.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/implementation-review.md",
+  "variables": {},
+  "output": {
+    "description": "Return a loopGate object with decision, severityCounts, blockingFindings, evidenceRefs, and diagnostics."
+  }
+}

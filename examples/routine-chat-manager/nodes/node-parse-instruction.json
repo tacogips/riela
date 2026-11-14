@@ -1,0 +1,49 @@
+{
+  "id": "parse-instruction",
+  "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
+  "model": "claude-haiku-4-5",
+  "modelFreeze": false,
+  "description": "Parse a natural-language routine instruction from chat into a routine name, task, six-field cron schedule, and optional completion criteria.",
+  "promptTemplateFile": "prompts/parse-instruction.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with required name, task, six-field cron schedule, timezone, and completionCriteria.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "completionCriteria": {
+          "type": "string"
+        },
+        "routine": {
+          "type": "object"
+        },
+        "routineId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "task",
+        "schedule",
+        "timezone",
+        "completionCriteria"
+      ]
+    }
+  }
+}

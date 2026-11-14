@@ -1,0 +1,269 @@
+import RielaCore
+
+public struct RielaAddonDescriptor: Codable, Equatable, Sendable {
+  public var name: String
+  public var version: String?
+
+  public init(name: String, version: String? = nil) {
+    self.name = name
+    self.version = version
+  }
+}
+
+public enum RielaBuiltinAddonCatalog {
+  public static let appleGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-notes-list", version: "1"),
+    .init(name: "riela/apple-mail-list", version: "1"),
+    .init(name: "riela/apple-mail-message", version: "1"),
+    .init(name: "riela/apple-note-get", version: "1"),
+    .init(name: "riela/apple-note-create", version: "1"),
+    .init(name: "riela/apple-note-update-body", version: "1"),
+    .init(name: "riela/apple-note-delete", version: "1"),
+    .init(name: "riela/apple-note-move", version: "1"),
+    .init(name: "riela/apple-notifications-list", version: "1"),
+    .init(name: "riela/apple-notification-post", version: "1"),
+    .init(name: "riela/apple-notifications-dismiss", version: "1"),
+    .init(name: "riela/calendar-list", version: "1"),
+    .init(name: "riela/event-search", version: "1"),
+    .init(name: "riela/event-get", version: "1"),
+    .init(name: "riela/event-create", version: "1"),
+    .init(name: "riela/event-update", version: "1"),
+    .init(name: "riela/event-delete", version: "1"),
+    .init(name: "riela/event-alarms-set", version: "1"),
+    .init(name: "riela/apple-clock-alarms-list", version: "1"),
+    .init(name: "riela/apple-clock-alarm-create", version: "1"),
+    .init(name: "riela/apple-clock-alarm-toggle", version: "1"),
+    .init(name: "riela/apple-clock-alarm-update", version: "1"),
+    .init(name: "riela/apple-clock-alarm-delete", version: "1")
+  ]
+
+  public static let appleReminderReadAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-reminder-lists", version: "1"),
+    .init(name: "riela/apple-reminders-list", version: "1"),
+    .init(name: "riela/apple-reminder-get", version: "1")
+  ]
+
+  public static let appleReminderMutationAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-reminder-list-create", version: "1"),
+    .init(name: "riela/apple-reminder-create", version: "1"),
+    .init(name: "riela/apple-reminder-update", version: "1"),
+    .init(name: "riela/apple-reminder-delete", version: "1"),
+    .init(name: "riela/apple-reminder-complete", version: "1"),
+    .init(name: "riela/apple-reminder-alarms-set", version: "1")
+  ]
+
+  public static let noteAddons: [RielaAddonDescriptor] = [
+    .init(name: "kaiba/note-create", version: "1"),
+    .init(name: "kaiba/note-update", version: "1"),
+    .init(name: "kaiba/note-get", version: "1"),
+    .init(name: "kaiba/note-search", version: "1"),
+    .init(name: "kaiba/note-tag-search", version: "1"),
+    .init(name: "kaiba/note-graph-neighbors", version: "1"),
+    .init(name: "kaiba/note-chain", version: "1"),
+    .init(name: "kaiba/note-tag-apply", version: "1"),
+    .init(name: "kaiba/note-attach-file", version: "1"),
+    .init(name: "kaiba/note-attachments", version: "1"),
+    .init(name: "kaiba/note-memos", version: "1"),
+    .init(name: "kaiba/note-graphql-document", version: "1"),
+    .init(name: "kaiba/note-graphql-remote", version: "1"),
+    .init(name: "kaiba/note-comment-add", version: "1"),
+    .init(name: "kaiba/notebook-ingest-pages", version: "1"),
+    .init(name: "kaiba/document-import", version: "1"),
+    .init(name: "kaiba/note-conversation-save", version: "1"),
+    .init(name: "kaiba/memory-consolidate", version: "1"),
+    .init(name: "kaiba/memory-recall", version: "1")
+  ]
+
+  public static let workflowAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/private-workflow", version: "1"),
+    .init(name: "riela/workflow-create-register-run", version: "1"),
+    .init(name: "riela/chat-reply-worker", version: "1")
+  ]
+
+  public static let handoverAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/handover-request", version: "1")
+  ]
+
+  public static let chatPersonaAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/chat-persona-router", version: "1"),
+    .init(name: "riela/chat-persona-memory-read", version: "1"),
+    .init(name: "riela/chat-persona-memory-write", version: "1")
+  ]
+
+  public static let memoryAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/memory-save", version: "1"),
+    .init(name: "riela/memory-load", version: "1"),
+    .init(name: "riela/memory-update", version: "1"),
+    .init(name: "riela/memory-search", version: "1")
+  ]
+
+  public static let digestAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gmail-digest", version: "1"),
+    .init(name: "riela/x-digest", version: "1")
+  ]
+
+  public static let workerAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gemini-sdk-worker", version: "1"),
+    .init(name: "riela/codex-sdk-worker", version: "1"),
+    .init(name: "riela/claude-sdk-worker", version: "1"),
+    .init(name: "riela/cursor-sdk-worker", version: "1")
+  ]
+
+  public static let timeAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/time-signal", version: "1")
+  ]
+
+  public static let dataAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/x-collect", version: "1"),
+    .init(name: "riela/gmail-collect", version: "1"),
+    .init(name: "riela/json-route", version: "1"),
+    .init(name: "riela/page-state", version: "1"),
+    .init(name: "riela/collection-checkpoint", version: "1"),
+    .init(name: "riela/snapshot-store", version: "1"),
+    .init(name: "riela/snapshot-scan", version: "1"),
+    .init(name: "riela/array-select", version: "1"),
+    .init(name: "riela/progress-tracker", version: "1"),
+    .init(name: "riela/command-result", version: "1"),
+    .init(name: "riela/durable-queue", version: "1"),
+    .init(name: "riela/snapshot-rotate", version: "1"),
+    .init(name: "riela/cache-exchange", version: "1"),
+    .init(name: "riela/record-manifest", version: "1"),
+    .init(name: "riela/public-web", version: "1"),
+    .init(name: "riela/public-discovery", version: "1"),
+    .init(name: "riela/web-collect", version: "1"),
+    .init(name: "riela/json-transform", version: "1"),
+    .init(name: "riela/json-compose", version: "1"),
+    .init(name: "riela/array-batch", version: "1"),
+    .init(name: "riela/array-gather", version: "1")
+  ]
+
+  // Legacy property name retained for source compatibility. These gateways
+  // execute their reader surface in a container and fail if execution fails.
+  public static let deferredContainerGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gmail-gateway-read", version: "1"),
+    .init(name: "riela/x-gateway-read", version: "1")
+  ]
+
+  public static let documentAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/file-markdown-convert", version: "1")
+  ]
+
+  public static let keyValueStoreAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/kv-set", version: "1"),
+    .init(name: "riela/cache-configure", version: "1"),
+    .init(name: "riela/cache-put", version: "1"),
+    .init(name: "riela/cache-get", version: "1"),
+    .init(name: "riela/cache-delete", version: "1"),
+    .init(name: "riela/cache-prune", version: "1"),
+    .init(name: "riela/cache-protect", version: "1"),
+    .init(name: "riela/cache-reconcile", version: "1"),
+    .init(name: "riela/cache-maintain", version: "1"),
+
+    .init(name: "riela/kv-get", version: "1"),
+    .init(name: "riela/kv-delete", version: "1"),
+    .init(name: "riela/kv-list", version: "1")
+  ]
+
+  public static let gitAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/git-commit", version: "1"),
+    .init(name: "riela/git-push", version: "1"),
+    .init(name: "riela/git-publish-branch", version: "1")
+  ]
+
+  public static let routineAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/routine-create", version: "1"),
+    .init(name: "riela/routine-complete", version: "1"),
+    .init(name: "riela/routine-get", version: "1"),
+    .init(name: "riela/routine-list", version: "1"),
+    .init(name: "riela/routine-update-status", version: "1"),
+    .init(name: "riela/routine-delete", version: "1")
+  ]
+
+  public static let wrikeGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/wrike-gateway-read", version: "1"),
+    .init(name: "riela/wrike-gateway-write", version: "1"),
+    .init(name: "riela/wrike-gateway-admin", version: "1")
+  ]
+
+  public static let googleServiceGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/google-service-gateway-read", version: "1"),
+    .init(name: "riela/google-service-gateway-write", version: "1")
+  ]
+
+  public static let xGatewaySDKAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/x-gateway-reader", version: "1")
+  ]
+
+  public static let gmailGatewayCLIAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gmail-gateway-reader", version: "1"),
+    .init(name: "riela/gmail-gateway-draft", version: "1"),
+    .init(name: "riela/gmail-gateway-sender", version: "1")
+  ]
+
+  public static let googleAnalyticsGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/google-analytics-gateway-read", version: "1"),
+    .init(name: "riela/google-analytics-gateway-write", version: "1"),
+    .init(name: "riela/google-analytics-gateway-admin", version: "1")
+  ]
+
+  public static let notionGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/notion-gateway-read", version: "1"),
+    .init(name: "riela/notion-gateway-write", version: "1")
+  ]
+
+  public static let googleDocumentsGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/google-docs-gateway-read", version: "1"),
+    .init(name: "riela/google-docs-gateway-write", version: "1"),
+    .init(name: "riela/google-sheet-gateway-read", version: "1"),
+    .init(name: "riela/google-sheet-gateway-write", version: "1"),
+    .init(name: "riela/google-drive-gateway-read", version: "1"),
+    .init(name: "riela/google-drive-gateway-write", version: "1")
+  ]
+
+  public static let appleGatewayAdminAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-gateway-graphql", version: "1"),
+    .init(name: "riela/apple-gateway-schema", version: "1"),
+    .init(name: "riela/apple-gateway-permissions-status", version: "1"),
+    .init(name: "riela/apple-gateway-permissions-request", version: "1"),
+    .init(name: "riela/apple-gateway-config-validate", version: "1"),
+    .init(name: "riela/apple-gateway-file-download", version: "1"),
+    .init(name: "riela/apple-gateway-cache-prune", version: "1")
+  ]
+
+  public static let all: [RielaAddonDescriptor] = appleGatewayAddons
+    + appleReminderReadAddons
+    + appleReminderMutationAddons
+    + appleGatewayAdminAddons
+    + noteAddons
+    + workflowAddons
+    + handoverAddons
+    + chatPersonaAddons
+    + memoryAddons
+    + digestAddons
+    + workerAddons
+    + timeAddons
+    + dataAddons
+    + deferredContainerGatewayAddons
+    + documentAddons
+    + keyValueStoreAddons
+    + gitAddons
+    + routineAddons
+    + wrikeGatewayAddons
+    + googleServiceGatewayAddons
+    + xGatewaySDKAddons
+    + gmailGatewayCLIAddons
+    + googleAnalyticsGatewayAddons
+    + googleDocumentsGatewayAddons
+    + notionGatewayAddons
+
+  public static func descriptor(named name: String) -> RielaAddonDescriptor? {
+    all.first { $0.name == name }
+  }
+
+  public static func supports(name: String, version: String?) -> Bool {
+    guard let descriptor = descriptor(named: name) else {
+      return false
+    }
+    return version == nil || descriptor.version == nil || descriptor.version == version
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "taskId": "work-runtime-p0-20260921",
+  "workflowMode": "single-plan-serial",
+  "implementationBranch": "feat/work-runtime-p0",
+  "baseBranch": "feat/work-runtime-p0",
+  "remote": "origin",
+  "originalHead": "a6a76743ac07980ea1dbfe6a98c3f74bfd4209be",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-control-surface-parity.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p0-20260921",
+  "notes": {
+    "featureFanout": false,
+    "planCount": 1,
+    "evidenceLayout": "tmp/work-runtime-p0-20260921/plans/<planId>/attempt-<n>/",
+    "evidenceTracked": false,
+    "acceptedDeltas": "D1-D6 recorded in the plan's 'Accepted Deltas' section; design-doc header carries the pointer line.",
+    "serialReconciliation": "Package.swift, the plan progress log, the SurfaceCatalog row files, the SQLiteWorkflowRuntimePersistenceStore generation constant and the two READMEs are edited serially inside their owning P0 task; no parallel worker owns them.",
+    "branchDiscipline": "Commit and push feat/work-runtime-p0 only. Never touch main or feat/control-surface-parity. No force push, reset, or branch deletion.",
+    "shellRequirement": "Every Swift/SwiftLint command must run through arch -arm64 /bin/zsh -lc; the default shell runs under Rosetta and the xctest bundle refuses to dlopen.",
+    "acceptedBaselineFailures": [
+      "RielaAppUXOnboardingControllerTests (AppKit view hierarchy)",
+      "RielaAppSettingsEditorNavigationTests (AppKit view hierarchy)",
+      "RielaAppWindowContentInsetTests (AppKit view hierarchy)",
+      "WorkflowRound7AdversarialTests (3 unix-socket-unlink cases)",
+      "WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "work-runtime-p0",
+      "planPath": "impl-plans/active/work-runtime-p0-model-and-store.md",
+      "dependsOn": [],
+      "progressFile": "impl-plans/active/work-runtime-p0-model-and-store.md#progress-log",
+      "orderedTasks": [
+        "P0-1 Module and identifiers (Package.swift, WorkIdentifiers.swift, no-import-RielaWork-in-RielaCore grep test)",
+        "P0-2 Domain model with D4 spellings, strict decoding, Fixtures + round-trip and negative tests",
+        "P0-3 WorkStore schema/CRUD, D5 generation bump 4 to 5, optimistic concurrency, discard-on-mismatch tests",
+        "P0-4 WorkEvidenceProjector + WorkFindingMerge with design section 8 mapping and causedBy edge tests",
+        "P0-5 CompletionEvaluator pure function with D3 acceptance decoding, table-driven verdict tests",
+        "P0-6 riela task show|list CLI + D6 SurfaceCatalog flip and gate-test updates",
+        "P0-7 TaskProjectionProofTests over both loop examples + docs and checking all 7 boxes with evidence"
+      ],
+      "taskDependencies": [
+        "P0-2 <- P0-1",
+        "P0-3 <- P0-1",
+        "P0-4 <- P0-2",
+        "P0-5 <- P0-2",
+        "P0-6 <- P0-3, P0-4, P0-5",
+        "P0-7 <- P0-6"
+      ],
+      "writePaths": [
+        "Package.swift",
+        "Sources/RielaWork/**",
+        "Tests/RielaWorkTests/**",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskCommandModels.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Tests/RielaCLITests/TaskCommandTests.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/TaskProjectionProofTests.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "impl-plans/active/work-runtime-p0-model-and-store.md",
+        "impl-plans/README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "README.md"
+      ],
+      "sharedPaths": [
+        {
+          "path": "Package.swift",
+          "intendedEdit": "Add the RielaWork library target (deps RielaCore, RielaSQLite) and the RielaWorkTests test target; add RielaWork to RielaCLI dependencies. Owned serially by P0-1.",
+          "phase": "P0-1"
+        },
+        {
+          "path": "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+          "intendedEdit": "D6: flip only the CLI face of task.show and task.list from blocked to implemented with CLI bindings in workRuntimeRows; all other work-runtime rows and all GraphQL/library faces stay blocked with plan-citing evidence. Owned serially by P0-6.",
+          "phase": "P0-6"
+        },
+        {
+          "path": "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+          "intendedEdit": "D5: bump the schemaGeneration constant 4 to 5 (and its migration-table entry so hasCompletePath stays honest: no path means discard). No other behavior change. Owned serially by P0-3.",
+          "phase": "P0-3"
+        },
+        {
+          "path": "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+          "intendedEdit": "Rewrite testWorkRuntimeOperationsAreBlockedOnTheP0Plan to the CLI-implemented / everything-else-blocked split, landed in the same change as the D6 flip. Gates are updated, never loosened. Owned serially by P0-6.",
+          "phase": "P0-6"
+        },
+        {
+          "path": "impl-plans/active/work-runtime-p0-model-and-store.md",
+          "intendedEdit": "Per-task checkbox ticks and progress-log entries carrying command plus result evidence; no worker other than the P0 implementer writes here.",
+          "phase": "P0-1..P0-7"
+        },
+        {
+          "path": "design-docs/specs/design-work-runtime-consolidation.md",
+          "intendedEdit": "Status line updated to note P0 implemented, plus any further accepted-delta pointer lines. Owned serially by P0-7.",
+          "phase": "P0-7"
+        },
+        {
+          "path": "README.md",
+          "intendedEdit": "Add the RielaWork module paragraph to the module list. Owned serially by P0-7.",
+          "phase": "P0-7"
+        },
+        {
+          "path": "impl-plans/README.md",
+          "intendedEdit": "D2: correct the drifted 'import-session' row to the shipped 'riela task show|list' surface; the import-session command is not built. Owned serially by P0-7.",
+          "phase": "P0-7"
+        }
+      ],
+      "acceptanceCriteria": [
+        "Every one of the 7 P0 task checkboxes in impl-plans/active/work-runtime-p0-model-and-store.md is checked with concrete per-box evidence recorded in the plan progress log.",
+        "A new SwiftPM target RielaWork exists with RielaWorkTests, depends on RielaCore and RielaSQLite, and RielaCore contains zero occurrences of 'import RielaWork' proven by a test.",
+        "The domain model from design section 4 is implemented with closed enums and strict decoding (an unknown enum value is a decode error), with round-trip tests and checked-in fixture JSON under Tests/RielaWorkTests/Fixtures.",
+        "WorkStore creates work_intents, work_tasks, work_attempts, work_decisions, work_evidence and work_findings in the runtime records database with the documented columns, indexes, optimistic concurrency on work_tasks.version, and a schema generation guard that discards a mismatched store.",
+        "WorkEvidenceProjector projects a persisted WorkflowRuntimePersistenceSnapshot into Evidence and Finding records with causedBy edges as in design section 8, and CompletionEvaluator implements the design section 5 rule as a pure function including the gate payload acceptance.met check.",
+        "riela task show <taskId> and riela task list work read-only with json, jsonl and text output following the LoopCommands rendering, resolving the store root through canonicalRuntimeStoreRoot, and their SurfaceCatalog rows are updated from blocked to their real state with the other surfaces still declared.",
+        "A test runs the two loop example workflows with their mock scenarios, projects the terminal snapshots into a task each, and asserts gate, finding, verification and cost counts against EXPECTED_RESULTS.md.",
+        "arch -arm64 /bin/zsh -lc 'swift build && swift test' at the worktree root reports no failures beyond the ten accepted environmental ones listed in the constraints, and SwiftLint is clean on changed sources.",
+        "All work is committed on feat/work-runtime-p0 and pushed to that branch only; main and feat/control-surface-parity are untouched."
+      ],
+      "verification": "Iterate per task with arch -arm64 /bin/zsh -lc 'swift test --filter RielaWork', '--filter TaskCommand', and after P0-6 '--filter \"SurfaceCatalogTests|SurfaceParityCLITests\"'. Acceptance: arch -arm64 /bin/zsh -lc 'swift build && swift test' run in the foreground from /Users/taco/gits/tacogips/riela-worktrees/work-runtime-p0 with the complete untailed log and final exit status retained under tmp/work-runtime-p0-20260921/plans/work-runtime-p0/attempt-<n>/; diff the failure set name-by-name against the ten accepted environmental failures and list any difference explicitly; rerun with full logs to distinguish the known interleaved-submit timing flake from a regression. SwiftLint (arm64) clean on changed sources. git diff --stat confined to the plan's extended allow-list in its Verification section. Commit and push feat/work-runtime-p0 only; every committedFiles path must exist on disk."
+    }
+  ]
+}

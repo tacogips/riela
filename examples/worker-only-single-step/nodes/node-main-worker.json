@@ -1,0 +1,11 @@
+{
+  "id": "main-worker",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/main-worker.md",
+  "variables": {},
+  "output": {
+    "description": "Return a concise workflow completion summary with status, verification commands, and any residual risks."
+  }
+}

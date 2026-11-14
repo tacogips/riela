@@ -1,0 +1,57 @@
+{
+  "workflowId": "riela-memory-design-impl-review",
+  "description": "Project-scoped Riela workflow to design and review the Riela memory feature implementation without committing or pushing.",
+  "defaults": {
+    "nodeTimeoutMs": 3600000,
+    "maxLoopIterations": 2
+  },
+  "prompts": {
+    "rielaPromptTemplate": "Run design review, implementation review, then final output. This workflow must not commit, push, or mutate unrelated files.",
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve unrelated dirty worktree changes. Do not commit or push. For review nodes, inspect the current repository state and diff before answering."
+  },
+  "entryStepId": "design-review",
+  "nodes": [
+    {
+      "id": "design-review",
+      "nodeFile": "nodes/node-design-review.json"
+    },
+    {
+      "id": "implementation-review",
+      "nodeFile": "nodes/node-implementation-review.json"
+    },
+    {
+      "id": "workflow-output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "design-review",
+      "nodeId": "design-review",
+      "description": "Review the memory feature design before further implementation.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "implementation-review"
+        }
+      ]
+    },
+    {
+      "id": "implementation-review",
+      "nodeId": "implementation-review",
+      "description": "Review the current memory feature implementation against the requested behavior.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "description": "Summarize the review findings and required follow-up implementation work.",
+      "role": "worker"
+    }
+  ]
+}

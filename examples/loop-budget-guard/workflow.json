@@ -1,0 +1,49 @@
+{
+  "workflowId": "loop-budget-guard",
+  "description": "Demonstrates loop budget enforcement: an authored wall-clock budget is checked at every step boundary and, with onExceeded 'fail', emits a budget_exceeded event and fails the session closed with failureKind budgetExceeded.",
+  "defaults": {
+    "maxLoopIterations": 2,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise structured JSON only."
+  },
+  "entryStepId": "plan",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": false,
+    "description": "Example of loop budget enforcement at step boundaries.",
+    "budget": {
+      "maxWallClockMs": 1,
+      "onExceeded": "fail"
+    }
+  },
+  "nodes": [
+    {
+      "id": "plan",
+      "nodeFile": "nodes/node-plan.json"
+    },
+    {
+      "id": "summarize",
+      "nodeFile": "nodes/node-summarize.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "nodeId": "plan",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "summarize",
+          "label": "always"
+        }
+      ]
+    },
+    {
+      "id": "summarize",
+      "nodeId": "summarize",
+      "role": "worker"
+    }
+  ]
+}

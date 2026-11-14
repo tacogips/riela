@@ -1,0 +1,13 @@
+{
+  "director": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "kind": "accept",
+      "reason": "The latest work attempt passed its required gate and verification."
+    }
+  }
+}

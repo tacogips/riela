@@ -1,0 +1,30 @@
+.workflow-definition-page .page-header { margin-bottom: 18px; align-items: flex-start; flex-wrap: wrap; }
+.workflow-definition-page .page-header > div:first-child { min-width: 0; flex: 1 1 280px; }
+.workflow-definition-page .page-header h1 { overflow-wrap: anywhere; }
+.workflow-definition-page .header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.definition-summary { display: flex; flex-wrap: wrap; gap: 16px; color: var(--muted, #8b9eac); margin-bottom: 18px; font-size: 13px; }
+.definition-network-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 16px; }
+.definition-network-stage { position: relative; height: max(520px, 65vh); border: 1px solid #29434e; border-radius: 16px; overflow: hidden; background: #08131c; }
+.definition-network-hint { position: absolute; bottom: 12px; left: 16px; right: 140px; pointer-events: none; font-size: 12px; color: #91a8b5; }
+.definition-network-node { cursor: pointer; outline: none; }
+.definition-network-node rect { fill: #112632; stroke: #3f697a; stroke-width: 1.5; }
+.definition-network-node:hover rect, .definition-network-node:focus rect, .definition-network-node.selected rect { fill: #193e49; stroke: #63dcdf; stroke-width: 2.5; }
+.definition-network-node.external rect, .definition-network-node.unused rect { stroke-dasharray: 6 4; }
+.definition-network-node text { fill: #9eb8c6; font-size: 12px; pointer-events: none; }
+.definition-network-node .definition-node-title { fill: #e4f3fa; font-size: 15px; font-weight: 650; }
+.definition-network-node .definition-node-eyebrow { fill: #69dade; font-size: 10px; letter-spacing: 2px; }
+.definition-connection path { fill: none; stroke: #68bfc9; stroke-width: 2; }
+.definition-connection text { fill: #c0dce5; font-size: 12px; paint-order: stroke; stroke: #08131c; stroke-width: 4px; }
+#definition-arrow path { fill: #68bfc9; }
+.definition-node-inspector { align-self: start; overflow-wrap: anywhere; }
+.definition-node-inspector h2 { font-size: 17px; margin-top: 0; }
+.definition-node-inspector p, .definition-node-inspector dt { color: #8fa6b4; font-size: 13px; }
+.definition-node-inspector dd { margin: 6px 0 18px; }
+.definition-node-inspector h3 { font-size: 13px; margin-top: 24px; }
+.definition-node-inspector button { display: block; margin-top: 8px; width: 100%; text-align: left; }
+.definition-empty { position: absolute; inset: 45% 20px auto; text-align: center; pointer-events: none; color: #8fa6b4; }
+@media (max-width: 1050px) {
+  .definition-network-layout { grid-template-columns: minmax(0, 1fr); }
+  .definition-network-stage { height: 60vh; min-height: 420px; }
+}
+.definition-network-stage .ops-zoom { right: 16px; bottom: 16px; }

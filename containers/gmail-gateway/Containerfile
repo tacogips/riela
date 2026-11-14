@@ -1,0 +1,21 @@
+FROM swift:6.2-noble AS build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+ARG GATEWAY_REVISION=2761f3bccf30ead78de5d6968d827929925eae80
+WORKDIR /src
+RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
+    git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD
+COPY prepare-container-gateway-source.py /prepare.py
+RUN python3 /prepare.py gmail /src
+RUN swift build -c release --product gmail-gateway-reader --jobs 4 && \
+    swift build -c release --product gmail-gateway-draft --jobs 4 && \
+    swift build -c release --product gmail-gateway-sender --jobs 4
+
+COPY collect-swift-runtime.sh /collect-swift-runtime.sh
+RUN sh /collect-swift-runtime.sh /runtime-swift /src/.build/release/gmail-gateway-reader /src/.build/release/gmail-gateway-draft /src/.build/release/gmail-gateway-sender
+
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata libcurl4t64 libxml2 libstdc++6 libgcc-s1 libssl3t64 zlib1g && rm -rf /var/lib/apt/lists/*
+COPY --from=build /runtime-swift/ /usr/lib/swift/linux/
+ENV LD_LIBRARY_PATH="/usr/lib/swift/linux"
+COPY --from=build /src/.build/release/gmail-gateway-reader /src/.build/release/gmail-gateway-draft /src/.build/release/gmail-gateway-sender /usr/local/bin/
+ENTRYPOINT ["gmail-gateway-reader"]

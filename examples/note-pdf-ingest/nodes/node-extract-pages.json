@@ -1,0 +1,12 @@
+{
+  "id": "extract-pages",
+  "description": "Extract OCR text/page images from a source PDF and return pages for notebook ingestion.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/extract-pages.md",
+  "variables": {},
+  "output": {
+    "description": "Return `pages` as an ordered array accepted by riela/notebook-ingest-pages."
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "design-review",
+  "nodeType": "command",
+  "description": "Review the proposed memory feature design against the user's requested behavior.",
+  "command": {
+    "executable": "/usr/bin/env",
+    "argvTemplate": ["sh", ".riela/workflows/riela-memory-design-impl-review/scripts/review-memory-feature.sh", "design"]
+  },
+  "output": {
+    "description": "Return JSON with accepted, findings, designDecisions, and requiredChanges."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "workflowInput": {
+    "accountUsername": "@yu_kawa_taco",
+    "lookbackMinutes": 60,
+    "maxPosts": 50,
+    "kvRoot": ".riela-data/x-follower-ai-business-digest/mock-kv",
+    "replyTarget": {
+      "sourceId": "telegram-gateway-personas",
+      "provider": "telegram",
+      "conversationId": "-1001234567890"
+    }
+  }
+}

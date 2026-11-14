@@ -1,0 +1,273 @@
+{
+  "taskId": "stale-definition",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/stale-definition-wall-deadline",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "ac6670fec201a22282fd567bb29a1ec2eacead2d",
+  "evidenceRoot": "tmp/stale-definition",
+  "designDocPaths": [
+    "design-docs/specs/design-workflow-definition-store.md",
+    "design-docs/specs/design-wall-clock-deadlines.md",
+    "design-docs/specs/design-step-deadline-and-retry-policy.md",
+    "design-docs/user-qa/qa-workflow-definition-store.md"
+  ],
+  "reviewContext": {
+    "issueReference": "No GitHub issue. Inline workflowInput.requestedBehavior (ART hourly-refresh outage, 2026-11-10); accepted at step5-impl-plan-review comm-000008 in opus-terra-design-and-implement-review-loop-session-1.",
+    "userProblem": "Service-mode runs (RielaApp / events serve) resolved workflows from the definition store head and never noticed later bundle-file edits (store seeded with defaults.nodeTimeoutMs=3300000, workflow.json edited to 21600000 never reached the store), and LocalProcess deadline timers used DispatchTime uptime (paused during sleep), so ART runs were killed at exactly 3300 s once the host stayed awake; hourly output stopped ~13 h.",
+    "requiredOutcomes": [
+      "Service-mode run with an untouched head (current == lastFileVersionId) and an edited, valid bundle file auto-imports the file as a new audited .import version (actor id service-auto-sync) and uses it.",
+      "Independently edited head: no overwrite; definitionStore.sourceDrift warning in stderr, session snapshot diagnostics and riela doctor, with remediation riela instance reload / riela workflow definition import <workflow> --force --reason.",
+      "Invalid or missing source file: stored head kept, definitionStore.sourceInvalid / sourceUnavailable warning emitted, run never silently changed or failed.",
+      "Existing stores without extra metadata handled by re-canonical digest comparison; seed/import/forceUpdate treated as file-derived; no schema migration.",
+      "LocalProcess, step supervisor (SystemWorkflowRetryClock), distributed worker, ACP deadline cancel and file-markdown conversion deadlines fire at the absolute wall-clock Date via an injectable WallClockDeadlineScheduling; docs state timeouts are wall-clock.",
+      "swift build, focused swift test filters and changed-file swiftlint --strict pass."
+    ],
+    "nonGoals": [
+      "No timeout value/default/precedence/clamping changes.",
+      "No change to riela instance reload, importDefinition(force:), seedIfAbsent, update/undo/redo/restore/prune or the store schema.",
+      "No new WorkflowDefinitionOperation / ActorKind values, GraphQL/SDL changes or new event types.",
+      "No change to lookupOnly callers (EventLiveServe, RuntimeEnvironmentPreparation, InstanceReloadSupport fingerprint) or pinned resume/rerun loadPinned.",
+      "scheduleKillIfRunning 1 s SIGTERM->SIGKILL grace, WorkflowRuntimeClock, SleepNodeExecution, polling loops, RielaLocalHTTPServer and AppleSpeechRecognition unchanged."
+    ],
+    "constraints": [
+      "Work only in worktree /Users/taco/gits/tacogips/riela-worktrees/stale-definition; never touch the main checkout or its .build.",
+      "Do not restart/kill/reconfigure the running RielaApp; do not modify ~/.riela/** or installed binaries; tests use temp stores under tmp/stale-definition/<planId>/.",
+      "Do not weaken definition-store conflict safety (staleHead / expectedCurrentVersionId head-aware commits).",
+      "Run swift build / swift test / swiftlint via arch -arm64 /bin/zsh -lc.",
+      "Each worker edits only its writePaths and its own impl-plans/progress/<planId>.md."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Drift check runs only in lookupOrSeed service resolution (DefinitionStoreWorkflowBundleResolver.lookup) via WorkflowDefinitionService.syncFromSourceIfUntouched; configured-launch route switches to .lookupOnly.",
+        "rationale": "One check per launch inside the session so diagnostics persist to the session snapshot; seed() does not check mode so first-use seeding is preserved (design-workflow-definition-store.md §4, §4.1)."
+      },
+      {
+        "decision": "File candidate resolved with an explicit FileSystemWorkflowBundleResolver (sourceFileResolver / passed fileResolver), never the resolver's inner or the service's own fileResolver.",
+        "rationale": "Configured launch hands EditorPreparedBundleResolver(stale stored bundle) as inner; using it would re-import the stale bundle (review finding D1)."
+      },
+      {
+        "decision": "Auto-sync writes one .import WorkflowDefinitionWrite with expectedCurrentVersionId = head.currentVersionId; on staleHead/alreadyRegistered/any write error re-read once and emit autoSyncConflict unless the re-read digest equals the file digest.",
+        "rationale": "Respects existing head-aware conflict semantics without retry loops; no new operation enum values (design §4.1 Concurrency)."
+      },
+      {
+        "decision": "Classification compares re-canonical document digests; nil baseline falls back to operation-based rule (seed/import/forceUpdate on untouched head => autoSync).",
+        "rationale": "Migration-safe for existing stores without extra metadata; last_file_version_id already NOT NULL since generation 10 (user-qa Q1 2026-11-11)."
+      },
+      {
+        "decision": "Single RielaCore primitive WallClockDeadlineScheduling / SystemWallClockDeadlineScheduler / dispatchWallTime(for:) / wallClockSleep(until:scheduler:) using DispatchWallTime at the absolute Date.",
+        "rationale": "DispatchTime uptime pauses during sleep; every timer enforcing a node/step Date deadline must fire at that wall Date (design-wall-clock-deadlines.md §2-§3)."
+      },
+      {
+        "decision": "riela doctor gains a read-only definitionSources report (pendingAutoSync/drift/sourceInvalid/sourceUnavailable => warning; errors => storeUnreadable/unknown).",
+        "rationale": "Operators see drift without waiting for a service run; doctor never writes or creates a store (design §8)."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Wall-clock adjustments (NTP/manual) move deadlines; a sleeping host can time out immediately on wake.",
+      "Auto-sync is default with no config flag (only untouched heads are synced).",
+      "Warnings emitted before a session exists go to stderr only; callee drift diagnostics attach to the callee bundle, not the parent session.",
+      "WorkflowDefinitionServiceResolutionTests expectations may change only where a valid post-seed edit is now auto-synced (design §11), each change logged."
+    ],
+    "supportedEdgeCases": [
+      "Untouched head + edited valid file => auto-sync; repeated run with unchanged file => inSync, no writes.",
+      "Edited head (updatePrompt, undo onto older version) + file edit => drift, no write.",
+      "Invalid workflow.json or changed workflowId => sourceInvalid; missing source directory => sourceUnavailable.",
+      "Last file op forceUpdate => still file-derived; concurrent head move during sync => autoSyncConflict; concurrent identical auto-sync => no diagnostic, one import audit.",
+      "fileDigest equal to current head digest on an edited head => inSync.",
+      "Callee workflows in service runs get their own check; one-time riela workflow run leaves zero definition_* rows.",
+      "Past deadlines fire immediately; cancellation of wallClockSleep resumes exactly once with CancellationError."
+    ],
+    "outOfScopeEdgeCases": [
+      "Making auto-sync configurable.",
+      "Surfacing callee drift in the parent session or pre-session warnings in persisted diagnostics.",
+      "Wall-clock conversion of polling loops, WorkflowRuntimeClock, SleepNodeExecution, HTTP server and speech recognition timers."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCLI/DefinitionStoreWorkflowBundleResolver.swift",
+      "Sources/RielaWorkflowRegistry/WorkflowDefinitionService.swift",
+      "Sources/RielaCore/WorkflowDefinitionStore.swift",
+      "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+      "Sources/RielaCLI/WebWorkflowLaunch.swift",
+      "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
+      "Sources/RielaCLI/WorkflowRunCommand.swift",
+      "Sources/RielaCLI/WorkflowRunCommand+LoopOperations.swift",
+      "Sources/RielaCLI/SessionCommands.swift",
+      "Sources/RielaCLI/DoctorCommand.swift",
+      "Sources/RielaAdapters/LocalProcess.swift",
+      "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter+FileMarkdownAddon.swift",
+      "Sources/RielaCore/WorkflowStepRetryPolicy.swift",
+      "Sources/RielaCore/DistributedWorkerNodeExecutor.swift"
+    ],
+    "residualRisks": [
+      "Shared .build contention across wave-2 RielaCLITests plans (sdwd-03, sdwd-04): log sibling breaks and re-run, never fix sibling files.",
+      "sdwd-03 test-expectation changes in WorkflowDefinitionServiceResolutionTests must be justified per design §11 and reviewed at the test-integrity gate."
+    ],
+    "codexAgentReferences": [],
+    "reconcileVerification": [
+      "arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/reconcile/build.log 2>&1; echo $? > tmp/stale-definition/reconcile/build.exit'",
+      "arch -arm64 /bin/zsh -lc 'swift test --filter \"WallClockDeadlineTests|StepRetry|StepDeadline|LocalProcess|AgentGatewayNodeAdapter|FileMarkdown\" > tmp/stale-definition/reconcile/test-wallclock.log 2>&1; echo $? > tmp/stale-definition/reconcile/test-wallclock.exit'",
+      "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinitionSourceDrift|WorkflowDefinitionServiceResolutionTests|WorkflowDefinitionServiceTests|WorkflowDefinitionCommandTests|InstanceReloadSupportTests|EventLiveServe|Doctor\" > tmp/stale-definition/reconcile/test-definition.log 2>&1; echo $? > tmp/stale-definition/reconcile/test-definition.exit'",
+      "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet <all changed Swift files> > tmp/stale-definition/reconcile/lint.log 2>&1; echo $? > tmp/stale-definition/reconcile/lint.exit'"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "sdwd-01-wall-clock-core",
+      "planPath": "impl-plans/active/sdwd-01-wall-clock-core.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WallClockDeadline.swift",
+        "Sources/RielaCore/WorkflowStepRetryPolicy.swift",
+        "Sources/RielaCore/DistributedWorkerNodeExecutor.swift",
+        "Tests/RielaCoreTests/WallClockDeadlineTests.swift",
+        "impl-plans/progress/sdwd-01-wall-clock-core.md",
+        "tmp/stale-definition/sdwd-01-wall-clock-core"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/stale-definition/sdwd-01-wall-clock-core"
+      ],
+      "acceptanceCriteria": [
+        "Sources/RielaCore/WallClockDeadline.swift exists with exactly WallClockDeadlineScheduling, SystemWallClockDeadlineScheduler, dispatchWallTime(for:) and wallClockSleep(until:scheduler:) as specified.",
+        "SystemWorkflowRetryClock.sleep(until:) and the DistributedWorkerNodeExecutor timeout race use wallClockSleep(until:) with an absolute Date; no deadline-enforcing Task.sleep remains in those files.",
+        "All WallClockDeadlineTests cases present and pass; existing StepRetry*/StepDeadline* suites pass.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/stale-definition/sdwd-01-wall-clock-core/."
+      ],
+      "verification": [
+        "mkdir -p tmp/stale-definition/sdwd-01-wall-clock-core && arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/sdwd-01-wall-clock-core/build.log 2>&1; echo $? > tmp/stale-definition/sdwd-01-wall-clock-core/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WallClockDeadlineTests|StepRetry|StepDeadline\" > tmp/stale-definition/sdwd-01-wall-clock-core/test.log 2>&1; echo $? > tmp/stale-definition/sdwd-01-wall-clock-core/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaCore/WallClockDeadline.swift Sources/RielaCore/WorkflowStepRetryPolicy.swift Sources/RielaCore/DistributedWorkerNodeExecutor.swift Tests/RielaCoreTests/WallClockDeadlineTests.swift > tmp/stale-definition/sdwd-01-wall-clock-core/lint.log 2>&1; echo $? > tmp/stale-definition/sdwd-01-wall-clock-core/lint.exit'"
+      ]
+    },
+    {
+      "planId": "sdwd-02-source-drift-service",
+      "planPath": "impl-plans/active/sdwd-02-source-drift-service.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaWorkflowRegistry/WorkflowDefinitionSourceDrift.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowDefinitionService.swift",
+        "Tests/RielaCLITests/WorkflowDefinitionSourceDriftTests.swift",
+        "impl-plans/progress/sdwd-02-source-drift-service.md",
+        "tmp/stale-definition/sdwd-02-source-drift-service"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/stale-definition/sdwd-02-source-drift-service"
+      ],
+      "acceptanceCriteria": [
+        "WorkflowDefinitionSourceDrift.swift and the additive WorkflowDefinitionService methods workflowNames(), inspectSourceDrift(...) and syncFromSourceIfUntouched(...) match the contract signatures; existing method bodies unchanged.",
+        "Classification order, diagnostic paths (definitionStore.autoSynced/sourceDrift/sourceInvalid/sourceUnavailable/autoSyncConflict) and remediation substrings exactly as in the plan.",
+        "All WorkflowDefinitionSourceDriftTests cases pass; WorkflowDefinitionServiceTests, WorkflowDefinitionCommandTests and InstanceReloadSupportTests pass.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/stale-definition/sdwd-02-source-drift-service/."
+      ],
+      "verification": [
+        "mkdir -p tmp/stale-definition/sdwd-02-source-drift-service && arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/sdwd-02-source-drift-service/build.log 2>&1; echo $? > tmp/stale-definition/sdwd-02-source-drift-service/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinitionSourceDriftTests|WorkflowDefinitionServiceTests|WorkflowDefinitionCommandTests|InstanceReloadSupportTests\" > tmp/stale-definition/sdwd-02-source-drift-service/test.log 2>&1; echo $? > tmp/stale-definition/sdwd-02-source-drift-service/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaWorkflowRegistry/WorkflowDefinitionSourceDrift.swift Sources/RielaWorkflowRegistry/WorkflowDefinitionService.swift Tests/RielaCLITests/WorkflowDefinitionSourceDriftTests.swift > tmp/stale-definition/sdwd-02-source-drift-service/lint.log 2>&1; echo $? > tmp/stale-definition/sdwd-02-source-drift-service/lint.exit'"
+      ]
+    },
+    {
+      "planId": "sdwd-03-service-resolution-integration",
+      "planPath": "impl-plans/active/sdwd-03-service-resolution-integration.md",
+      "dependsOn": [
+        "sdwd-02-source-drift-service"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/DefinitionStoreWorkflowBundleResolver.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+DefinitionStoreDiagnostics.swift",
+        "docs/workflow-definition-store.md",
+        "Tests/RielaCLITests/WorkflowDefinitionSourceDriftResolutionTests.swift",
+        "Tests/RielaCLITests/WorkflowDefinitionServiceResolutionTests.swift",
+        "impl-plans/progress/sdwd-03-service-resolution-integration.md",
+        "tmp/stale-definition/sdwd-03-service-resolution-integration"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Tests/RielaCLITests/WorkflowDefinitionServiceResolutionTests.swift",
+          "intendedEdit": "Owned only by sdwd-03. Adjust only expectations that fail solely because a valid post-seed file edit is now auto-synced (design §11); log test name, old/new assertion and design reference in the progress log; never delete or weaken other assertions."
+        }
+      ],
+      "artifactRoots": [
+        "tmp/stale-definition/sdwd-03-service-resolution-integration"
+      ],
+      "acceptanceCriteria": [
+        "lookupOrSeed lookup runs syncFromSourceIfUntouched with an explicit FileSystemWorkflowBundleResolver sourceFileResolver (never inner) and appends outcome diagnostics; lookupOnly path unchanged.",
+        "grep -n \"lookupOrSeed\" Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift returns nothing; 409 source_changed / 422 guards and EditorPreparedBundleResolver handoff unchanged.",
+        "definitionStore.* warnings printed on stderr (success and failure) and persisted to session snapshot diagnostics after terminal persistence.",
+        "All WorkflowDefinitionSourceDriftResolutionTests cases pass; WorkflowDefinitionServiceResolutionTests passes with any expectation changes logged; docs/workflow-definition-store.md has the Source drift and auto-sync section.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/stale-definition/sdwd-03-service-resolution-integration/."
+      ],
+      "verification": [
+        "mkdir -p tmp/stale-definition/sdwd-03-service-resolution-integration && arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/sdwd-03-service-resolution-integration/build.log 2>&1; echo $? > tmp/stale-definition/sdwd-03-service-resolution-integration/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinitionSourceDriftResolutionTests|WorkflowDefinitionServiceResolutionTests|WorkflowDefinitionSourceDriftTests|InstanceReloadSupportTests|EventLiveServe\" > tmp/stale-definition/sdwd-03-service-resolution-integration/test.log 2>&1; echo $? > tmp/stale-definition/sdwd-03-service-resolution-integration/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaCLI/DefinitionStoreWorkflowBundleResolver.swift Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCLI/WorkflowRunCommand+DefinitionStoreDiagnostics.swift Tests/RielaCLITests/WorkflowDefinitionSourceDriftResolutionTests.swift Tests/RielaCLITests/WorkflowDefinitionServiceResolutionTests.swift > tmp/stale-definition/sdwd-03-service-resolution-integration/lint.log 2>&1; echo $? > tmp/stale-definition/sdwd-03-service-resolution-integration/lint.exit'"
+      ]
+    },
+    {
+      "planId": "sdwd-04-doctor-drift-report",
+      "planPath": "impl-plans/active/sdwd-04-doctor-drift-report.md",
+      "dependsOn": [
+        "sdwd-02-source-drift-service"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/DoctorCommand.swift",
+        "Tests/RielaCLITests/DoctorDefinitionSourceTests.swift",
+        "impl-plans/progress/sdwd-04-doctor-drift-report.md",
+        "tmp/stale-definition/sdwd-04-doctor-drift-report"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/stale-definition/sdwd-04-doctor-drift-report"
+      ],
+      "acceptanceCriteria": [
+        "DoctorDefinitionSourceReport, DoctorCommandResult.definitionSources and DoctorSummary.definitionSourceWarnings exist; doctor is read-only (never seeds/imports/auto-syncs or creates a store DB).",
+        "Result/status mapping inSync=ok, pendingAutoSync/drift/sourceInvalid/sourceUnavailable=warning, errors=storeUnreadable/unknown; summary becomes warning when definitionSourceWarnings > 0; text output prints a Definition sources: block.",
+        "All DoctorDefinitionSourceTests cases pass; existing DoctorCommandTests and DoctorBackendCapabilityTests pass unchanged.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/stale-definition/sdwd-04-doctor-drift-report/."
+      ],
+      "verification": [
+        "mkdir -p tmp/stale-definition/sdwd-04-doctor-drift-report && arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/sdwd-04-doctor-drift-report/build.log 2>&1; echo $? > tmp/stale-definition/sdwd-04-doctor-drift-report/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DoctorDefinitionSourceTests|DoctorCommandTests|DoctorBackendCapabilityTests\" > tmp/stale-definition/sdwd-04-doctor-drift-report/test.log 2>&1; echo $? > tmp/stale-definition/sdwd-04-doctor-drift-report/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaCLI/DoctorCommand.swift Tests/RielaCLITests/DoctorDefinitionSourceTests.swift > tmp/stale-definition/sdwd-04-doctor-drift-report/lint.log 2>&1; echo $? > tmp/stale-definition/sdwd-04-doctor-drift-report/lint.exit'"
+      ]
+    },
+    {
+      "planId": "sdwd-05-wall-clock-adapters",
+      "planPath": "impl-plans/active/sdwd-05-wall-clock-adapters.md",
+      "dependsOn": [
+        "sdwd-01-wall-clock-core"
+      ],
+      "writePaths": [
+        "Sources/RielaAdapters/LocalProcess.swift",
+        "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+FileMarkdownAddon.swift",
+        "docs/workflows/step-deadline-and-retry.md",
+        "Tests/RielaAdaptersTests/LocalProcessWallDeadlineTests.swift",
+        "impl-plans/progress/sdwd-05-wall-clock-adapters.md",
+        "tmp/stale-definition/sdwd-05-wall-clock-adapters"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [
+        "tmp/stale-definition/sdwd-05-wall-clock-adapters"
+      ],
+      "acceptanceCriteria": [
+        "FoundationLocalProcessRunner schedules the process deadline via deadlineScheduler.schedule(at: deadline, ...) with an absolute Date; grep -n \"asyncAfter(deadline: .now() + delay\" Sources/RielaAdapters/LocalProcess.swift returns exactly one match inside scheduleKillIfRunning.",
+        "No Task.sleep remains in the AgentGatewayNodeAdapter ACP deadline cancel block or the FileMarkdownAddon timer block; error messages verbatim.",
+        "docs/workflows/step-deadline-and-retry.md has a Timeout clock section stating wall-clock semantics with unchanged values/defaults.",
+        "All LocalProcessWallDeadlineTests pass; existing LocalProcess*, AgentGatewayNodeAdapter*, FileMarkdown* suites pass.",
+        "build.exit, test.exit and lint.exit equal 0 under tmp/stale-definition/sdwd-05-wall-clock-adapters/."
+      ],
+      "verification": [
+        "mkdir -p tmp/stale-definition/sdwd-05-wall-clock-adapters && arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/sdwd-05-wall-clock-adapters/build.log 2>&1; echo $? > tmp/stale-definition/sdwd-05-wall-clock-adapters/build.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"LocalProcess|AgentGatewayNodeAdapter|FileMarkdown|WallClockDeadline\" > tmp/stale-definition/sdwd-05-wall-clock-adapters/test.log 2>&1; echo $? > tmp/stale-definition/sdwd-05-wall-clock-adapters/test.exit'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaAdapters/LocalProcess.swift Sources/RielaAdapters/AgentGatewayNodeAdapter.swift Sources/RielaCLI/ProductionNodeAdapter+FileMarkdownAddon.swift Tests/RielaAdaptersTests/LocalProcessWallDeadlineTests.swift > tmp/stale-definition/sdwd-05-wall-clock-adapters/lint.log 2>&1; echo $? > tmp/stale-definition/sdwd-05-wall-clock-adapters/lint.exit'"
+      ]
+    }
+  ]
+}

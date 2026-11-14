@@ -1,0 +1,71 @@
+{
+  "summarize-memories": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "memoryEntries": [
+        {
+          "content": "# project-atlas kickoff decisions\n\n- The team committed to the project-atlas kickoff scope in the design review.\n- Consolidation runs nightly and writes one long-term memory per topic.\n- Short-term chat records stay in riela; the durable summary lives in kaiba.",
+          "topicTags": [
+            "project-atlas"
+          ],
+          "sourceMemoryRecordIds": [
+            1
+          ],
+          "periodStart": "2026-08-01T00:00:00Z",
+          "periodEnd": "2026-08-08T00:00:00Z"
+        }
+      ]
+    }
+  },
+  "consolidate-long-term": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-consolidate",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "entriesWritten": 1,
+      "noteIds": [
+        "note-long-term-memory-fixture"
+      ],
+      "notebookId": "notebook-long-term-memory-fixture",
+      "idempotentReplay": false,
+      "associations": [],
+      "sourceMemoryRecordIds": [
+        1
+      ]
+    }
+  },
+  "recall-long-term": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-recall",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "entriesWritten": 1,
+      "consolidatedNoteIds": [
+        "note-long-term-memory-fixture"
+      ],
+      "notebookId": "notebook-long-term-memory-fixture",
+      "idempotentReplay": false,
+      "associations": [],
+      "resultCount": 1,
+      "noteIds": [
+        "note-long-term-memory-fixture"
+      ],
+      "results": [
+        {
+          "noteId": "note-long-term-memory-fixture",
+          "snippet": "project-atlas kickoff decisions",
+          "isAssociation": false
+        }
+      ],
+      "recallText": "#note-long-term-memory-fixture [direct] project-atlas kickoff decisions"
+    }
+  }
+}

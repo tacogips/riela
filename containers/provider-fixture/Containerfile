@@ -1,0 +1,11 @@
+ARG WORKER_IMAGE=riela-builtin-addons:local
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS fixture-build
+COPY Tests/Fixtures/BuiltinProviderFixture/main.swift /fixture/main.swift
+RUN swiftc -O /fixture/main.swift -o /fixture/provider-fixture
+
+# Test-only derivative: the production image has no fake provider or wrapper.
+FROM ${WORKER_IMAGE}
+COPY --from=fixture-build /fixture/provider-fixture /opt/riela/provider-fixture
+RUN mv /opt/riela/riela-addon-worker /opt/riela/riela-addon-worker-real
+COPY containers/provider-fixture/worker.sh /opt/riela/riela-addon-worker
+COPY --chmod=755 containers/provider-fixture/codex.sh /usr/local/bin/codex

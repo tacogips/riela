@@ -1,0 +1,159 @@
+{
+  "workflowId": "note-config-agent",
+  "description": "Plan and apply auditable Riela Note configuration changes for tag classes, auto-actions, and ingestion workflow scaffolds.",
+  "defaults": {
+    "maxLoopIterations": 6,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Propose GraphQL mutation fields that later steps apply through the note GraphQL document add-on."
+  },
+  "entryStepId": "plan-config-change",
+  "nodes": [
+    {
+      "id": "plan-config-change",
+      "nodeFile": "nodes/node-plan-config-change.json"
+    },
+    {
+      "id": "define-tag-class",
+      "addon": {
+        "name": "riela/note-graphql-document",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "operationName": "DefineNoteTagClass",
+          "query": "mutation DefineNoteTagClass($input: DefineNoteTagClassInput!) { defineNoteTagClass(input: $input) { result { accepted status diagnostics } tagClass { classId label description } } }",
+          "variables": {
+            "input": {
+              "classId": "{{tagClass.classId}}",
+              "label": "{{tagClass.label}}",
+              "description": "{{tagClass.description}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "define-tag",
+      "addon": {
+        "name": "riela/note-graphql-document",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "operationName": "DefineNoteTag",
+          "query": "mutation DefineNoteTag($input: DefineNoteTagInput!) { defineNoteTag(input: $input) { result { accepted status diagnostics } tag { name classId } } }",
+          "variables": {
+            "input": {
+              "name": "{{tag.name}}",
+              "classId": "{{tag.classId}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "configure-auto-action",
+      "addon": {
+        "name": "riela/note-graphql-document",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "operationName": "ConfigureNoteAutoAction",
+          "query": "mutation ConfigureNoteAutoAction($input: ConfigureNoteAutoActionInput!) { configureNoteAutoAction(input: $input) { result { accepted status diagnostics } autoAction { actionId trigger workflowId enabled position } } }",
+          "variables": {
+            "input": {
+              "actionId": "{{autoAction.actionId}}",
+              "trigger": "{{autoAction.trigger}}",
+              "workflowId": "{{autoAction.workflowId}}",
+              "filterJSON": "{{autoAction.filterJSON}}",
+              "enabled": true,
+              "position": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "scaffold-ingestion-workflow",
+      "addon": {
+        "name": "riela/note-graphql-document",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "operationName": "ScaffoldNoteIngestionWorkflow",
+          "query": "mutation ScaffoldNoteIngestionWorkflow($input: ScaffoldNoteIngestionWorkflowInput!) { scaffoldNoteIngestionWorkflow(input: $input) { result { accepted status diagnostics } workflowScaffold { workflowId workflowRoot workflowPath } } }",
+          "variables": {
+            "input": {
+              "workflowRoot": "{{workflowInput.workflowRoot}}",
+              "workflowId": "{{ingestionWorkflow.workflowId}}",
+              "notebookKindTag": "{{ingestionWorkflow.notebookKindTag}}",
+              "assignedBy": "note-config-agent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "plan-config-change",
+      "nodeId": "plan-config-change",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "define-tag-class"
+        }
+      ]
+    },
+    {
+      "id": "define-tag-class",
+      "nodeId": "define-tag-class",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "define-tag"
+        }
+      ]
+    },
+    {
+      "id": "define-tag",
+      "nodeId": "define-tag",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "configure-auto-action"
+        }
+      ]
+    },
+    {
+      "id": "configure-auto-action",
+      "nodeId": "configure-auto-action",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "scaffold-ingestion-workflow"
+        }
+      ]
+    },
+    {
+      "id": "scaffold-ingestion-workflow",
+      "nodeId": "scaffold-ingestion-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+	"architect": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": {
+			"always": true
+		},
+		"payload": {
+			"persona": "architect",
+			"message": "I propose durable at-least-once delivery with receiver-side idempotency.",
+			"details": {
+				"proposal": "Persist an idempotency key before delivery, retry with a bounded backoff, and retain keys beyond the retry horizon.",
+				"assumptions": [
+					"The receiver can persist idempotency keys atomically with its side effect."
+				],
+				"successCriteria": [
+					"Replaying the same event produces exactly one externally visible side effect."
+				]
+			},
+			"priorTurns": []
+		}
+	},
+	"skeptic": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": {
+			"always": true
+		},
+		"payload": {
+			"persona": "skeptic",
+			"message": "The proposal needs explicit crash boundaries, retention limits, and poison-event handling.",
+			"details": {
+				"verdict": "revise",
+				"failureModes": [
+					"A crash between applying the side effect and recording the key can duplicate work."
+				],
+				"requiredChanges": [
+					"Define the atomic write boundary and move exhausted retries to an observable dead-letter queue."
+				]
+			},
+			"priorTurns": [
+				{
+					"persona": "architect",
+					"message": "I propose durable at-least-once delivery with receiver-side idempotency.",
+					"details": {
+						"proposal": "Persist an idempotency key before delivery, retry with a bounded backoff, and retain keys beyond the retry horizon.",
+						"assumptions": [
+							"The receiver can persist idempotency keys atomically with its side effect."
+						],
+						"successCriteria": [
+							"Replaying the same event produces exactly one externally visible side effect."
+						]
+					}
+				}
+			]
+		}
+	},
+	"integrator": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": {
+			"always": true
+		},
+		"payload": {
+			"persona": "integrator",
+			"message": "Adopt Aster's policy with Flint's atomicity and recovery requirements made mandatory.",
+			"details": {
+				"decision": "Use at-least-once delivery with an atomic receiver-side idempotency record, bounded retries, and a visible dead-letter queue.",
+				"actions": [
+					"Document the atomic write boundary, retry horizon, key retention, and dead-letter ownership."
+				]
+			},
+			"priorTurns": [
+				{
+					"persona": "architect",
+					"message": "I propose durable at-least-once delivery with receiver-side idempotency.",
+					"details": {
+						"proposal": "Persist an idempotency key before delivery, retry with a bounded backoff, and retain keys beyond the retry horizon.",
+						"assumptions": [
+							"The receiver can persist idempotency keys atomically with its side effect."
+						],
+						"successCriteria": [
+							"Replaying the same event produces exactly one externally visible side effect."
+						]
+					}
+				},
+				{
+					"persona": "skeptic",
+					"message": "The proposal needs explicit crash boundaries, retention limits, and poison-event handling.",
+					"details": {
+						"verdict": "revise",
+						"failureModes": [
+							"A crash between applying the side effect and recording the key can duplicate work."
+						],
+						"requiredChanges": [
+							"Define the atomic write boundary and move exhausted retries to an observable dead-letter queue."
+						]
+					}
+				}
+			],
+			"solved": true,
+			"unresolved": [],
+			"acceptanceCriteria": [
+				"A duplicate event produces one externally visible side effect.",
+				"A crash before acknowledgement causes a retry.",
+				"The idempotency record and side effect commit atomically.",
+				"Idempotency keys outlive the maximum retry horizon.",
+				"Exhausted retries enter an operator-visible dead-letter queue."
+			]
+		}
+	}
+}

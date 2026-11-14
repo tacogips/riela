@@ -1,0 +1,5 @@
+# instance-cancel-10 implementation progress
+
+Implemented both desktop cancel routes and identity-scoped App/child ports, including stored session lookup. The handler follows the reload guard and serialization pattern; reasons are neither logged nor echoed. App telemetry is private to EntryPoint.swift, so the optional telemetry event is omitted as permitted by the plan. Existing reload and runs entries remain intact. The App handler is compiled; the coordinator and route table provide the planned test seams.
+
+IR-10-RELOAD-CATALOG-ROW: added the desktop reload web catalog row without changing existing rows or route handlers. The prior baseline-candidate claim is superseded. On the current shared tree, arm64 build-r5.exit=0, test-r5.exit=0 (13 tests, zero failures, including reload, cancel, CLI parity and both specified web parity checks), and strict selected-file lint-r5.exit=0. Complete logs and pre-edit hashes are under tmp/instance-cancel/instance-cancel-10-app-route/. Full SurfaceParity remains a serial reconcile gate after both plans land; formal reviews remain downstream.

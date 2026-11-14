@@ -1,0 +1,30 @@
+{
+  "workflowId": "managed-cache-maintenance",
+  "description": "Bounded maintenance of explicitly listed retrieval caches with the native riela/cache-maintain add-on.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "maintain",
+  "nodes": [
+    {
+      "id": "maintain",
+      "addon": {
+        "name": "riela/cache-maintain",
+        "version": "1",
+        "config": {
+          "cacheRoot": "{{cacheRoot}}",
+          "cacheIds": "{{cacheIds}}",
+          "maxDurationSeconds": 120
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "maintain",
+      "nodeId": "maintain",
+      "role": "worker"
+    }
+  ]
+}

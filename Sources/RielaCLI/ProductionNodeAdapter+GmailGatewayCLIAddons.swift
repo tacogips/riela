@@ -1,0 +1,136 @@
+import Foundation
+import GatewaySDKKit
+#if canImport(GmailGatewayCore)
+import GmailGatewayCore
+#endif
+import RielaAddonSupport
+import RielaCore
+
+/// Built-in add-ons that run the sibling gmail-gateway package's async SDK
+/// inside this process. The tier is a mode the gateway enforces (reader is
+/// read-only, draft turns sendMessage/replyMessage/forwardMessage into provider
+/// drafts, sender performs direct sends), and each add-on pins one mode, so the
+/// workflow cannot escalate through inputs or payload data.
+///
+/// These are distinct from `riela/gmail-gateway-read` / `riela/gmail-gateway`,
+/// which are container-backed add-ons resolved outside this process.
+enum BuiltinGmailGatewayCLIAddon: String {
+  case reader = "riela/gmail-gateway-reader"
+  case draft = "riela/gmail-gateway-draft"
+  case sender = "riela/gmail-gateway-sender"
+
+  #if canImport(GmailGatewayCore)
+  var mode: GmailGatewayCLIMode {
+    switch self {
+    case .reader:
+      .reader
+    case .draft:
+      .draftGateway
+    case .sender:
+      .directSender
+    }
+  }
+  #endif
+
+  var tier: String {
+    switch self {
+    case .reader:
+      "gmail-gateway-reader"
+    case .draft:
+      "gmail-gateway-draft"
+    case .sender:
+      "gmail-gateway-sender"
+    }
+  }
+
+  /// gmail-gateway derives credential variable names from config credential
+  /// ids (`GMAIL_GATEWAY_CREDENTIAL_<SUFFIX>_...`), so the allowlist is a
+  /// shape check instead of a fixed set: the config path variable, the
+  /// credential-directory variable, plus the four credential-material forms
+  /// for any credential suffix.
+  static func isAllowedTargetEnvironmentName(_ name: String) -> Bool {
+    if name == "GMAIL_GATEWAY_CONFIG" || name == "GMAIL_GATEWAY_CREDENTIAL_DIR"
+      || name == "GMAIL_GATEWAY_WRITE_RETRY_INITIAL_WAIT_SECONDS" || name == "GMAIL_GATEWAY_WRITE_RETRY_MAX_RETRIES" {
+      return true
+    }
+    let prefix = "GMAIL_GATEWAY_CREDENTIAL_"
+    guard name.hasPrefix(prefix) else {
+      return false
+    }
+    let remainder = name.dropFirst(prefix.count)
+    let credentialSuffixes = [
+      "_OAUTH_CLIENT_SECRET_PATH",
+      "_OAUTH_CLIENT_SECRET_JSON",
+      "_TOKEN_STORE_PATH",
+      "_TOKEN_STORE_JSON"
+    ]
+    guard let suffix = credentialSuffixes.first(where: { remainder.hasSuffix($0) }) else {
+      return false
+    }
+    let credentialPart = remainder.dropLast(suffix.count)
+    return !credentialPart.isEmpty && credentialPart.allSatisfy { character in
+      character == "_" || character.isNumber || (character.isLetter && character.isUppercase)
+    }
+  }
+
+  private var operationCatalog: (() throws -> GatewaySchemaCatalog)? {
+    #if canImport(GmailGatewayCore)
+    return { GmailGatewaySDK(mode: mode).catalog }
+    #else
+    return nil
+    #endif
+  }
+
+  var descriptor: LocalGatewayGraphQLDescriptor {
+    LocalGatewayGraphQLDescriptor(
+      providerName: "gmail-gateway",
+      payloadNamespaceKey: "gmailGateway",
+      tier: tier,
+      // Preserve the legacy CLI document contract. Operation mode uses
+      // typed variables through the async SDK.
+      acceptsVariables: false,
+      isAllowedEnvironmentTarget: { Self.isAllowedTargetEnvironmentName($0) },
+      catalog: operationCatalog,
+      run: runner
+    )
+  }
+
+  #if canImport(GmailGatewayCore)
+  private var runner: LocalGatewayGraphQLRunner {
+    let mode = mode
+    return { tier, document, variablesJSON, environment in
+      let variables = try variablesJSON.map { try JSONDecoder().decode([String: GatewayJSONValue].self, from: Data($0.utf8)) } ?? [:]
+      let result = await GmailGatewaySDK(mode: mode).execute(
+        document: document, variables: variables, environment: environment
+      )
+      guard !result.rawOutput.isEmpty else {
+        throw AdapterExecutionError(
+          .providerError,
+          "gmail-gateway \(tier) returned an empty SDK envelope (exit code \(result.exitCode))"
+        )
+      }
+      return result.rawOutput
+    }
+  }
+  #else
+  private var runner: LocalGatewayGraphQLRunner {
+    { tier, _, _, _ in
+      throw AdapterExecutionError(.policyBlocked, "\(tier) is unavailable in this build")
+    }
+  }
+  #endif
+}
+
+extension BuiltinWorkflowAddonResolver {
+  func executeGmailGatewayCLIAddon(
+    _ input: WorkflowAddonExecutionInput,
+    operation: BuiltinGmailGatewayCLIAddon,
+    context: AdapterExecutionContext
+  ) async throws -> AdapterExecutionOutput {
+    try await LocalGatewayGraphQLEngine(
+      environment: environment,
+      descriptor: operation.descriptor,
+      runnerOverride: localGatewayGraphQLRunner
+    ).execute(input, context: context)
+  }
+}

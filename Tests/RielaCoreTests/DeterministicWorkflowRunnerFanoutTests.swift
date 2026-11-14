@@ -1,0 +1,1080 @@
+import XCTest
+@testable import RielaCore
+
+final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
+  func testJoinContextPreservesLiteralDataOnceForEmptyAndPopulatedFanouts() async throws {
+    let value: JSONValue = .object(["checkpoint": .integer(8), "literal": .string("{{secret}}")])
+    for empty in [false, true] {
+      let tracker = FanoutBranchTracker(delaysByIndex: [:])
+      var workflow = fanoutWorkflow(concurrency: 2)
+      workflow.steps[0].transitions?[0].fanout?.contextFrom = "/joinContext"
+      let encoded = try JSONEncoder().encode(workflow)
+      workflow = try JSONDecoder().decode(WorkflowDefinition.self, from: encoded)
+      let runner = DeterministicWorkflowRunner(adapter: ContextFanoutAdapter(tracker: tracker, contextValue: value, empty: empty))
+      _ = try await runner.run(.init(workflow: workflow, nodePayloads: fanoutPayloads(), maxConcurrency: 2))
+      let captured = await tracker.joinRuntimeFanout()
+      let join = try XCTUnwrap(captured)
+      XCTAssertEqual(join["context"], value)
+      guard case let .array(branches)? = join["branches"] else { return XCTFail("missing branches") }
+      XCTAssertEqual(branches.count, empty ? 0 : 3)
+      for branch in branches {
+        guard case let .object(record) = branch else { return XCTFail("missing branch") }
+        XCTAssertNil(record["context"])
+      }
+    }
+  }
+
+  func testMissingOrOversizedJoinContextFailsBeforeDispatchingAnyBranch() async throws {
+    for pointer in ["/missing", "/joinContext"] {
+      let tracker = FanoutBranchTracker(delaysByIndex: [:])
+      var workflow = fanoutWorkflow(concurrency: 2)
+      workflow.steps[0].transitions?[0].fanout?.contextFrom = pointer
+      let runner = DeterministicWorkflowRunner(adapter: ContextFanoutAdapter(tracker: tracker,
+        contextValue: .string(String(repeating: "x", count: 8_000_001)), empty: false))
+      await XCTAssertThrowsErrorAsync(try await runner.run(.init(workflow: workflow, nodePayloads: fanoutPayloads())))
+      let active = await tracker.maxActiveCount()
+      XCTAssertEqual(active, 0)
+      let join = await tracker.joinRuntimeFanout()
+      XCTAssertNil(join)
+    }
+  }
+
+  func testEmptyFanoutReopenRecoversOneContextJoinWithoutCreatingChildren() async throws {
+    for completedItems in [false, true] {
+      for checkpoint in [NestedRecoveryCheckpoint.beforeParentPublication, .parentPublicationPersisted] {
+        let repository = URL(fileURLWithPath: #filePath)
+          .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = repository.appendingPathComponent("tmp/fanout-empty-recovery/" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tracker = FanoutBranchTracker(delaysByIndex: [:])
+        let context: JSONValue = .object(["checkpoint": .integer(9), "literal": .string("{{opaque}}")])
+        let adapter = ContextFanoutAdapter(tracker: tracker, contextValue: context, empty: !completedItems,
+          completedItems: completedItems)
+        let store = InMemoryWorkflowRuntimeStore()
+        var workflow = fanoutWorkflow(concurrency: 1)
+        workflow.steps[0].transitions?[0].fanout?.contextFrom = "/joinContext"
+        if completedItems {
+          workflow.steps[0].transitions?[0].fanout?.dependencies = WorkflowFanoutDependencies(
+            branchIdFrom: "/id", dependsOnFrom: "/dependsOn", completedBranchIdsFrom: "/completed")
+        }
+        // A same-join transition with a false predicate must never be reconstructed.
+        var untaken = try XCTUnwrap(workflow.steps[0].transitions?.first)
+        untaken.label = "untaken"
+        untaken.fanout?.groupId = "wrong-group"
+        workflow.steps[0].transitions?.insert(untaken, at: 0)
+        let interrupted = DeterministicWorkflowRunner(store: store, adapter: adapter,
+          nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path),
+          nestedInvocationRecoveryCheckpointer: FanoutThrowingCheckpoint(target: checkpoint))
+        await XCTAssertThrowsErrorAsync(try await interrupted.run(.init(workflow: workflow, nodePayloads: conditionalFanoutPayloads())))
+        let latest = await store.latestSession(workflowId: workflow.workflowId)
+        let parent = try XCTUnwrap(latest)
+        XCTAssertEqual(parent.status, .running)
+        let resumed = try await DeterministicWorkflowRunner(store: store, adapter: adapter,
+          nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)).run(
+            .init(workflow: workflow, nodePayloads: conditionalFanoutPayloads(), resumeSessionId: parent.sessionId))
+        XCTAssertEqual(resumed.status, .completed)
+        XCTAssertEqual(resumed.session.executions.filter { $0.stepId == "source" }.count, 1)
+        let branchEffects = await tracker.branchIdentities()
+        XCTAssertTrue(branchEffects.isEmpty)
+        let messages = try SQLiteWorkflowMessageLog(databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path))
+          .listMessages(workflowExecutionId: parent.sessionId, toStepId: "join")
+        XCTAssertEqual(messages.count, 1)
+        guard case let .object(join)? = messages.first?.payload["fanoutJoin"] else { return XCTFail("missing context join") }
+        XCTAssertEqual(join["context"], context)
+        XCTAssertEqual(join["groupId"], .string("group"))
+        XCTAssertEqual(join["completedBranchIds"], .array(completedItems ? [.string("done")] : []))
+      }
+    }
+  }
+
+  func testRecoveryDoesNotPublishUntakenEmptyFanoutOnOrdinaryJoinRoute() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/fanout-untaken-recovery/" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = InMemoryWorkflowRuntimeStore()
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let tracker = FanoutBranchTracker(delaysByIndex: [:])
+    let runner = DeterministicWorkflowRunner(store: store,
+      adapter: ContextFanoutAdapter(tracker: tracker, contextValue: .null, empty: true),
+      nestedInvocationPersistenceStore: persistence)
+    var workflow = fanoutWorkflow(concurrency: 1)
+    var untaken = try XCTUnwrap(workflow.steps[0].transitions?.first)
+    untaken.label = "untaken"
+    workflow.steps[0].transitions = [untaken, WorkflowStepTransition(toStepId: "join")]
+    let result = try await runner.run(.init(workflow: workflow, nodePayloads: conditionalFanoutPayloads()))
+    var session = result.session
+    session.currentStepId = "join"
+    try await runner.recoverNestedInvocationsBeforeResuming(session: session,
+      request: .init(workflow: workflow, nodePayloads: conditionalFanoutPayloads(), resumeSessionId: session.sessionId))
+    let messages = try await store.listMessages(for: session.sessionId, toStepId: "join")
+    XCTAssertFalse(messages.contains { $0.payload["fanoutJoin"] != nil })
+  }
+
+  func testFanoutBranchesEmitInspectableChildSessionProgress() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [:])
+    let store = InMemoryWorkflowRuntimeStore()
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: FanoutTestAdapter(tracker: tracker)
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2),
+      nodePayloads: fanoutPayloads(),
+      eventHandler: { event in await recorder.append(event) }
+    ))
+
+    let events = await recorder.events()
+    let startedSessionIds = events.compactMap { event -> String? in
+      guard event.type == .sessionStarted else { return nil }
+      return event.sessionId
+    }
+    let completedSessionIds = events.compactMap { event -> String? in
+      guard event.type == .sessionCompleted else { return nil }
+      return event.sessionId
+    }
+    let childSessionIds = Set(startedSessionIds).subtracting([result.session.sessionId])
+
+    XCTAssertEqual(childSessionIds.count, 3)
+    XCTAssertEqual(Set(completedSessionIds), childSessionIds.union([result.session.sessionId]))
+    for sessionId in childSessionIds {
+      let child = try await store.loadSession(id: sessionId)
+      XCTAssertEqual(child?.parentSessionId, result.session.sessionId)
+      XCTAssertEqual(child?.rootSessionId, result.session.sessionId)
+      XCTAssertEqual(child?.status, .completed)
+    }
+  }
+
+  func testFanoutJoinOrdersBranchesByInputAndCapsConcurrency() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [0: 120_000_000, 1: 20_000_000, 2: 60_000_000])
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let store = InMemoryWorkflowRuntimeStore()
+    let runner = DeterministicWorkflowRunner(store: store, adapter: adapter)
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2),
+      nodePayloads: fanoutPayloads(),
+      maxConcurrency: 2
+    ))
+
+    XCTAssertEqual(result.exitCode, 0)
+    let maxActive = await tracker.maxActiveCount()
+    XCTAssertEqual(maxActive, 2)
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    guard case let .array(branches)? = join["branches"] else {
+      return XCTFail("fanoutJoin branches should be an array")
+    }
+    XCTAssertEqual(branches.compactMap(branchIndex), [0, 1, 2])
+    XCTAssertEqual(branches.compactMap(branchOutputIndex), [0, 1, 2])
+    for branch in branches {
+      guard case let .object(record) = branch, case let .string(sessionId)? = record["sessionId"] else {
+        return XCTFail("missing branch session identity")
+      }
+      let child = try await store.loadSession(id: sessionId)
+      XCTAssertEqual(child?.parentSessionId, result.session.sessionId)
+      XCTAssertEqual(child?.rootSessionId, result.session.sessionId)
+    }
+    XCTAssertEqual(join["fanoutGroupRunId"], .string("group:source-attempt-1-exec-1"))
+    XCTAssertEqual(join["resultOrder"], .string("input"))
+    let identities = await tracker.branchIdentities()
+    XCTAssertEqual(identities.count, 3)
+    XCTAssertEqual(Set(identities.map(\.workflowRunId)), [result.session.sessionId])
+    XCTAssertEqual(Set(identities.map(\.workflowSessionId)).count, 3)
+    XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"])
+  }
+
+  func testFanoutFailFastCancelsOutstandingBranchesAndStopsScheduling() async throws {
+    let tracker = FanoutBranchTracker(
+      delaysByIndex: [0: 20_000_000, 1: 2_000_000_000, 2: 2_000_000_000],
+      failingIndexes: [0]
+    )
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: fanoutWorkflow(concurrency: 2),
+        nodePayloads: fanoutPayloads()
+      ))
+      XCTFail("expected fanout failure")
+    } catch DeterministicWorkflowRunnerError.fanoutDispatchFailed(let groupId, let reason) {
+      XCTAssertEqual(groupId, "group")
+      XCTAssertTrue(reason.contains("branch 0 failed"), reason)
+    }
+
+    let started = await tracker.startedIndexes()
+    XCTAssertEqual(started.sorted(), [0, 1])
+    let observedCancellation = await tracker.observedCancellation()
+    XCTAssertTrue(observedCancellation)
+  }
+
+  func testFanoutCollectAllRunsEveryBranchBeforeFailing() async throws {
+    let tracker = FanoutBranchTracker(
+      delaysByIndex: [0: 20_000_000, 1: 10_000_000, 2: 30_000_000],
+      failingIndexes: [1]
+    )
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectAll),
+        nodePayloads: fanoutPayloads()
+      ))
+      XCTFail("expected fanout failure")
+    } catch DeterministicWorkflowRunnerError.fanoutDispatchFailed(let groupId, let reason) {
+      XCTAssertEqual(groupId, "group")
+      XCTAssertTrue(reason.contains("collect-all fanout recorded 1 failed branch"), reason)
+    }
+
+    let started = await tracker.startedIndexes()
+    XCTAssertEqual(started.sorted(), [0, 1, 2])
+  }
+
+  func testFanoutCollectPartialDeliversMixedBranchRecordsToJoin() async throws {
+    let tracker = FanoutBranchTracker(
+      delaysByIndex: [0: 20_000_000, 1: 10_000_000, 2: 30_000_000],
+      failingIndexes: [1]
+    )
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial),
+      nodePayloads: fanoutPayloads()
+    ))
+
+    XCTAssertEqual(result.exitCode, 0)
+    let started = await tracker.startedIndexes()
+    XCTAssertEqual(started.sorted(), [0, 1, 2])
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    guard case let .array(branches)? = join["branches"] else {
+      return XCTFail("fanoutJoin branches should be an array")
+    }
+    XCTAssertEqual(branches.compactMap(branchIndex), [0, 1, 2])
+    let statuses = branches.map { branch -> String? in
+      guard case let .object(record) = branch, case let .string(status)? = record["status"] else { return nil }
+      return status
+    }
+    XCTAssertEqual(statuses, ["completed", "failed", "completed"])
+    guard case let .object(failedRecord) = branches[1],
+          case let .string(reason)? = failedRecord["failureReason"] else {
+      return XCTFail("failed branch should carry a failureReason")
+    }
+    XCTAssertFalse(reason.isEmpty)
+  }
+
+  func testCrossWorkflowFanoutRunsCalleesAndJoinsInParent() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [0: 30_000_000, 1: 10_000_000, 2: 20_000_000])
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let resolver = FanoutCalleeResolver(callee: ResolvedWorkflowCallee(
+      workflow: fanoutCalleeWorkflow(),
+      nodePayloads: ["branch-node": branchPayload]
+    ))
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: adapter,
+      calleeResolver: resolver
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads,
+      maxConcurrency: 2
+    ))
+
+    XCTAssertEqual(result.exitCode, 0)
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin, "executions: \(result.session.executions.map(\.stepId))")
+    guard case let .array(branches)? = join["branches"] else {
+      return XCTFail("fanoutJoin branches should be an array")
+    }
+    XCTAssertEqual(branches.compactMap(branchOutputIndex), [0, 1, 2])
+    let identities = await tracker.branchIdentities()
+    XCTAssertEqual(identities.count, 3)
+    XCTAssertEqual(Set(identities.map(\.workflowRunId)), [result.session.sessionId])
+    XCTAssertEqual(Set(identities.map(\.workflowSessionId)).count, 3)
+    XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"])
+  }
+
+  func testProductionRunnerPersistsEveryFanoutBranchAndOneJoinAcrossResume() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-production/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let tracker = FanoutBranchTracker(delaysByIndex: [:])
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let runtimeStore = InMemoryWorkflowRuntimeStore()
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let runner = DeterministicWorkflowRunner(
+      store: runtimeStore,
+      adapter: adapter,
+      calleeResolver: FanoutCalleeResolver(callee: ResolvedWorkflowCallee(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      )),
+      nestedInvocationPersistenceStore: persistence
+    )
+    let request = DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads,
+      maxConcurrency: 2
+    )
+    let first = try await runner.run(request)
+    XCTAssertEqual(first.status, .completed)
+    let sourceExecutionId = "source-attempt-1-exec-1"
+    for branchId in ["fanout-0", "fanout-1", "fanout-2"] {
+      let record = try XCTUnwrap(try persistence.nestedInvocationRecord(
+        parentSessionId: first.session.sessionId,
+        sourceStepExecutionId: sourceExecutionId,
+        branchId: branchId
+      ))
+      XCTAssertEqual(record.phase, .delivered)
+      XCTAssertEqual(record.childTerminalSnapshot?.session.status, .completed)
+    }
+    let beforeResume = await tracker.branchIdentities().count
+    let resumed = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: request.workflow,
+      nodePayloads: request.nodePayloads,
+      resumeSessionId: first.session.sessionId
+    ))
+    XCTAssertEqual(resumed.status, .completed)
+    let afterResume = await tracker.branchIdentities().count
+    XCTAssertEqual(afterResume, beforeResume, "Delivered fanout branches must not relaunch on parent reopen")
+    let messages = try SQLiteWorkflowMessageLog(
+      databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    ).listMessages(workflowExecutionId: first.session.sessionId, toStepId: "join")
+    XCTAssertEqual(messages.count, 1)
+  }
+
+  func testProductionCollectPartialPersistsFailedChildBeforePublishingJoin() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-partial-persistence/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let tracker = FanoutBranchTracker(delaysByIndex: [:], failingIndexes: [1])
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(), adapter: FanoutTestAdapter(tracker: tracker),
+      calleeResolver: FanoutCalleeResolver(callee: .init(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      )), nestedInvocationPersistenceStore: persistence
+    )
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads, maxConcurrency: 2
+    ))
+    XCTAssertEqual(result.status, .completed)
+    let sourceExecutionId = "source-attempt-1-exec-1"
+    let failed = try XCTUnwrap(try persistence.nestedInvocationRecord(
+      parentSessionId: result.session.sessionId, sourceStepExecutionId: sourceExecutionId, branchId: "fanout-1"
+    ))
+    XCTAssertEqual(failed.childTerminalSnapshot?.session.status, .failed)
+    XCTAssertEqual(failed.phase, .delivered, "A partial join is published only after the failed child terminal is durable")
+    let messages = try SQLiteWorkflowMessageLog(
+      databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    ).listMessages(workflowExecutionId: result.session.sessionId, toStepId: "join")
+    XCTAssertEqual(messages.count, 1)
+  }
+
+  func testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-partial-cancellation/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let tracker = FanoutBranchTracker(delaysByIndex: [:], cancellingIndexes: [1])
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(), adapter: FanoutTestAdapter(tracker: tracker),
+      calleeResolver: FanoutCalleeResolver(callee: .init(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      )), nestedInvocationPersistenceStore: persistence
+    )
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads, maxConcurrency: 2
+    ))
+    XCTAssertEqual(result.status, .completed)
+    let cancelled = try XCTUnwrap(try persistence.nestedInvocationRecord(
+      parentSessionId: result.session.sessionId, sourceStepExecutionId: "source-attempt-1-exec-1", branchId: "fanout-1"
+    ))
+    XCTAssertEqual(cancelled.childTerminalSnapshot?.session.status, .cancelled)
+    XCTAssertEqual(cancelled.childTerminalSnapshot?.session.failureKind, .cancelled)
+    XCTAssertEqual(cancelled.phase, .delivered, "A partial join cannot outrun a cancelled child terminal snapshot")
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    XCTAssertEqual(branchStatuses(join), ["completed", "cancelled", "completed"],
+                   "a real cancellation is still rendered as cancelled in the join")
+  }
+
+  func testPolicyFailureNamingCancelIsReportedAsFailedNotCancelled() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [:], policyBlockedIndexes: [1])
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(), adapter: FanoutTestAdapter(tracker: tracker)
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial),
+      nodePayloads: fanoutPayloads()
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    XCTAssertEqual(join["allBranchesCompleted"], .bool(false))
+    XCTAssertEqual(branchStatuses(join), ["completed", "failed", "completed"],
+                   "a policy failure whose text mentions a cancel-named path is a failure, not a cancellation")
+    guard case let .array(branches)? = join["branches"], case let .object(blocked) = branches[1],
+          case let .string(reason)? = blocked["failureReason"] else {
+      return XCTFail("the policy-blocked branch should carry a failureReason")
+    }
+    XCTAssertTrue(reason.contains("src/CancelButton.tsx"), reason)
+  }
+
+  func testFanoutCheckpointsInterruptAndResumeTheProductionParentRunner() async throws {
+    for checkpoint in [
+      NestedRecoveryCheckpoint.prepared,
+      .beforeChildNodeEffect,
+      .afterChildNodeResult,
+      .childTerminalPersisted,
+      .beforeParentPublication,
+      .parentPublicationPersisted
+    ] {
+      let repository = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-checkpoints/\(UUID().uuidString)")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+
+      let tracker = FanoutBranchTracker(delaysByIndex: [:])
+      let adapter = FanoutTestAdapter(tracker: tracker)
+      let payloads = fanoutPayloads()
+      let branchPayload = try XCTUnwrap(payloads["branch-node"])
+      let store = InMemoryWorkflowRuntimeStore()
+      let request = DeterministicWorkflowRunRequest(
+        workflow: fanoutWorkflow(concurrency: 1, toWorkflowId: "fanout-callee"),
+        nodePayloads: payloads,
+        maxConcurrency: 1
+      )
+      let resolver = FanoutCalleeResolver(callee: ResolvedWorkflowCallee(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      ))
+      let interrupted = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        calleeResolver: resolver,
+        nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path),
+        nestedInvocationRecoveryCheckpointer: FanoutThrowingCheckpoint(target: checkpoint)
+      )
+      do {
+        _ = try await interrupted.run(request)
+        XCTFail("Expected checkpoint interruption at \(checkpoint.rawValue)")
+      } catch {
+        // Recreate the runner to model process restart. The parent is resumed
+        // through its production checkpoint, never by calling fanout directly.
+      }
+      let latestParent = await store.latestSession(workflowId: request.workflow.workflowId)
+      let parent = try XCTUnwrap(latestParent)
+      XCTAssertEqual(parent.status, .running)
+
+      let reopened = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        calleeResolver: resolver,
+        nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      )
+      let resumed = try await reopened.run(DeterministicWorkflowRunRequest(
+        workflow: request.workflow,
+        nodePayloads: request.nodePayloads,
+        maxConcurrency: request.maxConcurrency,
+        resumeSessionId: parent.sessionId
+      ))
+      XCTAssertEqual(resumed.status, .completed)
+      let branchEffectCount = await tracker.branchIdentities().count
+      XCTAssertEqual(branchEffectCount, 3, "\(checkpoint.rawValue) duplicated a fanout child effect")
+      let arrivals = try SQLiteWorkflowMessageLog(
+        databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+      ).listMessages(workflowExecutionId: parent.sessionId, toStepId: "join")
+      XCTAssertEqual(arrivals.count, 1, "\(checkpoint.rawValue) must publish one aggregate join")
+    }
+  }
+
+  /// A local fanout (no `toWorkflowId`) carries no `resumeStepId`, so the
+  /// parent cursor used to land on the branch step after the publication
+  /// commit. A crash mid-fanout then found no reservation matching the cursor
+  /// and executed the branch step inside the parent with an empty inbox.
+  func testLocalFanoutCheckpointsInterruptAndResumeAtTheJoinWithReservedChildren() async throws {
+    for checkpoint in [
+      NestedRecoveryCheckpoint.prepared,
+      .beforeChildNodeEffect,
+      .afterChildNodeResult,
+      .childTerminalPersisted,
+      .beforeParentPublication,
+      .parentPublicationPersisted
+    ] {
+      let repository = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      let root = repository.appendingPathComponent("tmp/specialist-supervisor/local-fanout-checkpoints/\(UUID().uuidString)")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+
+      let tracker = FanoutBranchTracker(delaysByIndex: [:])
+      let adapter = FanoutTestAdapter(tracker: tracker)
+      let store = InMemoryWorkflowRuntimeStore()
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      // Local fanout children share the parent's workflowId, so the parent is
+      // identified by the first session the interrupted run started rather
+      // than by `latestSession(workflowId:)`.
+      let recorder = WorkflowRunEventRecorder()
+      let request = DeterministicWorkflowRunRequest(
+        workflow: fanoutWorkflow(concurrency: 1),
+        nodePayloads: fanoutPayloads(),
+        maxConcurrency: 1,
+        eventHandler: { event in await recorder.append(event) }
+      )
+      let interrupted = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        nestedInvocationPersistenceStore: persistence,
+        nestedInvocationRecoveryCheckpointer: FanoutThrowingCheckpoint(target: checkpoint)
+      )
+      do {
+        _ = try await interrupted.run(request)
+        XCTFail("Expected checkpoint interruption at \(checkpoint.rawValue)")
+      } catch {
+        // Recreate the runner to model process restart.
+      }
+      let events = await recorder.events()
+      let parentSessionId = try XCTUnwrap(events.first { $0.type == .sessionStarted }?.sessionId)
+      let loadedParent = try await store.loadSession(id: parentSessionId)
+      let parent = try XCTUnwrap(loadedParent)
+      XCTAssertNil(parent.parentSessionId)
+      XCTAssertEqual(parent.status, .running)
+      XCTAssertEqual(
+        parent.currentStepId, "join",
+        "\(checkpoint.rawValue): the committed parent cursor must be the join so resume can match the reservations"
+      )
+
+      let reopened = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      )
+      let resumed = try await reopened.run(DeterministicWorkflowRunRequest(
+        workflow: request.workflow,
+        nodePayloads: request.nodePayloads,
+        maxConcurrency: request.maxConcurrency,
+        resumeSessionId: parent.sessionId
+      ))
+      XCTAssertEqual(resumed.status, .completed, checkpoint.rawValue)
+      XCTAssertFalse(
+        resumed.session.executions.contains { $0.stepId == "branch" },
+        "\(checkpoint.rawValue): the branch step must never execute inside the parent session"
+      )
+      let identities = await tracker.branchIdentities()
+      XCTAssertEqual(identities.count, 3, "\(checkpoint.rawValue) duplicated or dropped a fanout child effect")
+      XCTAssertFalse(
+        identities.contains { $0.workflowSessionId == parent.sessionId },
+        "\(checkpoint.rawValue): every branch effect must run in a reserved child, not the parent"
+      )
+      XCTAssertEqual(Set(identities.map(\.workflowSessionId)).count, 3, checkpoint.rawValue)
+      XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"], checkpoint.rawValue)
+      let records = try persistence.nestedInvocationRecords(parentSessionId: parent.sessionId)
+      XCTAssertEqual(Set(records.map(\.reservation.branchId)), ["fanout-0", "fanout-1", "fanout-2"], checkpoint.rawValue)
+      XCTAssertEqual(Set(records.map(\.reservation.resumeStepId)), ["join"], checkpoint.rawValue)
+      let arrivals = try SQLiteWorkflowMessageLog(
+        databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+      ).listMessages(workflowExecutionId: parent.sessionId, toStepId: "join")
+      XCTAssertEqual(arrivals.count, 1, "\(checkpoint.rawValue) must publish one aggregate join")
+    }
+  }
+
+  func testFanoutBranchesInheritDefaultGuardOptOut() async throws {
+    let adapter = FanoutLoopOptOutAdapter()
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: adapter
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutLoopWorkflow(),
+      nodePayloads: fanoutLoopPayloads(),
+      maxSteps: 10,
+      maxConcurrency: 3,
+      maxLoopIterations: 10,
+      disableDefaultLoopGuard: true
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    let reviewExecutions = await adapter.totalReviewExecutions()
+    XCTAssertEqual(reviewExecutions, 9, "each of three branches must reach its third review response")
+  }
+
+  private func branchIndex(_ value: JSONValue) -> Int? {
+    guard case let .object(object) = value,
+          let index = object["index"]?.asInt64 else {
+      return nil
+    }
+    return Int(index)
+  }
+
+  private func branchStatuses(_ join: JSONObject) -> [String?] {
+    guard case let .array(branches)? = join["branches"] else { return [] }
+    return branches.map { branch -> String? in
+      guard case let .object(record) = branch, case let .string(status)? = record["status"] else { return nil }
+      return status
+    }
+  }
+
+  private func branchOutputIndex(_ value: JSONValue) -> Int? {
+    guard case let .object(object) = value,
+          case let .object(output)? = object["output"],
+          let index = output["branchIndex"]?.asInt64 else {
+      return nil
+    }
+    return Int(index)
+  }
+}
+
+private actor FanoutLoopOptOutAdapter: NodeAdapter {
+  private var reviewExecutionsBySession: [String: Int] = [:]
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    switch input.node.id {
+    case "source":
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: [
+          "payload": .object([
+            "items": .array([
+              .object(["index": .integer(0)]),
+              .object(["index": .integer(1)]),
+              .object(["index": .integer(2)])
+            ])
+          ])
+        ]
+      )
+    case "review":
+      let sessionId = input.executionIdentity?.workflowSessionId ?? "unknown"
+      let execution = reviewExecutionsBySession[sessionId, default: 0] + 1
+      reviewExecutionsBySession[sessionId] = execution
+      let needsWork = execution < 3
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        when: ["needs_work": needsWork],
+        payload: [
+          "decision": .string(needsWork ? "needs_work" : "accepted"),
+          "loopGate": .object([
+            "gateId": .string("fanout-review"),
+            "decision": .string(needsWork ? "needs_work" : "accepted"),
+            "blockingFindings": needsWork
+              ? .array([.object([
+                "id": .string("same"),
+                "severity": .string("high"),
+                "message": .string("same finding")
+              ])])
+              : .array([])
+          ])
+        ]
+      )
+    case "join":
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: ["joined": .bool(true)]
+      )
+    default:
+      throw AdapterExecutionError(.invalidInput, "unexpected fanout loop step '\(input.node.id)'")
+    }
+  }
+
+  func totalReviewExecutions() -> Int {
+    reviewExecutionsBySession.values.reduce(0, +)
+  }
+}
+
+private struct FanoutThrowingCheckpoint: NestedRecoveryCheckpointing {
+  let target: NestedRecoveryCheckpoint
+
+  func reached(_ checkpoint: NestedRecoveryCheckpoint) async throws {
+    guard checkpoint == target else { return }
+    throw NestedRecoveryInterruption()
+  }
+}
+
+private actor FanoutBranchTracker {
+  private let delaysByIndex: [Int: UInt64]
+  private let failingIndexes: Set<Int>
+  private let cancellingIndexes: Set<Int>
+  private let policyBlockedIndexes: Set<Int>
+  private var activeCount = 0
+  private var maxActive = 0
+  private var started: [Int] = []
+  private var cancellationObserved = false
+  private var joinFanout: JSONObject?
+  private var identities: [AdapterExecutionIdentity] = []
+
+  init(
+    delaysByIndex: [Int: UInt64], failingIndexes: Set<Int> = [], cancellingIndexes: Set<Int> = [],
+    policyBlockedIndexes: Set<Int> = []
+  ) {
+    self.delaysByIndex = delaysByIndex
+    self.failingIndexes = failingIndexes
+    self.cancellingIndexes = cancellingIndexes
+    self.policyBlockedIndexes = policyBlockedIndexes
+  }
+
+  func begin(index: Int) -> UInt64 {
+    activeCount += 1
+    maxActive = max(maxActive, activeCount)
+    started.append(index)
+    return delaysByIndex[index] ?? 0
+  }
+
+  func finish() {
+    activeCount = max(0, activeCount - 1)
+  }
+
+  func shouldFail(index: Int) -> Bool {
+    failingIndexes.contains(index)
+  }
+
+  func shouldCancel(index: Int) -> Bool {
+    cancellingIndexes.contains(index)
+  }
+
+  func shouldPolicyBlock(index: Int) -> Bool {
+    policyBlockedIndexes.contains(index)
+  }
+
+  func recordCancellation() {
+    cancellationObserved = true
+  }
+
+  func recordJoinFanout(_ fanout: JSONObject?) {
+    joinFanout = fanout
+  }
+
+  func recordIdentity(_ identity: AdapterExecutionIdentity?) {
+    if let identity {
+      identities.append(identity)
+    }
+  }
+
+  func maxActiveCount() -> Int {
+    maxActive
+  }
+
+  func startedIndexes() -> [Int] {
+    started
+  }
+
+  func observedCancellation() -> Bool {
+    cancellationObserved
+  }
+
+  func joinRuntimeFanout() -> JSONObject? {
+    joinFanout
+  }
+
+  func branchIdentities() -> [AdapterExecutionIdentity] {
+    identities
+  }
+}
+
+private struct FanoutTestAdapter: NodeAdapter {
+  var tracker: FanoutBranchTracker
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    switch input.node.id {
+    case "source":
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: [
+          "payload": .object([
+            "items": .array([
+              .object(["index": .integer(0)]),
+              .object(["index": .integer(1)]),
+              .object(["index": .integer(2)])
+            ])
+          ])
+        ]
+      )
+    case "branch":
+      let index = branchIndex(from: input.arguments["feature"])
+      await tracker.recordIdentity(input.executionIdentity)
+      let delay = await tracker.begin(index: index)
+      do {
+        if delay > 0 {
+          try await Task.sleep(nanoseconds: delay)
+        }
+        if await tracker.shouldFail(index: index) {
+          throw AdapterExecutionError(.providerError, "forced branch \(index) failure")
+        }
+        if await tracker.shouldCancel(index: index) {
+          throw CancellationError()
+        }
+        if await tracker.shouldPolicyBlock(index: index) {
+          // The path name contains "cancel" on purpose: the join status must
+          // come from the real cancellation signal, not from the failure text.
+          throw AdapterExecutionError(.policyBlocked, "write to src/CancelButton.tsx is outside the branch's owned paths")
+        }
+        await tracker.finish()
+        return AdapterExecutionOutput(
+          provider: "test",
+          model: input.node.model,
+          promptText: input.promptText,
+          completionPassed: true,
+          payload: ["branchIndex": .integer(Int64(index))]
+        )
+      } catch {
+        if error is CancellationError {
+          await tracker.recordCancellation()
+        }
+        await tracker.finish()
+        throw error
+      }
+    case "join":
+      let fanout = runtimeFanoutJoin(from: input.mergedVariables)
+      await tracker.recordJoinFanout(fanout)
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: ["joined": .bool(true)]
+      )
+    default:
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: ["status": .string("ok")]
+      )
+    }
+  }
+
+  private func branchIndex(from value: JSONValue?) -> Int {
+    guard case let .object(object)? = value,
+          let index = object["index"]?.asInt64 else {
+      return -1
+    }
+    return Int(index)
+  }
+
+  private func runtimeFanoutJoin(from variables: JSONObject) -> JSONObject? {
+    guard case let .object(runtimeVariables)? = variables["runtimeVariables"],
+          case let .object(fanoutJoin)? = runtimeVariables["fanoutJoin"] else {
+      if case let .object(fanoutJoin)? = variables["fanoutJoin"] {
+        return fanoutJoin
+      }
+      return nil
+    }
+    return fanoutJoin
+  }
+}
+
+private struct FanoutCalleeResolver: WorkflowCalleeResolving {
+  var callee: ResolvedWorkflowCallee
+
+  func resolveCallee(workflowId: String) async throws -> ResolvedWorkflowCallee {
+    guard workflowId == callee.workflow.workflowId else {
+      throw AdapterExecutionError(.invalidInput, "unknown callee workflow '\(workflowId)'")
+    }
+    return callee
+  }
+}
+
+private func fanoutWorkflow(
+  concurrency: Int,
+  failurePolicy: WorkflowFanoutFailurePolicy = .failFast,
+  toWorkflowId: String? = nil
+) -> WorkflowDefinition {
+  WorkflowDefinition(
+    workflowId: "fanout-runner",
+    defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+    entryStepId: "source",
+    nodeRegistry: [
+      WorkflowNodeRegistryRef(id: "source-node", nodeFile: "nodes/source.json"),
+      WorkflowNodeRegistryRef(id: "branch-node", nodeFile: "nodes/branch.json"),
+      WorkflowNodeRegistryRef(id: "join-node", nodeFile: "nodes/join.json")
+    ],
+    steps: [
+      WorkflowStepRef(
+        id: "source",
+        nodeId: "source-node",
+        transitions: [
+          WorkflowStepTransition(
+            toStepId: "branch",
+            toWorkflowId: toWorkflowId,
+            resumeStepId: toWorkflowId == nil ? nil : "join",
+            fanout: WorkflowStepFanout(
+              groupId: "group",
+              itemsFrom: "/payload/items",
+              itemVariable: "feature",
+              concurrency: concurrency,
+              joinStepId: "join",
+              failurePolicy: failurePolicy,
+              resultOrder: .input,
+              writeOwnership: WorkflowFanoutWriteOwnership(mode: .readOnly)
+            )
+          )
+        ]
+      ),
+      WorkflowStepRef(id: "branch", nodeId: "branch-node", transitions: [WorkflowStepTransition(toStepId: "join")]),
+      WorkflowStepRef(id: "join", nodeId: "join-node")
+    ],
+    nodes: [
+      WorkflowNodeRef(id: "source-node", nodeFile: "nodes/source.json"),
+      WorkflowNodeRef(id: "branch-node", nodeFile: "nodes/branch.json"),
+      WorkflowNodeRef(id: "join-node", nodeFile: "nodes/join.json")
+    ]
+  )
+}
+
+private func fanoutCalleeWorkflow() -> WorkflowDefinition {
+  WorkflowDefinition(
+    workflowId: "fanout-callee",
+    defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+    entryStepId: "branch",
+    nodeRegistry: [
+      WorkflowNodeRegistryRef(id: "branch-node", nodeFile: "nodes/branch.json")
+    ],
+    steps: [
+      WorkflowStepRef(id: "branch", nodeId: "branch-node")
+    ],
+    nodes: [
+      WorkflowNodeRef(id: "branch-node", nodeFile: "nodes/branch.json")
+    ]
+  )
+}
+
+private func fanoutLoopWorkflow() -> WorkflowDefinition {
+  WorkflowDefinition(
+    workflowId: "fanout-loop-opt-out",
+    defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 10),
+    entryStepId: "source",
+    nodeRegistry: [
+      WorkflowNodeRegistryRef(id: "source-node", nodeFile: "nodes/source.json"),
+      WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json"),
+      WorkflowNodeRegistryRef(id: "join-node", nodeFile: "nodes/join.json")
+    ],
+    steps: [
+      WorkflowStepRef(
+        id: "source",
+        nodeId: "source-node",
+        transitions: [
+          WorkflowStepTransition(
+            toStepId: "review",
+            fanout: WorkflowStepFanout(
+              groupId: "loop-group",
+              itemsFrom: "/payload/items",
+              itemVariable: "feature",
+              concurrency: 3,
+              joinStepId: "join",
+              failurePolicy: .failFast,
+              resultOrder: .input,
+              writeOwnership: WorkflowFanoutWriteOwnership(mode: .readOnly)
+            )
+          )
+        ]
+      ),
+      WorkflowStepRef(
+        id: "review",
+        nodeId: "review-node",
+        transitions: [
+          WorkflowStepTransition(toStepId: "review", label: "needs_work"),
+          WorkflowStepTransition(toStepId: "join", label: "!needs_work")
+        ],
+        loop: WorkflowStepLoopMetadata(role: "gate", gateId: "fanout-review")
+      ),
+      WorkflowStepRef(id: "join", nodeId: "join-node")
+    ],
+    nodes: [
+      WorkflowNodeRef(id: "source-node", nodeFile: "nodes/source.json"),
+      WorkflowNodeRef(id: "review-node", nodeFile: "nodes/review.json"),
+      WorkflowNodeRef(id: "join-node", nodeFile: "nodes/join.json")
+    ]
+  )
+}
+
+private func fanoutPayloads() -> [String: AgentNodePayload] {
+  [
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
+  ]
+}
+
+private func conditionalFanoutPayloads() -> [String: AgentNodePayload] {
+  var payloads = fanoutPayloads()
+  payloads["source-node"]?.output = NodeOutputContract(jsonSchema: ["type": .string("object")])
+  return payloads
+}
+
+private func fanoutLoopPayloads() -> [String: AgentNodePayload] {
+  [
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "review-node": AgentNodePayload(
+      id: "review-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      agentSandbox: .readOnly,
+      output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+    ),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
+  ]
+}
+
+private struct ContextFanoutAdapter: NodeAdapter {
+  let tracker: FanoutBranchTracker
+  let contextValue: JSONValue
+  let empty: Bool
+  var completedItems = false
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    var output = try await FanoutTestAdapter(tracker: tracker).execute(input, context: context)
+    if input.node.id == "source" {
+      output.payload["joinContext"] = contextValue
+      if empty { output.payload["payload"] = .object(["items": .array([])]) }
+      if completedItems {
+        output.payload["payload"] = .object(["items": .array([
+          .object(["id": .string("done"), "dependsOn": .array([])])
+        ])])
+        output.payload["completed"] = .array([.string("done")])
+      }
+    }
+    return output
+  }
+}

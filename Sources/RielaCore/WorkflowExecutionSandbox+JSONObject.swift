@@ -1,0 +1,25 @@
+import Foundation
+
+extension WorkflowExecutionSandbox {
+  /// Lossless projection for persisted workflow instance and run overrides.
+  var jsonObject: JSONObject {
+    var object: JSONObject = [
+      "backend": .string(backend.rawValue), "networkPolicy": .string(networkPolicy.rawValue),
+      "readPaths": .array(readPaths.map(JSONValue.string)),
+      "writePaths": .array(writePaths.map(JSONValue.string)),
+      "credentialPaths": .array(credentialPaths.map(JSONValue.string)),
+      "environment": .array(environment.map(JSONValue.string)),
+      "credentials": .array(credentials.map { .object(["source": .string($0.source), "homePath": .string($0.homePath)]) })
+    ]
+    if let container {
+      object["container"] = .object([
+        "image": .string(container.image), "runtime": .string(container.runtime.rawValue),
+        "networkPolicy": .string(container.networkPolicy.rawValue),
+        "mounts": .array(container.mounts.map { .object([
+          "source": .string($0.source), "target": .string($0.target), "readOnly": .bool($0.readOnly)
+        ]) })
+      ])
+    }
+    return object
+  }
+}

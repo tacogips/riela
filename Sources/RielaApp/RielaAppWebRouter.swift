@@ -1,0 +1,95 @@
+#if os(macOS)
+import Foundation
+import RielaCore
+import RielaServer
+
+final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
+  private weak var app: RielaApp?
+  private let assetResolver: RielaStaticAssetResolver
+  private let deterministicAdapter: DeterministicServerHTTPAdapter
+  private let beforeGraphQLProfileBinding: (@MainActor () -> Void)?
+  private let lock = NSLock()
+  private var configuredPort: Int
+  let csrfToken: String
+
+  init(
+    app: RielaApp,
+    assetRoot: URL,
+    configuredPort: Int,
+    beforeGraphQLProfileBinding: (@MainActor () -> Void)? = nil
+  ) {
+    self.app = app
+    self.beforeGraphQLProfileBinding = beforeGraphQLProfileBinding
+    assetResolver = RielaStaticAssetResolver(rootURL: assetRoot)
+    deterministicAdapter = DeterministicServerHTTPAdapter(
+      context: ServerRequestContext(serviceName: "riela-app")
+    )
+    self.configuredPort = configuredPort
+    csrfToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+      + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+  }
+
+  func updateConfiguredPort(_ port: Int) {
+    lock.lock()
+    configuredPort = port
+    lock.unlock()
+  }
+
+  func response(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
+    if request.path.hasPrefix("/api/v1") {
+      if let rejection = securityRejection(for: request) {
+        return rejection
+      }
+      guard let app else {
+        return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
+      }
+      return await app.webAPIResponse(for: request, csrfToken: csrfToken)
+    }
+    if request.path == "/" || isFrontendNavigation(request.path),
+       let response = assetResolver.response(for: request) {
+      return response
+    }
+    if request.path == "/graphql" {
+      if request.headers["origin"] == nil, request.headers["x-riela-csrf"] == nil {
+        guard let app else { return .text(status: 503, "RielaApp is unavailable") }
+        let expectedHost = lock.withLock { "127.0.0.1:\(configuredPort)" }
+        guard request.headers["host"] == expectedHost else { return .text(status: 403, "Invalid host") }
+        if let rejection = RielaAPIKeyHTTPAuthorization.rejection(for: request, store: await app.apiKeyStore) {
+          return rejection
+        }
+        return await app.webGraphQLResponse(for: request, machineClient: true)
+      }
+      if let rejection = securityRejection(for: request) {
+        return rejection
+      }
+      guard let app else {
+        return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
+      }
+      if let beforeGraphQLProfileBinding {
+        await beforeGraphQLProfileBinding()
+      }
+      return await app.webGraphQLResponse(for: request)
+    }
+    let deterministic = await deterministicAdapter.response(for: request)
+    if deterministic.status != 404 {
+      return deterministic
+    }
+    return assetResolver.response(for: request) ?? deterministic
+  }
+
+  private func securityRejection(for request: RielaHTTPRequest) -> RielaHTTPResponse? {
+    let expectedHost: String
+    lock.lock()
+    expectedHost = "127.0.0.1:\(configuredPort)"
+    lock.unlock()
+    return RielaWebRequestSecurity(authority: expectedHost, csrfToken: csrfToken).rejection(for: request)
+  }
+
+  private func isFrontendNavigation(_ path: String) -> Bool {
+    guard !path.hasPrefix("/api/") else {
+      return false
+    }
+    return path.split(separator: "/").last?.contains(".") != true
+  }
+}
+#endif

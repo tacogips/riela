@@ -1,0 +1,9 @@
+{
+  "id": "riela-manager",
+  "executionBackend": "claude-code-agent",
+  "model": "claude-haiku-4-5",
+  "promptTemplateFile": "prompts/riela-manager.md",
+  "variables": {
+    "workflowId": "claude-riela-codex-coding"
+  }
+}

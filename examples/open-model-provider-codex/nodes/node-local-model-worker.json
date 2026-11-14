@@ -1,0 +1,13 @@
+{
+  "id": "local-model-worker",
+  "executionBackend": "codex-agent",
+  "model": "qwen3-coder",
+  "modelFreeze": false,
+  "provider": {
+    "name": "local_vllm",
+    "baseUrl": "http://localhost:8000/v1"
+  },
+  "providerProxy": "codex",
+  "promptTemplateFile": "prompts/local-model-worker.md",
+  "variables": {}
+}

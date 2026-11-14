@@ -1,0 +1,14 @@
+{
+  "specialists": [
+    { "id": "engineering", "capacity": 2, "domain": "software implementation, debugging, and tests", "allowedOriginIds": ["REPLACE_WITH_EXACT_CATALOG_ORIGIN_ID"] },
+    { "id": "documentation", "capacity": 1, "domain": "technical documentation and explanation", "allowedOriginIds": ["REPLACE_WITH_EXACT_CATALOG_ORIGIN_ID"] }
+  ],
+  "classifier": {
+    "node": {
+      "id": "specialist-planner",
+      "executionBackend": "official/openai-sdk",
+      "model": "REPLACE_WITH_YOUR_CONFIGURED_MODEL"
+    },
+    "deadlineSeconds": 60
+  }
+}

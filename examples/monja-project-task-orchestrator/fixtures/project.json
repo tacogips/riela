@@ -1,0 +1,22 @@
+{
+	"projectId": "01K50000000000000000000001",
+	"channelId": "01K50000000000000000000002",
+	"directories": {
+		"api": "fixtures/project-a/api",
+		"site": "fixtures/project-a/site"
+	},
+	"repositories": [
+		{
+			"directory": "api",
+			"github": "https://github.com/example/project-a-api"
+		},
+		{
+			"directory": "site",
+			"github": "https://github.com/example/project-a-site"
+		}
+	],
+	"wrikeFolderId": "IEEXAMPLEI4FOLDER",
+	"wrikeTasks": {
+		"01K50000000000000000000003": "IEEXAMPLEKQEXAMPLE"
+	}
+}

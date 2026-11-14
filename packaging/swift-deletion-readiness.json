@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "migrationStatus": "deletion_ready",
+  "allowsTypeScriptDeletion": true,
+  "productionSwiftPackagingReady": true,
+  "typeScriptSourceDeletionReady": true,
+  "notes": "Remaining TypeScript-family source files were removed or ported; deletion is authorized by reviewed-tree evidence bound to branch main, base commit 18581037bb503d3b2374e15e4a6205f4f83ab58d, and packaging/swift-deletion-readiness-evidence.json reviewedTreeState.treeDigest <reviewedTreeState.treeDigest>. The digest is computed from reviewed file contents rather than the uncommitted diff, so the final commit stays valid if it preserves the reviewed tree.",
+  "domains": [
+    {
+      "id": "package-build",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/package-build-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "cli",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/cli-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "server",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaServerTests"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/server-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "graphql",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaGraphQLTests"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/graphql-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "event",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaEventsTests"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/event-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "workflow-package",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowPackage"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/workflow-package-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "persistence",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Persistence"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/persistence-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "release",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "RIELA_RELEASE_DIR=tmp/swift-deletion-readiness-homebrew RIELA_VERSION=0.1.15 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64",
+        "RIELA_RELEASE_DIR=tmp/swift-deletion-readiness-homebrew scripts/render-homebrew-formula.sh 0.1.15 tmp/swift-deletion-readiness-homebrew/Formula/riela.rb"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/release-0",
+        "verification-result:swift-deletion-readiness/release-1"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "documentation",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "rg -n \"swift-deletion-readiness\" design-docs",
+        "rg -n \"TypeScript deletion\" design-docs"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/documentation-0",
+        "verification-result:swift-deletion-readiness/documentation-1"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "test",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/test-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "agent-codex",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/agent-codex-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "agent-claude-code",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/agent-claude-code-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    },
+    {
+      "id": "agent-cursor-cli",
+      "status": "passed",
+      "requiredBeforeTypeScriptDeletion": true,
+      "evidenceCommands": [
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent"
+      ],
+      "evidenceArtifacts": [
+        "verification-result:swift-deletion-readiness/agent-cursor-cli-0"
+      ],
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
+      "verifiedBranch": "main",
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
+    }
+  ]
+}

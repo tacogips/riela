@@ -1,0 +1,17 @@
+{
+  "workflowId": "task-handover-answer",
+  "description": "Pause a task for a deployment target answer, then resume at apply.",
+  "defaults": { "maxLoopIterations": 1, "nodeTimeoutMs": 120000 },
+  "prompts": { "workerSystemPromptTemplate": "Return concise business JSON." },
+  "entryStepId": "plan",
+  "nodes": [
+    { "id": "plan", "nodeFile": "nodes/plan.json" },
+    { "id": "apply", "nodeFile": "nodes/apply.json" },
+    { "id": "report", "nodeFile": "nodes/report.json" }
+  ],
+  "steps": [
+    { "id": "plan", "nodeId": "plan", "role": "worker", "transitions": [{ "toStepId": "apply" }] },
+    { "id": "apply", "nodeId": "apply", "role": "worker", "transitions": [{ "toStepId": "report" }] },
+    { "id": "report", "nodeId": "report", "role": "worker" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "eventId": "gmail-latest-mail-hourly-cron-fixture",
+  "eventType": "cron.tick",
+  "provider": "riela",
+  "sourceId": "gmail-latest-mail-hourly-cron",
+  "receivedAt": "2026-06-01T00:30:00Z",
+  "input": {
+    "scheduledAt": "2026-06-01T00:30:00.000Z",
+    "scheduledLocalTime": "2026-06-01 09:30:00",
+    "firedAt": "2026-06-01T00:30:00.500Z",
+    "timezone": "Asia/Tokyo",
+    "replyTarget": {
+      "sourceId": "telegram-gateway-personas",
+      "provider": "telegram",
+      "conversationId": "-1001234567890"
+    }
+  }
+}

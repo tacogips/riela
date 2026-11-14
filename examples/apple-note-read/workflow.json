@@ -1,0 +1,50 @@
+{
+  "workflowId": "apple-note-read",
+  "description": "Fetch one Apple Note by id through the external apple-gateway CLI.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "get-apple-note",
+  "nodes": [
+    {
+      "id": "get-apple-note",
+      "addon": {
+        "name": "riela/apple-note-get",
+        "version": "1",
+        "config": {
+          "includePlaintext": true,
+          "includeBodyHtml": false,
+          "includeBodyFile": false,
+          "includeAttachments": false,
+          "materializeBody": false
+        },
+        "inputs": {
+          "noteId": "{{workflowInput.noteId}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "get-apple-note",
+      "nodeId": "get-apple-note",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

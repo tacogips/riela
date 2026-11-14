@@ -1,0 +1,7 @@
+{
+  "id": "riela-manager",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.3-codex-spark",
+  "promptTemplateFile": "prompts/riela-manager.md",
+  "variables": {}
+}

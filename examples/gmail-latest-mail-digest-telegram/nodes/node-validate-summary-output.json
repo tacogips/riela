@@ -1,0 +1,12 @@
+{
+  "id": "validate-summary-output",
+  "description": "Deterministically validates LLM mail digest output against normalized selected Gmail messages and rebuilds Telegram text from allowed records.",
+  "nodeType": "command",
+  "variables": {},
+  "command": {
+    "scriptPath": "scripts/validate-summary-output.sh"
+  },
+  "output": {
+    "description": "Return JSON with when.should_send_telegram, payload.replyText, payload.messageDigests, and fetched message ids for persistence."
+  }
+}

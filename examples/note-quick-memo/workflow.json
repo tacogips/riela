@@ -1,0 +1,54 @@
+{
+  "workflowId": "note-quick-memo",
+  "description": "Create a quick memo note from chat/event text with the fixed note tag.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "create-memo",
+  "nodes": [
+    {
+      "id": "create-memo",
+      "addon": {
+        "name": "riela/note-create",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "bodyMarkdown": "{{workflowInput.text}}",
+          "notebookKindTag": "notebook-kind:user-memo",
+          "notebookTitle": "{{workflowInput.notebookTitle}}",
+          "provenance": "human",
+          "assignedBy": "note-quick-memo",
+          "tags": [
+            {
+              "name": "ノート",
+              "classId": "content-kind"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "create-memo",
+      "nodeId": "create-memo",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

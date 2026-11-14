@@ -1,0 +1,49 @@
+{
+  "repair": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summary": "Repaired the failing fixture.",
+      "changedFiles": [
+        "fixture.txt"
+      ],
+      "verification": [
+        "fixture check passed"
+      ]
+    }
+  },
+  "verify": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopGate": {
+        "gateId": "verification",
+        "stepId": "verify",
+        "decision": "accepted",
+        "severityCounts": {
+          "high": 0,
+          "medium": 0,
+          "low": 0,
+          "informational": 0
+        },
+        "blockingFindings": [],
+        "evidenceRefs": [
+          "repair:fixture-check"
+        ],
+        "acceptance": {
+          "met": true,
+          "note": "The fixture check passed."
+        }
+      },
+      "verification": [
+        "fixture check passed"
+      ]
+    }
+  }
+}

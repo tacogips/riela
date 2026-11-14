@@ -1,0 +1,152 @@
+{
+  "taskId": "gmail-collect-concurrency",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": false,
+  "originalHead": "164d2b7565fabb3476be3d12a3a9f5e76c84ad7b",
+  "designDocPaths": [
+    "design-docs/specs/design-native-source-collection.md"
+  ],
+  "evidenceRoot": "tmp/gmail-collect-concurrency",
+  "reviewContext": {
+    "issueReference": "none: no issueUrl, issueNumber or issueRepository was supplied; source of truth is workflowInput.requestedOutcome (ART 48h scan with maxThreads 150 stops every other run with stage 'budget'); workflowExecutionId opus-luna-design-and-implement-review-loop-session-541, plan acceptance comm-010177 (step5-impl-plan-review, reviewDecision accept)",
+    "userProblem": "In riela/gmail-collect, GmailMailboxCollector.collectScan (Sources/RielaCLI/GmailCollection.swift) uses maxThreads as a per-run cap on listed and processed threads. A 48-hour ART mailbox scan with more than 150 threads and maxThreads 150 stops every other run with failure stage 'budget' and resumes next run, delaying mail by about an hour.",
+    "requiredOutcomes": [
+      "maxThreads means the maximum number of in-flight per-thread reads (version check, full thread read, messageBodyBytes); effective concurrency is min(maxThreads, 16).",
+      "One run lists every page until the provider reports no next page, at page size 50 (min(50, 10000 - listed) near the hard limit), and processes every listed thread.",
+      "All provider requests in a scan (profile, listing, thread reads) take start slots from one shared GmailCollectionRequestLimiter actor spaced by minRequestIntervalSeconds; the limiter refuses slots not strictly before the deadline and refused requests are not counted in requestCount.",
+      "Outcomes are accepted sequentially in queue order on the parent, preserving pending_collection, thread_versions acknowledgement only for accepted threads, deferred/failed rotation via retry_after, output byte reservation, invalidated IDs, mailbox_version freezing and cancellation propagation.",
+      "Early stops record real stages 'deadline' (once), 'output-budget' (with threadId), 'listing-limit', 'listing', 'thread', 'requested-body'; the generic 'budget' stage is removed.",
+      "Existing resume/rotation tests are rewritten to stop via deadline or output budget and still pass; new tests cover full multi-page listing with maxThreads 1, concurrency bound 4 and clamp 16, in-order results, shared limiter spacing, listing-limit stage and coordinator prefetched profile requestCount.",
+      "swift test --filter GmailCollection passes and the full RielaCLITests suite has no new failures."
+    ],
+    "nonGoals": [
+      "No change to message-bodies mode (GmailMessageBodyCollector, maxMessages) or other collectors.",
+      "No change to GmailCollectionOptions validation (maxThreads range 1...10000, default 100) or the scope hash; maxThreads never enters scope identity.",
+      "No change to the pending_collection key set, listing.maximum 10000, advancePage, threadSelection, bodySelection, gmailIdentifier or gmailIDSet.",
+      "No change to coordinator scope archive, retry backlog, fresh-capacity failure or backlog complete=false behavior.",
+      "No README/docs changes (none reference maxThreads), no new dependencies, no commit/push/merge by workers."
+    ],
+    "constraints": [
+      "Swift 6 strict concurrency with no @unchecked Sendable, nonisolated(unsafe) or Mutex in production code; macOS 14 deployment target.",
+      "fetch closures in scan, coordinator and adapter are @Sendable, as are the injectable clock and wait.",
+      "Every swift build/test/swiftlint runs as arch -arm64 /bin/zsh -lc with logs under tmp/gmail-collect-concurrency/<gcc-01|gcc-02>/.",
+      "Same working directory on main, no worktrees, no git write operations by workers; fresh read plus pre/post SHA-256 per owned file.",
+      "gcc-02 guards GmailMessageBodyCollection.swift, GmailCollectionRetryBacklog.swift, GmailCollectionRequestLimiter.swift and the design doc with a shasum pre/post diff.",
+      "Scope-hash golden tests (29b73447..., c4ee206a...) must not be edited or weakened."
+    ],
+    "designDecisionsAndRationale": [
+      "Listing stays sequential because each page needs the previous cursor; only the per-thread phase is concurrent (design §'Full listing, concurrent thread reads and early-stop reasons').",
+      "Concurrency clamp min(maxThreads, 16) keeps compatibility of the accepted maxThreads range while bounding provider load and look-ahead memory.",
+      "Look-ahead window equals the concurrency: a read launches only while fewer than C IDs are launched but unaccepted, bounding wasted work after a stop.",
+      "Shared limiter actor reserves the slot before suspending (actor-reentrancy safe) and sleeps only slot - now, so starts are spaced across workers rather than per worker.",
+      "Deadline refusal is a dedicated GmailCollectionDeadlineRefusal error so a deadline stop is distinguishable from provider .timeout errors.",
+      "A read refused before its first request stays pending (not deferred); a read refused after a request started is deferred and becomes retry_after so a slow item cannot monopolize runs.",
+      "Coordinator passes its already-read profile as prefetchedProfile (counted as the first granted slot) instead of capturing a mutable usedProfile flag, keeping spacing and requestCount.",
+      "Malformed stored versions are parsed inside the worker's error mapping so they fail only that ID."
+    ],
+    "intentionalTradeoffs": [
+      "Throughput is about one request per minRequestIntervalSeconds regardless of concurrency, so single-run completion still depends on the node deadline.",
+      "Removing the per-run cap means large mailboxes may now stop on output-budget or deadline instead of budget.",
+      "testBudgetStopsBeforeAnotherProviderCallAndCancellationPropagates now asserts stage 'deadline' instead of 'listing' (accepted divergence).",
+      "The pre-existing 10,000-item listing hard limit still never completes such a scan; it is now labeled 'listing-limit'."
+    ],
+    "supportedEdgeCases": [
+      "Deadline reached mid-listing or mid-thread-phase returns complete=false with stage 'deadline' and a pending_collection resumed exactly next run.",
+      "Output-budget refusal defers the oversized ID, stops new launches and still evaluates completed look-ahead outcomes in order.",
+      "Out-of-order concurrent completions are accepted in listing/queue order.",
+      "Poison/failed items rotate fairly even with maxThreads 1 (attempts a,b,a,b,a,b).",
+      "Old-cursor resume, discovery floor and body-intent scope switches keep their existing semantics.",
+      "Cancellation from any worker or the parent propagates with no partial result."
+    ],
+    "outOfScopeEdgeCases": [
+      "Raising throughput beyond the shared minRequestIntervalSeconds spacing.",
+      "Completing listings larger than 10,000 items in one scan.",
+      "Concurrency in message-bodies mode or other collectors.",
+      "Known timing flakes in the full RielaCLITests suite unrelated to the owned files (rerun alone and classify under tmp/gmail-collect-concurrency/gcc-02/rerun-*.log)."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-native-source-collection.md",
+      "impl-plans/active/gmail-collect-concurrency-01-request-limiter.md",
+      "impl-plans/active/gmail-collect-concurrency-02-concurrent-collector.md",
+      "Sources/RielaCLI/GmailCollection.swift",
+      "Sources/RielaCLI/GmailCollectionCoordinator.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter+GmailCollect.swift",
+      "Tests/RielaCLITests/GmailCollectionTests.swift"
+    ],
+    "codexAgentReferences": [],
+    "resolvedFindings": [
+      "S5-F1 (mid, resolved): gcc-02 turn maps make only the turn-0 old-cursor listing request throw; turn 3 keeps draining with page([]); all preserved assertions listed.",
+      "S5-F2 (mid, resolved): gcc-02 captures shasum guard-pre/guard-post over 4 non-owned files and diffs them; no 'committed before fanout' assumption.",
+      "Step 5 low residual previousVersion parse (resolved): worker receives raw versions[id] and calls gmailVersion inside its error mapping."
+    ],
+    "residualFindings": [
+      "low: throughput ~1 request per minRequestIntervalSeconds whatever the concurrency; single-run completion depends on the node deadline.",
+      "low: pre-existing 10,000 listing-limit scan never completes; now labeled 'listing-limit'.",
+      "low: known timing flakes in full RielaCLITests must be rerun alone and classified under tmp/gmail-collect-concurrency/gcc-02/rerun-*.log."
+    ]
+  },
+  "plans": [
+    {
+      "planId": "gcc-01-request-limiter",
+      "planPath": "impl-plans/active/gmail-collect-concurrency-01-request-limiter.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/GmailCollectionRequestLimiter.swift",
+        "Tests/RielaCLITests/GmailCollectionRequestLimiterTests.swift",
+        "impl-plans/progress/gcc-01-request-limiter.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Sources/RielaCLI/GmailCollectionRequestLimiter.swift defines internal struct GmailCollectionDeadlineRefusal: Error, Sendable and actor GmailCollectionRequestLimiter with init(interval:deadline:clock:wait:), recordPrefetchedGrant(), acquire() async throws and grantedCount, exactly as pinned in the plan; no 'unchecked' in the file.",
+        "acquire() checks cancellation, computes slot = max(now, lastSlot + interval), refuses slot >= deadline without changing state or waiting, reserves before awaiting wait(slot - now), and never calls wait with a non-positive value.",
+        "GmailCollectionRequestLimiterTests covers the 10 situations in the plan table and passes with 0 failures.",
+        "swift build exits 0 with no diagnostics for the new file; swiftlint --strict on the two new files exits 0 with an empty log.",
+        "git diff --quiet over GmailCollection.swift, GmailCollectionCoordinator.swift, ProductionNodeAdapter+GmailCollect.swift and GmailCollectionTests.swift exits 0.",
+        "impl-plans/progress/gcc-01-request-limiter.md records changes, pre/post SHA-256 of owned files and a verification table (command, exitStatus, testsRun, failureCount, log path)."
+      ],
+      "verification": [
+        "mkdir -p tmp/gmail-collect-concurrency/gcc-01",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/gmail-collect-concurrency/gcc-01/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter GmailCollectionRequestLimiterTests > tmp/gmail-collect-concurrency/gcc-01/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/GmailCollectionRequestLimiter.swift Tests/RielaCLITests/GmailCollectionRequestLimiterTests.swift > tmp/gmail-collect-concurrency/gcc-01/swiftlint.log 2>&1'",
+        "git diff --quiet -- Sources/RielaCLI/GmailCollection.swift Sources/RielaCLI/GmailCollectionCoordinator.swift Sources/RielaCLI/ProductionNodeAdapter+GmailCollect.swift Tests/RielaCLITests/GmailCollectionTests.swift"
+      ]
+    },
+    {
+      "planId": "gcc-02-concurrent-collector",
+      "planPath": "impl-plans/active/gmail-collect-concurrency-02-concurrent-collector.md",
+      "dependsOn": ["gcc-01-request-limiter"],
+      "writePaths": [
+        "Sources/RielaCLI/GmailCollection.swift",
+        "Sources/RielaCLI/GmailCollectionCoordinator.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GmailCollect.swift",
+        "Tests/RielaCLITests/GmailCollectionTests.swift",
+        "impl-plans/progress/gcc-02-concurrent-collector.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "With maxThreads=1 and a 3-page listing, one collectScan lists every page with first == 50 and returns all threads with complete=true and no pending_collection.",
+        "With maxThreads=4 at most 4 thread reads are in flight (high-water mark >= 2 and <= 4); maxThreads=10000 clamps to <= 16; threads and invalidated are in listing order; request starts honour minRequestIntervalSeconds via the shared limiter with injected clock/wait.",
+        "A deadline reached mid-run returns complete=false, failure stage 'deadline' and a pending_collection that the next run resumes exactly; existing resume/rotation tests are rewritten per the plan turn maps and pass.",
+        "Failed-item rotation holds (attempts a,b,a,b,a,b at one-read turns); output-budget refusal records {stage: output-budget, threadId}; listing limit records 'listing-limit' after exactly 200 listing calls.",
+        "Grep invariants: no '\"budget\"' in GmailCollection.swift; options.maximum used only in min(options.maximum, 16); no usedProfile in GmailCollectionCoordinator.swift; '@Sendable func fetch' in ProductionNodeAdapter+GmailCollect.swift; scope-hash goldens unchanged.",
+        "swift build, swift test --filter GmailCollection and swiftlint --strict on the four owned Swift files exit 0; full RielaCLITests shows no new failures with any non-Gmail failures classified via rerun logs.",
+        "Guard shasum diff over GmailMessageBodyCollection.swift, GmailCollectionRetryBacklog.swift, GmailCollectionRequestLimiter.swift and the design doc exits 0; impl-plans/progress/gcc-02-concurrent-collector.md records per-file changes, pre/post hashes, rewritten/new tests and the verification table."
+      ],
+      "verification": [
+        "mkdir -p tmp/gmail-collect-concurrency/gcc-02",
+        "shasum -a 256 Sources/RielaCLI/GmailMessageBodyCollection.swift Sources/RielaCLI/GmailCollectionRetryBacklog.swift Sources/RielaCLI/GmailCollectionRequestLimiter.swift design-docs/specs/design-native-source-collection.md > tmp/gmail-collect-concurrency/gcc-02/guard-pre.sha256",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/gmail-collect-concurrency/gcc-02/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter GmailCollection > tmp/gmail-collect-concurrency/gcc-02/test-gmail.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter RielaCLITests > tmp/gmail-collect-concurrency/gcc-02/test-rielacli.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/GmailCollection.swift Sources/RielaCLI/GmailCollectionCoordinator.swift \"Sources/RielaCLI/ProductionNodeAdapter+GmailCollect.swift\" Tests/RielaCLITests/GmailCollectionTests.swift > tmp/gmail-collect-concurrency/gcc-02/swiftlint.log 2>&1'",
+        "shasum -a 256 Sources/RielaCLI/GmailMessageBodyCollection.swift Sources/RielaCLI/GmailCollectionRetryBacklog.swift Sources/RielaCLI/GmailCollectionRequestLimiter.swift design-docs/specs/design-native-source-collection.md > tmp/gmail-collect-concurrency/gcc-02/guard-post.sha256 && diff tmp/gmail-collect-concurrency/gcc-02/guard-pre.sha256 tmp/gmail-collect-concurrency/gcc-02/guard-post.sha256"
+      ]
+    }
+  ]
+}

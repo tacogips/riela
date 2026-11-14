@@ -1,0 +1,66 @@
+.page.workflow-workspace-page { max-width: none; padding: 24px; }
+.workflow-workspace-page > .page-header { margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+.workflow-workspace-page > .page-header h1 { font-family: inherit; font-size: 24px; }
+.workflow-workspace-page .header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.workflow-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+.workflow-graph-pane { min-width: 0; position: sticky; top: 16px; }
+.workflow-definition-embedded { min-width: 0; }
+.workflow-definition-embedded .graph-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--muted, #8b9eac); font-size: 13px; }
+.workflow-definition-embedded .definition-summary { margin-bottom: 12px; font-size: 11px; }
+.workflow-definition-embedded .definition-network-layout { display: block; position: relative; }
+.workflow-definition-embedded .definition-network-stage { height: calc(100vh - 260px); min-height: 460px; border-radius: 10px; }
+.workflow-definition-embedded .definition-node-inspector { position: absolute; right: 12px; top: 12px; width: min(280px, calc(100% - 24px)); max-height: calc(100% - 80px); overflow: auto; margin: 0; padding: 16px; background: var(--surface, #13212c); color: var(--ink, #e4f3fa); box-shadow: 0 8px 32px #0005; }
+.workflow-definition-embedded .definition-node-inspector h2, .workflow-definition-embedded .definition-node-inspector dd { color: var(--ink, #e4f3fa); }
+.workflow-definition-embedded .definition-node-inspector > button:first-child { width: auto; margin: 0 0 12px auto; }
+.workflow-definition-embedded .definition-network-node { cursor: grab; touch-action: none; }
+.workflow-definition-embedded .definition-network-node:active { cursor: grabbing; }
+.definition-port { fill: #83d6c9; stroke: #102832; stroke-width: 2; }
+.workflow-configurations-pane { min-width: 0; max-height: calc(100vh - 185px); overflow-y: auto; overflow-x: hidden; padding: 0 2px 20px; scrollbar-gutter: stable; }
+.workflow-configurations-pane .panel, .workflow-configurations-pane .editor-panel { margin-top: 0; margin-bottom: 16px; padding: 16px; }
+.workflow-configurations-pane .section-title { flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.workflow-configurations-pane .section-title h2 { font-family: inherit; font-size: 17px; }
+.workflow-configurations-pane p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.workflow-configurations-pane .instance-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.workflow-configurations-pane .instance-card { padding: 12px; }
+.workflow-configurations-pane .instance-card p { min-height: 0; margin: 6px 0 0; }
+.workflow-configurations-pane .card-heading { flex-wrap: wrap; }
+.workflow-configurations-pane .card-heading strong { flex: 1; }
+.workflow-configurations-pane .form-grid, .workflow-configurations-pane .secret-row { grid-template-columns: minmax(0, 1fr); }
+.workflow-configurations-pane .save-row, .workflow-configurations-pane .filter-row, .workflow-configurations-pane .add-source { flex-wrap: wrap; gap: 8px; }
+.workflow-configurations-pane .add-source .grow { flex-basis: 100%; }
+.workflow-configurations-pane .source-label { overflow-wrap: anywhere; }
+.workflow-configurations-pane .page { padding: 0; }
+.workflow-configurations-pane .page-header { display: block; margin: 16px 0; }
+.workflow-configurations-pane .page-header h1 { font-family: inherit; font-size: 20px; }
+.workflow-configurations-pane .refresh-actions { flex-wrap: wrap; }
+.workflow-configurations-pane .execution-row { min-width: 0; flex-wrap: wrap; }
+.workflow-configurations-pane .execution-row > div { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .page.workflow-workspace-page { padding: 16px; }
+  .workflow-workspace { grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; }
+  .workflow-definition-embedded .definition-network-hint { display: none; }
+  .workflow-definition-embedded .graph-toolbar { flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .workflow-workspace { grid-template-columns: minmax(0, 1fr); }
+  .workflow-graph-pane { position: static; }
+  .workflow-definition-embedded .definition-network-stage { min-height: 280px; height: 45vh; }
+  .workflow-configurations-pane { max-height: none; overflow: visible; }
+}
+
+.workflow-configurations-pane { border-left: 1px solid var(--line, #29434e); padding-left: 16px; }
+.configuration-list-section { margin-bottom: 16px; }
+.configuration-list-section > .section-title { padding: 0 0 12px; margin: 0; }
+.configuration-list-section > .section-title button { font-size: 11px; }
+.configuration-list { list-style: none; padding: 0; margin: 0; }
+.configuration-list > li { border-bottom: 1px solid var(--line, #29434e); }
+.configuration-list > li:first-child { border-top: 1px solid var(--line, #29434e); }
+.workflow-configurations-pane .configuration-list .configuration-list-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 10px 8px; border: 0; border-radius: 0; background: transparent; color: var(--ink, #e4f3fa); text-align: left; box-shadow: none; }
+.workflow-configurations-pane .configuration-list .configuration-list-row:hover:not(:disabled) { background: var(--surface-subtle, #1a2936); }
+.workflow-configurations-pane .configuration-list .configuration-list-row.selected { background: var(--blue-100, #193e49); box-shadow: inset 3px 0 var(--blue-600, #63dcdf); }
+.configuration-list-row strong { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 12px; }
+.configuration-list-row .status-dot { flex-shrink: 0; }
+.configuration-state { flex-shrink: 0; color: var(--muted, #8b9eac); font-size: 11px; }
+.configuration-list-row .warning-badge { font-size: 10px; }
+.workflow-configurations-pane .editor-panel { border: 0; border-top: 1px solid var(--line, #29434e); border-radius: 0; background: transparent; padding: 16px 0; box-shadow: none; }
+@media (max-width: 560px) { .workflow-configurations-pane { border-left: 0; padding-left: 0; } }

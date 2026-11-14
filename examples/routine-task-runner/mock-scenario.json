@@ -1,0 +1,14 @@
+{
+  "run-task": {
+    "provider": "scenario-mock",
+    "model": "claude-haiku-4-5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "result": "Collected the daily metrics snapshot and appended it to the report.",
+      "conditionMet": false,
+      "completionNote": ""
+    }
+  }
+}

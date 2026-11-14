@@ -1,0 +1,220 @@
+{
+  "taskId": "x-collect-author-sampling",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/x-collect-author-sampling",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "bb50a7b04acc43ffa365a69a87272e42f10ca8c1",
+  "designDocPaths": [
+    "design-docs/specs/design-native-source-collection.md"
+  ],
+  "evidenceRoot": "tmp/x-collect-author-sampling",
+  "reviewContext": {
+    "issueReference": "none (no GitHub issue URL/number supplied; request taken from workflowInput.requestedBehavior, intake comm-000012 of opus-terra-design-and-implement-review-loop-session-1)",
+    "userProblem": "ART reads 23 followed X accounts through the built-in riela/x-collect add-on with one `from:a OR from:b` search per run. X pay-per-use bills each returned post ($0.005), deduplicated only within a UTC day. Two prolific accounts (@rohanpaul_ai 26, @Polymarket 24 of the last 18 h window) used two thirds of the page budget and drove cost until the user's X spend cap was hit. Nested quote/repost expansions to depth 2 and cross-UTC-day re-reads add further billable reads.",
+    "requiredOutcomes": [
+      "authorSampling option: handle (case-insensitive) -> probability in [0,1]; sampled handles removed from the regular author query and its checkpoint; deterministic draw SHA-256(lowercase handle + canonical end) < probability; drawn handles read in a separate group for [start,end] only (fresh scan, no cursor, no earliest widening), posts merged with the same shape.",
+      "authorDailyPostThreshold option: checkpoint keeps a compact rolling per-author daily count for the regular query; authors above the threshold are auto-sampled at min(1, threshold/observedDailyVolume); explicit authorSampling overrides; auto set changes at most once per day.",
+      "A sampling-, depth- or query-induced change of the regular query never produces an invalid-cursor failure and never triggers a 24 h re-read; it starts fresh coverage from start.",
+      "Output metadata `sampling` lists sampled handles with source, probability, observed volume, drawn/skipped status, fetchedCount and truncated; output size limits kept.",
+      "Validation rejects probabilities outside [0,1], handles not in authorHandles, duplicate case-insensitive keys, threshold < 1 (and > 100000), referenceDepth outside 0..2 or combined with select.",
+      "referenceDepth option (0/1/2, default 2 byte-identical to today) limits nested quote/repost/author fields and expansions; checkpoint reference_depth identity resets coverage on change.",
+      "UTC-day aware re-reads: resumed/widened scans do not re-request posts older than the current UTC day that a completed coverage already contains (suffix/prefix segments around the covered range H).",
+      "usageTweets: expose GET /2/usage/tweets via the linked x-gateway SDK if its SDL has a usage field (fixture-tested through riela/x-gateway-reader); otherwise document why in the design doc and skip.",
+      "README documents the cost controls with one JSON example and the per-UTC-day dedup rule."
+    ],
+    "nonGoals": [
+      "No hard-coded handles.",
+      "No change to lookup mode (XLookupCollection.swift) or to XCollectionOptions.postFields(depth:links:coverage:).",
+      "No edits to Tests/RielaCLITests/XCollectionTests.swift.",
+      "No REST client or Package.swift bump for usage; no real X API calls in tests.",
+      "No persistence outside the returned checkpoint."
+    ],
+    "constraints": [
+      "Work only in worktree /Users/taco/gits/tacogips/riela-worktrees/x-sampling; do not modify the main checkout /Users/taco/gits/tacogips/riela or its .build.",
+      "Do not restart/kill/reconfigure RielaApp, modify ~/.riela/** or installed binaries.",
+      "Backward compatible: without the new options, selection, request arguments, checkpoint bytes and output keys are unchanged.",
+      "Do not modify unrelated files.",
+      "Run swift build/test/swiftlint inside `arch -arm64 /bin/zsh -lc`.",
+      "Evidence logs only under the gitignored tmp/x-collect-author-sampling/<planId-short>/."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Wave 1 contract plan xs-01 pins all new XCollectionOptions fields (authorSampling, authorDailyPostThreshold, referenceDepth, customSelection, billingDayStart, depthIdentity), postFields(level:referenceDepth:links:coverage:), the reference_depth checkpoint identity and a window.needsRequest seam.",
+        "rationale": "xs-02 and xs-03 build on fixed shapes in wave 2 without editing XCollectionOptions.swift, keeping per-wave write sets disjoint."
+      },
+      {
+        "decision": "Deterministic draw uses the first 8 bytes of SHA-256(lowercase(handle) + \"\\n\" + canonical ISO8601 end) / 2^64, never Hasher.",
+        "rationale": "Reproducible across processes and testable; Hasher is per-process seeded."
+      },
+      {
+        "decision": "Billing day D is the UTC start of the execution clock's day (options.billingDayStart), never derived from end or options.timezone; H = [max(cs,start), min(ce,end,D)) is skipped via suffix/prefix segments.",
+        "rationale": "X dedup resets at UTC midnight; posts in a previous UTC day's completed coverage would be billed again."
+      },
+      {
+        "decision": "usageTweets is only exposed if the pinned x-gateway SDL already has a usage Query field, through the existing riela/x-gateway-reader; otherwise documented as absent.",
+        "rationale": "Riela calls X only through the linked SDK; a riela REST path would break the single-SDK rule and an SDK change is outside this repository."
+      },
+      {
+        "decision": "Plan review accepted XS-PLAN-H1 resolved: every writePaths entry is one concrete file, sharedPaths [] and artifactRoots [] in all plans; per-wave writePaths disjoint; XCollectionWindow.swift and ProductionNodeAdapter+XCollect.swift ordered by dependsOn on xs-01.",
+        "rationale": "Reviewer parsed all four JSON headers with python3 -I and checked git status (step5-impl-plan-review, comm-000012)."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "xs-02 and xs-03 both run full `swift build --build-tests` in the same tree in wave 2; a half-finished edit in one can break the other's build; both record and rerun, and the integration gate runs the combined filter.",
+      "When sampling changes author_query the window resets to config_key and loses prior coverage, so on that one run xs-02 cannot exclude H and previous-UTC-day posts in [start,end) may be billed once more (design: fresh coverage from start, no 24 h re-read).",
+      "Sampled reads are 1 page (maxResults = pageSize) per drawn group; a leftover token is not persisted and is reported as truncated.",
+      "The auto-sampled set is frozen per calendar day in options.timezone to keep the regular query/checkpoint stable."
+    ],
+    "supportedEdgeCases": [
+      "All handles sampled: no regular search, minimal checkpoint with author_query \"\" and complete coverage.",
+      "Sampled read failure: failures entry with stage \"sampled\", run succeeds, complete reflects regular query only.",
+      "Malformed previous.author_sampling with threshold set: invalid before any search; without threshold the key is dropped.",
+      "Replayed completed window does not double count observed volumes; truncated sampled page counts only [t_old,end).",
+      "Depth change with a pending token: no nextToken/sinceId sent, startTime = wire(start); legacy checkpoints without reference_depth keep continuing at depth 2.",
+      "Suffix/prefix segment switches, zero-page failures and budget stops persist a validated pending_scan and never request H.",
+      "billingDayStart nil (direct window construction): legacy behavior."
+    ],
+    "outOfScopeEdgeCases": [
+      "Lookup mode depth/sampling.",
+      "Billing of included/expanded objects (undocumented by X; assumed possibly billed).",
+      "Adding usage endpoints to the x-gateway SDK itself."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCLI/XCollectionOptions.swift",
+      "Sources/RielaCLI/XCollectionWindow.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter+XCollect.swift",
+      "Sources/RielaCLI/XLookupCollection.swift",
+      "Tests/RielaCLITests/XCollectionTests.swift",
+      "Tests/RielaCLITests/XGatewayEmbeddedReaderRuntimeTests.swift",
+      "README.md",
+      "Package.swift"
+    ]
+  },
+  "acceptedDependencies": [],
+  "plans": [
+    {
+      "planId": "xs-01-options-and-depth",
+      "planPath": "impl-plans/active/xs-01-options-and-depth.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/XCollectionOptions.swift",
+        "Sources/RielaCLI/XCollectionWindow.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+XCollect.swift",
+        "Tests/RielaCLITests/XCollectionReferenceDepthTests.swift",
+        "impl-plans/progress/xs-01-options-and-depth.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "XCollectionOptions exposes authorSampling [String: Double]?, authorDailyPostThreshold Int?, referenceDepth Int (default 2), customSelection Bool, billingDayStart Date? and computed depthIdentity Int? with the exact names/types in the plan.",
+        "Validation rejects referenceDepth 3, -1, \"2\", 1.5, referenceDepth with select, unknown/duplicate/out-of-range/non-numeric authorSampling entries, non-object authorSampling, threshold 0, 100001, 2.5; accepts {\"BOB\":0}, {\"bob\":1}, {\"bob\":0.25}, threshold 1.",
+        "referenceDepth 2/absent default selection is byte-identical to postFields(depth:0,links:coverage:) for all four links/coverage combos; depth 1 and 0 produce the expected nested sets.",
+        "A depth change resets coverage from start with no nextToken/sinceId; same depth continues the token; legacy checkpoints keep working and gain no reference_depth key; invalid previous.reference_depth is rejected before any search.",
+        "Collector sets billingDayStart (UTC day of clock) on each group window and the read loop uses window.needsRequest.",
+        "XCollectionTests.swift and XLookupCollection.swift unchanged; existing XCollectionTests and XLookupCollectionTests pass unmodified."
+      ],
+      "verification": [
+        "mkdir -p tmp/x-collect-author-sampling/xs-01",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/x-collect-author-sampling/xs-01/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'XCollectionReferenceDepthTests|XCollectionTests|XLookupCollectionTests'\" > tmp/x-collect-author-sampling/xs-01/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/XCollectionOptions.swift Sources/RielaCLI/XCollectionWindow.swift Sources/RielaCLI/ProductionNodeAdapter+XCollect.swift Tests/RielaCLITests/XCollectionReferenceDepthTests.swift' > tmp/x-collect-author-sampling/xs-01/lint.log 2>&1",
+        "git grep -n needsRequest Sources/RielaCLI",
+        "git diff --stat -- Tests/RielaCLITests/XCollectionTests.swift Sources/RielaCLI/XLookupCollection.swift"
+      ]
+    },
+    {
+      "planId": "xs-02-utc-day-segments",
+      "planPath": "impl-plans/active/xs-02-utc-day-segments.md",
+      "dependsOn": [
+        "xs-01-options-and-depth"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/XCollectionWindow.swift",
+        "Tests/RielaCLITests/XCollectionUTCDayTests.swift",
+        "impl-plans/progress/xs-02-utc-day-segments.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Fresh windows whose previous complete coverage overlaps a previous UTC day compute H = [max(cs,start), min(ce,end,D)) and never request it; empty H keeps today's exact behavior and bytes.",
+        "Suffix/prefix segments with skip/segment keys, correct startTime/endTime/sinceId arguments, segment-scoped accept filter, and a segment switch that resets token/visited/page_count.",
+        "needsRequest, finalization (pending_scan persisted until both segments finish, since_id committed only on completion) and pending validation follow the plan; legacy scans unchanged byte-for-byte.",
+        "Design assertions 1-7 and 9-12 exist as named passing tests in XCollectionUTCDayTests; billingDayStart nil keeps legacy behavior; existing XCollectionTests and XCollectionReferenceDepthTests green."
+      ],
+      "verification": [
+        "mkdir -p tmp/x-collect-author-sampling/xs-02",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/x-collect-author-sampling/xs-02/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'XCollectionUTCDayTests|XCollectionTests|XCollectionReferenceDepthTests'\" > tmp/x-collect-author-sampling/xs-02/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/XCollectionWindow.swift Tests/RielaCLITests/XCollectionUTCDayTests.swift' > tmp/x-collect-author-sampling/xs-02/lint.log 2>&1"
+      ]
+    },
+    {
+      "planId": "xs-03-author-sampling",
+      "planPath": "impl-plans/active/xs-03-author-sampling.md",
+      "dependsOn": [
+        "xs-01-options-and-depth"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/XCollectionSampling.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+XCollect.swift",
+        "Tests/RielaCLITests/XCollectionSamplingTests.swift",
+        "impl-plans/progress/xs-03-author-sampling.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "drawValue is deterministic per (handle, end), case-insensitive, SHA-256 based (no Hasher); 4000 ends at p=0.25 give a drawn fraction in [0.22,0.28]; p=0 never, p=1 always.",
+        "Sampled handles are absent from every regular search query, author_query and checkpoint; drawn handles get a separate search for [start,end] only with no nextToken/sinceId, maxResults = pageSize; posts merged with the normal shape; leftover token reported truncated and not persisted.",
+        "Threshold 10 with 40 posts/86400 s on a new day gives auto p = 0.25 (source auto); explicit entry overrides (source explicit); auto set frozen within the same day; replay does not double count.",
+        "A sampling-induced query change with a pending token for the old query gives no invalid-cursor error and a fresh scan from start without nextToken.",
+        "Sampled read failure is recorded with stage sampled and does not fail the run; all-handles-sampled yields no regular search and a minimal complete checkpoint; malformed author_sampling state handled per plan.",
+        "Without authorSampling/authorDailyPostThreshold the output has no sampling key and the checkpoint equals the pre-change checkpoint; existing tests green."
+      ],
+      "verification": [
+        "mkdir -p tmp/x-collect-author-sampling/xs-03",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/x-collect-author-sampling/xs-03/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter 'XCollectionSamplingTests|XCollectionTests|XCollectionReferenceDepthTests'\" > tmp/x-collect-author-sampling/xs-03/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/XCollectionSampling.swift Sources/RielaCLI/ProductionNodeAdapter+XCollect.swift Tests/RielaCLITests/XCollectionSamplingTests.swift' > tmp/x-collect-author-sampling/xs-03/lint.log 2>&1",
+        "! git grep -n Hasher Sources/RielaCLI/XCollectionSampling.swift"
+      ]
+    },
+    {
+      "planId": "xs-04-usage-and-docs",
+      "planPath": "impl-plans/active/xs-04-usage-and-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "README.md",
+        "design-docs/specs/design-native-source-collection.md",
+        "Tests/RielaCLITests/XGatewayUsageTweetsTests.swift",
+        "impl-plans/progress/xs-04-usage-and-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "sharedPathNotes": [
+        {
+          "path": "design-docs/specs/design-native-source-collection.md",
+          "intendedEdit": "replace only the Implementation outcome placeholder under Daily usage read (usageTweets)"
+        },
+        {
+          "path": "Tests/RielaCLITests/XGatewayUsageTweetsTests.swift",
+          "intendedEdit": "created only when the pinned x-gateway SDL has a usage Query field; otherwise left absent"
+        }
+      ],
+      "acceptanceCriteria": [
+        "Usage feasibility determined from the pinned x-gateway SDL (.build/checkouts/x-gateway) and Package.resolved version, recorded in the progress log.",
+        "Design doc Implementation outcome under Daily usage read (usageTweets) names present/absent, x-gateway version and evidence log path; the rest of the design doc is byte-unchanged.",
+        "If present: XGatewayUsageTweetsTests asserts the field in XGatewayOperationCatalog.queryOperationNames, runs riela/x-gateway-reader through XGatewayReaderSDK.invocationOverride, and checks an oversized output is rejected; no real X API calls.",
+        "README has a concise riela/x-collect cost-controls paragraph with one JSON example (authorSampling, authorDailyPostThreshold, referenceDepth), the per-UTC-day dedup statement and a design-doc link.",
+        "No Swift source changes in Sources/ and no Package.swift change."
+      ],
+      "verification": [
+        "mkdir -p tmp/x-collect-author-sampling/xs-04",
+        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/x-collect-author-sampling/xs-04/build.log 2>&1",
+        "grep -rn -i usage .build/checkouts/x-gateway/Sources > tmp/x-collect-author-sampling/xs-04/usage-grep.log 2>&1; test $? -le 1",
+        "if [ -f Tests/RielaCLITests/XGatewayUsageTweetsTests.swift ]; then arch -arm64 /bin/zsh -lc \"swift test --skip-build --filter XGatewayUsageTweetsTests\" > tmp/x-collect-author-sampling/xs-04/test.log 2>&1; fi",
+        "git diff --check -- README.md design-docs/specs/design-native-source-collection.md"
+      ]
+    }
+  ]
+}

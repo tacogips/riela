@@ -1,0 +1,27 @@
+# sdwd-04 implementation progress
+
+Blocked 2026-11-11: the prescribed `WorkflowDefinitionService.workflowNames()` / `inspectSourceDrift` uses `WorkflowDefinitionStore.openDatabase()` in `Sources/RielaCore/WorkflowDefinitionStore.swift:758`. It opens the persistence database in writable mode. `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift:264` invokes the incompatible-store discard and lines 214–215 delete the database and its WAL/SHM; writable open also prepares/migrates the schema. A database-exists guard does not prevent deletion or recreation. This contradicts the accepted read-only doctor design and risks live stores.
+
+Resume after the checkpoint assigns an API for strict read-only definition inspection in the core/registry paths (including non-destructive handling of incompatible stores) and its verification, or supplies another accepted safe design. Those paths are outside this plan's writePaths. No doctor implementation or behavioral verification was attempted; both acceptance criteria remain unchecked. Dependency sdwd-02 is accepted by dispatch; this is a newly discovered API capability/ownership gap, not a rejection of that dependency.
+
+## IR-SDWD04-READONLY-OPEN redispatch
+
+The proposed generation/table precheck does not resolve the read-only contract. `SQLiteDatabase.open(mode: .readOnly)` can fall back to a writable connection (`Sources/RielaSQLite/SQLiteDatabase.swift:176-185`); `.strictReadOnly` avoids that fallback. More importantly, after the precheck, `WorkflowDefinitionService.workflowNames()` still enters `WorkflowDefinitionStore.openDatabase()`, acquires a definition schema lock and opens the writable persistence store. On a schema-cache miss, `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift:296-305` calls `prepareSchema(in:)`, which executes `CREATE TABLE IF NOT EXISTS` and related DDL even when the generation stamp matches (`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift:160,708`). The writable options also enable WAL. A current-generation database containing `definition_heads` but missing other schema objects passes the proposed precheck and can be modified. A concurrent database replacement between the check and service open also defeats the guard. Thus the review's assertion that the writable open is a no-op at the current generation is not generally valid.
+
+The finding remains unresolved: the assigned paths cannot supply a strict read-only service/store inspection API. Resume with an amended checkpoint assigning that API and verification, or another accepted design that actually guarantees read-only inspection. No unsafe doctor changes were made. Build, focused tests, and lint were not run because implementation remains blocked; both acceptance criteria remain unchecked. Formal review and integration remain downstream.
+
+## Amendment 2026-11-11 (IR-SDWD04-DOCTOR-RULING)
+
+IR-SDWD04-DOCTOR-RULING: sdwd-04 was blocked twice with no DoctorCommand.swift change, so `riela doctor` has no definitionSources drift report. The worker's rebuttal of round 1 is correct: SQLiteDatabase.open(mode: .readOnly) falls back to SQLITE_OPEN_READWRITE (SQLiteDatabase.swift:174-181), and the later service open runs schema preparation. As design author, integration review now rules on design §8 'read-only'. It means no seed, import or auto-sync, no definition_* row writes, and never creating, migrating or discarding a store. A writable service open is permitted only after a .strictReadOnly precheck proves three things: the store is at SQLiteWorkflowRuntimePersistenceStore.schemaGeneration, has definition_heads, and is already in WAL journal mode. On such a store the open's schema preparation is idempotent, so it neither migrates nor discards. This is the same open path the existing read-only `riela workflow definition history|show|diff` commands already use. The TOCTOU replacement window is an accepted residual. No RielaCore or Registry change is authorized or needed.
+
+The prior blocker reports above are historical. This binding ruling authorizes the guarded service open and supersedes the earlier read-only interpretation. Implementation and final-source verification are in progress; acceptance remains pending their results.
+
+## Implementation and verification completed
+
+The strict read-only generation, heads-table and WAL checks precede service construction. Doctor reports per-source drift without invoking definition writes. Three new cases cover statuses, row counts, text, missing stores and byte-identical mismatched generation. The accepted TOCTOU replacement window remains.
+
+- `arch -arm64 /bin/zsh -lc 'swift build > tmp/stale-definition/sdwd-04-doctor-drift-report/build.log 2>&1; echo $? > tmp/stale-definition/sdwd-04-doctor-drift-report/build.exit'`: 0.
+- Isolated HOME and RIELA_WORKFLOW_HOME, `swift test --filter "DoctorDefinitionSourceTests|DoctorCommandTests|DoctorBackendCapabilityTests"` via arm64 zsh: 0; 30 tests, 0 failures; `test.log` and `test.exit`.
+- Changed-file NUL manifest `changed-swift.nul`, `xargs -0 swiftlint lint --strict --quiet --no-cache` via arm64 zsh: 0; `lint.log` and `lint.exit`.
+- SHA256 DoctorCommand.swift: `9015a2154cfe41201be50e5d2a4763d7aa125133cc6274e81c7141d6dc7373c9`; DoctorDefinitionSourceTests.swift: `f93b2515d8293aa746326905ddb82dd029f5809b6a1e54cfbc4b872e66b7eceb`.
+- Both plan acceptance criteria are complete; formal review and integration remain downstream.

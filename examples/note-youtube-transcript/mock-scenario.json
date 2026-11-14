@@ -1,0 +1,13 @@
+{
+  "extract-transcript": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "status": "ready",
+      "bodyMarkdown": "# Mock YouTube Transcript\n\nSource: https://youtu.be/example\n\n- Riela Note stores transcript notes.\n- Related video references are attached as files."
+    }
+  }
+}

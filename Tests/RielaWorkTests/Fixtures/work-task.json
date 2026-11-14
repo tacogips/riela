@@ -1,0 +1,93 @@
+{
+  "completion" : {
+    "acceptance" : [
+      {
+        "gateIds" : [
+          "implementation-review"
+        ],
+        "id" : "criterion-1",
+        "statement" : "The importer stops dropping rows with a null vendor."
+      }
+    ],
+    "gates" : [
+      {
+        "acceptWhen" : {
+          "decision" : "accepted",
+          "maxHighFindings" : 0
+        },
+        "id" : "implementation-review",
+        "required" : true,
+        "stepId" : "implementation-review"
+      }
+    ],
+    "requiresHumanAccept" : false,
+    "verification" : [
+      {
+        "command" : "swift test",
+        "name" : "unit-tests"
+      }
+    ]
+  },
+  "context" : {
+    "kind" : "repository",
+    "repository" : {
+      "baseRevision" : "60b8fe8fb69c905c52ec3356e626525edb1e4bec",
+      "isolation" : "worktree",
+      "root" : "/repo",
+      "writeScopes" : [
+        "Sources/"
+      ]
+    }
+  },
+  "dependsOn" : [
+    "task-1a1d3c11-8b1f-4f2a-9c3d-1b7e5f0a4d99"
+  ],
+  "director" : {
+    "deterministic" : {
+      "recoverOnGateRejection" : true,
+      "rerunOnAdapterFailure" : true,
+      "rerunOnInactivity" : true,
+      "rerunOnNodeTimeout" : true
+    },
+    "humanEscalation" : {
+      "escalateAfterFailedAttempts" : 3,
+      "escalateOnGuardViolation" : true
+    }
+  },
+  "guard" : {
+    "budget" : {
+      "maxAttempts" : 4,
+      "maxTotalTokens" : 500000
+    },
+    "convergence" : {
+      "maxGateVisits" : 4,
+      "maxRepeatedFindingRounds" : 2
+    },
+    "inactivity" : {
+      "heartbeatBackends" : [
+        "codex-agent"
+      ],
+      "monitorIntervalMs" : 1000,
+      "stallTimeoutMs" : 120000
+    },
+    "onViolation" : "askDirector"
+  },
+  "id" : "task-0f0d0d48-2b3e-4c1d-9f0a-5a9a3b1e7c22",
+  "instruction" : "Fix the vendor import so null vendors are reported, not dropped.",
+  "intentId" : "intent-6a2d3c11-8b1f-4f2a-9c3d-1b7e5f0a4d22",
+  "plan" : {
+    "kind" : "workflow",
+    "workflow" : {
+      "name" : "loop-engineer-quality-loop",
+      "scope" : "project"
+    }
+  },
+  "state" : "running",
+  "title" : "Fix the vendor importer",
+  "trigger" : {
+    "cron" : "0 0 * * * *",
+    "kind" : "schedule",
+    "timezone" : "Asia/Tokyo"
+  },
+  "version" : 3
+}

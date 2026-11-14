@@ -1,0 +1,16 @@
+{
+  "id": "summarize-new-mail",
+  "description": "Summarizes newly seen Gmail messages into a compact Telegram digest.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/summarize-new-mail.md",
+  "variables": {
+    "codexAdditionalArgs": [
+      "--sandbox",
+      "workspace-write"
+    ]
+  },
+  "output": {
+    "description": "Return JSON with when.should_send_telegram, payload.replyText, payload.messageDigests, and payload.fetchedMessageIds."
+  }
+}

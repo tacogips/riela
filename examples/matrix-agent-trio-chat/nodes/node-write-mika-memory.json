@@ -1,0 +1,16 @@
+{
+  "id": "write-mika-memory",
+  "addon": {
+    "name": "riela/chat-persona-memory-write",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend",
+      "memoryId": "persona-chat-memory"
+    }
+  },
+  "memories": [{"id": "persona-chat-memory", "purpose": "persist Mika Trend memory entries"}],
+  "output": {
+    "description": "Persist Mika Trend memory entries and pass through reply/handoff flags."
+  }
+}

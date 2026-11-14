@@ -1,0 +1,16 @@
+{
+  "id": "read-rina-memory",
+  "addon": {
+    "name": "riela/chat-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor",
+      "memoryId": "persona-chat-memory"
+    }
+  },
+  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina Cursor memory"}],
+  "output": {
+    "description": "Return recent Rina Cursor memory records from persona-chat-memory."
+  }
+}

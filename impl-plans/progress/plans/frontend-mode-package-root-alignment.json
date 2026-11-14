@@ -1,0 +1,1 @@
+{"phase":44,"status":"Completed","tasks":{"TASK-001":{"deps":["frontend-mode-built-asset-contract:TASK-002"],"parallelizable":true,"status":"Completed"},"TASK-002":{"deps":["TASK-001"],"parallelizable":false,"status":"Completed"}}}

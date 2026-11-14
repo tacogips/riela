@@ -1,0 +1,27 @@
+{
+  "id": "import-incoming-document",
+  "sourceId": "kaiba-incoming-documents",
+  "match": {
+    "eventType": "file.change.created"
+  },
+  "workflowName": "kaiba-document-intake",
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "path": "{{event.input.file.absolutePath}}",
+      "title": "{{event.input.file.name}}",
+      "watch": "{{event.input.watch}}",
+      "kaibaConfigPath": "",
+      "ocr": false,
+      "translate": false,
+      "targetLanguage": "Japanese",
+      "s3ProfileName": ""
+    },
+    "mirrorToHumanInput": false
+  },
+  "execution": {
+    "async": true,
+    "dedupeWindowMs": 86400000,
+    "concurrencyKey": "{{event.input.file.path}}"
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "route-message": {
+    "provider": "scenario-mock",
+    "model": "router",
+    "when": {
+      "target_support-lead": true,
+      "target_product-engineer": false,
+      "target_customer-success": false
+    },
+    "payload": {
+      "target": "support-lead"
+    }
+  },
+  "support-lead": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_product-engineer": true,
+      "handoff_customer-success": false
+    },
+    "payload": {
+      "replyText": "I will own the escalation timeline. @product-engineer, confirm impact and mitigation.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Customer escalation example memory for Hana Support Lead"
+        }
+      ],
+      "handoff_product-engineer": true,
+      "handoff_customer-success": false
+    }
+  },
+  "product-engineer": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_support-lead": false,
+      "handoff_customer-success": true
+    },
+    "payload": {
+      "replyText": "The issue affects exports over 50k rows; a feature-flag mitigation is ready. @customer-success, frame the customer update.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Customer escalation example memory for Rei Product Engineer"
+        }
+      ],
+      "handoff_support-lead": false,
+      "handoff_customer-success": true
+    }
+  },
+  "customer-success": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_support-lead": false,
+      "handoff_product-engineer": false
+    },
+    "payload": {
+      "replyText": "Send a factual update with the workaround now and commit to the next checkpoint in two hours.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Customer escalation example memory for Mio Customer Success"
+        }
+      ],
+      "handoff_support-lead": false,
+      "handoff_product-engineer": false
+    }
+  }
+}

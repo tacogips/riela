@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the note tag-apply result as the workflow root output.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest note add-on payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest accepted note add-on payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

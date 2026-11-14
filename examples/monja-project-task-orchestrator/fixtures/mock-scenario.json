@@ -1,0 +1,36 @@
+{
+	"plan": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": { "always": true },
+		"payload": {
+			"goal": "Deliver receipt artifact",
+			"steps": ["Implement", "Check"],
+			"scopes": ["api"],
+			"dependencies": [],
+			"mergeKey": "",
+			"verification": "Both fixture steps executed in order"
+		}
+	},
+	"work-0": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": { "always": true },
+		"payload": { "progress": "Implementation fixture executed" }
+	},
+	"work-1": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": { "always": true },
+		"payload": { "progress": "Check fixture executed" }
+	},
+	"verify": {
+		"provider": "scenario-mock",
+		"model": "gpt-5.6-luna",
+		"when": { "always": true },
+		"payload": {
+			"verified": true,
+			"evidence": "Both fixture steps executed in order"
+		}
+	}
+}

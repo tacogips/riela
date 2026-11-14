@@ -1,0 +1,11 @@
+{
+  "room_id": "!customer-escalation:matrix.example",
+  "type": "m.room.message",
+  "event_id": "$enterprise-customer-event-1",
+  "sender": "@support-operator:matrix.example",
+  "origin_server_ts": 1785682802000,
+  "content": {
+    "msgtype": "m.text",
+    "body": "Coordinate a response to this customer escalation with product and customer success."
+  }
+}

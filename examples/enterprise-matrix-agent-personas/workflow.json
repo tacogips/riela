@@ -1,0 +1,94 @@
+{
+  "workflowId": "enterprise-matrix-agent-personas",
+  "description": "Example-owned enterprise persona nodes. Identities and prompts are intentionally outside production code.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "incident-lead",
+  "nodes": [
+    {
+      "id": "incident-lead",
+      "nodeFile": "nodes/node-incident-lead.json"
+    },
+    {
+      "id": "security-analyst",
+      "nodeFile": "nodes/node-security-analyst.json"
+    },
+    {
+      "id": "compliance-counsel",
+      "nodeFile": "nodes/node-compliance-counsel.json"
+    },
+    {
+      "id": "procurement-lead",
+      "nodeFile": "nodes/node-procurement-lead.json"
+    },
+    {
+      "id": "finance-analyst",
+      "nodeFile": "nodes/node-finance-analyst.json"
+    },
+    {
+      "id": "legal-counsel",
+      "nodeFile": "nodes/node-legal-counsel.json"
+    },
+    {
+      "id": "support-lead",
+      "nodeFile": "nodes/node-support-lead.json"
+    },
+    {
+      "id": "product-engineer",
+      "nodeFile": "nodes/node-product-engineer.json"
+    },
+    {
+      "id": "customer-success",
+      "nodeFile": "nodes/node-customer-success.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "incident-lead",
+      "nodeId": "incident-lead",
+      "role": "worker"
+    },
+    {
+      "id": "security-analyst",
+      "nodeId": "security-analyst",
+      "role": "worker"
+    },
+    {
+      "id": "compliance-counsel",
+      "nodeId": "compliance-counsel",
+      "role": "worker"
+    },
+    {
+      "id": "procurement-lead",
+      "nodeId": "procurement-lead",
+      "role": "worker"
+    },
+    {
+      "id": "finance-analyst",
+      "nodeId": "finance-analyst",
+      "role": "worker"
+    },
+    {
+      "id": "legal-counsel",
+      "nodeId": "legal-counsel",
+      "role": "worker"
+    },
+    {
+      "id": "support-lead",
+      "nodeId": "support-lead",
+      "role": "worker"
+    },
+    {
+      "id": "product-engineer",
+      "nodeId": "product-engineer",
+      "role": "worker"
+    },
+    {
+      "id": "customer-success",
+      "nodeId": "customer-success",
+      "role": "worker"
+    }
+  ]
+}

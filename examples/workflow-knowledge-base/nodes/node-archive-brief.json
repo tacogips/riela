@@ -1,0 +1,23 @@
+{
+  "id": "archive-brief",
+  "description": "Re-emit the archive part of the merge decision so the archive step can apply it after the merge write.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.3-codex",
+  "sessionPolicy": { "mode": "reuse" },
+  "promptTemplateFile": "prompts/archive-brief.md",
+  "variables": {},
+  "output": {
+    "description": "Return the archive instruction decided by the merge judge.",
+    "jsonSchema": {
+      "type": "object",
+      "required": ["archive_note", "archiveNoteId", "archivedPointerBody"],
+      "properties": {
+        "archive_note": { "type": "boolean" },
+        "archiveNoteId": { "type": "string" },
+        "archivedPointerBody": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "maxValidationAttempts": 2
+  }
+}

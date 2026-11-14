@@ -1,0 +1,24 @@
+{
+  "acceptance" : [
+    {
+      "gateIds" : [
+        "implementation-review"
+      ],
+      "id" : "criterion-1",
+      "statement" : "The importer stops dropping rows with a null vendor."
+    }
+  ],
+  "constraints" : {
+    "allowedContexts" : [
+      "repository"
+    ],
+    "capabilities" : [
+      "repository.write"
+    ]
+  },
+  "id" : "intent-6a2d3c11-8b1f-4f2a-9c3d-1b7e5f0a4d22",
+  "instruction" : "Fix the vendor import so null vendors are reported, not dropped.",
+  "origin" : "cli",
+  "state" : "open",
+  "title" : "Vendor import drops rows"
+}

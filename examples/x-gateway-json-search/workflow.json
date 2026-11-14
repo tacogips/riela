@@ -1,0 +1,116 @@
+{
+  "workflowId": "x-gateway-json-search",
+  "description": "Fetch one cursor-controlled X search page and shape its posts without a helper script.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 60000
+  },
+  "entryStepId": "fetch",
+  "nodes": [
+    {
+      "id": "fetch",
+      "addon": {
+        "name": "riela/x-gateway-reader",
+        "version": "1",
+        "env": {
+          "X_GW_TOKEN": {"fromEnv": "X_GW_TOKEN", "required": false},
+          "X_GW_CONSUMER_KEY": {"fromEnv": "X_GW_CONSUMER_KEY", "required": false},
+          "X_GW_CONSUMER_SECRET": {"fromEnv": "X_GW_CONSUMER_SECRET", "required": false},
+          "X_GW_ACCESS_TOKEN": {"fromEnv": "X_GW_ACCESS_TOKEN", "required": false},
+          "X_GW_ACCESS_TOKEN_SECRET": {"fromEnv": "X_GW_ACCESS_TOKEN_SECRET", "required": false}
+        },
+        "config": {
+          "operation": "searchPosts",
+          "arguments": {
+            "query": "{{workflowInput.query}}",
+            "maxResults": 25,
+            "nextToken": "{{workflowInput.cursor}}"
+          },
+          "selection": [
+            "posts.id",
+            "posts.text",
+            "posts.createdAt",
+            "posts.author.username",
+            "pageInfo.nextToken"
+          ],
+          "postprocess": [
+            {"pick": "/data/searchPosts/posts"},
+            {"unique": "/id"},
+            {"map": {
+              "id": "/id",
+              "text": "/text",
+              "authorId": "/author/username",
+              "publishedAt": "/createdAt"
+            }},
+            {"take": 25}
+          ],
+          "providerFailure": "output"
+        }
+      }
+    },
+    {
+      "id": "page",
+      "addon": {
+        "name": "riela/json-transform",
+        "version": "1",
+        "config": {
+          "input": {
+            "items": "{{input.processed}}",
+            "nextCursor": "{{input.data.searchPosts.pageInfo.nextToken}}"
+          },
+          "steps": [
+            {"project": {"items": "/items", "nextCursor": "/nextCursor"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "retry-later",
+      "addon": {
+        "name": "riela/json-transform",
+        "version": "1",
+        "config": {
+          "input": {
+            "retryLater": true,
+            "category": "{{input.xGateway.failure.category}}"
+          },
+          "steps": [
+            {"project": {"retryLater": "/retryLater", "category": "/category"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "report-failure",
+      "addon": {
+        "name": "riela/json-transform",
+        "version": "1",
+        "config": {
+          "input": {
+            "category": "{{input.xGateway.failure.category}}",
+            "retryable": "{{input.xGateway.failure.retryable}}"
+          },
+          "steps": [
+            {"project": {"category": "/category", "retryable": "/retryable"}}
+          ]
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "fetch",
+      "nodeId": "fetch",
+      "role": "worker",
+      "transitions": [
+        {"label": "providerRetryable", "toStepId": "retry-later"},
+        {"label": "providerFailed", "toStepId": "report-failure"},
+        {"label": "postprocessFailed", "toStepId": "report-failure"},
+        {"toStepId": "page"}
+      ]
+    },
+    {"id": "page", "nodeId": "page", "role": "worker"},
+    {"id": "retry-later", "nodeId": "retry-later", "role": "worker"},
+    {"id": "report-failure", "nodeId": "report-failure", "role": "worker"}
+  ]
+}

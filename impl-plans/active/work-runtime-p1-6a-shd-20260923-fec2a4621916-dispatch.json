@@ -1,0 +1,136 @@
+{
+  "taskId": "work-runtime-p1-6a-shd-20260923-fec2a4621916",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "102a8fb51f93e0ea69d911ee3bb8504776616df5",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6a-shd-20260923-fec2a4621916",
+  "reviewContext": {
+    "issueReference": "local-request: Work Runtime P1-6a selected-host and called-workflow delivery; no GitHub issue supplied",
+    "userProblem": "The fbd4412 work-in-progress checkpoint compiles, but TaskDispatch still evaluates local capabilities with no workers and task reservation rejects remote/callee placement; selected host/backend/model is not proven through real root and callee execution.",
+    "requiredOutcomes": [
+      "SHD-1 through SHD-5 deliver selected-host and called-workflow execution through retained TaskDispatcher, admission, callee resolution and authenticated distributed worker paths.",
+      "T1–T8 prove real root and callee worker handoff, exact reserved root session and ordinary callee admission, assignments, wait without allocation, no fallback after uncertain worker loss and terminal projection before completion.",
+      "Run V0–V7/V11 with complete logs, final exit statuses, positive selected-test counts and strict touched-file SwiftLint; resolve independent high/mid findings; commit/push only accepted P1-6a scope."
+    ],
+    "nonGoals": [
+      "P1-6c, P1-6d, P1-7b, P1-7a and final parent P1 acceptance remain open.",
+      "No Monja, other worktrees, packages, examples, second dispatcher, registry, transport, runner, store, scheduler or unrelated repair; no main merge."
+    ],
+    "constraints": [
+      "Use immutable user-scope codex-design-and-implement-review-loop package 0.3.26 or newer; no project-scope workflow.",
+      "One serial implementation owner for coupled source/tests; independent adversarial and integration review.",
+      "Preserve unrelated changes and parent criteria; all throwaway fixtures/logs/evidence stay under repository tmp/; foreground commands must reach final exit.",
+      "Extend the plan file map only with a concrete failing handoff test and serial review of the exact additional path."
+    ],
+    "designDecisionsAndRationale": [
+      "The retained TaskDispatcher and store perform one reachable topology evaluation before atomic reservation; the same full-provenance choice is carried to execution.",
+      "The existing distributed executor and authenticated worker claim/complete path execute selected remote nodes while the exact reserved root token applies only to the root; callees use ordinary admission.",
+      "A configured controller default workspace supplies unassigned remote execution; authored workspace retains precedence and missing mapping fails before reserve.",
+      "Worker loss retains uncertainty fencing and never authorizes a local or alternate-worker copy."
+    ],
+    "intentionalTradeoffs": [
+      "Add only an optional bounded controller default workspace to bridge host selection to the retained worker workspace alias contract.",
+      "Keep this tightly coupled slice as one serial plan; retained parent P1 criteria remain unchecked."
+    ],
+    "supportedEdgeCases": [
+      "Callee-only add-on/environment requirements; cycles, return/join, unreachable nodes and qualified reused prefixes; explicit worker/group pins.",
+      "Missing target or workspace mapping before reservation; dependency/capacity waits and version races without allocation.",
+      "Different choices for steps sharing a node ID; effective-instance patch ordering; worker loss or authorization uncertainty after admission.",
+      "Old controller config decoding, authored workspace precedence, terminal output projection and ordinary non-task workflow behavior."
+    ],
+    "outOfScopeEdgeCases": [
+      "New task cancellation acknowledgment coverage, human decision/director child execution, task-backed examples and legacy auto-improve removal.",
+      "New transport/schema migration, planner, package resolver, live model credentials and final parent certification."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+    ],
+    "reviewDecision": "Step 3 design accepted through comm-000004; Step 5 plan review comm-000006 accepted the selected-host plan SHA-256 44e19f96806e4b82e3ae5af162c8a32003b5e1cbea38747f6d78aeabb14cd340 with no findings or revision request. Implementation and test gates remain downstream.",
+    "reviewedFiles": [
+      "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "design-docs/specs/design-work-runtime-consolidation.md"
+    ],
+    "codexAgentReferences": [],
+    "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
+    "communications": [
+      "comm-000004",
+      "comm-000006"
+    ],
+    "planningVerificationCommands": [
+      "git rev-parse HEAD",
+      "git branch --show-current",
+      "git status --porcelain=v1",
+      "shasum -a 256 impl-plans/active/work-runtime-p1-selected-host-delivery.md design-docs/specs/design-work-runtime-consolidation.md impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "git diff --check",
+      "git diff --cached --check"
+    ],
+    "planningVerificationResult": "Step 5 reviewer reported expected HEAD/branch/hash and clean tree, with diff checks exiting 0; current direct HEAD/index inspection confirms 102a8fb51f93e0ea69d911ee3bb8504776616df5 and zero staged entries.",
+    "implementationEvidence": "Each command needs complete tmp/ log, final producer exit status and positive selected-test count; plan progress records T1–T8, source hashes, independent review and accepted exact files."
+  },
+  "plans": [
+    {
+      "planId": "work-runtime-p1-selected-host-delivery",
+      "planPath": "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/HostCapabilityResolver.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
+        "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/DistributedWorkerCommand.swift",
+        "Sources/RielaCore/WorkflowRequirements.swift",
+        "Sources/RielaServer/DistributedControllerHost.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+        "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+        "Tests/RielaCLITests/DistributedNodeExecutionTests.swift",
+        "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
+        "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
+        "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+        "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+        "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
+        "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCore/WorkflowRequirements.swift",
+        "Sources/RielaServer/DistributedControllerHost.swift"
+      ],
+      "progressFile": "tmp/work-runtime-p1-selected-host-delivery/progress.md",
+      "acceptanceCriteria": [
+        "Real task-root and callee execution reaches selected host/backend/model through retained authenticated worker path with exact reserved root identity and ordinary callee admission.",
+        "Deterministic T1–T8 and V0–V7/V11 show no introduced regression, with complete logs and positive test counts.",
+        "Independent adversarial and integration review has no unresolved high/mid findings; only P1-6a is accepted and later parent slices remain open."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-selected-host-delivery/build",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|DistributedNodeExecutionTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-selected-host-delivery/changed-swift-files.nul",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "git diff --check",
+        "git diff --cached --check",
+        "shasum -a 256 impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "brain",
+  "description": "Plan small, safe fixture-analysis workflows and decide when evidence is complete.",
+  "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
+  "model": "claude-opus-5-5",
+  "promptTemplateFile": "prompts/brain.md",
+  "variables": {},
+  "output": {
+    "description": "A dynamic workflow request or a final decision.",
+    "jsonSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["decision", "rationale", "workflow", "nodePayloads", "input"],
+          "properties": {
+            "decision": {"const": "execute_workflow"},
+            "rationale": {"type": "string", "maxLength": 2000},
+            "workflow": {"type": "object"},
+            "nodePayloads": {"type": "object"},
+            "input": {"type": "object"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["decision", "rationale", "finalResult", "evidenceRefs"],
+          "properties": {
+            "decision": {"const": "finish"},
+            "rationale": {"type": "string"},
+            "finalResult": {"type": "object"},
+            "evidenceRefs": {"type": "array", "items": {"type": "string"}}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

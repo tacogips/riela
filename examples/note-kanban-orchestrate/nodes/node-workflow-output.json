@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Publish the final orchestration outcome payload.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest orchestration outcome payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest orchestration outcome payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

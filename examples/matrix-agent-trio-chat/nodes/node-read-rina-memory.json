@@ -1,0 +1,15 @@
+{
+  "id": "read-rina-memory",
+  "modelFreeze": false,
+  "addon": {
+    "name": "riela/note-persona-context-read",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor"
+    }
+  },
+  "output": {
+    "description": "Return recent Rina Cursor note context from system-memory notebook."
+  }
+}

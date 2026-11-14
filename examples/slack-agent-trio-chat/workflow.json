@@ -1,0 +1,345 @@
+{
+  "workflowId": "slack-agent-trio-chat",
+  "description": "Route provider-neutral Slack Gateway chat messages, including attachment descriptors, to one of three named female bot personas: Yui Codex by default, Mika Trend when called, or Rina Cursor when called. Persona nodes can hand off to another named persona when the user explicitly asks one bot to hear another bot's opinion.",
+  "defaults": {
+    "maxLoopIterations": 16,
+    "nodeTimeoutMs": 180000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Keep user-facing chat text in top-level replyText. Do not expose internal workflow routing details unless the user asks for diagnostics.",
+    "chatFailureMessageTemplate": "ごめん、{{node.variables.shortName}}はいま少し調子が悪いみたい。少し待ってからもう一度呼んでね。"
+  },
+  "memories": [
+    {
+      "id": "persona-chat-memory",
+      "description": "Persona-specific durable chat memory for Yui, Mika, and Rina.",
+      "purpose": "Provide recent persona memory to chat reply nodes and persist explicit memoryEntries without Python scripts.",
+      "dataSchema": {
+        "type": "object",
+        "required": ["personaId", "content", "recordedAt"]
+      },
+      "scope": "cross-workflow",
+      "defaultLimit": 3
+    }
+  ],
+  "entryStepId": "route-message",
+  "nodes": [
+    {
+      "id": "route-message",
+      "addon": {
+        "name": "riela/chat-persona-router",
+        "version": "1",
+        "config": {
+          "defaultPersonaId": "yui",
+          "personas": [
+            {
+              "id": "yui",
+              "name": "Yui Codex",
+              "aliases": [
+                "yui",
+                "codex",
+                "default bot"
+              ]
+            },
+            {
+              "id": "mika",
+              "name": "Mika Trend",
+              "aliases": [
+                "mika",
+                "claude",
+                "gyaru",
+                "trend",
+                "entertainment",
+                "pop culture"
+              ]
+            },
+            {
+              "id": "rina",
+              "name": "Rina Cursor",
+              "aliases": [
+                "rina",
+                "cursor",
+                "otaku",
+                "nerd",
+                "technical analyst"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "yui-codex",
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "yui-codex"
+      }
+    },
+    {
+      "id": "read-yui-memory",
+      "addon": {
+        "name": "riela/chat-persona-memory-read",
+        "version": "1",
+        "config": {"personaId": "yui", "personaName": "Yui Codex", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Yui memory"}]
+    },
+    {
+      "id": "write-yui-memory",
+      "addon": {
+        "name": "riela/chat-persona-memory-write",
+        "version": "1",
+        "config": {"personaId": "yui", "personaName": "Yui Codex", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "persist Yui memory entries"}]
+    },
+    {
+      "id": "mika-claude",
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "mika-claude"
+      }
+    },
+    {
+      "id": "read-mika-memory",
+      "addon": {
+        "name": "riela/chat-persona-memory-read",
+        "version": "1",
+        "config": {"personaId": "mika", "personaName": "Mika Trend", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Mika memory"}]
+    },
+    {
+      "id": "write-mika-memory",
+      "addon": {
+        "name": "riela/chat-persona-memory-write",
+        "version": "1",
+        "config": {"personaId": "mika", "personaName": "Mika Trend", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "persist Mika memory entries"}]
+    },
+    {
+      "id": "rina-cursor",
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "rina-cursor"
+      }
+    },
+    {
+      "id": "read-rina-memory",
+      "addon": {
+        "name": "riela/chat-persona-memory-read",
+        "version": "1",
+        "config": {"personaId": "rina", "personaName": "Rina Cursor", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina memory"}]
+    },
+    {
+      "id": "write-rina-memory",
+      "addon": {
+        "name": "riela/chat-persona-memory-write",
+        "version": "1",
+        "config": {"personaId": "rina", "personaName": "Rina Cursor", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "persist Rina memory entries"}]
+    },
+    {
+      "id": "send-yui-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "yui",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "send-mika-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "mika",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "send-rina-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "rina",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "route-message",
+      "nodeId": "route-message",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-yui-memory",
+          "label": "target_yui"
+        },
+        {
+          "toStepId": "read-mika-memory",
+          "label": "target_mika"
+        },
+        {
+          "toStepId": "read-rina-memory",
+          "label": "target_rina"
+        }
+      ]
+    },
+    {
+      "id": "read-yui-memory",
+      "nodeId": "read-yui-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "yui-codex"
+        }
+      ]
+    },
+    {
+      "id": "yui-codex",
+      "nodeId": "yui-codex",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-yui-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-yui-memory",
+      "nodeId": "write-yui-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-yui-reply"
+        }
+      ]
+    },
+    {
+      "id": "send-yui-reply",
+      "nodeId": "send-yui-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-mika-memory",
+          "label": "handoff_mika"
+        },
+        {
+          "toStepId": "read-rina-memory",
+          "label": "handoff_rina"
+        }
+      ]
+    },
+    {
+      "id": "read-mika-memory",
+      "nodeId": "read-mika-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "mika-claude"
+        }
+      ]
+    },
+    {
+      "id": "mika-claude",
+      "nodeId": "mika-claude",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-mika-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-mika-memory",
+      "nodeId": "write-mika-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-mika-reply"
+        }
+      ]
+    },
+    {
+      "id": "send-mika-reply",
+      "nodeId": "send-mika-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-yui-memory",
+          "label": "handoff_yui"
+        },
+        {
+          "toStepId": "read-rina-memory",
+          "label": "handoff_rina"
+        }
+      ]
+    },
+    {
+      "id": "read-rina-memory",
+      "nodeId": "read-rina-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "rina-cursor"
+        }
+      ]
+    },
+    {
+      "id": "rina-cursor",
+      "nodeId": "rina-cursor",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-rina-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-rina-memory",
+      "nodeId": "write-rina-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-rina-reply"
+        }
+      ]
+    },
+    {
+      "id": "send-rina-reply",
+      "nodeId": "send-rina-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-yui-memory",
+          "label": "handoff_yui"
+        },
+        {
+          "toStepId": "read-mika-memory",
+          "label": "handoff_mika"
+        }
+      ]
+    }
+  ]
+}

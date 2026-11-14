@@ -1,0 +1,999 @@
+import Foundation
+import RielaCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
+public struct LocalProcessConfiguration: Equatable, Sendable {
+  public var executableURL: URL
+  public var arguments: [String]
+  public var environment: [String: String]
+  public var unsetEnvironmentKeys: Set<String>
+  public var workingDirectoryURL: URL?
+  public var sandboxPolicy: LocalProcessSandboxPolicy?
+  public var inheritEnvironment: Bool
+  /// Maximum retained stdout bytes; excess bytes are drained without retaining or streaming them.
+  public var stdoutCaptureByteLimit: Int?
+  public var inheritedDescriptors: Set<Int32>
+  public var stderrCaptureByteLimit: Int?
+  public var cancellationPolicy: WorkflowProcessCancellation
+
+  public init(
+    executableURL: URL,
+    arguments: [String] = [],
+    environment: [String: String] = [:],
+    unsetEnvironmentKeys: Set<String> = [],
+    workingDirectoryURL: URL? = nil,
+    sandboxPolicy: LocalProcessSandboxPolicy? = nil,
+    inheritEnvironment: Bool = true,
+    stdoutCaptureByteLimit: Int? = nil,
+    inheritedDescriptors: Set<Int32> = [],
+    stderrCaptureByteLimit: Int? = nil,
+    cancellationPolicy: WorkflowProcessCancellation = .terminateGroup
+  ) {
+    self.executableURL = executableURL
+    self.arguments = arguments
+    self.environment = environment
+    self.unsetEnvironmentKeys = unsetEnvironmentKeys
+    self.workingDirectoryURL = workingDirectoryURL
+    self.sandboxPolicy = sandboxPolicy
+    self.inheritEnvironment = inheritEnvironment
+    self.stdoutCaptureByteLimit = stdoutCaptureByteLimit
+    self.inheritedDescriptors = inheritedDescriptors
+    self.stderrCaptureByteLimit = stderrCaptureByteLimit
+    self.cancellationPolicy = cancellationPolicy
+  }
+}
+
+public struct LocalProcessResult: Equatable, Sendable {
+  public var stdout: String
+  public var stderr: String
+  public var terminationStatus: Int32
+  /// Bytes of stdout the runner retained, measured before decoding. Set when
+  /// `stdoutCaptureByteLimit` bounded the capture; nil means "measure
+  /// `stdout`" (runners without a capture limit and test doubles).
+  public var stdoutRetainedByteCount: Int?
+  /// True when a bounded capture was not valid UTF-8. `stdout` is then empty;
+  /// it is never replaced by substitution characters.
+  public var stdoutInvalidUTF8: Bool
+
+  public init(
+    stdout: String,
+    stderr: String,
+    terminationStatus: Int32,
+    stdoutRetainedByteCount: Int? = nil,
+    stdoutInvalidUTF8: Bool = false
+  ) {
+    self.stdout = stdout
+    self.stderr = stderr
+    self.terminationStatus = terminationStatus
+    self.stdoutRetainedByteCount = stdoutRetainedByteCount
+    self.stdoutInvalidUTF8 = stdoutInvalidUTF8
+  }
+}
+
+public protocol LocalProcessRunning: Sendable {
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult
+}
+
+public enum LocalProcessOutputStream: String, Equatable, Sendable {
+  case stdout
+  case stderr
+}
+
+public struct LocalProcessOutputEvent: Equatable, Sendable {
+  public var stream: LocalProcessOutputStream
+  public var line: String
+
+  public init(stream: LocalProcessOutputStream, line: String) {
+    self.stream = stream
+    self.line = line
+  }
+}
+
+public protocol LocalProcessEventStreaming: LocalProcessRunning {
+  func run(
+    configuration: LocalProcessConfiguration,
+    stdin: String,
+    deadline: Date?,
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) async throws -> LocalProcessResult
+}
+
+private final class LockedProcessData: @unchecked Sendable {
+  private let lock = NSLock()
+  private var data = Data()
+
+  func store(_ value: Data) {
+    lock.lock()
+    data = value
+    lock.unlock()
+  }
+
+  func load() -> Data {
+    lock.lock()
+    defer { lock.unlock() }
+    return data
+  }
+}
+
+private final class LocalProcessPipeReader: @unchecked Sendable {
+  private let fileHandle: FileHandle
+  private let fileDescriptor: Int32
+  private let stream: LocalProcessOutputStream
+  private let captureByteLimit: Int?
+  private let outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+
+  init(
+    fileHandle: FileHandle,
+    stream: LocalProcessOutputStream,
+    captureByteLimit: Int? = nil,
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) {
+    self.fileHandle = fileHandle
+    self.fileDescriptor = fileHandle.fileDescriptor
+    self.stream = stream
+    self.captureByteLimit = captureByteLimit.map { max(0, $0) }
+    self.outputEventHandler = outputEventHandler
+  }
+
+  func readToEnd() -> Data {
+    defer { try? fileHandle.close() }
+    var output = Data()
+    var pendingLine = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while true {
+      let byteCount = buffer.withUnsafeMutableBytes { pointer in
+        read(fileDescriptor, pointer.baseAddress, pointer.count)
+      }
+      if byteCount == 0 {
+        break
+      }
+      if byteCount < 0 {
+        if errno == EINTR {
+          continue
+        }
+        break
+      }
+      let retainedCount = captureByteLimit.map { min(byteCount, max(0, $0 - output.count)) } ?? byteCount
+      let chunk = Data(buffer.prefix(retainedCount))
+      output.append(chunk)
+      if outputEventHandler != nil {
+        emitCompleteLines(in: chunk, pendingLine: &pendingLine)
+      }
+    }
+    emitPendingLine(pendingLine)
+    return output
+  }
+
+  private func emitCompleteLines(in chunk: Data, pendingLine: inout Data) {
+    // Scan each incoming byte once. Rescanning the accumulated partial line
+    // makes a long newline-free response quadratic in its size.
+    var start = chunk.startIndex
+    for index in chunk.indices where chunk[index] == 10 {
+      pendingLine.append(contentsOf: chunk[start..<index])
+      emitLine(pendingLine)
+      pendingLine.removeAll()
+      start = chunk.index(after: index)
+    }
+    pendingLine.append(contentsOf: chunk[start...])
+  }
+
+  private func emitPendingLine(_ pendingLine: Data) {
+    guard !pendingLine.isEmpty else {
+      return
+    }
+    emitLine(pendingLine)
+  }
+
+  private func emitLine(_ data: Data) {
+    guard let outputEventHandler else {
+      return
+    }
+    var lineData = data
+    if lineData.last == 13 {
+      lineData.removeLast()
+    }
+    guard let line = String(data: lineData, encoding: .utf8), !line.isEmpty else {
+      return
+    }
+    outputEventHandler(LocalProcessOutputEvent(stream: stream, line: line))
+  }
+}
+
+private final class LocalProcessPipes: @unchecked Sendable {
+  private let inputPipe: Pipe
+  private let outputPipe: Pipe
+  private let errorPipe: Pipe
+  private let lock = NSLock()
+
+  init(inputPipe: Pipe, outputPipe: Pipe, errorPipe: Pipe) {
+    self.inputPipe = inputPipe
+    self.outputPipe = outputPipe
+    self.errorPipe = errorPipe
+  }
+
+  func closeParentOutputWriters() {
+    lock.lock()
+    defer { lock.unlock() }
+    try? outputPipe.fileHandleForWriting.close()
+    try? errorPipe.fileHandleForWriting.close()
+  }
+
+  func closeForFailureOrTimeout() {
+    lock.lock()
+    defer { lock.unlock() }
+    try? inputPipe.fileHandleForWriting.close()
+    try? outputPipe.fileHandleForWriting.close()
+    try? errorPipe.fileHandleForWriting.close()
+    // Each reader owns its handle through EOF. Closing its descriptor from
+    // another thread would permit fd reuse while a read is still in flight.
+    // Process-group termination closes child writers and wakes both readers.
+  }
+}
+
+private final class LocalProcessStdinWriter: @unchecked Sendable {
+  private let fileDescriptor: Int32
+  private let stdin: String
+
+  init(fileHandle: FileHandle, stdin: String) throws {
+    // Own a distinct descriptor before cancellation can close the Pipe's
+    // handle. Capturing only its numeric fd would still permit descriptor
+    // reuse between cancellation and the asynchronous writer starting.
+    let descriptor = fcntl(fileHandle.fileDescriptor, F_DUPFD_CLOEXEC, 0)
+    guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    fileDescriptor = descriptor
+    self.stdin = stdin
+  }
+
+  deinit { _ = close(fileDescriptor) }
+
+  func writeAndClose(onStarted: (@Sendable () -> Void)? = nil) {
+    disableSigpipeForStdin(fileDescriptor)
+    onStarted?()
+    let data = Data(stdin.utf8)
+    data.withUnsafeBytes { buffer in
+      guard let baseAddress = buffer.baseAddress else {
+        return
+      }
+      var written = 0
+      while written < buffer.count {
+        let byteCount = min(16_384, buffer.count - written)
+        let result = write(fileDescriptor, baseAddress.advanced(by: written), byteCount)
+        if result > 0 {
+          written += result
+          continue
+        }
+        if result == -1 && errno == EINTR {
+          continue
+        }
+        if result == -1 && (errno == EPIPE || errno == EBADF) {
+          break
+        }
+        break
+      }
+    }
+  }
+}
+
+private final class LocalProcessCompletion: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didResume = false
+  private var didTimeout = false
+  private var didCancel = false
+  private var deadlineWorkItem: DispatchWorkItem?
+  private let continuation: CheckedContinuation<LocalProcessResult, Error>
+
+  init(continuation: CheckedContinuation<LocalProcessResult, Error>) {
+    self.continuation = continuation
+  }
+
+  func setDeadlineWorkItem(_ workItem: DispatchWorkItem) {
+    lock.lock()
+    deadlineWorkItem = workItem
+    lock.unlock()
+  }
+
+  func markTimedOut() {
+    lock.lock()
+    didTimeout = true
+    lock.unlock()
+  }
+
+  func markCancelled() {
+    lock.lock()
+    didCancel = true
+    lock.unlock()
+  }
+
+  func timedOut() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return didTimeout
+  }
+
+  func cancelled() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return didCancel
+  }
+
+  func cancelDeadline() {
+    lock.lock()
+    let workItem = deadlineWorkItem
+    lock.unlock()
+    workItem?.cancel()
+  }
+
+  func resume(_ result: Result<LocalProcessResult, Error>) {
+    lock.lock()
+    guard !didResume else {
+      lock.unlock()
+      return
+    }
+    didResume = true
+    let workItem = deadlineWorkItem
+    lock.unlock()
+
+    workItem?.cancel()
+    switch result {
+    case let .success(value):
+      continuation.resume(returning: value)
+    case let .failure(error):
+      continuation.resume(throwing: error)
+    }
+  }
+}
+
+private final class LocalProcessCancellationState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didCancel = false
+  private var didFinish = false
+  private var processHandle: LocalProcessHandle?
+  private var pipes: LocalProcessPipes?
+  private var completion: LocalProcessCompletion?
+
+  func configure(
+    processHandle: LocalProcessHandle,
+    pipes: LocalProcessPipes,
+    completion: LocalProcessCompletion
+  ) {
+    let shouldCancel: Bool
+    lock.lock()
+    if didFinish {
+      lock.unlock()
+      return
+    }
+    self.processHandle = processHandle
+    self.pipes = pipes
+    self.completion = completion
+    shouldCancel = didCancel
+    if shouldCancel {
+      cancelConfiguredProcess(processHandle: processHandle, pipes: pipes, completion: completion)
+    }
+    lock.unlock()
+  }
+
+  func cancel() {
+    let currentProcessHandle: LocalProcessHandle?
+    let currentPipes: LocalProcessPipes?
+    let currentCompletion: LocalProcessCompletion?
+    lock.lock()
+    guard !didFinish, !didCancel else {
+      lock.unlock()
+      return
+    }
+    didCancel = true
+    currentProcessHandle = processHandle
+    currentPipes = pipes
+    currentCompletion = completion
+    if let currentProcessHandle, let currentPipes, let currentCompletion {
+      cancelConfiguredProcess(
+        processHandle: currentProcessHandle,
+        pipes: currentPipes,
+        completion: currentCompletion
+      )
+    }
+    lock.unlock()
+  }
+
+  func killAfterLeaderExitIfNeeded(_ handle: LocalProcessHandle, completion: LocalProcessCompletion) {
+    lock.lock()
+    defer { lock.unlock() }
+    if !completion.cancelled() || handle.usesAwaitOwner {
+      _ = handle.killGroupOrProcess()
+    }
+  }
+
+  func finish() {
+    lock.lock()
+    didFinish = true
+    processHandle = nil
+    pipes = nil
+    completion = nil
+    lock.unlock()
+  }
+
+  private func cancelConfiguredProcess(
+    processHandle: LocalProcessHandle,
+    pipes: LocalProcessPipes,
+    completion: LocalProcessCompletion
+  ) {
+    processHandle.beginTaskCancellation {
+      completion.markCancelled()
+      pipes.closeForFailureOrTimeout()
+    }
+  }
+}
+
+private final class CStringArray {
+  private var pointers: [UnsafeMutablePointer<CChar>?]
+
+  init(_ strings: [String]) {
+    pointers = strings.map { strdup($0) }
+    pointers.append(nil)
+  }
+
+  deinit {
+    for pointer in pointers where pointer != nil {
+      free(pointer)
+    }
+  }
+
+  func withUnsafeMutableBufferPointer<Result>(
+    _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) throws -> Result
+  ) rethrows -> Result {
+    try pointers.withUnsafeMutableBufferPointer { buffer in
+      try body(buffer.baseAddress!)
+    }
+  }
+}
+
+typealias LocalProcessSignal = @Sendable (pid_t, Int32) -> Int32
+
+final class LocalProcessHandle: @unchecked Sendable {
+  private let lock = NSLock()
+  private var processId: pid_t?
+  private var processGroupId: pid_t?
+  private var didExit = false
+  private var leaderExited = false
+  private var killWorkItem: DispatchWorkItem?
+  private let signalProcess: LocalProcessSignal
+  private let cancellationPolicy: WorkflowProcessCancellation
+  private let cancellationGroup = DispatchGroup()
+  private let snapshotter: any LocalProcessTreeSnapshotting
+  private let cancellationGrace: TimeInterval
+  private let cancellationHardBound: TimeInterval
+  private let cancellationScanInterval: TimeInterval
+  private let survivorReporter: @Sendable (Int) -> Void
+
+  init(
+    cancellationPolicy: WorkflowProcessCancellation = .terminateGroup,
+    signalProcess: @escaping LocalProcessSignal = { processId, signal in kill(processId, signal) },
+    snapshotter: any LocalProcessTreeSnapshotting = SystemLocalProcessTreeSnapshotter(),
+    cancellationGrace: TimeInterval = 5,
+    cancellationHardBound: TimeInterval = 5,
+    cancellationScanInterval: TimeInterval = 0.1,
+    survivorReporter: @escaping @Sendable (Int) -> Void = { count in
+      FileHandle.standardError.write(Data("process_tree_survivors \(count)\n".utf8))
+    }
+  ) {
+    self.signalProcess = signalProcess
+    self.cancellationPolicy = cancellationPolicy
+    self.snapshotter = snapshotter
+    self.cancellationGrace = cancellationGrace
+    self.cancellationHardBound = cancellationHardBound
+    self.cancellationScanInterval = cancellationScanInterval
+    self.survivorReporter = survivorReporter
+  }
+
+  func beginTaskCancellation(markCancelled: () -> Void) {
+    if cancellationPolicy == .awaitOwner {
+      markCancelled()
+      _ = terminateGroupOrProcess()
+      return
+    }
+    cancellationGroup.enter()
+    markCancelled()
+    DispatchQueue.global(qos: .utility).async {
+      self.cancelProcessTree()
+      self.cancellationGroup.leave()
+    }
+  }
+
+  var usesAwaitOwner: Bool { cancellationPolicy == .awaitOwner }
+
+  func waitForCancellation() {
+    cancellationGroup.wait()
+  }
+
+  private func cancelProcessTree() {
+    lock.lock()
+    let leader = processId
+    let group = processGroupId
+    lock.unlock()
+    guard let leader, let group else { return }
+    let initial = snapshotter.snapshot()
+    var tracked = Dictionary(uniqueKeysWithValues: localProcessDescendants(of: [leader], in: initial).map { ($0.pid, $0) })
+    _ = signalGroupOrProcess(SIGTERM)
+    signalTracked(tracked, signal: SIGTERM, excludingGroup: group)
+    let graceEnd = Date().addingTimeInterval(cancellationGrace)
+    while (!tracked.isEmpty || !leaderHasExited()) && Date() < graceEnd {
+      Thread.sleep(forTimeInterval: cancellationScanInterval)
+      refreshTracked(&tracked, signalNew: true)
+    }
+    killScheduledProcessGroup()
+    let hardEnd = Date().addingTimeInterval(cancellationHardBound)
+    while !tracked.isEmpty && Date() < hardEnd {
+      refreshTracked(&tracked, signalNew: false)
+      killScheduledProcessGroup()
+      signalTracked(tracked, signal: SIGKILL, excludingGroup: nil)
+      if !tracked.isEmpty { Thread.sleep(forTimeInterval: cancellationScanInterval) }
+    }
+    refreshTracked(&tracked, signalNew: false)
+    if !tracked.isEmpty { survivorReporter(tracked.count) }
+  }
+
+  private func leaderHasExited() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return leaderExited || didExit || processId == nil
+  }
+
+  private func refreshTracked(_ tracked: inout [pid_t: LocalProcessTreeEntry], signalNew: Bool) {
+    let entries = snapshotter.snapshot()
+    let current = Dictionary(uniqueKeysWithValues: entries.map { ($0.pid, $0) })
+    tracked = tracked.filter { current[$0.key]?.startTime == $0.value.startTime }
+    let descendants = localProcessDescendants(of: Set(tracked.keys), in: entries)
+    var added: [pid_t: LocalProcessTreeEntry] = [:]
+    for entry in descendants where tracked[entry.pid] == nil {
+      tracked[entry.pid] = entry
+      added[entry.pid] = entry
+    }
+    if signalNew { signalTracked(added, signal: SIGTERM, excludingGroup: nil) }
+  }
+
+  private func signalTracked(_ tracked: [pid_t: LocalProcessTreeEntry], signal: Int32, excludingGroup: pid_t?) {
+    for entry in tracked.values where entry.pgid != excludingGroup {
+      guard snapshotter.snapshot().contains(where: { $0.pid == entry.pid && $0.startTime == entry.startTime }) else { continue }
+      _ = signalProcess(entry.pid, signal)
+    }
+  }
+
+  func store(processId: pid_t) {
+    lock.lock()
+    guard !didExit else {
+      lock.unlock()
+      return
+    }
+    self.processId = processId
+    self.processGroupId = processId
+    lock.unlock()
+  }
+
+  @discardableResult
+  func terminateGroupOrProcess() -> Bool {
+    if cancellationPolicy == .awaitOwner { return signalOwner() }
+    return signalGroupOrProcess(SIGTERM)
+  }
+
+  @discardableResult
+  func killGroupOrProcess() -> Bool {
+    guard cancellationPolicy != .awaitOwner else { return false }
+    return signalGroupOrProcess(SIGKILL)
+  }
+
+  @discardableResult
+  func scheduleKillIfRunning(after delay: TimeInterval) -> Bool {
+    guard cancellationPolicy != .awaitOwner else { return false }
+    let workItem = DispatchWorkItem {
+      self.killScheduledProcessGroup()
+    }
+    lock.lock()
+    guard processGroupId != nil else {
+      lock.unlock()
+      workItem.cancel()
+      return false
+    }
+    killWorkItem?.cancel()
+    killWorkItem = workItem
+    lock.unlock()
+
+    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
+    return true
+  }
+
+  /// Observe exit without reaping. The unreaped group leader pins its PID and
+  /// PGID until all pending signals and output readers have finished, avoiding
+  /// an ID-reuse race between waitpid and delayed descendant escalation.
+  func waitForLeaderExit() -> Bool {
+    lock.lock()
+    let ownedPID = processId
+    lock.unlock()
+    guard let ownedPID else { return false }
+    var information = siginfo_t()
+    var result: Int32
+    repeat {
+      result = waitid(P_PID, id_t(ownedPID), &information, WEXITED | WNOWAIT)
+    } while result < 0 && errno == EINTR
+    if result == 0 {
+      lock.lock()
+      leaderExited = true
+      lock.unlock()
+      return true
+    }
+    // Someone else reaped the child: ownership cannot be inferred from the
+    // numeric ID any more, so fail closed without any subsequent signal.
+    lock.lock()
+    didExit = true
+    processId = nil
+    processGroupId = nil
+    killWorkItem?.cancel()
+    killWorkItem = nil
+    lock.unlock()
+    return false
+  }
+
+  func reapAfterOutput(terminateRemaining: Bool) -> Int32 {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let ownedPID = processId else { return 0 }
+    if terminateRemaining, cancellationPolicy != .awaitOwner, let groupId = processGroupId {
+      _ = signalProcess(-groupId, SIGKILL)
+    }
+    // Signals execute under this same lock. Clear their authority before
+    // releasing the PID back to the OS, not after waitpid returns.
+    didExit = true
+    processId = nil
+    processGroupId = nil
+    killWorkItem?.cancel()
+    killWorkItem = nil
+    var status: Int32 = 0
+    while waitpid(ownedPID, &status, 0) < 0, errno == EINTR {}
+    return status
+  }
+
+  private func killScheduledProcessGroup() {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let groupId = processGroupId, processId != nil else { return }
+    _ = signalProcess(-groupId, SIGKILL)
+    killWorkItem = nil
+  }
+
+  private func signalOwner() -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    guard !didExit, let pid = processId else { return false }
+    return signalProcess(pid, SIGTERM) == 0
+  }
+
+  private func signalGroupOrProcess(_ signal: Int32) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let groupId = processGroupId
+    let pid = didExit ? nil : processId
+    guard let groupId else {
+      return false
+    }
+    if signalProcess(-groupId, signal) == 0 {
+      return true
+    }
+    guard let pid else {
+      return false
+    }
+    return signalProcess(pid, signal) == 0
+  }
+}
+
+private func checkLocalProcessAdmission(deadline: Date?) throws {
+  try Task.checkCancellation()
+  if let deadline, deadline <= Date() {
+    throw AdapterExecutionError(.timeout, "local agent process deadline expired before dispatch")
+  }
+}
+
+private func localProcessTimeoutError() -> AdapterExecutionError {
+  AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
+}
+
+private func disableSigpipeForStdin(_ fileDescriptor: Int32) {
+  #if canImport(Darwin)
+  _ = fcntl(fileDescriptor, F_SETNOSIGPIPE, 1)
+  #else
+  _ = signal(SIGPIPE, SIG_IGN)
+  #endif
+}
+
+private func spawnProcess(
+  configuration: LocalProcessConfiguration,
+  inputReadDescriptor: Int32,
+  inputWriteDescriptor: Int32,
+  outputReadDescriptor: Int32,
+  outputWriteDescriptor: Int32,
+  errorReadDescriptor: Int32,
+  errorWriteDescriptor: Int32
+) throws -> pid_t {
+  #if canImport(Glibc)
+  var fileActions = posix_spawn_file_actions_t()
+  var attributes = posix_spawnattr_t()
+  #else
+  var fileActions: posix_spawn_file_actions_t?
+  var attributes: posix_spawnattr_t?
+  #endif
+  posix_spawn_file_actions_init(&fileActions)
+  posix_spawnattr_init(&attributes)
+  defer {
+    posix_spawn_file_actions_destroy(&fileActions)
+    posix_spawnattr_destroy(&attributes)
+  }
+
+  try checkPosixSpawn(posix_spawn_file_actions_adddup2(&fileActions, inputReadDescriptor, STDIN_FILENO), operation: "dup stdin")
+  try checkPosixSpawn(posix_spawn_file_actions_adddup2(&fileActions, outputWriteDescriptor, STDOUT_FILENO), operation: "dup stdout")
+  try checkPosixSpawn(posix_spawn_file_actions_adddup2(&fileActions, errorWriteDescriptor, STDERR_FILENO), operation: "dup stderr")
+  try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, inputReadDescriptor), operation: "close child stdin pipe")
+  try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, inputWriteDescriptor), operation: "close child stdin writer")
+  try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, outputReadDescriptor), operation: "close child stdout reader")
+  try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, outputWriteDescriptor), operation: "close child stdout pipe")
+  try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, errorReadDescriptor), operation: "close child stderr reader")
+  try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, errorWriteDescriptor), operation: "close child stderr pipe")
+  for descriptor in configuration.inheritedDescriptors.sorted() {
+    guard descriptor > STDERR_FILENO,
+      ![inputReadDescriptor, inputWriteDescriptor, outputReadDescriptor, outputWriteDescriptor, errorReadDescriptor, errorWriteDescriptor].contains(descriptor) else {
+      throw AdapterExecutionError(.policyBlocked, "invalid inherited command descriptor")
+    }
+    #if canImport(Darwin)
+    try checkPosixSpawn(posix_spawn_file_actions_addinherit_np(&fileActions, descriptor), operation: "inherit command lock")
+    #else
+    try checkPosixSpawn(posix_spawn_file_actions_adddup2(&fileActions, descriptor, descriptor), operation: "inherit command lock")
+    #endif
+  }
+  if let workingDirectoryURL = configuration.workingDirectoryURL {
+    try workingDirectoryURL.path.withCString { path in
+      try checkPosixSpawn(posix_spawn_file_actions_addchdir_np(&fileActions, path), operation: "set working directory")
+    }
+  }
+
+  #if canImport(Darwin)
+  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
+  #else
+  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
+  #endif
+  // The CLI uses ignored dispositions plus DispatchSource for these signals.
+  // Do not inherit SIG_IGN into command shells: an ignored-on-entry signal
+  // cannot be trapped by a non-interactive shell, preventing graceful cancel.
+  var defaultSignals = sigset_t()
+  sigemptyset(&defaultSignals)
+  for signalNumber in [SIGINT, SIGTERM, SIGPIPE] { sigaddset(&defaultSignals, signalNumber) }
+  try checkPosixSpawn(posix_spawnattr_setsigdefault(&attributes, &defaultSignals), operation: "reset child signal dispositions")
+  var signalMask = sigset_t()
+  sigemptyset(&signalMask)
+  try checkPosixSpawn(posix_spawnattr_setsigmask(&attributes, &signalMask), operation: "reset child signal mask")
+  try checkPosixSpawn(posix_spawnattr_setflags(&attributes, spawnFlags), operation: "set process flags")
+  try checkPosixSpawn(posix_spawnattr_setpgroup(&attributes, 0), operation: "set child process group")
+
+  let arguments = [configuration.executableURL.path] + configuration.arguments
+  let environment = (configuration.inheritEnvironment ? ProcessInfo.processInfo.environment : [:])
+    .filter { !configuration.unsetEnvironmentKeys.contains($0.key) }
+    .merging(configuration.environment) { _, new in new }
+    .map { "\($0.key)=\($0.value)" }
+  let argv = CStringArray(arguments)
+  let envp = CStringArray(environment)
+  var processId = pid_t()
+
+  let spawnResult = configuration.executableURL.path.withCString { executablePath in
+    argv.withUnsafeMutableBufferPointer { argvPointer in
+      envp.withUnsafeMutableBufferPointer { envPointer in
+        posix_spawn(&processId, executablePath, &fileActions, &attributes, argvPointer, envPointer)
+      }
+    }
+  }
+  try checkPosixSpawn(spawnResult, operation: "spawn \(configuration.executableURL.path)")
+  return processId
+}
+
+private func checkPosixSpawn(_ result: Int32, operation: String) throws {
+  guard result == 0 else {
+    throw AdapterExecutionError(.providerError, "local agent process failed to \(operation): \(String(cString: strerror(result)))")
+  }
+}
+
+private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
+  if status & 0x7f == 0 {
+    return (status >> 8) & 0xff
+  }
+  return -(status & 0x7f)
+}
+
+/// Runs one foreground command. Its dedicated process group belongs to this
+/// invocation, including background children that remain after the leader
+/// exits. A command must not escape that group (setsid/setpgid/daemonization);
+/// detached services require a separately owned lifecycle, not this runner.
+public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEventStreaming {
+  var deadlineScheduler: any WallClockDeadlineScheduling = SystemWallClockDeadlineScheduler()
+  var treeSnapshotter: any LocalProcessTreeSnapshotting = SystemLocalProcessTreeSnapshotter()
+  var cancellationGrace: TimeInterval = 5
+  var cancellationHardBound: TimeInterval = 5
+  var cancellationScanInterval: TimeInterval = 0.1
+  var survivorReporter: @Sendable (Int) -> Void = { count in
+    FileHandle.standardError.write(Data("process_tree_survivors \(count)\n".utf8))
+  }
+
+  public init() {}
+
+  init(deadlineScheduler: any WallClockDeadlineScheduling) {
+    self.deadlineScheduler = deadlineScheduler
+  }
+
+  public func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalProcessResult {
+    try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
+  }
+
+  public func run(
+    configuration: LocalProcessConfiguration,
+    stdin: String,
+    deadline: Date? = nil,
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) async throws -> LocalProcessResult {
+    try await run(
+      configuration: configuration,
+      stdin: stdin,
+      deadline: deadline,
+      outputEventHandler: outputEventHandler,
+      stdinWriterStartedHandler: nil
+    )
+  }
+
+  /// Testable cancellation boundary: invoked by the writer after it owns a
+  /// duplicated stdin descriptor and immediately before its first write.
+  public func run(
+    configuration: LocalProcessConfiguration,
+    stdin: String,
+    deadline: Date? = nil,
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?,
+    stdinWriterStartedHandler: (@Sendable () -> Void)?
+  ) async throws -> LocalProcessResult {
+    try checkLocalProcessAdmission(deadline: deadline)
+    let effectiveConfiguration = try seatbeltInvocation(for: configuration) ?? configuration
+    let cancellationState = LocalProcessCancellationState()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        let inputPipe = Pipe()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        let processHandle = LocalProcessHandle(
+          cancellationPolicy: configuration.cancellationPolicy, snapshotter: treeSnapshotter,
+          cancellationGrace: cancellationGrace, cancellationHardBound: cancellationHardBound,
+          cancellationScanInterval: cancellationScanInterval, survivorReporter: survivorReporter
+        )
+        let pipes = LocalProcessPipes(inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
+
+        let outputGroup = DispatchGroup()
+        let outputData = LockedProcessData()
+        let errorData = LockedProcessData()
+        let outputReader = LocalProcessPipeReader(
+          fileHandle: outputPipe.fileHandleForReading,
+          stream: .stdout,
+          captureByteLimit: configuration.stdoutCaptureByteLimit,
+          outputEventHandler: outputEventHandler
+        )
+        let errorReader = LocalProcessPipeReader(
+          fileHandle: errorPipe.fileHandleForReading,
+          stream: .stderr,
+          captureByteLimit: configuration.stderrCaptureByteLimit,
+          outputEventHandler: outputEventHandler
+        )
+
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+          outputData.store(outputReader.readToEnd())
+          outputGroup.leave()
+        }
+
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+          errorData.store(errorReader.readToEnd())
+          outputGroup.leave()
+        }
+
+        let completion = LocalProcessCompletion(continuation: continuation)
+
+        do {
+          let stdinWriter = try LocalProcessStdinWriter(fileHandle: inputPipe.fileHandleForWriting, stdin: stdin)
+          try checkLocalProcessAdmission(deadline: deadline)
+          let processId = try spawnProcess(
+            configuration: effectiveConfiguration,
+            inputReadDescriptor: inputPipe.fileHandleForReading.fileDescriptor,
+            inputWriteDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
+            outputReadDescriptor: outputPipe.fileHandleForReading.fileDescriptor,
+            outputWriteDescriptor: outputPipe.fileHandleForWriting.fileDescriptor,
+            errorReadDescriptor: errorPipe.fileHandleForReading.fileDescriptor,
+            errorWriteDescriptor: errorPipe.fileHandleForWriting.fileDescriptor
+          )
+          processHandle.store(processId: processId)
+          try? inputPipe.fileHandleForWriting.close()
+          cancellationState.configure(processHandle: processHandle, pipes: pipes, completion: completion)
+          try? inputPipe.fileHandleForReading.close()
+          pipes.closeParentOutputWriters()
+
+          DispatchQueue.global(qos: .utility).async {
+            let ownsExitedChild = processHandle.waitForLeaderExit()
+            if ownsExitedChild {
+              // Serialize the normal-exit signal with cancellation registration.
+              cancellationState.killAfterLeaderExitIfNeeded(processHandle, completion: completion)
+            }
+            outputGroup.notify(queue: .global(qos: .utility)) {
+              cancellationState.finish()
+              if completion.cancelled() { processHandle.waitForCancellation() }
+              let status = processHandle.reapAfterOutput(terminateRemaining: true)
+              completion.cancelDeadline()
+              if completion.timedOut() {
+                cancellationState.finish()
+                completion.resume(.failure(localProcessTimeoutError()))
+                return
+              }
+              guard ownsExitedChild else {
+                cancellationState.finish()
+                completion.resume(.failure(POSIXError(.ECHILD)))
+                return
+              }
+              if completion.cancelled() {
+                cancellationState.finish()
+                completion.resume(.failure(CancellationError()))
+                return
+              }
+
+              let stdoutData = outputData.load()
+              let decodedOutput = String(data: stdoutData, encoding: .utf8)
+              let boundedCapture = configuration.stdoutCaptureByteLimit != nil
+              let error = String(data: errorData.load(), encoding: .utf8) ?? ""
+              cancellationState.finish()
+              completion.resume(
+                .success(
+                  LocalProcessResult(
+                    stdout: decodedOutput ?? "",
+                    stderr: error,
+                    terminationStatus: terminationStatus(fromWaitStatus: status),
+                    stdoutRetainedByteCount: boundedCapture ? stdoutData.count : nil,
+                    stdoutInvalidUTF8: boundedCapture && decodedOutput == nil
+                  )
+                )
+              )
+            }
+          }
+
+          if let deadline {
+            let workItem = DispatchWorkItem {
+              completion.markTimedOut()
+              pipes.closeForFailureOrTimeout()
+              if processHandle.terminateGroupOrProcess() {
+                processHandle.scheduleKillIfRunning(after: 1)
+              }
+              // A deadline requests termination; it is not proof of process
+              // completion. The exit/EOF/reap path returns the timeout only
+              // after this invocation has reclaimed its owned group.
+            }
+            completion.setDeadlineWorkItem(workItem)
+            deadlineScheduler.schedule(at: deadline, on: DispatchQueue.global(qos: .utility), workItem)
+          }
+          DispatchQueue.global(qos: .utility).async {
+            stdinWriter.writeAndClose(onStarted: stdinWriterStartedHandler)
+          }
+        } catch {
+          pipes.closeForFailureOrTimeout()
+          processHandle.terminateGroupOrProcess()
+          if completion.timedOut() {
+            cancellationState.finish()
+            completion.resume(.failure(localProcessTimeoutError()))
+          } else {
+            cancellationState.finish()
+            completion.resume(.failure(error))
+          }
+        }
+      }
+    } onCancel: {
+      cancellationState.cancel()
+    }
+  }
+}

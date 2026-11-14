@@ -1,0 +1,42 @@
+{
+  "id": "run-task",
+  "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
+  "model": "claude-haiku-4-5",
+  "modelFreeze": false,
+  "description": "Produce this tick's spoken announcement for a voice routine and report the routine's delivery policy as routing labels.",
+  "promptTemplateFile": "prompts/run-task.md",
+  "variables": {},
+  "output": {
+    "description": "Return {\"when\": {\"defer_when_absent\": bool, \"skip_when_absent\": bool, \"always_speak\": bool}, \"payload\": {...}} with exactly one label true.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "announcement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "room": {
+          "type": "string",
+          "minLength": 1
+        },
+        "presenceEntity": {
+          "type": "string"
+        },
+        "notAfter": {
+          "type": "string"
+        },
+        "context": {
+          "type": "object",
+          "description": "Not produced by the agent: the presence step copies this agent payload here (static validation treats add-ons as payload-forwarding)."
+        }
+      },
+      "required": [
+        "announcement",
+        "room",
+        "presenceEntity",
+        "notAfter"
+      ]
+    }
+  }
+}

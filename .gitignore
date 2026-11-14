@@ -1,0 +1,123 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+ui/dist/
+.build/
+*.tsbuildinfo
+
+# Bun (binary lockfile - we use text lockfile bun.lock instead)
+bun.lockb
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+playwright-report/
+test-results/
+
+# Temporary files
+tmp/
+temp/
+.cache/
+telegram-sdk/
+tmp-*
+
+# Implementation progress lock file
+impl-plans/.progress.lock
+
+# Private files
+.private*/
+
+# riela event-source runtime artifacts inside checked-in example event roots
+examples/**/.riela-events/serve-record.json
+examples/**/.riela-events/receipts/
+examples/**/.riela-events/attachments/
+examples/document-inbox-notebook/inbox/*
+!examples/document-inbox-notebook/inbox/.gitkeep
+examples/voice-assistant/inbox/
+
+# riela runtime artifacts and session store (default paths)
+.riela/*
+!.riela/workflows/
+!.riela/workflows/**
+.riela-data/
+.riela-data/**
+.riela-opt/
+.riela-opt/**
+.riela-artifact/
+.riela-artifact/**
+.riela-datas/
+.riela-datas/**
+
+# Web-app local runtime stores
+/web/.riela/
+
+# Local temporary run/verify wrappers and swift-migration parity evidence
+# (scratch artifacts; must not be tracked in VCS)
+/.run-*
+/.verify-*
+/.compute-v017-*
+/scripts/*-input.json
+/scripts/*v017*
+
+# Temporary Riela verification fixtures
+/.riela/workflows/riela-package-installer-skill/
+/.riela/workflows/riela-package-manager-skill/
+/.riela/workflows/riela-package-release-skill/
+/.riela/workflows/riela-project-workflow-skill/
+/.riela/workflows/riela-temporary-workflow-skill/
+/.riela/workflows/riela-workflow-creator-skill/
+/.riela/workflows/riela-workflow-skill-creator-skill/
+/.riela/workflows/riela-maintainability-review-improve/
+/.codex/skills/riela-package-installer/
+/.codex/skills/riela-package/
+/.codex/skills/riela-package-release/
+/.codex/skills/riela-project-workflow/
+/.codex/skills/riela-temporary-workflow/
+/.codex/skills/riela-workflow/
+/.codex/skills/riela-workflow-use-skill/
+/.codex/skills/riela-verification-fixture-cleanup/
+/.claude/skills/riela-package-installer/
+/.claude/skills/riela-package/
+/.claude/skills/riela-package-release/
+/.claude/skills/riela-project-workflow/
+/.claude/skills/riela-temporary-workflow/
+/.claude/skills/riela-workflow/
+/.claude/skills/riela-workflow-use-skill/
+/.cursor/rules/riela-project-workflow.mdc
+.build-linux/
+
+# Crash dumps from cross-platform container builds (QEMU writes these)
+qemu_*.core
+core
+*.core
+
+# Tauri build products
+/web/src-tauri/target/
+
+# Nix
+.direnv/
+result
+/result-*

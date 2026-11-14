@@ -1,0 +1,182 @@
+{
+  "taskId": "issue-184",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "a30065e7f73757f1493faa98060f8b542cf98b6d",
+  "designDocPaths": [
+    "design-docs/specs/design-cli-subcommand-help.md"
+  ],
+  "evidenceRoot": "tmp/issue-184",
+  "reviewContext": {
+    "issueReference": "#184 (riela storage compact --help prints an internal helpRequested error instead of usage); workflowExecutionId opus-terra-design-and-implement-review-loop-session-542; design accepted by step3-design-review, plans accepted by step5-impl-plan-review (comm-010201, reviewDecision accept)",
+    "userProblem": "riela storage compact --help/-h prints {\"error\":\"helpRequested(...)\"} and exits 1, and subcommands with required arguments (session status, workflow validate, ...) report a missing-argument error instead of printing usage.",
+    "requiredOutcomes": [
+      "Any --help/-h token before -- prints the subcommand's existing usage on stdout with exit 0 and empty stderr, before required-argument checks, via one detector (CLIHelpRequest.detect) called first in RielaCLIApplication.runParsed.",
+      "Help text comes only from existing help texts (package/workflow run/workflow register/auth/worker/sandbox/gateway) or from usage lines in rielaCLIHelpText, falling back to the full help.",
+      "CleanExit is never reported as error JSON: StorageCommandFailure.result(_:usagePath:), RielaClientFamilyArguments.parseCLI and the runParsed final catch map it to help with exit 0.",
+      "Regression tests cover storage compact --help/-h, representative required-argument commands, a CLISurfaceEnumerator audit (excluding the delegated set and gateway <name>), and the backstops.",
+      "Focused RielaCLITests suites pass."
+    ],
+    "nonGoals": [
+      "No new usage strings (kaiba/routine/version fall back to the full help).",
+      "No change to parse-level help returns in RielaArgumentParser, delegated runner help (gc, session prune, session reconcile, cache, environment) or native gateway <name> help.",
+      "No change to ad-hoc CLIUsageError(Self.message(for:)) wrappers other than RielaClientFamilyArguments.parseCLI.",
+      "No backward-compat overloads, no design-doc edits, no commit/push by workers."
+    ],
+    "constraints": [
+      "Do not modify unrelated files; each plan edits only its writePaths.",
+      "Keep existing usage texts as the source of help output; do not invent divergent usage strings.",
+      "No backward-compat shims.",
+      "Run swift build/test/swiftlint from an arm64 shell (arch -arm64 /bin/zsh -lc) with focused swift test --filter suites.",
+      "Scratch files and logs go under tmp/issue-184/<planId>/."
+    ],
+    "designDecisionsAndRationale": [
+      "D1: one detector at the top of RielaCLIApplication.runParsed, not per-parser help, so every subcommand gets uniform help before required-argument validation.",
+      "D2: help text only from existing producers or usage-line slices of rielaCLIHelpText, so help never diverges from documented usage.",
+      "D3: a help token before -- wins even in a value position; literal values use --opt=--help, matching existing contains(--help) checks and the --option=<value> rule for leading-dash values.",
+      "D4: delegated runners (gc, session prune, session reconcile, cache, environment) keep their ArgumentParser USAGE: output because they already handle help correctly.",
+      "§2.2: help is always plain text on stdout, exit 0, and ignores --output.",
+      "§2.4: CleanExit backstops in StorageCommandFailure.result, RielaClientFamilyArguments.parseCLI and the runParsed final catch, as defense in depth."
+    ],
+    "intentionalTradeoffs": [
+      "kaiba, routine and version print the full top-level help instead of a dedicated usage (no new strings for #184).",
+      "Family-only help (e.g. workflow --help) prints the family's usage-line slice instead of the full help.",
+      "The usage-line slice depends on rielaCLIHelpText formatting.",
+      "Ad-hoc CLIUsageError wrappers are left as-is and rely on the detector, with the ch-01 audit test as coverage.",
+      "A W2 per-plan gate may end blocked-by-sibling; integrationVerification after the W2 join is authoritative."
+    ],
+    "supportedEdgeCases": [
+      "storage compact --help and -h; doctor storage --help.",
+      "Required-argument commands such as session status --help and workflow validate --help.",
+      "Help token in a value position (--message --help) is treated as help.",
+      "workflow run <target> --help keeps the run target for workflowRunHelpText(target:).",
+      "serve --help no longer starts a listener; auth invite --help no longer creates an invite.",
+      "Unmatched full path falls back by dropping the last word (events validate -> events usage line)."
+    ],
+    "outOfScopeEdgeCases": [
+      "Tokens after -- never request help.",
+      "riela --help / -h / bare riela keep the existing top-level help.",
+      "Unknown first token keeps the unknown-command error.",
+      "gateway <name> ... (name != list) keeps the gateway's native --help.",
+      "Literal --help option values must use --opt=--help."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-cli-subcommand-help.md",
+      "impl-plans/active/cli-subcommand-help-01-help-core.md",
+      "impl-plans/active/cli-subcommand-help-02-app-wiring.md",
+      "impl-plans/active/cli-subcommand-help-03-storage-backstop.md",
+      "Sources/RielaCLI/RielaCLIApplication.swift",
+      "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+      "Sources/RielaCLI/StorageCompactCommand.swift",
+      "Sources/RielaCLI/StorageDoctorCommand.swift",
+      "Sources/RielaCLI/SandboxCommand.swift",
+      "Sources/RielaCLI/DistributedWorkerCommand.swift"
+    ],
+    "resolvedFindings": [
+      "Step 3 low: the audit leaves out gateway <name> paths. Pinned in ch-01 Tests/Audit.",
+      "Step 5 mid F1-wave2-module-build-gate: sibling-diagnostic rule, ch-03 uninterrupted signature edit, and integrationVerification as authoritative serial gate."
+    ],
+    "residualFindings": [
+      "low: D3 value-position rule.",
+      "low: ad-hoc CleanExit wrappers rely on the detector, with the audit as coverage.",
+      "low: the usage-line slice depends on the formatting of rielaCLIHelpText.",
+      "low: a W2 gate may end blocked-by-sibling; integrationVerification resolves it.",
+      "low: decision IDs D5 and D6 are cited in plans but correspond to design §2.2 and §2.4, not numbered in §5."
+    ]
+  },
+  "plans": [
+    {
+      "planId": "ch-01-help-core",
+      "planPath": "impl-plans/active/cli-subcommand-help-01-help-core.md",
+      "progressPath": "impl-plans/progress/ch-01-help-core.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/CLISubcommandHelp.swift",
+        "Sources/RielaCLI/SandboxCommand.swift",
+        "Sources/RielaCLI/DistributedWorkerCommand.swift",
+        "Tests/RielaCLITests/SubcommandHelpTests.swift",
+        "impl-plans/progress/ch-01-help-core.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Sources/RielaCLI/CLISubcommandHelp.swift exists with exactly the pinned contract names (CLIHelpRequest.detect/resolve/result) and contains no nonisolated(unsafe) or @unchecked.",
+        "SandboxCommand.helpText and DistributedWorkerCommand.helpText exist, existing branches use them, and help wording is unchanged.",
+        "SubcommandHelpTests cover detection, text-source selection, usage-line slicing, and the CLISurfaceEnumerator audit (excluding delegated runners and gateway <name>).",
+        "swift build, the focused tests, neighbor suites and swiftlint --strict pass with logs under tmp/issue-184/ch-01/.",
+        "impl-plans/progress/ch-01-help-core.md records changed symbols, pre/post SHA-256, audited path count, skipped assertions and a verification table."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-184/ch-01",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/issue-184/ch-01/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter SubcommandHelpTests > tmp/issue-184/ch-01/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"WorkflowRunHelpTests|PasskeyCommandTests|GatewayCommandTests|SandboxContainerShareValidationTests\" > tmp/issue-184/ch-01/test-neighbors.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/CLISubcommandHelp.swift Sources/RielaCLI/SandboxCommand.swift Sources/RielaCLI/DistributedWorkerCommand.swift Tests/RielaCLITests/SubcommandHelpTests.swift > tmp/issue-184/ch-01/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ch-02-app-wiring",
+      "planPath": "impl-plans/active/cli-subcommand-help-02-app-wiring.md",
+      "progressPath": "impl-plans/progress/ch-02-app-wiring.md",
+      "dependsOn": ["ch-01-help-core"],
+      "writePaths": [
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Tests/RielaCLITests/SubcommandHelpApplicationTests.swift",
+        "impl-plans/progress/ch-02-app-wiring.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "CLIHelpRequest.detect(arguments) is called inside RielaCLIApplication.runParsed before the sandbox/auth/worker pre-dispatch and parser.parse.",
+        "RielaClientFamilyArguments.parseCLI rethrows CleanExit unchanged (one isCleanExit hit) and the runParsed final catch maps CleanExit to help with exit 0.",
+        "session status --help, workflow validate --help and other required-argument commands print usage on stdout with exit 0 and empty stderr; --output is ignored for help.",
+        "SubcommandHelpApplicationTests plus listed neighbor suites and swiftlint --strict pass with logs under tmp/issue-184/ch-02/ (or are recorded blocked-by-sibling per verificationNotes).",
+        "impl-plans/progress/ch-02-app-wiring.md records changes, hashes and a verification table."
+      ],
+      "verificationNotes": "Sibling-diagnostic rule: if swift build/test fails and every compiler diagnostic is in a file outside this plan's writePaths (for example ch-03's StorageDoctorCommand.swift or StorageCompactCommand.swift), do not edit it. Record the diagnostic, file and owner plan in the progress log, rerun the same command (at most 3 attempts in total), then record the gate as blocked-by-sibling with the log path, not PASS or FAIL. Diagnostics in owned files are this plan's responsibility. integrationVerification after the W2 join is the authoritative module-wide gate.",
+      "verification": [
+        "mkdir -p tmp/issue-184/ch-02",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/issue-184/ch-02/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"SubcommandHelpApplicationTests|SubcommandHelpTests|CommandParsingTests|WorkflowRunHelpTests|PasskeyCommandTests|WorkflowTemporaryRegistrationTests|GarbageCollectionCommandTests|CacheCommandTests|SessionReconcileCommandTests|RuntimeEnvironmentChannelTests\" > tmp/issue-184/ch-02/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/RielaCLIApplication.swift Sources/RielaCLI/RielaClientFamilyArguments.swift Tests/RielaCLITests/SubcommandHelpApplicationTests.swift > tmp/issue-184/ch-02/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ch-03-storage-backstop",
+      "planPath": "impl-plans/active/cli-subcommand-help-03-storage-backstop.md",
+      "progressPath": "impl-plans/progress/ch-03-storage-backstop.md",
+      "dependsOn": ["ch-01-help-core"],
+      "writePaths": [
+        "Sources/RielaCLI/StorageDoctorCommand.swift",
+        "Sources/RielaCLI/StorageCompactCommand.swift",
+        "Tests/RielaCLITests/StorageHelpBackstopTests.swift",
+        "impl-plans/progress/ch-03-storage-backstop.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "StorageCommandFailure.result has signature result(_:usagePath:) with exactly 2 callers (storage compact and doctor storage).",
+        "A CleanExit passed to StorageCommandFailure.result returns the storage usage for the given path with exit 0 and is never JSON-encoded.",
+        "riela storage compact --help and -h print the storage compact usage and exit 0.",
+        "StorageHelpBackstopTests and StorageCompactCommandTests plus swiftlint --strict pass with logs under tmp/issue-184/ch-03/ (or are recorded blocked-by-sibling per verificationNotes).",
+        "impl-plans/progress/ch-03-storage-backstop.md records changes, hashes and a verification table."
+      ],
+      "verificationNotes": "Apply the StorageCommandFailure.result(_:usagePath:) signature change and both call-site updates (StorageDoctorCommand.swift:86, StorageCompactCommand.swift:96) as one uninterrupted edit sequence before any build. Sibling-diagnostic rule: if swift build/test fails and every compiler diagnostic is in a file outside this plan's writePaths (for example ch-02's RielaCLIApplication.swift or RielaClientFamilyArguments.swift), do not edit it. Record the diagnostic, file and owner plan in the progress log, rerun the same command (at most 3 attempts in total), then record the gate as blocked-by-sibling with the log path, not PASS or FAIL. integrationVerification after the W2 join is the authoritative module-wide gate.",
+      "verification": [
+        "mkdir -p tmp/issue-184/ch-03",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build > tmp/issue-184/ch-03/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift test --filter \"StorageHelpBackstopTests|StorageCompactCommandTests\" > tmp/issue-184/ch-03/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/StorageDoctorCommand.swift Sources/RielaCLI/StorageCompactCommand.swift Tests/RielaCLITests/StorageHelpBackstopTests.swift > tmp/issue-184/ch-03/swiftlint.log 2>&1'"
+      ]
+    }
+  ],
+  "integrationVerificationNote": "Authoritative module-wide gate, run serially after the W2 join (ch-02 and ch-03). Per-plan build and test results marked blocked-by-sibling are resolved here.",
+  "integrationVerification": [
+    "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && swift build && swift test --filter RielaCLITests > tmp/issue-184/integration-rielacli.log 2>&1'",
+    "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela && for c in \"storage compact --help\" \"storage compact -h\" \"session status --help\" \"workflow validate --help\"; do .build/debug/riela ${=c}; echo \"exit=$?\"; done > tmp/issue-184/integration-manual.log 2>&1'"
+  ]
+}

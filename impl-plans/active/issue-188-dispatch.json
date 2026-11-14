@@ -1,0 +1,280 @@
+{
+  "taskId": "issue-188",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "28ce6a28787118ff570f16a536ab974174c80c19",
+  "designDocPaths": [
+    "design-docs/specs/design-step-deadline-and-retry-policy.md",
+    "design-docs/specs/design-workflow-json.md",
+    "design-docs/user-qa/qa-step-deadline-and-retry-policy.md"
+  ],
+  "evidenceRoot": "tmp/issue-188",
+  "reviewContext": {
+    "issueReference": "tacogips/riela#188 (https://github.com/tacogips/riela/issues/188); workflowExecutionId opus-terra-design-and-implement-review-loop-session-1; plans accepted by step5-impl-plan-review comm-000010",
+    "userProblem": "ART's hourly Notion persistence (publish fanout running riela/notion-gateway-write) can run for hours: on 2026-11-10 failed creates took ~337 s each with mutationOutcome=unknown and a pure riela/json-route step took up to 1049 s. Riela has no whole-save-job deadline covering waits/backoff and no bounded, mutation-safe retry/backoff for add-on save steps.",
+    "requiredOutcomes": [
+      "Optional WorkflowStepRef fields deadlineMs (whole-step deadline anchored at readyAt = max(input message time, run start), fanout dispatch time for branch entry steps) and retry {maxAttempts, initialDelayMs, multiplier, maxDelayMs, jitter} on add-on steps; existing timeoutMs stays the per-attempt timeout (design §3).",
+      "Bounded exponential backoff with Retry-After raising the delay, retry-after-exceeds-max-delay stop, budget check before sleeping, deterministic jitter, and cancellation-aware sleeps through an injected WorkflowRetryClock (design §3.3, §5.4).",
+      "Step supervisor that actively expires projection, attempts and backoff at stepDeadline + 5 s backstop without awaiting non-cooperative children, with a dispatch guard and stale-attempt-timer handling (design §5.1, §5.2).",
+      "Mutation safety: retry only when isRetryable == true and effectOutcome != unknown; Notion classification with ordered write precedence (unknown always wins, missing mutationOutcome = unknown, 429/409 rejected retryable, other rejected and notDispatched permanent), fail-safe isMutation, publishPage taint rule (design §4).",
+      "Fanout expiry: unscheduled local-fanout branches whose entry step authors deadlineMs become failed join records (attempts=0, stopReason=step-deadline) at dispatchAt + deadlineMs (design §5.3).",
+      "Path-qualified validation of the new fields (ranges, retry requires deadlineMs, step timeoutMs <= deadlineMs, add-on only, no writeRetry nesting, no placement) (design §6).",
+      "Diagnostics: riela.step.attempt.finished / riela.step.retry.stopped backend events, [rielaRetry ...] failure suffix, riela.step.publication.duration telemetry (design §7).",
+      "User docs docs/workflows/step-deadline-and-retry.md and a Notion classification subsection in docs/builtin-gateway-json.md, including the exact ART settings of design §9."
+    ],
+    "nonGoals": [
+      "Fixing runtime CPU, history or scheduling overhead (only bounded and observable).",
+      "A run-level deadline; scheduled overlap policy remains the whole-run bound.",
+      "Retry for agent/stdio/placement steps; reclassifying add-ons other than Notion.",
+      "Automatic Notion reconciliation or idempotency keys; notion-gateway change or pin bump.",
+      "Changing resume/rerun semantics; refactoring RielaAdapters executeWithRetry; DynamicWorkflowPolicy or GraphQL/SDL changes.",
+      "Any ART or running RielaApp modification; examples/ fixture."
+    ],
+    "constraints": [
+      "Run swift build/test/swiftlint from the repository root via arch -arm64 /bin/zsh -lc, in the foreground, with focused --filter suites; never delete .build (shared SwiftPM cache).",
+      "Evidence and logs only under tmp/issue-188/ (untracked); never commit them.",
+      "Workers share one working tree: no git commit/stash/checkout/branch; re-read files before editing and record pre/post SHA-256; edit only own writePaths; sibling-only compile errors are logged as sibling-blocked and re-run later.",
+      "No real sleeps in tests (fake WorkflowRetryClock), no live Notion calls, no credential access.",
+      "Steps without deadlineMs/retry keep byte-identical behaviour; Notion error message text unchanged.",
+      "Serial integration runs full swift build, the union focused+regression filter (must show testBranchEntryDeadlineAnchoredAtFanoutDispatch passing) and swiftlint, then one commit and push to origin/main."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Reuse timeoutMs as the per-attempt timeout and add deadlineMs as the whole-step budget instead of a new attempt-timeout field.",
+        "rationale": "Existing deadline(for:) precedence is kept; an HTTP/attempt timeout is not represented as a save-job deadline (design §2, §3.2)."
+      },
+      {
+        "decision": "AdapterExecutionError.isRetryable/retryAfter plus a new optional effectOutcome are the only retry-eligibility signals; unknown is never retried.",
+        "rationale": "Ambiguous non-idempotent Notion writes must not be repeated (design §4, §4.1)."
+      },
+      {
+        "decision": "Supervisor uses an unstructured child Task raced with lock-protected once-flag timers, never withThrowingTaskGroup.",
+        "rationale": "A task group awaits non-cooperative children, which is the hang this design fixes (design §5.1)."
+      },
+      {
+        "decision": "No notion-gateway change; pin 41f64e6 stays.",
+        "rationale": "The gateway already reports mutationOutcome, Retry-After, httpStatus and has no internal retry, so retries do not multiply (design §8)."
+      },
+      {
+        "decision": "retry cannot be combined with addon config.writeRetry.",
+        "rationale": "Avoids uncontrolled nested retry multiplication (design §6)."
+      },
+      {
+        "decision": "Unresolved items are retained via fanout collect-partial failed join records; cross-run backlog belongs to ART.",
+        "rationale": "Riela keeps runtime evidence only; timed-out work is never marked completed (design §9)."
+      },
+      {
+        "decision": "Amendment 2026-11-10 round 1: plan issue188-04-step-supervisor gains exact writePaths Sources/RielaCore/WorkflowFailureDiagnostics.swift (closed typed allowlist, <=1024-byte metadata retention for riela.step.attempt.finished / riela.step.retry.stopped / riela.step.deadline.exceededAfterSuccess; command_failure_diagnostics branch byte-identical), Sources/RielaCore/RuntimeStore.swift (once-only post-terminal append of riela.step.deadline.exceededAfterSuccess to a .completed execution, no status/output/live-tail change), and new tests Tests/RielaCoreTests/StepRetryEventRetentionTests.swift and Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift; verification widened accordingly (plan Decisions A-E).",
+        "rationale": "Blocked plan ids: issue188-04-step-supervisor (reason blocked-wave-scope-or-contract; evidence tmp/issue-188/issue188-04-step-supervisor/cont1-test-attempt2.log exit 1, 20 tests, 3 failures). Resolved gaps: WorkflowFailureDiagnostics.swift:178 discarded retry-event metadata and RuntimeStore.swift:681 ignored backend events after terminal status, so design §5.1/§7 diagnostics could not be persisted within plan 04 writePaths. No redesign; plan IDs, dependsOn and accepted plans issue188-01/02/03/05/06 unchanged; FailClosedSQLiteWorkflowRuntimeStore needs no change because it persists the session snapshot after the backing call. Accepted by step5-impl-plan-review comm-000068."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Cross-workflow fanout branches are only elapsed-accounted (fail at start with attempts=0), not actively expired while queued; ART's publish fanout is local.",
+      "Runtime CPU and store-write latency are measured, not bounded; the bound is stepDeadline + 5 s plus the outcome store write.",
+      "A success returned before expiry is published even if the store write runs past the deadline (exceededAfterSuccess event).",
+      "Wave siblings share one working tree and .build; mitigated by the sibling-blocked re-run rule and serial integration.",
+      "Plan 05's per-plan filter relies on a regex lookahead; a full-class fallback is specified."
+    ],
+    "supportedEdgeCases": [
+      "Stuck non-cooperative adapter or attachment projector (runner backstop, no late dispatch).",
+      "Transient 429/409 rejected with Retry-After, total-budget exhaustion, Retry-After above maxDelayMs, retry exhaustion.",
+      "Cancellation during backoff or attempt.",
+      "Ambiguous writes: 5xx/transport after dispatch, missing mutationOutcome, partial ensurePagePath, appendBlocks after createPage.",
+      "Permanent validation/auth/quota failures (non-retryable).",
+      "Deadline already passed before dispatch (attempts=0, queueWaitMs) and slow pure-routing steps.",
+      "Fanout slot wait expiry, all-finished-before-deadline, fail-fast with deadline.",
+      "Invalid policies with path-qualified diagnostics; resumed runs anchoring at the new runStartedAt."
+    ],
+    "outOfScopeEdgeCases": [
+      "Active expiry of queued cross-workflow fanout branches.",
+      "Automatic reconciliation of effectOutcome=unknown Notion items.",
+      "Blocking resume/rerun of outcome-unknown steps (QA Q2 default: unchanged).",
+      "Retries for non-Notion gateways, agent, stdio and placement steps."
+    ],
+    "residualRisks": [
+      "Supervisor concurrency complexity (once-guard, timer generations) covered by StepRetryPolicyTests cases 1, 11, 12 and 18 run 3 times.",
+      "Shared working tree/.build across wave siblings."
+    ],
+    "codexAgentReferences": [],
+    "sourcePaths": [
+      "design-docs/specs/design-step-deadline-and-retry-policy.md",
+      "design-docs/specs/design-workflow-json.md",
+      "design-docs/user-qa/qa-step-deadline-and-retry-policy.md",
+      "impl-plans/active/issue188-01-core-contract.md",
+      "impl-plans/active/issue188-02-validation.md",
+      "impl-plans/active/issue188-03-notion-classification.md",
+      "impl-plans/active/issue188-04-step-supervisor.md",
+      "impl-plans/active/issue188-05-fanout-expiry.md",
+      "impl-plans/active/issue188-06-docs.md",
+      "Sources/RielaCore/WorkflowStepRef.swift",
+      "Sources/RielaCore/AdapterContracts.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+      "Sources/RielaCore/WorkflowRawValidation.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter+LocalGatewaySupport.swift",
+      "docs/builtin-gateway-json.md"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "issue188-01-core-contract",
+      "planPath": "impl-plans/active/issue188-01-core-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowStepRef.swift",
+        "Sources/RielaCore/WorkflowStepRetryPolicy.swift",
+        "Sources/RielaCore/AdapterContracts.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Tests/RielaCoreTests/ManualWorkflowRetryClock.swift",
+        "Tests/RielaCoreTests/StepRetryBackoffTests.swift",
+        "impl-plans/active/issue188-01-core-contract.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "WorkflowStepRef.deadlineMs/retry, WorkflowStepRetryPolicy, WorkflowStepRetryJitter, WorkflowRetryClock, SystemWorkflowRetryClock, StepRetryStopReason, StepTimeoutKind, StepRetryBackoff.delayMs, StepRetryDiagnostics.suffix/backstopGraceMs, AdapterEffectOutcome, AdapterExecutionError.effectOutcome, DeterministicWorkflowRunRequest.runStartedAt and DeterministicWorkflowRunner.retryClock exist with the pinned names and shapes.",
+        "No runtime behaviour change; all new init params default and are appended last.",
+        "ManualWorkflowRetryClock is cancellation-aware and never resumes a continuation twice.",
+        "StepRetryBackoffTests, the regression filter and swiftlint exit 0 with log paths recorded in the plan progress log."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter StepRetryBackoffTests 2>&1 | tee tmp/issue-188/p01-test.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowStepFailurePolicyTests|RunnerFailurePolicyTests|RunnerNonTerminalStepFailureTests\" 2>&1 | tee tmp/issue-188/p01-regression.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/WorkflowStepRetryPolicy.swift Sources/RielaCore/WorkflowStepRef.swift Sources/RielaCore/AdapterContracts.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Tests/RielaCoreTests/ManualWorkflowRetryClock.swift Tests/RielaCoreTests/StepRetryBackoffTests.swift 2>&1 | tee tmp/issue-188/p01-lint.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "issue188-02-validation",
+      "planPath": "impl-plans/active/issue188-02-validation.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowRawValidation.swift",
+        "Sources/RielaCore/WorkflowRawValidation+StepRetry.swift",
+        "Tests/RielaCoreTests/StepRetryPolicyValidationTests.swift",
+        "impl-plans/active/issue188-02-validation.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "All 7 validation rules implemented on raw JSON with path-qualified diagnostics (e.g. workflow.steps[0].retry.maxDelayMs); booleans, non-integral and non-finite values rejected.",
+        "Workflows without deadlineMs/retry produce identical diagnostics.",
+        "StepRetryPolicyValidationTests, the regression filter and swiftlint exit 0 with log paths recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter StepRetryPolicyValidationTests 2>&1 | tee tmp/issue-188/p02-test.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowStepFailurePolicyTests|WorkflowLoopValidationTests\" 2>&1 | tee tmp/issue-188/p02-regression.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/WorkflowRawValidation.swift Sources/RielaCore/WorkflowRawValidation+StepRetry.swift Tests/RielaCoreTests/StepRetryPolicyValidationTests.swift 2>&1 | tee tmp/issue-188/p02-lint.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "issue188-03-notion-classification",
+      "planPath": "impl-plans/active/issue188-03-notion-classification.md",
+      "dependsOn": [
+        "issue188-01-core-contract"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/NotionGatewayFailureClassification.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+LocalGatewaySupport.swift",
+        "Tests/RielaCLITests/NotionGatewayAddonRetryClassificationTests.swift",
+        "impl-plans/active/issue188-03-notion-classification.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "NotionGatewayFailureClassifier.classify/isMutation and notionRunWithDeadline exist with the pinned signatures; rule 0 (any mutationOutcome=unknown -> unknown, non-retryable) precedes all other rules; isMutation is fail-safe.",
+        "publishPage taint rule and pageId-mode / ensurePagePath exemptions implemented; error message text unchanged; non-Notion gateways unchanged.",
+        "All listed test cases (6, 6a, 6b, 6c, 7, 8-prep, reads, fail-safe A-D, isMutation table, timeout) pass; regression log shows NotionGatewayAddonTests and GatewayRetryDiagnosticsTests ran; swiftlint exits 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter NotionGatewayAddonRetryClassificationTests 2>&1 | tee tmp/issue-188/p03-test.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"NotionGatewayAddonTests|GatewayRetryDiagnosticsTests\" 2>&1 | tee tmp/issue-188/p03-regression.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/NotionGatewayFailureClassification.swift Sources/RielaCLI/ProductionNodeAdapter+LocalGatewaySupport.swift Tests/RielaCLITests/NotionGatewayAddonRetryClassificationTests.swift 2>&1 | tee tmp/issue-188/p03-lint.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "issue188-04-step-supervisor",
+      "planPath": "impl-plans/active/issue188-04-step-supervisor.md",
+      "dependsOn": [
+        "issue188-01-core-contract"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift",
+        "Tests/RielaCoreTests/StepRetryPolicyTests.swift",
+        "impl-plans/active/issue188-04-step-supervisor.md",
+        "Sources/RielaCore/WorkflowFailureDiagnostics.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Tests/RielaCoreTests/StepRetryEventRetentionTests.swift",
+        "Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "executeAddonAndPublish delegates to executeSupervisedAddonAndPublish only when deadlineMs or retry is authored; otherwise the code path is unchanged.",
+        "Supervisor implements readyAt, dispatch guards, unstructured child Task with once-flag race (no task group), per-attempt timers replaced/disarmed with stale fires ignored, retry decision order, outcome handling and diagnostics events per design §5.1/§7.",
+        "Amendment round 1: WorkflowFailureDiagnostics retains riela.step.attempt.finished / retry.stopped / deadline.exceededAfterSuccess metadata only under the closed typed allowlist (<=1024 bytes, whole object dropped on any violation); command_failure_diagnostics branch unchanged.",
+        "Amendment round 1: InMemoryWorkflowRuntimeStore appends riela.step.deadline.exceededAfterSuccess at most once to a completed execution without changing status/completedAt/updatedAt/output or recreating a live tail; all other post-terminal events stay ignored; the event persists through FailClosedSQLiteWorkflowRuntimeStore.",
+        "All StepRetryPolicyTests, StepRetryEventRetentionTests and StepRetryEventSQLitePersistenceTests cases pass in 3 consecutive runs; regression filter and swiftlint exit 0 with log paths recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter \"StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests\" 2>&1 | tee tmp/issue-188/p04-test-run1.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests\" 2>&1 | tee tmp/issue-188/p04-test-run2.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"StepRetryPolicyTests|StepRetryEventRetentionTests|StepRetryEventSQLitePersistenceTests\" 2>&1 | tee tmp/issue-188/p04-test-run3.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RunnerFailurePolicyTests|RunnerNonTerminalStepFailureTests|DeterministicWorkflowRunnerFanoutTests|FanoutFailedBranchStepOutputsTests|RuntimeStoreTests|CommandFailureDiagnosticsCaptureTests|CommandFailureDiagnosticsExportTests|SessionReconcileCommandTests\" 2>&1 | tee tmp/issue-188/p04-regression.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift Sources/RielaCore/WorkflowFailureDiagnostics.swift Sources/RielaCore/RuntimeStore.swift Tests/RielaCoreTests/StepRetryPolicyTests.swift Tests/RielaCoreTests/StepRetryEventRetentionTests.swift Tests/RielaCLITests/StepRetryEventSQLitePersistenceTests.swift 2>&1 | tee tmp/issue-188/p04-lint.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "issue188-05-fanout-expiry",
+      "planPath": "impl-plans/active/issue188-05-fanout-expiry.md",
+      "dependsOn": [
+        "issue188-01-core-contract"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Tests/RielaCoreTests/StepDeadlineFanoutExpiryTests.swift",
+        "impl-plans/active/issue188-05-fanout-expiry.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "fanoutDispatchAt captured once per dispatchFanout and set as branchRequest.runStartedAt; expiry timer active only for local fanout whose entry step authors deadlineMs; unscheduled indices become failed records (attempts=0, stopReason=step-deadline, original item, no sessionId); running branches untouched; exactly one record per selected index.",
+        "No-deadline fanouts schedule exactly as before; timer cancellation is never reported as workflow cancellation.",
+        "Non-anchor tests pass in 3 consecutive runs; testBranchEntryDeadlineAnchoredAtFanoutDispatch is written unweakened and passes at integration; cross-workflow limitation recorded in the progress log; regression filter (log shows FanoutResumeTests ran) and swiftlint exit 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-188 && arch -arm64 /bin/zsh -lc 'swift test --filter \"StepDeadlineFanoutExpiryTests/(?!testBranchEntryDeadlineAnchoredAtFanoutDispatch)\" 2>&1 | tee tmp/issue-188/p05-test-run1.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"StepDeadlineFanoutExpiryTests/(?!testBranchEntryDeadlineAnchoredAtFanoutDispatch)\" 2>&1 | tee tmp/issue-188/p05-test-run2.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"StepDeadlineFanoutExpiryTests/(?!testBranchEntryDeadlineAnchoredAtFanoutDispatch)\" 2>&1 | tee tmp/issue-188/p05-test-run3.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeterministicWorkflowRunnerFanoutTests|FanoutResumeTests|FanoutFailedBranchStepOutputsTests|WorkflowFanoutMapReduceTests|WorkflowFanoutObservationBoundTests|FanoutArtifactEvidenceRunnerTests\" 2>&1 | tee tmp/issue-188/p05-regression.log; exit ${pipestatus[1]}'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift Tests/RielaCoreTests/StepDeadlineFanoutExpiryTests.swift 2>&1 | tee tmp/issue-188/p05-lint.log; exit ${pipestatus[1]}'"
+      ]
+    },
+    {
+      "planId": "issue188-06-docs",
+      "planPath": "impl-plans/active/issue188-06-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "docs/workflows/step-deadline-and-retry.md",
+        "docs/builtin-gateway-json.md",
+        "impl-plans/active/issue188-06-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "docs/workflows/step-deadline-and-retry.md covers purpose, fields/defaults, deadline coverage, retry eligibility, validation, diagnostics, exact ART settings (design §9) and not-covered items, using the pinned names; no CPU-fix claim.",
+        "docs/builtin-gateway-json.md gains only the '### Notion failure classification (step retry)' subsection after '### Notion publishPage'.",
+        "diff-check, whitespace and required-terms checks exit 0 with log paths recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-188 && zsh -c 'git diff --check -- docs/builtin-gateway-json.md 2>&1 | tee tmp/issue-188/p06-diffcheck.log; exit ${pipestatus[1]}'",
+        "python3 -I -c 'import pathlib,sys; ps=[\"docs/workflows/step-deadline-and-retry.md\",\"docs/builtin-gateway-json.md\"]; bad=[f\"{p}:{i}\" for p in ps for i,l in enumerate(pathlib.Path(p).read_text().splitlines(),1) if l!=l.rstrip()]; print(\"\\n\".join(bad) or \"ok\"); sys.exit(bool(bad))' 2>&1 | tee tmp/issue-188/p06-ws.log",
+        "python3 -I -c 'import pathlib,sys; t=pathlib.Path(\"docs/workflows/step-deadline-and-retry.md\").read_text(); req=[\"deadlineMs\",\"maxAttempts\",\"initialDelayMs\",\"maxDelayMs\",\"deterministic\",\"outcome-unknown\",\"retry-after-exceeds-max-delay\",\"deadline-exhausted\",\"riela.step.attempt.finished\",\"riela.step.retry.stopped\",\"collect-partial\",\"180000\",\"600000\",\"120000\",\"rielaRetry\"]; miss=[r for r in req if r not in t]; print(miss or \"ok\"); sys.exit(bool(miss))' 2>&1 | tee tmp/issue-188/p06-terms.log"
+      ]
+    }
+  ]
+}

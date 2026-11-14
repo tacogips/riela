@@ -1,0 +1,294 @@
+import XCTest
+@testable import RielaCore
+
+final class AgentNodeOutputContractValidationTests: XCTestCase {
+  func testSandboxDeclarationMatchesBackendCapability() {
+    for backend in [NodeExecutionBackend.codexAgent, .claudeCodeAgent, .cursorCliAgent] {
+      let diagnostics = validate(singleAgent: AgentNodePayload(
+        id: "agent", executionBackend: backend, model: "model"
+      ))
+      XCTAssertTrue(diagnostics.contains { $0.path.hasSuffix("agentSandbox") && $0.message.contains("must declare") })
+    }
+
+    for backend in [
+      NodeExecutionBackend.officialOpenAISDK, .officialAnthropicSDK,
+      .officialGeminiSDK, .officialCursorSDK
+    ] {
+      let diagnostics = validate(singleAgent: AgentNodePayload(
+        id: "agent", executionBackend: backend, model: "model", agentSandbox: .readOnly
+      ))
+      XCTAssertTrue(diagnostics.contains { $0.path.hasSuffix("agentSandbox") && $0.message.contains("not supported") })
+    }
+  }
+
+  func testTemplateClassifierKeepsContextLenientAndSplitsAddonSurfaces() {
+    let configSurface = TemplateSurface.addonConfig(addonInputKeys: ["results"])
+    XCTAssertEqual(classifyTemplateReference("event.input.text", surface: configSurface), .context)
+    XCTAssertEqual(classifyTemplateReference("workflowInput.name", surface: configSurface), .context)
+    XCTAssertEqual(classifyTemplateReference("input._rielaInput.latest.fromStepId", surface: configSurface), .context)
+    XCTAssertEqual(classifyTemplateReference("input.upstream.value", surface: configSurface), .context)
+    XCTAssertEqual(classifyTemplateReference("input.runtime.value", surface: configSurface), .context)
+    XCTAssertEqual(classifyTemplateReference("results", surface: configSurface), .context)
+    XCTAssertEqual(classifyTemplateReference("results", surface: .addonInputs), .payload)
+    XCTAssertEqual(classifyTemplateReference("teamName", surface: configSurface), .payload)
+    XCTAssertEqual(classifyTemplateReference("commitMessage", surface: configSurface), .payload)
+    XCTAssertEqual(classifyTemplateReference("input.commitMessage", surface: configSurface), .payload)
+    XCTAssertEqual(classifyTemplateReference("inbox.latest.output.payload.commitMessage", surface: configSurface), .payload)
+  }
+
+  func testPayloadReferencesRequireProducerSchemaAndDeclaredFieldAcrossAddonRelay() {
+    for reference in [
+      "{{commitMessage}}",
+      "{{input.commitMessage}}",
+      "{{inbox.latest.output.payload.commitMessage}}"
+    ] {
+      let workflow = relayedWorkflow(reference: reference)
+      let missingSchema = DefaultWorkflowValidator().validate(
+        workflow,
+        nodePayloads: ["agent": compliantAgent(output: nil)]
+      )
+      XCTAssertTrue(missingSchema.contains {
+        $0.path == "workflow.nodes.agent.output.jsonSchema" && $0.message.contains("commitMessage")
+      })
+      XCTAssertFalse(missingSchema.contains { $0.path.contains("workflow.nodes.relay") })
+
+      let missingProperty = DefaultWorkflowValidator().validate(
+        workflow,
+        nodePayloads: ["agent": compliantAgent(output: NodeOutputContract(jsonSchema: ["type": .string("object")]))]
+      )
+      XCTAssertTrue(missingProperty.contains { $0.path.hasSuffix("properties.commitMessage") })
+    }
+  }
+
+  func testAddonInputCannotResolveFromAnotherDeclaredInput() {
+    let workflow = baseWorkflow(
+      registry: [
+        WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json"),
+        WorkflowNodeRegistryRef(id: "consumer", addon: WorkflowNodeAddonRef(
+          name: "riela/example",
+          inputs: ["first": .string("{{input.source}}"), "second": .string("{{first}}")]
+        ))
+      ],
+      steps: [
+        WorkflowStepRef(id: "produce", nodeId: "agent", transitions: [WorkflowStepTransition(toStepId: "consume")]),
+        WorkflowStepRef(id: "consume", nodeId: "consumer")
+      ]
+    )
+    let schema = NodeOutputContract(jsonSchema: [
+      "type": .string("object"),
+      "properties": .object(["source": .object(["type": .string("string")])])
+    ])
+
+    let diagnostics = DefaultWorkflowValidator().validate(
+      workflow,
+      nodePayloads: ["agent": compliantAgent(output: schema)]
+    )
+
+    XCTAssertTrue(diagnostics.contains {
+      $0.path.hasSuffix("properties.first") && $0.message.contains("first")
+    })
+  }
+
+  func testRequestBoundSchemaAllowsDownstreamPayloadReferences() {
+    let workflow = relayedWorkflow(reference: "{{input.commitMessage}}")
+    let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: [
+      "agent": compliantAgent(output: .init(jsonSchemaFrom: "/runtimeVariables/result_schema"))
+    ])
+    XCTAssertFalse(diagnostics.contains { $0.path.contains("output.jsonSchema") })
+    let invalid = DefaultWorkflowValidator().validate(workflow, nodePayloads: [
+      "agent": compliantAgent(output: .init(jsonSchemaFrom: "invalid-pointer"))
+    ])
+    XCTAssertTrue(invalid.contains { $0.path.hasSuffix("jsonSchemaFrom") && $0.severity == .error })
+  }
+
+  func testRequestBoundSchemaAllowsConditionalAgentTransitions() {
+    let workflow = baseWorkflow(
+      registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],
+      steps: [WorkflowStepRef(id: "only", nodeId: "agent", transitions: [
+        WorkflowStepTransition(toStepId: "only", label: "accepted")
+      ])]
+    )
+    let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: [
+      "agent": compliantAgent(output: .init(jsonSchemaFrom: "/runtimeVariables/result_schema"))
+    ])
+    XCTAssertFalse(diagnostics.contains { $0.message.contains("must declare output.jsonSchema") })
+  }
+
+  func testAgentVariablesDoNotExcludeBareAddonPayloadReferences() {
+    let workflow = relayedWorkflow(reference: "{{teamName}}")
+    let producer = AgentNodePayload(
+      id: "agent", executionBackend: .codexAgent, model: "model",
+      agentSandbox: .readOnly, variables: ["teamName": .string("declared-only-on-agent")]
+    )
+
+    let diagnostics = DefaultWorkflowValidator().validate(
+      workflow,
+      nodePayloads: ["agent": producer]
+    )
+
+    XCTAssertTrue(diagnostics.contains {
+      $0.path == "workflow.nodes.agent.output.jsonSchema" && $0.message.contains("teamName")
+    })
+  }
+
+  func testConditionalLabelsRequireSchemaAndProducerWalkTerminatesWithoutAgent() {
+    var workflow = baseWorkflow(
+      registry: [WorkflowNodeRegistryRef(id: "addon", addon: WorkflowNodeAddonRef(name: "riela/kv-set"))],
+      steps: [WorkflowStepRef(id: "only", nodeId: "addon", transitions: [WorkflowStepTransition(toStepId: "only")])]
+    )
+    let addonDiagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: [:])
+    XCTAssertFalse(addonDiagnostics.contains { $0.severity == .error })
+    XCTAssertTrue(addonDiagnostics.contains {
+      $0.severity == .warning
+        && $0.path == "workflow.nodes[0]"
+        && $0.message == "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
+    })
+
+    workflow = baseWorkflow(
+      registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],
+      steps: [WorkflowStepRef(
+        id: "only", nodeId: "agent",
+        transitions: [WorkflowStepTransition(toStepId: "only", label: "accepted")]
+      )]
+    )
+    let diagnostics = DefaultWorkflowValidator().validate(
+      workflow,
+      nodePayloads: ["agent": compliantAgent(output: NodeOutputContract(description: "envelope"))]
+    )
+    XCTAssertTrue(diagnostics.contains { $0.message.contains("conditional transition labels") })
+  }
+
+  func testConditionalCommandNodeDoesNotRequireAgentSchema() {
+    let workflow = baseWorkflow(
+      registry: [WorkflowNodeRegistryRef(id: "check", nodeFile: "nodes/check.json")],
+      steps: [WorkflowStepRef(
+        id: "check", nodeId: "check",
+        transitions: [WorkflowStepTransition(toStepId: "check", label: "continue")]
+      )]
+    )
+    let command = AgentNodePayload(
+      id: "check", nodeType: .command, model: "", command: .init(executable: "/usr/bin/true")
+    )
+
+    let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: ["check": command])
+    XCTAssertFalse(diagnostics.contains { $0.path.hasSuffix("output.jsonSchema") })
+  }
+
+  func testGitCommitOutputDoesNotRequireUpstreamAgentToDeclareGitField() {
+    let workflow = baseWorkflow(
+      registry: [
+        WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json"),
+        WorkflowNodeRegistryRef(id: "commit", addon: WorkflowNodeAddonRef(
+          name: "riela/git-commit",
+          config: ["commitMessageTemplate": .string("{{inbox.latest.output.payload.commitMessage}}")]
+        )),
+        WorkflowNodeRegistryRef(id: "push", addon: WorkflowNodeAddonRef(
+          name: "riela/git-push",
+          config: ["expectedCommitHashTemplate": .string("{{inbox.latest.output.payload.git.commitHash}}")]
+        ))
+      ],
+      steps: [
+        WorkflowStepRef(id: "plan", nodeId: "agent", transitions: [WorkflowStepTransition(toStepId: "commit")]),
+        WorkflowStepRef(id: "commit", nodeId: "commit", transitions: [WorkflowStepTransition(toStepId: "push")]),
+        WorkflowStepRef(id: "push", nodeId: "push")
+      ]
+    )
+    let schema = NodeOutputContract(jsonSchema: [
+      "type": .string("object"),
+      "properties": .object(["commitMessage": .object(["type": .string("string")])])
+    ])
+
+    let diagnostics = DefaultWorkflowValidator().validate(
+      workflow, nodePayloads: ["agent": compliantAgent(output: schema)]
+    )
+    XCTAssertFalse(diagnostics.contains { $0.path.hasSuffix("properties.git") })
+  }
+
+  func testNativeStructuredOutputRejectsComposedSchemaAndStepLevelReuse() {
+    let schema: JSONObject = ["type": .string("object")]
+    let composed = validate(singleAgent: compliantAgent(output: .init(jsonSchema: schema,
+      jsonSchemaFrom: "/runtimeVariables/schema", nativeStructuredOutput: true)))
+    XCTAssertTrue(composed.contains {
+      $0.severity == .error && $0.path == "workflow.nodes.agent.output.nativeStructuredOutput"
+        && $0.message.contains("cannot combine jsonSchema with jsonSchemaFrom")
+    }, "\(composed)")
+    let single = validate(singleAgent: compliantAgent(output: .init(jsonSchemaFrom: "/runtimeVariables/schema",
+      nativeStructuredOutput: true)))
+    XCTAssertFalse(single.contains { $0.path.hasSuffix("nativeStructuredOutput") }, "\(single)")
+
+    // The runner prefers the step-level session policy, so validation must too.
+    let reused = DefaultWorkflowValidator().validate(
+      baseWorkflow(registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],
+        steps: [WorkflowStepRef(id: "only", nodeId: "agent", sessionPolicy: .init(mode: .reuse))]),
+      nodePayloads: ["agent": compliantAgent(output: .init(jsonSchema: schema, nativeStructuredOutput: true))])
+    XCTAssertTrue(reused.contains {
+      $0.severity == .error && $0.path == "workflow.steps.only.sessionPolicy" && $0.message.contains("nativeStructuredOutput")
+    }, "\(reused)")
+  }
+
+  func testCommandFailureDiagnosticsWarnsAboutSettingsThatAlwaysReject() {
+    var command = AgentNodePayload(id: "agent", model: "model")
+    command.command = WorkflowCommandExecution(executable: "/bin/echo", failureDiagnostics: .init(
+      schema: ["type": .string("object")], maxBytes: 70_000, path: Array(repeating: "k", count: 9)))
+    let warnings = validateAgentNodePayload(command, path: "node").filter { $0.severity == .warning }
+    XCTAssertTrue(warnings.allSatisfy { $0.path == "node.command.failureDiagnostics" }, "\(warnings)")
+    for subject in ["maxBytes", "path", "schema"] {
+      XCTAssertTrue(warnings.contains { $0.message.hasPrefix(subject) }, "missing \(subject) warning: \(warnings)")
+    }
+    // A schema the restricted checker rejects below the root is also caught.
+    command.command?.failureDiagnostics = .init(schema: ["type": .string("object"),
+      "properties": .object(["note": .object(["type": .string("string")])]),
+      "required": .array([]), "additionalProperties": .bool(false)])
+    XCTAssertTrue(validateAgentNodePayload(command, path: "node").contains {
+      $0.severity == .warning && $0.message.contains("schema/properties/note")
+    })
+    command.command?.failureDiagnostics = .init(schema: ["type": .string("object"), "properties": .object([:]),
+      "required": .array([]), "additionalProperties": .bool(false)])
+    XCTAssertFalse(validateAgentNodePayload(command, path: "node").contains { $0.path.contains("failureDiagnostics") })
+  }
+
+  private func validate(singleAgent payload: AgentNodePayload) -> [WorkflowValidationDiagnostic] {
+    DefaultWorkflowValidator().validate(
+      baseWorkflow(
+        registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],
+        steps: [WorkflowStepRef(id: "only", nodeId: "agent")]
+      ),
+      nodePayloads: ["agent": payload]
+    )
+  }
+
+  private func compliantAgent(output: NodeOutputContract?) -> AgentNodePayload {
+    AgentNodePayload(
+      id: "agent", executionBackend: .codexAgent, model: "model",
+      agentSandbox: .readOnly, output: output
+    )
+  }
+
+  private func relayedWorkflow(reference: String) -> WorkflowDefinition {
+    baseWorkflow(
+      registry: [
+        WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json"),
+        WorkflowNodeRegistryRef(id: "relay", addon: WorkflowNodeAddonRef(name: "riela/kv-set")),
+        WorkflowNodeRegistryRef(id: "consumer", addon: WorkflowNodeAddonRef(
+          name: "riela/git-commit", config: ["commitMessageTemplate": .string(reference)]
+        ))
+      ],
+      steps: [
+        WorkflowStepRef(id: "produce", nodeId: "agent", transitions: [WorkflowStepTransition(toStepId: "relay")]),
+        WorkflowStepRef(id: "relay", nodeId: "relay", transitions: [WorkflowStepTransition(toStepId: "consume")]),
+        WorkflowStepRef(id: "consume", nodeId: "consumer")
+      ]
+    )
+  }
+
+  private func baseWorkflow(
+    registry: [WorkflowNodeRegistryRef],
+    steps: [WorkflowStepRef]
+  ) -> WorkflowDefinition {
+    WorkflowDefinition(
+      workflowId: "agent-output-contract", defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 2),
+      entryStepId: steps[0].id, nodeRegistry: registry, steps: steps,
+      nodes: registry.map { WorkflowNodeRef(id: $0.id, nodeFile: $0.nodeFile, addon: $0.addon) }
+    )
+  }
+}

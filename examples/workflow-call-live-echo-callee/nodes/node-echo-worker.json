@@ -1,0 +1,11 @@
+{
+  "id": "echo-worker",
+  "nodeType": "command",
+  "command": {
+    "executable": "/bin/sh",
+    "arguments": [
+      "-c",
+      "printf '%s\n' '{\"calleeResult\":\"echoed:{{handoff}}\"}'"
+    ]
+  }
+}

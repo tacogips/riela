@@ -1,0 +1,17 @@
+{
+  "id": "read-rina-memory",
+  "description": "Read recent Rina Cursor memory from the configured local memory root before the persona replies.",
+  "addon": {
+    "name": "riela/chat-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor",
+      "memoryId": "persona-chat-memory"
+    }
+  },
+  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina memory"}],
+  "output": {
+    "description": "Return recent Rina Cursor memory markdown and the persona-specific memory directory."
+  }
+}

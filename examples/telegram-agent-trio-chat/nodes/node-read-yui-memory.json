@@ -1,0 +1,17 @@
+{
+  "id": "read-yui-memory",
+  "description": "Read recent Yui Codex memory from the configured local memory root before the persona replies.",
+  "addon": {
+    "name": "riela/chat-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "yui",
+      "personaName": "Yui Codex",
+      "memoryId": "persona-chat-memory"
+    }
+  },
+  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Yui memory"}],
+  "output": {
+    "description": "Return recent Yui Codex memory markdown and the persona-specific memory directory."
+  }
+}

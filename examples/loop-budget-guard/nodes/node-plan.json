@@ -1,0 +1,12 @@
+{
+  "id": "plan",
+  "description": "First worker step; completes normally before the budget boundary check.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/plan.md",
+  "variables": {},
+  "output": {
+    "description": "Return a JSON object with a plan summary."
+  }
+}

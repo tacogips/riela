@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the selected link proposals as workflow output.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest link proposal payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest link proposal payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

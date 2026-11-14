@@ -1,0 +1,118 @@
+{
+  "taskId": "work-runtime-p1-6a-shd5-final-20260924-2264315-comm000006",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "22643151891ad47e999343d05da1a20044176193",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6a-shd5-final-20260924-2264315-comm000006",
+  "reviewContext": {
+    "issueReference": "local-request: Work Runtime P1-6a SHD-5; no GitHub issue supplied",
+    "userProblem": "The P1-6a implementation has source-matched host evidence, but independent SHD-5 acceptance and the bounded V5 exception decision remain open.",
+    "requiredOutcomes": [
+      "Audit current source and complete host logs against named T1–T8 assertions, hashes, terminal exits and the V5 baseline signatures.",
+      "Obtain separate independent adversarial and combined-tree integration decisions, each explicitly accepting or rejecting the bounded V5 exception and resolving material high/mid P1-6a findings.",
+      "If both accept, update only P1-6a plan/progress and publish the exact reviewed slice without force; leave V5 failing and parent P1 and later slices open."
+    ],
+    "nonGoals": [
+      "No new runtime component, recreated authenticated T4/T6 cases, unrelated baseline repair or fresh host gate without source drift or insufficient evidence.",
+      "No P1-6c/6d/7a/7b implementation, parent P1 closure, main merge, Monja, package workflow, examples or unrelated worktree changes."
+    ],
+    "constraints": [
+      "Use only the immutable user-scope codex-design-and-implement-review-loop workflow, never project scope; preserve checkpoint history and current WIP.",
+      "SHD-5a evidence audit precedes SHD-5b adversarial review, then SHD-5c distinct integration review, then SHD-5d serial reconciliation.",
+      "Review material correctness, data loss, security and verification; a repair requires a demonstrated defect, affected-gate reruns and updated source identity for both reviewers.",
+      "Foreground all verification; retain complete terminal logs and exit codes under repository tmp/ using per-plan and per-attempt directories; no force push.",
+      "Codex reference-code inputs are empty: codexAgentReferences: []."
+    ],
+    "designDecisionsAndRationale": [
+      "Keep selected root/callee host, backend and model choices through existing task reservation and authenticated worker execution; preserve exact reserved root and ordinary child admission.",
+      "Project terminal state before evaluation; dependency/capacity waits and preview races allocate no attempt, session, lease, job or evidence.",
+      "After worker loss, retain uncertain-launch fencing without local fallback, duplicate launch or premature release."
+    ],
+    "intentionalTradeoffs": [
+      "The coupled source and test seams have one serial repair owner; independent reviewers read the same combined tree.",
+      "Existing source-matched host gates are carried forward unless bytes change or evidence is materially insufficient.",
+      "A precisely bounded baseline exception can support only P1-6a acceptance; V5 still exits 1 and parent P1 remains open."
+    ],
+    "supportedEdgeCases": [
+      "Repeated node IDs and instance patches before placement; selected worker backend/model assertions and called-workflow delivery.",
+      "Absent or stale workers, zero capacity, dependency and version races, dry-run no-allocation, workspace/default precedence and missing mappings.",
+      "Claimed-worker loss, uncertain launch and terminal reconciliation."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live task cancellation acknowledgement, director child accounting, task-backed examples and legacy removal.",
+      "Credential-backed model equivalence, new transport/store/schema and final parent certification."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "tmp/p1-6a-finalization/host-verify/evidence.json",
+      "tmp/p1-6a-finalization/host-verify/V5-work-cli-core-final.log",
+      "tmp/p1-6a-finalization/host-verify/baseline-cbe1dd1-call-step.log",
+      "tmp/p1-6a-host-verify/preimplementation-baseline/all-current-failures.log"
+    ],
+    "reviewedCommunicationId": "comm-000006",
+    "reviewedStepId": "step5-impl-plan-review",
+    "reviewDecision": "Accepted sole SHD-5 plan with no design or plan revision and no findings; implementation and both independent bounded V5 exception decisions remain pending.",
+    "codexAgentReferences": [],
+    "workflowStepReferences": [
+      "step1-issue-intake/comm-000002",
+      "step3-design-review/comm-000004",
+      "step4-impl-plan-create",
+      "step5-impl-plan-review/comm-000006"
+    ],
+    "verificationEvidence": {
+      "sourceIdentity": "tmp/p1-6a-finalization/host-verify/evidence.json; checkpoint 22643151891ad47e999343d05da1a20044176193; four Swift file hashes and tracked code diff hash",
+      "passedHostGates": "V0, V1 41/41, V2 23/23, V3 80/80, V4 55/55, V11 53/53, V5 adapters/server/GraphQL/app 440 XCTest cases plus 19 Swift Testing cases, V6 and V7; full logs and exits in host-verify",
+      "failingHostGate": "V5 CLI/Core exit 1: 1,965 tests, 24 assertions in 22 cases; 21 cases/23 assertions match preimplementation and one case reproduces at cbe1dd1; signatures and slice relevance require independent review",
+      "planningReviewCommands": [
+        "shasum -a 256 design-docs/specs/design-work-runtime-consolidation.md impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+        "shasum -a 256 Sources/RielaCLI/HostCapabilityResolver.swift Sources/RielaCLI/TaskDispatch.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "git diff -- Sources/RielaCLI/HostCapabilityResolver.swift Sources/RielaCLI/TaskDispatch.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift | shasum -a 256",
+        "git diff --check"
+      ]
+    }
+  },
+  "plans": [
+    {
+      "planId": "work-runtime-p1-6a-shd5-finalization",
+      "planPath": "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/HostCapabilityResolver.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+      ],
+      "sharedPaths": [
+        "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+      ],
+      "sharedPathIntent": "Only the serial SHD-5d owner updates this plan after both independent reviews accept; reviewers record findings under separate tmp review directories. Any demonstrated source/test repair uses one serial owner and returns revised bytes to both reviewers.",
+      "progressFile": "tmp/work-runtime-p1-6a-shd5-final-20260924-2264315-comm000006/plans/work-runtime-p1-6a-shd5-finalization/progress.jsonl",
+      "attemptDirTemplate": "tmp/work-runtime-p1-6a-shd5-final-20260924-2264315-comm000006/plans/work-runtime-p1-6a-shd5-finalization/attempt-<n>",
+      "acceptanceCriteria": [
+        "SHD-5a maps T1–T8 to actual named assertions and source-matched positive host results and compares all 22 V5 failing cases and signatures with both baselines.",
+        "SHD-5b and distinct SHD-5c independently review material correctness, data loss, security, test integrity and combined-tree evidence, with explicit accept/reject decisions for the bounded V5 exception and no unresolved high/mid defect.",
+        "SHD-5d repairs only proven P1-6a defects, refreshes affected gates and hashes if bytes change, and returns revised bytes to both reviewers; otherwise preserves the host results.",
+        "After both reviews accept, update only this plan's P1-6a progress and reconcile the exact reviewed publication allowlist; V5 remains failing and parent P1 and later slices remain open."
+      ],
+      "verification": [
+        "git status --short --branch",
+        "git rev-parse HEAD",
+        "cat tmp/p1-6a-finalization/host-verify/evidence.json",
+        "shasum -a 256 design-docs/specs/design-work-runtime-consolidation.md impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+        "shasum -a 256 Sources/RielaCLI/HostCapabilityResolver.swift Sources/RielaCLI/TaskDispatch.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "git diff -- Sources/RielaCLI/HostCapabilityResolver.swift Sources/RielaCLI/TaskDispatch.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift | shasum -a 256",
+        "rg -n 'func test|XCTAssert|XCTUnwrap' Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "rg -n 'error: -\\[|Test Case.*failed|Executed .*tests' tmp/p1-6a-finalization/host-verify/V5-work-cli-core-final.log tmp/p1-6a-host-verify/preimplementation-baseline/all-current-failures.log tmp/p1-6a-finalization/host-verify/baseline-cbe1dd1-call-step.log",
+        "git diff --check"
+      ]
+    }
+  ]
+}

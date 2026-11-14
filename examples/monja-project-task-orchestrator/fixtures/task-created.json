@@ -1,0 +1,14 @@
+{
+	"v": 1,
+	"type": "task.created",
+	"eventId": "01K50000000000000000000004",
+	"channelId": null,
+	"at": "2026-09-14T00:00:00.000Z",
+	"payload": {
+		"id": "01K50000000000000000000003",
+		"projectId": "01K50000000000000000000001",
+		"title": "Document Project A application behavior",
+		"description": "Inspect the site fixture and write a concise behavior note in site/RESULT.md. Keep work within the site directory and verify the note against the fixture.",
+		"status": "open"
+	}
+}

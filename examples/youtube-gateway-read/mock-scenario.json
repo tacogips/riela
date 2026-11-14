@@ -1,0 +1,4 @@
+{"list": {"provider": "scenario-mock", "when": {"always": true}, "payload": {
+  "status": "ok", "addon": "riela/youtube-gateway-read", "stepId": "list", "operation": "subscriptions.list",
+  "data": {"items": [{"id": "subscription-1"}, {"id": "subscription-2"}], "nextPageToken": "fixture-next"}
+}}}

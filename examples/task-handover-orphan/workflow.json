@@ -1,0 +1,15 @@
+{
+  "workflowId": "task-handover-orphan",
+  "description": "A short plain workflow used to demonstrate takeover after an owner disappears.",
+  "defaults": { "maxLoopIterations": 1, "nodeTimeoutMs": 120000 },
+  "prompts": { "workerSystemPromptTemplate": "Return concise business JSON." },
+  "entryStepId": "work",
+  "nodes": [
+    { "id": "work", "nodeFile": "nodes/work.json" },
+    { "id": "finish", "nodeFile": "nodes/finish.json" }
+  ],
+  "steps": [
+    { "id": "work", "nodeId": "work", "role": "worker", "transitions": [{ "toStepId": "finish" }] },
+    { "id": "finish", "nodeId": "finish", "role": "worker" }
+  ]
+}

@@ -1,0 +1,214 @@
+{
+  "workflowId": "voice-assistant",
+  "description": "Home voice assistant built from ordinary riela nodes: transcribe one utterance WAV written by `riela voice listen`, require the wake phrase at the start, run allowlisted Home Assistant fast-path intents without a model, hand other addressed requests to an agent that answers or registers a presence-gated routine, and speak the result.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "transcribe",
+  "nodes": [
+    {
+      "id": "transcribe",
+      "addon": {
+        "name": "riela/speech-to-text",
+        "version": "1",
+        "config": {
+          "options": {
+            "provider": "openai",
+            "model": "gpt-4o-transcribe",
+            "path": "{{workflowInput.file.absolutePath}}",
+            "language": "ja",
+            "cache": false
+          }
+        },
+        "env": {
+          "OPENAI_API_KEY": { "fromEnv": "OPENAI_API_KEY", "required": true },
+          "OPENAI_BASE_URL": { "fromEnv": "OPENAI_BASE_URL", "required": false }
+        }
+      }
+    },
+    {
+      "id": "match",
+      "addon": {
+        "name": "riela/utterance-match",
+        "version": "1",
+        "config": {
+          "options": {
+            "text": "{{inbox.latest.output.payload.speechToText.text}}",
+            "wakePhrases": ["ねえリエラ", "リエラ", "hey riela"],
+            "requireWakePhrase": true,
+            "intents": [
+              { "id": "lights_on", "patterns": ["電気(を)?(つけ|点け)て", "lights?on"] },
+              { "id": "lights_off", "patterns": ["電気(を)?(けし|消し)て", "lights?off"] },
+              { "id": "aircon_off", "patterns": ["えあこん(を)?(けし|消し|止め|とめ)て", "冷房(を)?(止め|とめ)て"] },
+              { "id": "tv_off", "patterns": ["てれび(を)?(けし|消し)て"] }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "lights-on",
+      "addon": {
+        "name": "riela/home-assistant-write",
+        "version": "1",
+        "config": {
+          "options": {
+            "operation": "service",
+            "domain": "light", "service": "turn_on",
+            "target": { "entity_id": "light.office" },
+            "allowedServices": ["light.turn_on", "light.turn_off"],
+            "allowedEntities": ["light.office"]
+          }
+        },
+        "env": {
+          "HOME_ASSISTANT_URL": { "fromEnv": "HOME_ASSISTANT_URL", "required": true },
+          "HOME_ASSISTANT_TOKEN": { "fromEnv": "HOME_ASSISTANT_TOKEN", "required": true }
+        }
+      }
+    },
+    {
+      "id": "lights-off",
+      "addon": {
+        "name": "riela/home-assistant-write",
+        "version": "1",
+        "config": {
+          "options": {
+            "operation": "service",
+            "domain": "light", "service": "turn_off",
+            "target": { "entity_id": "light.office" },
+            "allowedServices": ["light.turn_on", "light.turn_off"],
+            "allowedEntities": ["light.office"]
+          }
+        },
+        "env": {
+          "HOME_ASSISTANT_URL": { "fromEnv": "HOME_ASSISTANT_URL", "required": true },
+          "HOME_ASSISTANT_TOKEN": { "fromEnv": "HOME_ASSISTANT_TOKEN", "required": true }
+        }
+      }
+    },
+    {
+      "id": "aircon-off",
+      "addon": {
+        "name": "riela/home-assistant-write",
+        "version": "1",
+        "config": {
+          "options": {
+            "operation": "service",
+            "domain": "climate", "service": "turn_off",
+            "target": { "entity_id": "climate.office" },
+            "allowedServices": ["climate.turn_off"],
+            "allowedEntities": ["climate.office"]
+          }
+        },
+        "env": {
+          "HOME_ASSISTANT_URL": { "fromEnv": "HOME_ASSISTANT_URL", "required": true },
+          "HOME_ASSISTANT_TOKEN": { "fromEnv": "HOME_ASSISTANT_TOKEN", "required": true }
+        }
+      }
+    },
+    {
+      "id": "tv-off",
+      "addon": {
+        "name": "riela/home-assistant-write",
+        "version": "1",
+        "config": {
+          "options": {
+            "operation": "service",
+            "domain": "remote", "service": "send_command",
+            "target": { "entity_id": "remote.living_room" },
+            "data": { "device": "tv", "command": "power_off" },
+            "allowedServices": ["remote.send_command"],
+            "allowedEntities": ["remote.living_room"]
+          }
+        },
+        "env": {
+          "HOME_ASSISTANT_URL": { "fromEnv": "HOME_ASSISTANT_URL", "required": true },
+          "HOME_ASSISTANT_TOKEN": { "fromEnv": "HOME_ASSISTANT_TOKEN", "required": true }
+        }
+      }
+    },
+    {
+      "id": "ack",
+      "addon": {
+        "name": "riela/text-to-speech",
+        "version": "1",
+        "config": { "options": { "provider": "apple", "text": "はい", "voice": "Kyoko", "play": true } }
+      }
+    },
+    {
+      "id": "assistant",
+      "nodeFile": "nodes/node-assistant.json"
+    },
+    {
+      "id": "speak-reply",
+      "addon": {
+        "name": "riela/text-to-speech",
+        "version": "1",
+        "config": {
+          "options": { "provider": "apple", "text": "{{inbox.latest.output.payload.reply}}", "voice": "Kyoko", "play": true }
+        }
+      }
+    },
+    {
+      "id": "create-routine",
+      "addon": {
+        "name": "riela/routine-create",
+        "version": "1",
+        "config": { "workflowName": "voice-routine-runner" },
+        "inputs": {
+          "name": "{{inbox.latest.output.payload.routine.name}}",
+          "task": "{{inbox.latest.output.payload.routine.task}}",
+          "schedule": "{{inbox.latest.output.payload.routine.schedule}}",
+          "timezone": "{{inbox.latest.output.payload.routine.timezone}}",
+          "completionCriteria": "{{inbox.latest.output.payload.routine.completionCriteria}}",
+          "instruction": "{{inbox.latest.output.payload.reply}}",
+          "origin": "{{inbox.latest.output.payload.origin}}"
+        }
+      }
+    },
+    {
+      "id": "confirm-routine",
+      "addon": {
+        "name": "riela/text-to-speech",
+        "version": "1",
+        "config": {
+          "options": {
+            "provider": "apple",
+            "text": "{{inbox.latest.output.payload.routine.name}}を登録しました。",
+            "voice": "Kyoko",
+            "play": true
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    { "id": "transcribe", "nodeId": "transcribe", "role": "worker", "transitions": [{ "toStepId": "match" }] },
+    {
+      "id": "match", "nodeId": "match", "role": "worker",
+      "transitions": [
+        { "toStepId": "lights-on", "label": "intent_lights_on" },
+        { "toStepId": "lights-off", "label": "intent_lights_off" },
+        { "toStepId": "aircon-off", "label": "intent_aircon_off" },
+        { "toStepId": "tv-off", "label": "intent_tv_off" },
+        { "toStepId": "assistant", "label": "freeform" }
+      ]
+    },
+    { "id": "lights-on", "nodeId": "lights-on", "role": "worker", "transitions": [{ "toStepId": "ack" }] },
+    { "id": "lights-off", "nodeId": "lights-off", "role": "worker", "transitions": [{ "toStepId": "ack" }] },
+    { "id": "aircon-off", "nodeId": "aircon-off", "role": "worker", "transitions": [{ "toStepId": "ack" }] },
+    { "id": "tv-off", "nodeId": "tv-off", "role": "worker", "transitions": [{ "toStepId": "ack" }] },
+    { "id": "ack", "nodeId": "ack", "role": "worker" },
+    {
+      "id": "assistant", "nodeId": "assistant", "role": "worker",
+      "transitions": [
+        { "toStepId": "speak-reply", "label": "answer" },
+        { "toStepId": "create-routine", "label": "schedule" }
+      ]
+    },
+    { "id": "speak-reply", "nodeId": "speak-reply", "role": "worker" },
+    { "id": "create-routine", "nodeId": "create-routine", "role": "worker", "transitions": [{ "toStepId": "confirm-routine" }] },
+    { "id": "confirm-routine", "nodeId": "confirm-routine", "role": "worker" }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "workflowId": "fanout-include-step-outputs",
+  "description": "Include intermediate branch outputs in a fanout join",
+  "defaults": {
+    "nodeTimeoutMs": 30000,
+    "maxLoopIterations": 1
+  },
+  "entryStepId": "source",
+  "nodes": [
+    {
+      "id": "source",
+      "addon": {
+        "name": "riela/json-compose",
+        "version": "1",
+        "config": {
+          "payload": {
+            "segments": [
+              {
+                "id": "s1"
+              },
+              {
+                "id": "s2"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "transcribe",
+      "addon": {
+        "name": "riela/json-compose",
+        "version": "1",
+        "config": {
+          "payload": {
+            "transcript": "transcript {{segment.id}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "describe",
+      "addon": {
+        "name": "riela/json-compose",
+        "version": "1",
+        "config": {
+          "payload": {
+            "description": "described {{segment.id}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "join",
+      "addon": {
+        "name": "riela/json-compose",
+        "version": "1",
+        "config": {
+          "payload": {
+            "joined": "{{input.fanoutJoin}}"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "source",
+      "nodeId": "source",
+      "transitions": [
+        {
+          "toStepId": "transcribe",
+          "fanout": {
+            "groupId": "segments",
+            "itemsFrom": "/segments",
+            "itemVariable": "segment",
+            "joinStepId": "join",
+            "failurePolicy": "fail-fast",
+            "writeOwnership": {
+              "mode": "read-only"
+            },
+            "includeStepOutputs": [
+              "transcribe"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "transcribe",
+      "nodeId": "transcribe",
+      "transitions": [
+        {
+          "toStepId": "describe"
+        }
+      ]
+    },
+    {
+      "id": "describe",
+      "nodeId": "describe",
+      "transitions": [
+        {
+          "toStepId": "join"
+        }
+      ]
+    },
+    {
+      "id": "join",
+      "nodeId": "join"
+    }
+  ]
+}

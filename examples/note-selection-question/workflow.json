@@ -1,0 +1,40 @@
+{
+  "workflowId": "note-selection-question",
+  "description": "Answer a user question scoped to a selected range of a Riela Note body.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Answer strictly about the selected text using the note body only for context."
+  },
+  "entryStepId": "answer-selection-question",
+  "nodes": [
+    {
+      "id": "answer-selection-question",
+      "nodeFile": "nodes/node-answer-selection-question.json"
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "answer-selection-question",
+      "nodeId": "answer-selection-question",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

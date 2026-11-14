@@ -1,0 +1,15 @@
+{
+  "id": "write-mika-memory",
+  "modelFreeze": false,
+  "addon": {
+    "name": "riela/note-persona-context-write",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend"
+    }
+  },
+  "output": {
+    "description": "Persist Mika Trend note context entries and pass through reply/handoff flags."
+  }
+}

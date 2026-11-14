@@ -1,0 +1,24 @@
+{
+  "answer-selection-question": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "answerMarkdown": "The selected milestone is the next deliverable; confirm its owner before scheduling.",
+      "summary": "Explained the selected milestone and owner."
+    }
+  },
+  "workflow-output": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "answerMarkdown": "The selected milestone is the next deliverable; confirm its owner before scheduling.",
+      "summary": "Explained the selected milestone and owner."
+    }
+  }
+}

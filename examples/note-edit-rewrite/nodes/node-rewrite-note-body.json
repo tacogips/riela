@@ -1,0 +1,12 @@
+{
+  "id": "rewrite-note-body",
+  "description": "Rewrite a full note draft or selected markdown range for user review.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/rewrite-note-body.md",
+  "variables": {},
+  "output": {
+    "description": "Return { rewrittenMarkdown, summary }."
+  }
+}

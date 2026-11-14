@@ -1,0 +1,62 @@
+{
+  "workflowId": "note-agent",
+  "description": "Answer a note chat request by retrieving Riela Note candidates and returning cited note_id sources.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve note_id citation values exactly as returned by riela/note-search."
+  },
+  "entryStepId": "retrieve-notes",
+  "nodes": [
+    {
+      "id": "retrieve-notes",
+      "addon": {
+        "name": "riela/note-search",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "{{workflowInput.query}}",
+          "limit": "{{workflowInput.limit}}"
+        }
+      }
+    },
+    {
+      "id": "answer-with-citations",
+      "nodeFile": "nodes/node-answer-with-citations.json"
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "retrieve-notes",
+      "nodeId": "retrieve-notes",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "answer-with-citations"
+        }
+      ]
+    },
+    {
+      "id": "answer-with-citations",
+      "nodeId": "answer-with-citations",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

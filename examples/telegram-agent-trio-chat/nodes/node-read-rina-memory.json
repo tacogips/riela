@@ -1,0 +1,17 @@
+{
+  "id": "read-rina-memory",
+  "modelFreeze": false,
+  "description": "Read recent Rina Cursor memory from the configured Riela Note system-memory notebook before the persona replies.",
+  "addon": {
+    "name": "riela/note-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor",
+      "memoryNamespace": "persona-chat-memory"
+    }
+  },
+  "output": {
+    "description": "Return recent Rina Cursor memory markdown and bounded Note file projections."
+  }
+}

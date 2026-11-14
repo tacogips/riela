@@ -1,0 +1,16 @@
+{
+  "id": "read-mika-memory",
+  "modelFreeze": false,
+  "addon": {
+    "name": "riela/note-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend",
+      "memoryNamespace": "persona-chat-memory"
+    }
+  },
+  "output": {
+    "description": "Return recent Mika Trend memory records from persona-chat-memory."
+  }
+}

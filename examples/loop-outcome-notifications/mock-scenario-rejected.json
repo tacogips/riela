@@ -1,0 +1,33 @@
+{
+  "implementation-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopGate": {
+        "gateId": "implementation-review",
+        "stepId": "implementation-review",
+        "decision": "rejected",
+        "severityCounts": {
+          "high": 1,
+          "medium": 0
+        },
+        "blockingFindings": [
+          {
+            "id": "unsafe-shell-interpolation",
+            "severity": "high",
+            "message": "User input is interpolated into a shell command without quoting.",
+            "evidenceRefs": [
+              "review.json"
+            ]
+          }
+        ],
+        "evidenceRefs": [
+          "review.json"
+        ]
+      }
+    }
+  }
+}

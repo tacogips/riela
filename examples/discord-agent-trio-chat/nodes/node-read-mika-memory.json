@@ -1,0 +1,17 @@
+{
+  "id": "read-mika-memory",
+  "modelFreeze": false,
+  "description": "Read recent Mika Trend memory from the configured Riela Note system-memory notebook before the persona replies.",
+  "addon": {
+    "name": "riela/note-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend",
+      "memoryNamespace": "persona-chat-memory"
+    }
+  },
+  "output": {
+    "description": "Return recent Mika Trend memory markdown and bounded Note file projections."
+  }
+}

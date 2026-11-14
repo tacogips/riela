@@ -1,0 +1,40 @@
+{
+  "workflowId": "shared-agent-trio-personas",
+  "description": "Shared Yui Codex, Mika Trend, and Rina Cursor persona nodes reused by Telegram, Discord, and Matrix agent trio chat examples.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "yui-codex",
+  "nodes": [
+    {
+      "id": "yui-codex",
+      "nodeFile": "nodes/node-yui-codex.json"
+    },
+    {
+      "id": "mika-claude",
+      "nodeFile": "nodes/node-mika-claude.json"
+    },
+    {
+      "id": "rina-cursor",
+      "nodeFile": "nodes/node-rina-cursor.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "yui-codex",
+      "nodeId": "yui-codex",
+      "role": "worker"
+    },
+    {
+      "id": "mika-claude",
+      "nodeId": "mika-claude",
+      "role": "worker"
+    },
+    {
+      "id": "rina-cursor",
+      "nodeId": "rina-cursor",
+      "role": "worker"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "write-rina-memory",
+  "modelFreeze": false,
+  "addon": {
+    "name": "riela/note-persona-memory-write",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor",
+      "memoryNamespace": "persona-chat-memory"
+    }
+  },
+  "output": {
+    "description": "Persist Rina Cursor memory entries and pass through reply/handoff flags."
+  }
+}

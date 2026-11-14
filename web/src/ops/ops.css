@@ -1,0 +1,105 @@
+/* Command deck: dark radial "operations console" theme for the ops views. */
+.ops-shell { --ops-mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace; display: flex; height: calc(100vh - 70px); min-height: 480px; flex-direction: column; background: radial-gradient(circle at 50% 30%, rgba(28, 58, 92, .22) 0, transparent 34rem), #04070d; }
+.ops-topline { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 14px; padding: 14px clamp(16px, 3vw, 34px); border-bottom: 1px solid #14202d; font-family: var(--ops-mono); }
+.ops-topline-title { display: flex; flex-direction: column; gap: 3px; }
+.ops-topline-title .eyebrow { color: #3f6478; }
+.ops-topline-title strong { color: #eef7fb; font-size: 19px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; }
+.ops-cursor { display: inline-block; width: 9px; height: 16px; margin-left: 6px; background: #7de5e5; vertical-align: -2px; animation: ops-blink 1.1s steps(1) infinite; }
+@keyframes ops-blink { 50% { opacity: 0; } }
+.ops-topline-meta { display: flex; align-items: center; gap: 10px; color: #5d7488; font-size: 10px; }
+.ops-topline-meta .status-chip { flex: none; }
+.ops-main { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.ops-canvas { position: absolute; inset: 0; cursor: grab; }
+.ops-canvas.dragging { cursor: grabbing; }
+.ops-canvas svg { display: block; width: 100%; height: 100%; }
+.ops-canvas svg text { user-select: none; }
+
+/* HUD chrome floating above the scene */
+.ops-hud-button, .ops-zoom button, .ops-carousel button { display: grid; place-items: center; border: 1px solid #24404e !important; border-radius: 7px; color: #9fd4d8 !important; background: rgba(8, 16, 24, .88) !important; font-family: var(--ops-mono); font-size: 11px; font-weight: 600 !important; }
+.ops-hud-button:hover, .ops-zoom button:hover, .ops-carousel button:hover { border-color: #3f7b86 !important; color: #dffbfb !important; }
+.ops-back { position: absolute; z-index: 6; top: 14px; left: 14px; display: flex; gap: 8px; }
+.ops-back .ops-hud-button { padding: 7px 12px; }
+.ops-zoom { position: absolute; z-index: 6; right: 276px; bottom: 16px; display: grid; gap: 6px; }
+.ops-zoom button { width: 32px; height: 32px; padding: 0; font-size: 15px; }
+.ops-carousel { position: absolute; z-index: 6; bottom: 16px; left: 50%; display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid #24404e; border-radius: 999px; background: rgba(8, 16, 24, .92); transform: translateX(-50%); }
+.ops-carousel button { width: 30px; height: 30px; padding: 0; border-radius: 999px !important; }
+.ops-carousel-label { min-width: 150px; max-width: 320px; overflow: hidden; padding: 0 10px; color: #dffbfb; font-family: var(--ops-mono); font-size: 11px; letter-spacing: .14em; text-align: center; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.ops-status-note { position: absolute; z-index: 6; top: 14px; left: 50%; padding: 6px 12px; border: 1px solid #24404e; border-radius: 999px; color: #6f8fa2; background: rgba(8, 16, 24, .9); font-family: var(--ops-mono); font-size: 10px; letter-spacing: .1em; transform: translateX(-50%); }
+
+/* Right rail: lens, legend, directory */
+.ops-rail { position: absolute; z-index: 5; top: 14px; right: 14px; bottom: 62px; display: flex; width: 248px; flex-direction: column; gap: 10px; overflow: auto; padding-right: 2px; font-family: var(--ops-mono); }
+.ops-rail-panel { flex: none; padding: 12px; border: 1px solid #1a2c3a; border-radius: 9px; background: rgba(7, 13, 20, .92); backdrop-filter: blur(10px); }
+.ops-rail-panel h2 { margin: 0 0 10px; color: #4f7488; font-size: 10px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; }
+.ops-rail-panel label { margin-bottom: 8px; font-size: 10px; color: #6e8598; }
+.ops-rail-panel input, .ops-rail-panel select { height: 30px; border-color: #1e3140; background: #060d14; font-family: var(--ops-mono); font-size: 10px; }
+.ops-check { display: flex; flex-direction: row !important; align-items: center; gap: 8px; }
+.ops-check input { width: 13px !important; height: 13px !important; }
+.ops-legend-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; color: #7f95a8; font-size: 10px; }
+.ops-legend-row .ops-swatch { display: inline-grid; width: 16px; height: 16px; flex: none; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; }
+.ops-legend-row .ops-swatch-line { width: 18px; height: 0; flex: none; border-top: 2px solid currentColor; }
+.ops-legend-row .ops-swatch-line.dashed { border-top-style: dashed; }
+.ops-directory-row { display: flex; width: 100%; align-items: center; gap: 8px; padding: 7px 6px !important; border: 0 !important; border-radius: 6px !important; color: #a9bdcb !important; background: transparent !important; font-family: var(--ops-mono); font-size: 10px; text-align: left; }
+.ops-directory-row:hover, .ops-directory-row[aria-pressed="true"] { background: #0e1e29 !important; color: #e6f6f8 !important; }
+.ops-directory-row .ops-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #47606f; }
+.ops-directory-row .ops-dot.live { background: #f2d268; box-shadow: 0 0 8px rgba(242, 210, 104, .6); }
+.ops-directory-row .ops-dot.failed { background: #f4737f; }
+.ops-directory-row .ops-dot.completed { background: #45d0a3; }
+.ops-directory-row span.grow { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ops-directory-row small { color: #5b7284; }
+.ops-rail-empty { color: #536a7c; font-size: 10px; }
+
+/* Detail overlay panel (left), SOP-style */
+.ops-detail { position: absolute; z-index: 7; top: 14px; bottom: 62px; left: 14px; display: flex; width: min(370px, 86vw); flex-direction: column; border: 1px solid #22394a; border-radius: 10px; background: rgba(6, 11, 18, .96); box-shadow: 0 18px 60px rgba(0, 0, 0, .5); font-family: var(--ops-mono); backdrop-filter: blur(14px); }
+.ops-detail-header { display: flex; flex: none; align-items: start; justify-content: space-between; gap: 10px; padding: 14px 14px 10px; border-bottom: 1px solid #17293a; }
+.ops-detail-header .eyebrow { color: #4f7488; }
+.ops-detail-header h2 { margin: 4px 0 0; color: #eef7fb; font-size: 15px; font-weight: 700; letter-spacing: .08em; overflow-wrap: anywhere; }
+.ops-detail-close { width: 26px; height: 26px; padding: 0 !important; }
+.ops-detail-body { min-height: 0; flex: 1; overflow: auto; padding: 12px 14px 18px; }
+.ops-detail-body h3 { margin: 16px 0 7px; color: #4f7488; font-size: 9px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; }
+.ops-detail-body h3:first-child { margin-top: 0; }
+.ops-detail-body p { margin: 0 0 8px; color: #9db1c1; font-size: 11px; line-height: 1.55; }
+.ops-detail-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ops-detail-meta div { min-width: 0; padding: 7px 8px; border: 1px solid #16283a; border-radius: 6px; background: #070f17; }
+.ops-detail-meta dt { color: #4c6a7f; font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
+.ops-detail-meta dd { overflow: hidden; margin: 3px 0 0; color: #c4d5e0; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.ops-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ops-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid #2a4353; border-radius: 999px; color: #a9ccd4; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.ops-chip.active { border-color: #6b5c27; color: #f2d268; }
+.ops-chip.failed { border-color: #5d3238; color: #f4a0a8; }
+.ops-route-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid #122230; color: #8ea3b4; font-size: 10px; }
+.ops-route-row strong { color: #d4e5ec; font-weight: 600; overflow-wrap: anywhere; }
+.ops-route-row .ops-route-glyph { flex: none; color: #4f7488; }
+.ops-route-row small { color: #5b7284; }
+button.ops-route-open { padding: 2px 7px !important; margin-left: auto; font-size: 9px !important; }
+.ops-exec-row { margin-top: 8px; padding: 9px; border: 1px solid #16283a; border-radius: 7px; background: #070f17; font-size: 10px; color: #8ea3b4; }
+.ops-exec-row header { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #c4d5e0; }
+.ops-exec-row ul { margin: 7px 0 0; padding: 0; list-style: none; }
+.ops-exec-row li { display: flex; gap: 8px; overflow: hidden; padding: 3px 0; border-top: 1px solid #101e2b; white-space: nowrap; }
+.ops-exec-row li span { overflow: hidden; text-overflow: ellipsis; }
+.ops-exec-row li .ops-seq { flex: none; width: 24px; color: #46606f; }
+.ops-failure { margin-top: 6px; color: #f4a0a8; overflow-wrap: anywhere; }
+.ops-detail-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+/* Scene primitives */
+.ops-grid-line { stroke: rgba(96, 140, 176, .07); }
+.ops-grid-line.major { stroke: rgba(96, 140, 176, .13); }
+.ops-node { cursor: pointer; }
+.ops-node-label { fill: #c9dbe6; font-family: var(--ops-mono); font-size: 12px; letter-spacing: .08em; text-anchor: middle; }
+.ops-node-sublabel { fill: #5f7a8d; font-family: var(--ops-mono); font-size: 9.5px; letter-spacing: .06em; text-anchor: middle; }
+.ops-node-glyph { font-family: var(--ops-mono); font-size: 13px; text-anchor: middle; dominant-baseline: central; }
+.ops-hub-title { fill: #eef7fb; font-family: var(--ops-mono); font-size: 15px; font-weight: 700; letter-spacing: .2em; text-anchor: middle; }
+.ops-core-stat { fill: #6f8fa2; font-family: var(--ops-mono); font-size: 10px; letter-spacing: .12em; text-anchor: middle; }
+.ops-edge { fill: none; stroke-linecap: round; }
+.ops-badge-text { fill: #04070d; font-family: var(--ops-mono); font-size: 8.5px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.ops-edge-label { fill: #5f8290; font-family: var(--ops-mono); font-size: 8.5px; letter-spacing: .06em; text-anchor: middle; }
+@keyframes ops-pulse { 0% { opacity: .85; } 50% { opacity: .25; } 100% { opacity: .85; } }
+.ops-pulse { animation: ops-pulse 1.6s ease-in-out infinite; }
+@keyframes ops-flow { to { stroke-dashoffset: -26; } }
+.ops-flow { stroke-dasharray: 7 6; animation: ops-flow 1.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ops-pulse, .ops-flow, .ops-cursor { animation: none !important; } }
+
+@media (max-width: 900px) {
+  .ops-rail { width: 196px; }
+  .ops-detail { width: min(320px, 88vw); }
+  .ops-carousel-label { min-width: 90px; }
+}

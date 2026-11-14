@@ -1,0 +1,80 @@
+{
+  "workflowId": "loop-engineering-run-persistence",
+  "description": "Connect loop evidence projection to workflow run persistence.",
+  "defaults": {
+    "nodeTimeoutMs": 1200000,
+    "maxLoopIterations": 2
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise business JSON only. Preserve unrelated dirty worktree changes. Do not commit or push. Do not start nested Riela or Codex processes."
+  },
+  "entryStepId": "intake-or-plan",
+  "nodes": [
+    {
+      "id": "intake-or-plan",
+      "nodeFile": "nodes/node-intake-or-plan.json"
+    },
+    {
+      "id": "work",
+      "nodeFile": "nodes/node-work.json"
+    },
+    {
+      "id": "review",
+      "nodeFile": "nodes/node-review.json"
+    },
+    {
+      "id": "workflow-output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "intake-or-plan",
+      "nodeId": "intake-or-plan",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work"
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "nodeId": "work",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "nodeId": "review",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work",
+          "label": "needs_revision",
+          "when": {
+            "key": "needs_revision",
+            "equals": true
+          }
+        },
+        {
+          "toStepId": "workflow-output",
+          "label": "accepted",
+          "when": {
+            "key": "accepted",
+            "equals": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

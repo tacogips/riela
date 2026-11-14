@@ -1,0 +1,9 @@
+{
+  "id": "enterprise-matrix-security-replies",
+  "kind": "chat",
+  "sourceId": "enterprise-matrix",
+  "target": {
+    "provider": "matrix",
+    "conversationId": "!security-incident:matrix.example"
+  }
+}

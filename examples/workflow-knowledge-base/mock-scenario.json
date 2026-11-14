@@ -1,0 +1,109 @@
+{
+  "kb-seed": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-consolidate",
+    "when": { "always": true },
+    "payload": {
+      "entriesWritten": 2,
+      "notebookId": "notebook-long-term-memory-fixture",
+      "noteIds": ["note-kb-retry-1", "note-kb-retry-2"]
+    }
+  },
+  "recall-prior-knowledge": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-recall",
+    "when": { "always": true },
+    "payload": {
+      "resultCount": 2,
+      "noteIds": ["note-kb-retry-1", "note-kb-retry-2"],
+      "recallText": "Use exponential backoff with jitter and a bounded attempt count."
+    }
+  },
+  "do-task": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "result": "Added exponential backoff with jitter to the sync API client; retries now succeed within 3 attempts.",
+      "approachNotes": "Applied the recalled prior knowledge instead of rediscovering it; noticed uncapped backoff delayed recovery, so a max-attempts cap was added.",
+      "usedKnowledge": [
+        "For flaky rate-limited APIs, exponential backoff with jitter stabilizes retries; fixed-interval backoff keeps failing under rate limiting."
+      ]
+    }
+  },
+  "self-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "knowledgeQuery": "backoff",
+      "candidateContent": "Exponential backoff needs a max-attempts cap; uncapped backoff delays recovery on persistent failures.",
+      "candidateTags": ["kb", "retry-backoff"]
+    }
+  },
+  "recall-related-knowledge": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-recall",
+    "when": { "always": true },
+    "payload": {
+      "resultCount": 2,
+      "noteIds": ["note-kb-retry-1", "note-kb-retry-2"],
+      "recallText": "Existing retry guidance overlaps the candidate."
+    }
+  },
+  "merge-judge": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "decision": "merge",
+      "create_knowledge": false,
+      "merge_knowledge": true,
+      "reason": "Two existing notes overlap on retry backoff; consolidate them with the candidate into one note and archive the redundant one.",
+      "entries": [],
+      "mergeNoteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-1",
+      "mergedBody": "For flaky rate-limited APIs, retry with exponential backoff plus jitter and a max-attempts cap; fixed-interval retries keep failing under rate limiting, and uncapped backoff delays recovery.",
+      "archive_note": true,
+      "archiveNoteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-2",
+      "archivedPointerBody": "Superseded by the consolidated note for this topic."
+    }
+  },
+  "archive-brief": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "archive_note": true,
+      "archiveNoteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-2",
+      "archivedPointerBody": "Superseded by the consolidated note for this topic."
+    }
+  },
+  "kb-merge": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-update",
+    "when": { "always": true },
+    "payload": {
+      "noteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-1",
+      "updated": true
+    }
+  },
+  "kb-archive": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-update",
+    "when": { "always": true },
+    "payload": {
+      "noteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-2",
+      "updated": true
+    }
+  },
+  "recall-verify": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-recall",
+    "when": { "always": true },
+    "payload": {
+      "resultCount": 1,
+      "noteIds": ["note-kb-retry-1"],
+      "recallText": "Exponential backoff with jitter and a maximum attempt count."
+    }
+  }
+}

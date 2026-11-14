@@ -1,0 +1,23 @@
+{
+  "eventId": "wrike-webhooky-stream-fixture",
+  "eventType": "webhook.record",
+  "provider": "webhooky",
+  "sourceId": "wrike-webhooky-stream",
+  "receivedAt": "2026-08-06T00:00:00Z",
+  "input": {
+    "receivedAt": "2026-08-06T00:00:00Z",
+    "fetched": false,
+    "payload": {
+      "source": "wrike",
+      "events": [
+        {
+          "webhookId": "IEAG4OENJAACF3OH",
+          "eventType": "TaskCreated",
+          "taskId": "MAAAAAEN0000",
+          "eventAuthorId": "KUAYWWKI",
+          "lastUpdatedDate": "2026-08-06T00:00:00Z"
+        }
+      ]
+    }
+  }
+}

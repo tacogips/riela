@@ -1,0 +1,12 @@
+{
+  "id": "loop-review",
+  "description": "Required loop engineer review gate.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/loop-review.md",
+  "variables": {},
+  "output": {
+    "description": "Return loopGate evidence with decision accepted only when exit criteria, instrumentation, and regression probes are complete."
+  }
+}

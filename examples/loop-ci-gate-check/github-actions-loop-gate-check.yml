@@ -1,0 +1,62 @@
+# Documentation-only GitHub Actions workflow showing how to gate CI on a Riela
+# loop's required review gates and publish findings as SARIF. This file is an
+# example artifact (it lives under examples/ and is not wired into this repo's
+# own CI). Copy it into `.github/workflows/` of a consuming repository.
+name: riela-loop-gate-check
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write # required for the SARIF upload step
+
+jobs:
+  loop-gate-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install/build the `riela` CLI however your project provides it
+      # (Homebrew, a release binary, or `swift build`). Omitted here.
+
+      # Run the loop workflow. In real CI this is your agent-backed run; this
+      # example uses the deterministic mock scenario so the job is reproducible.
+      - name: Run loop workflow
+        run: |
+          riela workflow run loop-ci-gate-check \
+            --workflow-definition-dir ./examples \
+            --mock-scenario ./examples/loop-ci-gate-check/mock-scenario-rejected.json \
+            --session-store "$RUNNER_TEMP/riela-sessions" \
+            --output json
+        # The run itself fails closed on a blocking required gate; `|| true`
+        # lets the explicit gate-check step below own the CI verdict.
+        continue-on-error: true
+
+      # Gate the build on the required loop gates. Exit codes:
+      #   0 all required gates present + accepted
+      #   3 a required gate is rejected/needs-work/missing or has blocking findings
+      #   4 no loop evidence recorded
+      #   1 operational error
+      - name: Check required loop gates
+        run: |
+          riela loop gates loop-ci-gate-check-session-1 --check \
+            --session-store "$RUNNER_TEMP/riela-sessions"
+
+      # Always export findings as SARIF so they surface in the PR even when the
+      # gate-check step above fails the job.
+      - name: Export loop findings as SARIF
+        if: always()
+        run: |
+          riela loop findings loop-ci-gate-check-session-1 \
+            --format sarif \
+            --session-store "$RUNNER_TEMP/riela-sessions" \
+            > "$RUNNER_TEMP/riela-loop.sarif"
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ runner.temp }}/riela-loop.sarif
+          category: riela-loop

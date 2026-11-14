@@ -1,0 +1,33 @@
+{
+  "plan-config-change": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "assistantMarkdown": "Define a business-idea class, update auto-tagging, and scaffold a business idea ingestion workflow.",
+      "tagClass": {
+        "classId": "business-idea",
+        "label": "Business Idea",
+        "description": "Business ideas and opportunity notes"
+      },
+      "tag": {
+        "name": "business-idea",
+        "classId": "business-idea"
+      },
+      "autoAction": {
+        "actionId": "config-agent-auto-tagging-business-idea",
+        "trigger": "note-created",
+        "workflowId": "note-auto-tagging",
+        "filterJSON": "{\"noteTags\":[\"business-idea\"]}",
+        "enabled": true,
+        "position": 10
+      },
+      "ingestionWorkflow": {
+        "workflowId": "note-ingest-business-idea",
+        "notebookKindTag": "notebook-kind:imported-material"
+      }
+    }
+  }
+}

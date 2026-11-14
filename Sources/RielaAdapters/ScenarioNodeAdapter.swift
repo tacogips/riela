@@ -1,0 +1,152 @@
+import Foundation
+import RielaCore
+
+public struct WorkflowMockScenario: Equatable, Sendable {
+  public var responses: [String: [MockNodeResponse]]
+
+  public init(responses: [String: [MockNodeResponse]]) {
+    self.responses = responses
+  }
+}
+
+public struct MockNodeResponse: Codable, Equatable, Sendable {
+  public var provider: String?
+  public var model: String?
+  public var promptText: String?
+  public var completionPassed: Bool?
+  public var when: [String: Bool]?
+  public var payload: JSONObject?
+  public var fail: Bool?
+  /// Optional token-usage payload (e.g. `{"input_tokens": 100, "output_tokens": 40,
+  /// "total_tokens": 140}`). When present, the adapter emits a `usage` backend
+  /// event before returning so cost/budget accumulation paths are testable.
+  public var usage: JSONObject?
+
+  public init(
+    provider: String? = nil,
+    model: String? = nil,
+    promptText: String? = nil,
+    completionPassed: Bool? = nil,
+    when: [String: Bool]? = nil,
+    payload: JSONObject? = nil,
+    fail: Bool? = nil,
+    usage: JSONObject? = nil
+  ) {
+    self.provider = provider
+    self.model = model
+    self.promptText = promptText
+    self.completionPassed = completionPassed
+    self.when = when
+    self.payload = payload
+    self.fail = fail
+    self.usage = usage
+  }
+}
+
+public protocol MockScenarioLoading: Sendable {
+  func loadScenario(at path: String) throws -> WorkflowMockScenario
+}
+
+public struct WorkflowMockScenarioLoader: MockScenarioLoading {
+  public init() {}
+
+  public func loadScenario(at path: String) throws -> WorkflowMockScenario {
+    let data = try Data(contentsOf: URL(fileURLWithPath: path))
+    let decoded = try JSONDecoder().decode(DecodableWorkflowMockScenario.self, from: data)
+    return decoded.scenario
+  }
+}
+
+public actor ScenarioNodeAdapter: NodeAdapter {
+  private let scenario: WorkflowMockScenario
+  private let fallback: any NodeAdapter
+  private let requiresScenarioResponse: Bool
+  private var consumedCounts: [String: Int] = [:]
+
+  public init(
+    scenario: WorkflowMockScenario,
+    fallback: any NodeAdapter = DeterministicLocalNodeAdapter(),
+    requiresScenarioResponse: Bool = false
+  ) {
+    self.scenario = scenario
+    self.fallback = fallback
+    self.requiresScenarioResponse = requiresScenarioResponse
+  }
+
+  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    guard let sequence = scenario.responses[input.node.id] else {
+      if requiresScenarioResponse {
+        throw AdapterExecutionError(.invalidOutput, "mock scenario is missing a response for node '\(input.node.id)'")
+      }
+      return try await fallback.execute(input, context: context)
+    }
+    guard !sequence.isEmpty || !requiresScenarioResponse else {
+      throw AdapterExecutionError(.invalidOutput, "mock scenario response sequence is empty for node '\(input.node.id)'")
+    }
+    let sequenceIndex = scenarioSequenceIndex(for: input)
+    consumedCounts[input.node.id] = max(consumedCounts[input.node.id] ?? 0, min(sequenceIndex, sequence.count))
+    let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(sequenceIndex - 1, sequence.count - 1)]
+    if response.fail == true {
+      throw AdapterExecutionError(.providerError, "scenario forced failure for node '\(input.node.id)'")
+    }
+    if let usage = response.usage {
+      await context.backendEventHandler?(AdapterBackendEvent(
+        provider: response.provider ?? "scenario-mock",
+        eventType: "usage",
+        channel: .usage,
+        usage: usage
+      ))
+    }
+    return AdapterExecutionOutput(
+      provider: response.provider ?? "scenario-mock",
+      model: response.model ?? input.node.model,
+      promptText: response.promptText ?? input.promptText,
+      completionPassed: response.completionPassed ?? true,
+      when: response.when ?? ["always": true],
+      payload: response.payload ?? [:]
+    )
+  }
+
+  public func consumedResponseCounts() -> [String: Int] {
+    consumedCounts
+  }
+
+  private func scenarioSequenceIndex(for input: AdapterExecutionInput) -> Int {
+    let attempt = input.output?.attempt ?? 1
+    let executionFloor = max(1, input.executionIndex + attempt - 1)
+    return max((consumedCounts[input.node.id] ?? 0) + 1, executionFloor)
+  }
+}
+
+private struct DecodableWorkflowMockScenario: Decodable {
+  var scenario: WorkflowMockScenario
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    let raw = try container.decode([String: ScenarioEntry].self)
+    var responses: [String: [MockNodeResponse]] = [:]
+    for (key, entry) in raw {
+      switch entry {
+      case let .single(response):
+        responses[key] = [response]
+      case let .sequence(sequence):
+        responses[key] = sequence
+      }
+    }
+    scenario = WorkflowMockScenario(responses: responses)
+  }
+}
+
+private enum ScenarioEntry: Decodable {
+  case single(MockNodeResponse)
+  case sequence([MockNodeResponse])
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if let sequence = try? container.decode([MockNodeResponse].self) {
+      self = .sequence(sequence)
+      return
+    }
+    self = .single(try container.decode(MockNodeResponse.self))
+  }
+}

@@ -1,0 +1,1 @@
+Review the repair against the task acceptance criteria. Return loopGate with gateId verification, stepId verify, decision accepted or needs_work, severityCounts, blockingFindings, and evidenceRefs. Return loopGate.acceptance.met as a boolean and explain the judgment in loopGate.acceptance.note. Do not claim acceptance when evidence is missing.

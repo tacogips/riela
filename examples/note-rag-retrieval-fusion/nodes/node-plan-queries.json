@@ -1,0 +1,12 @@
+{
+  "id": "plan-queries",
+  "description": "Derive the four retrieval probe queries that exercise each retrieval-fusion technique against the seeded corpus.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/plan-queries.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with strictQuery, contextQuery, relaxedQuery, and graphQuery strings that probe the seeded Atlas Retrieval Playbook corpus."
+  }
+}

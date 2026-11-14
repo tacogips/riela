@@ -1,0 +1,6 @@
+{
+  "get-routine": {"provider":"scenario-mock","when":{"always":true},"payload":{"status":"ok","routine":{"routineId":"routine-fixture-1","task":"今週の予定を要約する","origin":{"delivery":{"room":"office","presenceEntity":"binary_sensor.office_presence","whenAbsent":"defer"}}}}},
+  "run-task": {"provider":"scenario-mock","model":"claude-haiku-4-5","when":{"always":true,"defer_when_absent":true,"skip_when_absent":false,"always_speak":false},"payload":{"announcement":"今週は水曜に定例があります。","room":"office","presenceEntity":"binary_sensor.office_presence","notAfter":"2099-01-01T00:00:00Z"}},
+  "presence-defer": {"provider":"scenario-mock","when":{"always":true,"state_on":true},"payload":{"state":{"entity_id":"binary_sensor.office_presence","state":"on"},"context":{"announcement":"今週は水曜に定例があります。","room":"office"}}},
+  "speak": {"provider":"scenario-mock","when":{"always":true,"spoken":true},"payload":{"textToSpeech":{"status":"spoken","provider":"apple","path":"/tmp/a.aiff","played":true,"cached":false}}}
+}

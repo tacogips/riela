@@ -1,0 +1,89 @@
+{
+  "route-message": {
+    "provider": "scenario-mock",
+    "model": "router",
+    "when": {
+      "target_procurement-lead": true,
+      "target_finance-analyst": false,
+      "target_legal-counsel": false
+    },
+    "payload": {
+      "target": "procurement-lead"
+    }
+  },
+  "procurement-lead": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_finance-analyst": true,
+      "handoff_legal-counsel": false
+    },
+    "payload": {
+      "replyText": "I will coordinate onboarding and keep the decision log. @finance-analyst, review the commercial exposure.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Vendor onboarding example memory for Nao Procurement Lead"
+        }
+      ],
+      "handoff_finance-analyst": true,
+      "handoff_legal-counsel": false
+    }
+  },
+  "finance-analyst": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_procurement-lead": false,
+      "handoff_legal-counsel": true
+    },
+    "payload": {
+      "replyText": "The annual commitment fits budget, but renewal uplift needs a cap. @legal-counsel, review the contract language.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Vendor onboarding example memory for Yuna Finance Analyst"
+        }
+      ],
+      "handoff_procurement-lead": false,
+      "handoff_legal-counsel": true
+    }
+  },
+  "legal-counsel": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_procurement-lead": false,
+      "handoff_finance-analyst": false
+    },
+    "payload": {
+      "replyText": "Add an uplift cap, DPA, and termination assistance before approval.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Vendor onboarding example memory for Ema Legal Counsel"
+        }
+      ],
+      "handoff_procurement-lead": false,
+      "handoff_finance-analyst": false
+    }
+  }
+}

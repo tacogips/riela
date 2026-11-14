@@ -1,0 +1,102 @@
+{
+  "workflowId": "x-incremental-posts-kv",
+  "description": "Read the persisted fetch cursor from the built-in workflow key-value store, fetch newer X posts through x-gateway, and persist the newest post id back to the store so the next run resumes after it.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 180000,
+    "containerRuntime": {
+      "runnerKind": "docker"
+    }
+  },
+  "entryStepId": "read-cursor",
+  "nodes": [
+    {
+      "id": "read-cursor",
+      "addon": {
+        "name": "riela/kv-get",
+        "version": "1",
+        "config": {
+          "storeId": "x-posts",
+          "key": "fetch-cursor",
+          "default": {
+            "sinceId": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "fetch-posts",
+      "addon": {
+        "name": "riela/x-gateway-read",
+        "version": "1",
+        "env": {
+          "X_GW_ACCESS_TOKEN": {
+            "fromEnv": "X_GW_ACCESS_TOKEN"
+          },
+          "X_GW_ACCESS_TOKEN_SECRET": {
+            "fromEnv": "X_GW_ACCESS_TOKEN_SECRET"
+          },
+          "X_GW_ACCOUNT_USERNAME": {
+            "fromEnv": "X_GW_ACCOUNT_USERNAME"
+          },
+          "X_GW_AUTH_MODE": {
+            "fromEnv": "X_GW_AUTH_MODE"
+          },
+          "X_GW_CONSUMER_KEY": {
+            "fromEnv": "X_GW_CONSUMER_KEY"
+          },
+          "X_GW_CONSUMER_SECRET": {
+            "fromEnv": "X_GW_CONSUMER_SECRET"
+          }
+        },
+        "config": {
+          "queryTemplate": "query {\n  followingTimeline(\n    maxResults: 50\n    maxUsers: 50\n    maxResultsPerUser: 5\n    includePromoted: false\n  ) {\n    posts {\n      id\n      text\n      createdAt\n      author {\n        username\n        name\n      }\n    }\n    pageInfo {\n      resultCount\n      newestId\n      oldestId\n      nextToken\n    }\n  }\n}",
+          "image": "ghcr.io/tacogips/x-gateway:latest",
+          "runnerKind": "docker",
+          "networkPolicy": "egress-allowed"
+        }
+      }
+    },
+    {
+      "id": "persist-cursor",
+      "addon": {
+        "name": "riela/kv-set",
+        "version": "1",
+        "config": {
+          "storeId": "x-posts",
+          "key": "fetch-cursor",
+          "valueTemplate": {
+            "sinceId": "{{inbox.latest.output.payload.xGateway.data.data.followingTimeline.pageInfo.newestId}}"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "read-cursor",
+      "nodeId": "read-cursor",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "fetch-posts"
+        }
+      ]
+    },
+    {
+      "id": "fetch-posts",
+      "nodeId": "fetch-posts",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "persist-cursor"
+        }
+      ]
+    },
+    {
+      "id": "persist-cursor",
+      "nodeId": "persist-cursor",
+      "role": "worker"
+    }
+  ]
+}

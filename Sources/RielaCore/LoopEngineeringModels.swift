@@ -1,0 +1,301 @@
+import Foundation
+
+public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
+  public var kind: String?
+  public var required: Bool
+  public var description: String?
+  public var evidence: LoopEvidenceRequirements?
+  public var policies: LoopPolicyDeclaration?
+  public var gates: [LoopGateDeclaration]
+  public var recovery: LoopRecoveryDeclaration?
+  public var implementationPlan: LoopImplementationPlanRequirement?
+
+  private enum CodingKeys: String, CodingKey {
+    case kind
+    case required
+    case description
+    case evidence
+    case policies
+    case gates
+    case recovery
+    case implementationPlan
+  }
+
+  public init(
+    kind: String? = nil,
+    required: Bool = false,
+    description: String? = nil,
+    evidence: LoopEvidenceRequirements? = nil,
+    policies: LoopPolicyDeclaration? = nil,
+    gates: [LoopGateDeclaration] = [],
+    recovery: LoopRecoveryDeclaration? = nil,
+    implementationPlan: LoopImplementationPlanRequirement? = nil
+  ) {
+    self.kind = kind
+    self.required = required
+    self.description = description
+    self.evidence = evidence
+    self.policies = policies
+    self.gates = gates
+    self.recovery = recovery
+    self.implementationPlan = implementationPlan
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.kind = try container.decodeIfPresent(String.self, forKey: .kind)
+    self.required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+    self.description = try container.decodeIfPresent(String.self, forKey: .description)
+    self.evidence = try container.decodeIfPresent(LoopEvidenceRequirements.self, forKey: .evidence)
+    self.policies = try container.decodeIfPresent(LoopPolicyDeclaration.self, forKey: .policies)
+    self.gates = try container.decodeIfPresent([LoopGateDeclaration].self, forKey: .gates) ?? []
+    self.recovery = try container.decodeIfPresent(LoopRecoveryDeclaration.self, forKey: .recovery)
+    self.implementationPlan = try container.decodeIfPresent(LoopImplementationPlanRequirement.self, forKey: .implementationPlan)
+  }
+}
+
+public struct WorkflowStepLoopMetadata: Codable, Equatable, Sendable {
+  public var role: String?
+  public var gateId: String?
+  public var evidenceTags: [String]
+  public var recordsChangedFiles: Bool?
+  public var recordsVerification: Bool?
+
+  private enum CodingKeys: String, CodingKey {
+    case role
+    case gateId
+    case evidenceTags
+    case recordsChangedFiles
+    case recordsVerification
+  }
+
+  public init(
+    role: String? = nil,
+    gateId: String? = nil,
+    evidenceTags: [String] = [],
+    recordsChangedFiles: Bool? = nil,
+    recordsVerification: Bool? = nil
+  ) {
+    self.role = role
+    self.gateId = gateId
+    self.evidenceTags = evidenceTags
+    self.recordsChangedFiles = recordsChangedFiles
+    self.recordsVerification = recordsVerification
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.gateId = try container.decodeIfPresent(String.self, forKey: .gateId)
+    self.evidenceTags = try container.decodeIfPresent([String].self, forKey: .evidenceTags) ?? []
+    self.recordsChangedFiles = try container.decodeIfPresent(Bool.self, forKey: .recordsChangedFiles)
+    self.recordsVerification = try container.decodeIfPresent(Bool.self, forKey: .recordsVerification)
+  }
+}
+
+public struct LoopEvidenceRequirements: Codable, Equatable, Sendable {
+  public var required: Bool
+  public var artifactRootPolicy: String?
+  public var requiredSections: [String]
+
+  private enum CodingKeys: String, CodingKey {
+    case required
+    case artifactRootPolicy
+    case requiredSections
+  }
+
+  public init(required: Bool = false, artifactRootPolicy: String? = nil, requiredSections: [String] = []) {
+    self.required = required
+    self.artifactRootPolicy = artifactRootPolicy
+    self.requiredSections = requiredSections
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+    self.artifactRootPolicy = try container.decodeIfPresent(String.self, forKey: .artifactRootPolicy)
+    self.requiredSections = try container.decodeIfPresent([String].self, forKey: .requiredSections) ?? []
+  }
+}
+
+public struct LoopPolicyDeclaration: Codable, Equatable, Sendable {
+  public var mutation: LoopMutationPolicyDeclaration?
+  public var process: LoopProcessPolicyDeclaration?
+  public var network: LoopNetworkPolicyDeclaration?
+  public var redaction: LoopRedactionPolicyDeclaration?
+
+  public init(
+    mutation: LoopMutationPolicyDeclaration? = nil,
+    process: LoopProcessPolicyDeclaration? = nil,
+    network: LoopNetworkPolicyDeclaration? = nil,
+    redaction: LoopRedactionPolicyDeclaration? = nil
+  ) {
+    self.mutation = mutation
+    self.process = process
+    self.network = network
+    self.redaction = redaction
+  }
+}
+
+public struct LoopMutationPolicyDeclaration: Codable, Equatable, Sendable {
+  public var allowedWriteRoots: [String]
+  public var scratchRoot: String?
+  public var commit: String?
+  public var push: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case allowedWriteRoots
+    case scratchRoot
+    case commit
+    case push
+  }
+
+  public init(allowedWriteRoots: [String] = [], scratchRoot: String? = nil, commit: String? = nil, push: String? = nil) {
+    self.allowedWriteRoots = allowedWriteRoots
+    self.scratchRoot = scratchRoot
+    self.commit = commit
+    self.push = push
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.allowedWriteRoots = try container.decodeIfPresent([String].self, forKey: .allowedWriteRoots) ?? []
+    self.scratchRoot = try container.decodeIfPresent(String.self, forKey: .scratchRoot)
+    self.commit = try container.decodeIfPresent(String.self, forKey: .commit)
+    self.push = try container.decodeIfPresent(String.self, forKey: .push)
+  }
+}
+
+public struct LoopProcessPolicyDeclaration: Codable, Equatable, Sendable {
+  public var nestedRiela: String?
+  public var nestedCodex: String?
+  public var allowedBackends: [String]
+  public var requiredWorkerModel: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case nestedRiela
+    case nestedCodex
+    case allowedBackends
+    case requiredWorkerModel
+  }
+
+  public init(
+    nestedRiela: String? = nil,
+    nestedCodex: String? = nil,
+    allowedBackends: [String] = [],
+    requiredWorkerModel: String? = nil
+  ) {
+    self.nestedRiela = nestedRiela
+    self.nestedCodex = nestedCodex
+    self.allowedBackends = allowedBackends
+    self.requiredWorkerModel = requiredWorkerModel
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.nestedRiela = try container.decodeIfPresent(String.self, forKey: .nestedRiela)
+    self.nestedCodex = try container.decodeIfPresent(String.self, forKey: .nestedCodex)
+    self.allowedBackends = try container.decodeIfPresent([String].self, forKey: .allowedBackends) ?? []
+    self.requiredWorkerModel = try container.decodeIfPresent(String.self, forKey: .requiredWorkerModel)
+  }
+}
+
+public struct LoopNetworkPolicyDeclaration: Codable, Equatable, Sendable {
+  public var mode: String?
+
+  public init(mode: String? = nil) {
+    self.mode = mode
+  }
+}
+
+public struct LoopRedactionPolicyDeclaration: Codable, Equatable, Sendable {
+  public var secretPolicy: String?
+  public var storeRawStdout: Bool?
+  public var storeRawStderr: Bool?
+
+  public init(secretPolicy: String? = nil, storeRawStdout: Bool? = nil, storeRawStderr: Bool? = nil) {
+    self.secretPolicy = secretPolicy
+    self.storeRawStdout = storeRawStdout
+    self.storeRawStderr = storeRawStderr
+  }
+}
+
+public struct LoopGateDeclaration: Codable, Equatable, Sendable {
+  public var id: String
+  public var stepId: String
+  public var required: Bool
+  public var acceptWhen: LoopGateAcceptancePolicy
+
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case stepId
+    case required
+    case acceptWhen
+  }
+
+  public init(
+    id: String,
+    stepId: String,
+    required: Bool = false,
+    acceptWhen: LoopGateAcceptancePolicy = LoopGateAcceptancePolicy()
+  ) {
+    self.id = id
+    self.stepId = stepId
+    self.required = required
+    self.acceptWhen = acceptWhen
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.stepId = try container.decode(String.self, forKey: .stepId)
+    self.required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+    self.acceptWhen = try container.decodeIfPresent(LoopGateAcceptancePolicy.self, forKey: .acceptWhen)
+      ?? LoopGateAcceptancePolicy()
+  }
+}
+
+public struct LoopGateAcceptancePolicy: Codable, Equatable, Sendable {
+  public var decision: LoopGateDecision?
+  public var maxHighFindings: Int?
+  public var maxMediumFindings: Int?
+
+  public init(decision: LoopGateDecision? = nil, maxHighFindings: Int? = nil, maxMediumFindings: Int? = nil) {
+    self.decision = decision
+    self.maxHighFindings = maxHighFindings
+    self.maxMediumFindings = maxMediumFindings
+  }
+}
+
+public struct LoopRecoveryDeclaration: Codable, Equatable, Sendable {
+  public var resume: String?
+  public var rerun: String?
+  public var retry: String?
+
+  public init(resume: String? = nil, rerun: String? = nil, retry: String? = nil) {
+    self.resume = resume
+    self.rerun = rerun
+    self.retry = retry
+  }
+}
+
+public struct LoopImplementationPlanRequirement: Codable, Equatable, Sendable {
+  public var required: Bool
+  public var pathPattern: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case required
+    case pathPattern
+  }
+
+  public init(required: Bool = false, pathPattern: String? = nil) {
+    self.required = required
+    self.pathPattern = pathPattern
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+    self.pathPattern = try container.decodeIfPresent(String.self, forKey: .pathPattern)
+  }
+}

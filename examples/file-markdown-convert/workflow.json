@@ -1,0 +1,50 @@
+{
+  "workflowId": "file-markdown-convert",
+  "description": "Convert local documents (pdf, docx, pptx, xlsx, odt, rtf, epub, csv) to Markdown through the external anydoc-swift converter.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "convert-documents",
+  "nodes": [
+    {
+      "id": "convert-documents",
+      "addon": {
+        "name": "riela/file-markdown-convert",
+        "version": "1",
+        "config": {
+          "continueOnError": true,
+          "maxDocuments": 10,
+          "maxInputBytes": 25000000,
+          "maxMarkdownBytes": 1000000
+        },
+        "inputs": {
+          "path": "{{workflowInput.path}}",
+          "paths": "{{workflowInput.paths}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "convert-documents",
+      "nodeId": "convert-documents",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

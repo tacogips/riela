@@ -1,0 +1,22 @@
+{
+  "workflowId": "open-model-provider-codex",
+  "description": "Route a codex-agent node to a loopback OpenAI-compatible model provider.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "local-model-worker",
+  "nodes": [
+    {
+      "id": "local-model-worker",
+      "nodeFile": "nodes/node-local-model-worker.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "local-model-worker",
+      "nodeId": "local-model-worker",
+      "role": "worker"
+    }
+  ]
+}

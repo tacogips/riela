@@ -1,0 +1,32 @@
+{
+  "id": "affirmative-input",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/affirmative-input.md",
+  "variables": {
+    "stanceLabel": "affirmative"
+  },
+  "output": {
+    "description": "Return the normalized affirmative debate input as JSON.",
+    "jsonSchema": {
+      "type": "object",
+      "required": ["topic", "role", "opponentClaim"],
+      "properties": {
+        "topic": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "const": "affirmative"
+        },
+        "opponentClaim": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "maxValidationAttempts": 2
+  }
+}

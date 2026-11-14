@@ -1,0 +1,185 @@
+import { ActionButton } from '../components/ActionButton'
+import { For, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js'
+import { configurationClient } from '../config/client'
+import { ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
+import '../settings-extra.css'
+import { WorkerSettings } from './WorkerSettings'
+import { APIKeySettings } from './APIKeySettings'
+import { isDesktop, desktopServerOrigin, rielaFetch } from '../transport'
+import { APIError, api } from '../api'
+
+type SettingsSection = 'profiles' | 'storage' | 'assistant' | 'appearance' | 'server'
+
+const CONFLICT_CODES = ['profile_conflict', 'revision_conflict']
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isStaleStateConflict(error: unknown): boolean {
+  return error instanceof APIError && CONFLICT_CODES.includes(error.code)
+}
+
+function colorSchemeLabel(option: string): string {
+  return option.charAt(0).toUpperCase() + option.slice(1)
+}
+
+export function SettingsView(props: { profileKey: string; profileName: string; serverHosted?: boolean; onHostChange: () => void }) {
+  const [configuration, { refetch }] = createResource(() => props.profileKey, () => configurationClient.get())
+  const [messages, setMessages] = createSignal<Partial<Record<SettingsSection, string>>>({})
+  const [errors, setErrors] = createSignal<Partial<Record<SettingsSection, boolean>>>({})
+  const [conflicts, setConflicts] = createSignal<Partial<Record<SettingsSection, boolean>>>({})
+  const [saving, setSaving] = createSignal<SettingsSection>()
+  const [portConfirmation, setPortConfirmation] = createSignal('')
+  const [selectedVendor, setSelectedVendor] = createSignal('')
+  const [selectedModel, setSelectedModel] = createSignal('')
+  const [profileName, setProfileName] = createSignal('')
+  const [storageDirectory, setStorageDirectory] = createSignal('')
+  createEffect(() => setStorageDirectory(configuration()?.workflowStorage?.directory ?? ''))
+  createEffect(() => {
+    setSelectedVendor(configuration()?.assistant.vendor ?? '')
+    setSelectedModel(configuration()?.assistant.model ?? '')
+  })
+  const selectedModels = createMemo(() => configuration()?.assistant.modelCatalogs
+    .find((catalog) => catalog.vendor === selectedVendor())?.models ?? [])
+  const selectVendor = (vendor: string) => {
+    setSelectedVendor(vendor)
+    setSelectedModel(configuration()?.assistant.modelCatalogs.find((catalog) => catalog.vendor === vendor)?.models[0] ?? '')
+  }
+
+
+  const runMutation = async (section: SettingsSection, action: () => Promise<void>, success: string) => {
+    setSaving(section); setMessages((value) => ({ ...value, [section]: '' })); setErrors((value) => ({ ...value, [section]: false })); setConflicts((value) => ({ ...value, [section]: false }))
+    try {
+      await action()
+      setMessages((value) => ({ ...value, [section]: success }))
+    } catch (error) {
+      const isConflict = isStaleStateConflict(error)
+      setErrors((value) => ({ ...value, [section]: true })); setConflicts((value) => ({ ...value, [section]: isConflict }))
+      setMessages((value) => ({ ...value, [section]: isConflict ? 'Changed elsewhere — refresh before saving again.' : errorMessage(error) }))
+    } finally { setSaving(undefined) }
+  }
+
+  const saveAssistant = async (form: HTMLFormElement) => {
+    const data = new FormData(form)
+    await runMutation('assistant', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.updateAssistant(current, {
+        assistance: String(data.get('assistance') ?? ''),
+        vendor: String(data.get('vendor') ?? ''),
+        model: selectedModel(),
+      })
+      await refetch()
+    }, 'Assistant settings saved.')
+  }
+  const saveAppearance = async (colorScheme: string) => {
+    await runMutation('appearance', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.updateAppearance(current, colorScheme)
+      await refetch()
+    }, `Native window preference saved: ${colorSchemeLabel(colorScheme)}.`)
+  }
+  const saveServer = async (form: HTMLFormElement) => {
+    const data = new FormData(form)
+    const port = Number(data.get('port'))
+    if (port !== configuration()?.server.configuredPort && portConfirmation() !== 'CHANGE PORT') {
+      setErrors((value) => ({ ...value, server: true }))
+      setMessages((value) => ({ ...value, server: 'Type CHANGE PORT to confirm that this page may become unreachable.' }))
+      return
+    }
+    await runMutation('server', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.updateHTTPServer(current, port)
+      setPortConfirmation(''); await refetch(); props.onHostChange()
+    }, props.serverHosted ? 'Server port saved. Restart riela serve to apply it; an explicit --port overrides this setting.' : 'Server port saved. Stop and start the server to apply it.')
+  }
+  // Start/stop/open replace the old menu-bar items; only the local desktop owns
+  // the listener, so a page served by that listener never stops itself.
+  const controlsLocalServer = () => !props.serverHosted && isDesktop() && !desktopServerOrigin()
+  const setServerRunning = async (isEnabled: boolean) => {
+    await runMutation('server', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      // A listener failure rejects the mutation with its reason (shown by
+      // runMutation); refetch either way so the state chip shows "failed".
+      try {
+        await configurationClient.setHTTPServerEnabled(current, isEnabled)
+      } finally {
+        await refetch()
+      }
+    }, isEnabled ? 'Server started.' : 'Server stopped.')
+  }
+  const openServerInBrowser = async () => {
+    await runMutation('server', async () => {
+      const response = await rielaFetch('/api/v1/settings/server/open', { method: 'POST', headers: api.noteHeaders() })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.message ?? 'Cannot open the server in a browser.')
+    }, 'Opened in browser.')
+  }
+  const saveWorkflowStorage = async (directory: string) => {
+    await runMutation('storage', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.updateWorkflowStorage(current, directory)
+      await refetch(); props.onHostChange()
+    }, directory.trim() ? 'Workflow storage directory saved.' : 'Workflow storage reset to the profile default.')
+  }
+  const createProfile = async () => {
+    await runMutation('profiles', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.createProfile(current, profileName())
+      setProfileName(''); await refetch()
+    }, 'Profile created.')
+  }
+  const removeProfile = async (name: string) => {
+    await runMutation('profiles', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.removeProfile(current, name)
+      await refetch()
+    }, `Profile ${name} removed.`)
+  }
+  const switchProfile = async (name: string) => {
+    await runMutation('profiles', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.switchProfile(current, name)
+      props.onHostChange()
+    }, `Switched to ${name}.`)
+  }
+
+  const refresh = (_section: SettingsSection) => {
+    void refetch()
+  }
+  const SectionMessage = (section: SettingsSection) => <Show when={messages()[section]}>{(message) => <MutationMessage message={message()} isError={errors()[section]} onRefresh={conflicts()[section] ? () => refresh(section) : undefined} />}</Show>
+
+  return <section class="page"><PageHeader eyebrow="PREFERENCES" title="Settings" />
+    <div class="settings-stack">
+      <Show when={isDesktop() && !desktopServerOrigin()}><APIKeySettings profileKey={props.profileKey} /></Show>
+      <Show when={!props.serverHosted}><WorkerSettings profileKey={props.profileKey} /></Show>
+      <Show when={configuration.loading}><LoadingState label="Loading configuration…" /></Show><Show when={configuration.error}><ErrorBanner message={errorMessage(configuration.error)} /></Show>
+      <Show when={configuration()}>{(value) => <div class="panel settings-panel"><div class="section-title"><div><h2>Profiles</h2></div></div><div class="requirements"><For each={value().profiles}>{(name) => <div class="requirement-row"><div><strong>{name}</strong><span>{name === value().profile ? 'Active profile' : 'Inactive profile'}</span></div><div class="refresh-actions"><Show when={name !== value().profile}><ActionButton class="secondary" disabled={saving() === 'profiles'} onClick={() => void switchProfile(name)}>Switch</ActionButton></Show><ActionButton class="secondary" disabled={saving() === 'profiles' || name === 'default' || name === value().profile} onClick={() => void removeProfile(name)}>Remove</ActionButton></div></div>}</For></div><div class="form-grid"><label><span>New profile</span><input value={profileName()} onInput={(event) => setProfileName(event.currentTarget.value)} /></label></div><div class="save-row">{SectionMessage('profiles')}<ActionButton disabled={saving() === 'profiles' || !profileName().trim()} onClick={() => void createProfile()}>Create profile</ActionButton></div></div>}</Show>
+      <Show when={configuration()?.workflowStorage}>{(storage) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveWorkflowStorage(storageDirectory()) }}>
+        <div class="section-title"><div><h2>Workflow storage</h2><p>Separate from the riela CLI ({storage().cliWorkflowHome}).</p></div><span class="status-chip">{storage().isDefault ? 'default' : 'custom'}</span></div>
+        <div class="form-grid"><label class="grow"><span>Storage directory</span><input name="workflowStorageDirectory" value={storageDirectory()} placeholder={storage().defaultDirectory} onInput={(event) => setStorageDirectory(event.currentTarget.value)} /></label><label><span>Profile default</span><input disabled value={storage().defaultDirectory} /></label></div>
+        <div class="save-row">{SectionMessage('storage')}<ActionButton type="button" class="secondary" disabled={saving() === 'storage' || storage().isDefault} onClick={() => void saveWorkflowStorage('')}>Use default</ActionButton><ActionButton disabled={saving() === 'storage' || !storageDirectory().trim() || storageDirectory().trim() === storage().directory}>{saving() === 'storage' ? 'Saving…' : 'Save storage'}</ActionButton></div>
+      </form>}</Show>
+      <Show when={configuration()?.assistant}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveAssistant(event.currentTarget) }}><div class="section-title"><div><h2>Assistant</h2></div></div><label><span>Assistance</span><textarea name="assistance" rows="4">{value().assistance}</textarea></label><div class="form-grid"><label><span>Vendor</span><select name="vendor" value={selectedVendor()} onChange={(event) => selectVendor(event.currentTarget.value)}><option value="openai-api">OpenAI API</option><option value="anthropic-api">Anthropic API</option><option value="cursor-api">Cursor API</option><option value="codex-cli">Codex CLI</option><option value="claude-code-cli">Claude Code CLI</option><option value="cursor-cli">Cursor CLI</option></select></label><label><span>Model</span><select name="model" value={selectedModel()} onChange={(event) => setSelectedModel(event.currentTarget.value)}><For each={selectedModels()}>{(model) => <option value={model}>{model}</option>}</For></select></label></div><div class="save-row">{SectionMessage('assistant')}<ActionButton disabled={saving() === 'assistant'}>{saving() === 'assistant' ? 'Saving…' : 'Save assistant'}</ActionButton></div></form>}</Show>
+
+      <Show when={configuration()?.appearance}>{(value) => <div class="panel settings-panel">
+        <div class="section-title"><div><h2>Appearance</h2></div></div>
+        <div class="form-grid"><label><span>Native window appearance</span><select disabled={saving() === 'appearance'} value={value().colorScheme} onChange={(event) => void saveAppearance(event.currentTarget.value)}><For each={value().options}>{(option) => <option value={option}>{colorSchemeLabel(option)}</option>}</For></select></label></div>
+        <div class="save-row">{SectionMessage('appearance')}</div>
+      </div>}</Show>
+
+      <Show when={configuration()?.server}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveServer(event.currentTarget) }}><div class="section-title"><div><h2>Web Config server</h2></div><span class={`status-chip ${value().state}`}>{value().state}</span></div><div class="form-grid"><label><span>Configured port</span><input name="port" type="number" min="1" max="65535" value={value().configuredPort} /></label><label><span>Bound endpoint</span><input disabled value={props.serverHosted ? location.host : value().boundPort ? `127.0.0.1:${value().boundPort}` : 'Not running'} /></label></div><div class="confirmation-box"><strong>Type CHANGE PORT to save a different port.</strong><label><span>Port-change confirmation</span><input value={portConfirmation()} onInput={(event) => setPortConfirmation(event.currentTarget.value)} placeholder="CHANGE PORT" /></label></div><Show when={value().restartRequired}><p class="restart-notice">{props.serverHosted ? 'Restart riela serve to apply the saved port.' : 'Stop and start the server to apply the saved port.'}</p></Show><div class="save-row">{SectionMessage('server')}<Show when={controlsLocalServer()}>{(() => {
+        const running = () => value().boundPort !== null || value().state === 'starting'
+        return <><Show when={value().boundPort !== null}><ActionButton type="button" class="secondary" disabled={saving() === 'server'} onClick={() => void openServerInBrowser()}>Open in browser</ActionButton></Show><ActionButton type="button" class="secondary" disabled={saving() === 'server' || value().state === 'stopping'} onClick={() => void setServerRunning(!running())}>{running() ? 'Stop server' : 'Start server'}</ActionButton></>
+      })()}</Show><ActionButton disabled={saving() === 'server'}>{saving() === 'server' ? 'Saving…' : 'Save server'}</ActionButton></div></form>}</Show>
+    </div>
+  </section>
+}

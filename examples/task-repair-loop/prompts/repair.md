@@ -1,0 +1,1 @@
+Read the task intent and the latest attempt evidence. Make one bounded repair attempt. Return a concise JSON summary and the verification evidence. Do not start another workflow or decide the task outcome.

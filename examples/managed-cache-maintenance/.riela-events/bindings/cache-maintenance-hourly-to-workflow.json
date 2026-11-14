@@ -1,0 +1,25 @@
+{
+  "id": "cache-maintenance-hourly-to-workflow",
+  "sourceId": "cache-maintenance-hourly-cron",
+  "workflowName": "managed-cache-maintenance",
+  "match": {
+    "eventType": "cron.tick"
+  },
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "cacheRoot": "REPLACE_WITH_ABSOLUTE_CACHE_ROOT",
+      "cacheIds": ["managed-example"]
+    },
+    "mirrorToHumanInput": false
+  },
+  "execution": {
+    "async": false,
+    "dedupeWindowMs": 600000,
+    "maxConcurrentPerKey": 1,
+    "concurrencyKey": "{{event.sourceId}}"
+  },
+  "taskPlanning": {
+    "enabled": false
+  }
+}

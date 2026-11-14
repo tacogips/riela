@@ -1,0 +1,46 @@
+{
+  "workflowId": "apple-note-create",
+  "description": "Create one Apple Note through the external apple-gateway CLI.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "create-apple-note",
+  "nodes": [
+    {
+      "id": "create-apple-note",
+      "addon": {
+        "name": "riela/apple-note-create",
+        "version": "1",
+        "inputs": {
+          "accountId": "{{workflowInput.accountId}}",
+          "folderId": "{{workflowInput.folderId}}",
+          "title": "{{workflowInput.title}}",
+          "bodyText": "{{workflowInput.bodyText}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "create-apple-note",
+      "nodeId": "create-apple-note",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "id": "alpha-output",
+  "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
+  "model": "claude-haiku-4-5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/alpha-output.md",
+  "variables": {},
+  "output": {
+    "description": "Publish alpha-lane output for downstream grouped lanes.",
+    "jsonSchema": {
+      "type": "object",
+      "required": [
+        "token",
+        "status"
+      ],
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "maxValidationAttempts": 2
+  }
+}

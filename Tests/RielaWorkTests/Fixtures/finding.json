@@ -1,0 +1,15 @@
+{
+  "feedback" : "Report the row instead of skipping it.",
+  "filePath" : "Sources/Importer/VendorImport.swift",
+  "fingerprint" : {
+    "key" : "id:review-1"
+  },
+  "gateId" : "implementation-review",
+  "id" : "review-1",
+  "line" : 42,
+  "message" : "null vendor rows are dropped without a diagnostic",
+  "severity" : "high",
+  "sourceStepExecutionId" : "exec-implementation-review-1",
+  "status" : "open",
+  "targetStepId" : "implementation"
+}

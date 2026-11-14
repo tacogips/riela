@@ -1,0 +1,115 @@
+# Evolution history
+
+Status: implemented and verified (2026-10-15).
+
+## Required behavior
+
+Track mutable memory, self prompts and workflow bundles through their owning
+stores. Reconstruct every recorded version exactly, including deletion, empty
+files, Unicode, binary attachments and executable permissions. A restore creates
+a new version and never removes intervening history. Existing history remains
+readable. Changes made before tracking was introduced cannot be invented.
+
+Before this change, workflow snapshots contained complete per-snapshot object directories;
+`WorkflowSelfImproveVersioning` records reviewed mutations through those
+snapshots. Prompt files are included in the owned bundle inventory. Memory
+`save` inserted records, while `update` overwrote payload/tags/references and
+removed replaced attachment files. Neither operation previously recorded versions.
+
+## Storage contract
+
+For memory, keep the latest complete value and immutable reverse deltas. Each delta has
+`schemaVersion`, `direction: next-to-previous`, `fromVersion` (newer),
+`toVersion` (immediate predecessor), source/result SHA-256 hashes and byte
+counts. Reconstruction starts at the stored head and follows decreasing version
+numbers. Reject missing edges, wrong direction, unsupported formats, incorrect
+version identities, malformed ranges and hash mismatches. Never ask an AI to
+infer which way a patch applies.
+
+The first codec is a deterministic byte splice: unchanged prefix and suffix
+lengths plus the previous middle bytes. It runs in linear time, preserves binary
+data, and stores small localized edits proportionally to the change. Distant
+edits can retain a large middle span; a future codec may use multiple splices
+without changing the directional/version contract. It makes no claim of minimal
+diff size. Empty and identical values have valid representations.
+
+Workflow and prompt snapshots use a different explicit format:
+`schemaVersion: 2, storageFormat: content-addressed-chunks`. Their per-file
+objects contain `sha256-chunks-v1` descriptors with ordered chunk hashes and a
+byte count. Content-defined boundaries (2–16 KiB) resynchronize after insertions.
+Immutable SHA-256 chunks are shared across versions, so unchanged content is
+stored once; reconstruction concatenates the listed chunks and verifies the
+complete file hash. There is no patch direction to infer in this format.
+Compared with reverse chains, this preserves immutable snapshot publication and
+bounded reconstruction work independent of the number of versions. Small files
+occupy one chunk; a change to a small file stores its new content. Schema-v1 raw
+objects remain readable. Existing historical bytes are not rewritten implicitly.
+
+Chunk publication precedes atomic snapshot publication. A failed publication
+can leave reusable unreferenced chunks, but cannot expose a partial snapshot.
+Concurrent publication of identical chunks is accepted only after immutable
+byte equality verification. There is no chunk garbage collector yet.
+
+Atomicity is owned by persistence, not the codec. Head replacement and insertion
+of its reverse delta must commit together, with serialized writers and expected
+head checks. Reads reconstruct from one consistent transaction. Failure must
+leave either the old head/history or the complete new head/history. Do not prune
+edges required by retained versions. Latest reads must not replay history.
+
+Memory versions include payload, tags, related record IDs and attachment
+metadata. Attachment content remains at its retained unique stored path after
+replacement; separate SHA-256 records bind those paths to exact bytes. History
+read and restore verify attachments. Unchanged attachments are not copied per
+version. The hash records commit with the corresponding record/delta changes.
+Workflow versions include the full owned inventory (prompt/node/definition files
+and modes); runtime session/step and reviewed change-set identifiers provide
+provenance. Baseline existing values on their first tracked mutation.
+
+Expose bounded history listing, version reconstruction and explicit restoration
+through the existing memory/workflow command surfaces. Machine-readable outputs
+must expose direction, source/target version IDs, timestamp and provenance.
+Restoration must reuse existing validation and authorization boundaries.
+
+## Superseded memory storage encoding (2026-10-27)
+
+For memory records, `design-efficient-history-and-storage.md` replaces the
+storage encoding above and adds the retention this design lacked. It also
+corrects the claim that distant edits only "can retain a large middle span".
+In production, a header change plus an appended item kept 99.6% of a 660 KB
+document per version, base64-encoded in JSON (1.23x the document per
+version).
+
+What changes:
+
+- Records move onto the shared `VersionedHistory` component.
+- Each retained non-head version is a compressed BLOB holding either the full
+  value or the same byte splice, whichever is smaller. No base64, no JSON.
+- `historyRetention` defaults to 2 generations for ordinary records and 1 for
+  snapshot-store records.
+- Undo and redo are head moves.
+- `memory_evolution` rows stay readable and convert on the next write or on
+  `riela storage compact`.
+
+What is kept:
+
+- the direction, hash, transaction and "restore is a new version" rules;
+- the workflow and prompt snapshot format (`content-addressed-chunks`).
+
+## Role change (2026-11-02)
+
+`design-workflow-history-unification.md` §2 makes the SQLite definition store
+the single workflow change lineage. Workflow bundle snapshots stay in the
+format above, as the file-restore auxiliary that definition audits reference
+by snapshot id.
+
+## Completion evidence
+
+Required gates: codec round trips and malformed input rejection; transactional
+memory update/history rollback and concurrent writers; workflow and prompt
+mutation integration; old-store compatibility; attachment retention; CLI list,
+show and restore; storage-size assertions for repeated localized edits; focused
+Swift suites, build, SwiftLint and a requirement-by-requirement completion review.
+
+Store integration, command surfaces and integration gates are complete. See
+`impl-plans/evolution-history-verification.md` for requirement-by-requirement
+evidence and documented storage limits.

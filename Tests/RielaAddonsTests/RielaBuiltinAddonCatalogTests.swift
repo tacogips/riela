@@ -1,0 +1,51 @@
+import XCTest
+@testable import RielaAddons
+
+final class RielaBuiltinAddonCatalogTests: XCTestCase {
+  private let expectedNames = [
+    "riela/chat-persona-router",
+    "riela/chat-persona-memory-read",
+    "riela/chat-persona-memory-write",
+    "riela/memory-save",
+    "riela/memory-load",
+    "riela/memory-update",
+    "riela/memory-search",
+    "riela/gmail-digest",
+    "riela/x-digest",
+    "riela/gemini-sdk-worker",
+    "riela/codex-sdk-worker",
+    "riela/claude-sdk-worker",
+    "riela/cursor-sdk-worker",
+    "riela/time-signal",
+    "riela/gmail-gateway-read",
+    "riela/x-gateway-read",
+    "riela/youtube-gateway-read",
+    "riela/audio-segments",
+    "riela/video-frames",
+    "riela/speech-to-text",
+    "riela/utterance-match",
+    "riela/home-assistant-read",
+    "riela/home-assistant-write",
+    "riela/text-to-speech"
+  ]
+
+  func testIssue116BuiltinsHaveVersionOneDescriptors() {
+    for name in expectedNames {
+      XCTAssertEqual(RielaBuiltinAddonCatalog.descriptor(named: name),
+                     RielaAddonDescriptor(name: name, version: "1"), name)
+      XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: name, version: nil), name)
+      XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: name, version: "1"), name)
+      XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: "2"), name)
+    }
+  }
+
+  func testCatalogNamesAreUniqueAndUnknownNamesFailClosed() {
+    let names = RielaBuiltinAddonCatalog.all.map(\.name)
+    XCTAssertEqual(Set(names).count, names.count)
+    for name in ["riela/issue-116-unknown", "example/issue-116-unknown", "riela/media-download"] {
+      XCTAssertNil(RielaBuiltinAddonCatalog.descriptor(named: name))
+      XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: nil))
+      XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: "1"))
+    }
+  }
+}

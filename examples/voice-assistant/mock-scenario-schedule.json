@@ -1,0 +1,9 @@
+{
+  "transcribe": {"provider":"scenario-mock","when":{"always":true},"payload":{"speechToText":{"status":"completed","provider":"openai","model":"gpt-4o-transcribe","language":"ja","text":"ねえリエラ、毎週月曜9時に部屋にいたら今週の予定を教えて。いなければ次に入ってきたときに教えて","path":"/tmp/voice/office/a.wav","cached":false}}},
+  "assistant": {"provider":"scenario-mock","model":"claude-haiku-4-5","when":{"always":true,"answer":false,"schedule":true},"payload":{
+    "reply":"毎週月曜9時に今週の予定をお知らせします。不在のときは次に入室したときにお伝えします。",
+    "routine":{"name":"週次予定の読み上げ","task":"今週の予定をカレンダーから集めて、読み上げ用に2〜3文で要約する","schedule":"0 0 9 * * 1","timezone":"Asia/Tokyo","completionCriteria":""},
+    "origin":{"source":"voice","delivery":{"room":"office","presenceEntity":"binary_sensor.office_presence","whenAbsent":"defer","deferTtlMinutes":720}}}},
+  "create-routine": {"provider":"scenario-mock","when":{"always":true},"payload":{"status":"ok","addon":"riela/routine-create","operation":"create","created":true,"routineId":"routine-fixture-1","routine":{"routineId":"routine-fixture-1","name":"週次予定の読み上げ"}}},
+  "confirm-routine": {"provider":"scenario-mock","when":{"always":true,"spoken":true},"payload":{"textToSpeech":{"status":"spoken","provider":"apple","path":"/tmp/voice/out/b.aiff","played":true,"cached":false}}}
+}

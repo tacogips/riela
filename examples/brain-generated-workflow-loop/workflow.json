@@ -1,0 +1,25 @@
+{
+  "workflowId": "brain-generated-workflow-loop",
+  "description": "A brain generates two bounded workflows, learns from the first result, and then finishes.",
+  "defaults": {"nodeTimeoutMs": 120000, "maxLoopIterations": 6},
+  "entryStepId": "brain",
+  "nodes": [{"id": "brain", "nodeFile": "nodes/node-brain.json"}],
+  "steps": [{
+    "id": "brain",
+    "nodeId": "brain",
+    "role": "worker",
+    "transitions": [{
+      "label": "execute_workflow",
+      "toStepId": "brain",
+      "dynamicWorkflow": {
+        "maxIterations": 4,
+        "onFailure": "return",
+        "allow": {
+          "nodeTypes": ["agent"],
+          "backends": ["claude-code-agent"],
+          "models": ["claude-opus-5-5"]
+        }
+      }
+    }]
+  }]
+}

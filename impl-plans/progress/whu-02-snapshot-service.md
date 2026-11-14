@@ -1,0 +1,7 @@
+# whu-02 snapshot service progress
+
+Implementation complete for the assigned plan. Snapshot manifests and list references expose the optional parent; verified object reads support content diffs. `WorkflowSnapshotService` owns list, show, diff, and approval-gated restore. The CLI supports `--content` and `--reason`, while nil result fields remain omitted. Definition-store sync and GraphQL wiring belong to downstream plans.
+
+The focused filter passed 21 tests with zero failures, including canonical manifest compatibility, snapshot lineage, content diff, binary and size handling, executable-only changes, and restore reason. `swift build` and strict changed-file SwiftLint exited 0. These ran on the moving shared tree; logs are under `tmp/workflow-history-unification/whu-02-snapshot-service/` (`tests-final-1.log`, `build-final.log`, `lint-final.log`). Formal review and finalization remain downstream.
+
+WHU02-ADV-01 revision: advisory parent selection now skips foreign-owner and unverifiable headers while strict `list` remains unchanged. The mixed-owner regression also covers a corrupt header and equal-time ordering. On the moving shared tree, the expanded focused filter passed 29 tests with zero failures, including registry evolution and self-improve versioning; build and strict selected-file lint exited 0. Logs: `adv-tests-final.log`, `adv-build-final.log`, `adv-lint-final.log` under the plan evidence directory. Independent review remains pending.

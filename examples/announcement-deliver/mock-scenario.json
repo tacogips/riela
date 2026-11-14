@@ -1,0 +1,8 @@
+{
+  "next": [
+    {"provider":"scenario-mock","when":{"always":true,"found":true},"payload":{"found":true,"identity":"routine-fixture-1:2026-11-02T00:00:00Z","request":{"announcement":"今週は水曜に定例、金曜にリリースがあります。","notAfter":"2099-01-01T00:00:00Z","room":"office"}}},
+    {"provider":"scenario-mock","when":{"always":true,"found":false},"payload":{"found":false,"identity":null,"request":null}}
+  ],
+  "speak": {"provider":"scenario-mock","when":{"always":true,"spoken":true,"expired":false,"skipped":false},"payload":{"textToSpeech":{"status":"spoken","provider":"apple","path":"/tmp/a.aiff","played":true,"cached":false},"context":{"identity":"routine-fixture-1:2026-11-02T00:00:00Z"}}},
+  "finish-spoken": {"provider":"scenario-mock","when":{"always":true},"payload":{"identity":"routine-fixture-1:2026-11-02T00:00:00Z"}}
+}

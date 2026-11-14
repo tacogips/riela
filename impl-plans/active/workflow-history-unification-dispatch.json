@@ -1,0 +1,214 @@
+{
+  "taskId": "workflow-history-unification",
+  "workflowMode": "issue-resolution",
+  "issueReference": "none; workflowInput.requestedOutcome (branch feat/workflow-history-unification off main 28ce6a28; session opus-terra-design-and-implement-review-loop-session-631, intake comm-012347)",
+  "implementationBranch": "feat/workflow-history-unification",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": false,
+  "originalHead": "28ce6a28787118ff570f16a536ab974174c80c19",
+  "designDocPaths": [
+    "design-docs/specs/design-workflow-history-unification.md",
+    "design-docs/user-qa/qa-workflow-history-unification.md",
+    "design-docs/specs/design-workflow-definition-store.md",
+    "design-docs/specs/design-evolution-history.md",
+    "design-docs/user-qa/qa-workflow-definition-store.md",
+    "design-docs/user-qa/qa-efficient-history-and-storage.md"
+  ],
+  "overviewPlanPath": "impl-plans/active/workflow-history-unification.md",
+  "evidenceRoot": "tmp/workflow-history-unification",
+  "acceptedDependencies": [
+    {
+      "planId": "whu-02-snapshot-service",
+      "planPath": "impl-plans/active/workflow-history-unification-02-snapshot-service.md",
+      "commit": "542c71f5",
+      "acceptance": "Accepted in wave 1 and confirmed by the session 637 integration review; committed by the operator in 542c71f5.",
+      "provides": [
+        "WorkflowBundleSnapshotManifest.parentSnapshotId",
+        "workflow diff --content unified text diff and --reason",
+        "Sources/RielaCLI/WorkflowSnapshotService.swift shared snapshot/restore service",
+        "WorkflowRestoreCommandResult.definitionWarnings"
+      ]
+    },
+    {
+      "planId": "whu-01-store-core",
+      "planPath": "impl-plans/active/workflow-history-unification-01-store-core.md",
+      "commit": "542c71f5",
+      "acceptance": "Wave 1 accepted by test-integrity, adversarial and integration review in opus-terra session 637; committed by the operator."
+    },
+    {
+      "planId": "whu-03-graphql-contract",
+      "planPath": "impl-plans/active/workflow-history-unification-03-graphql-contract.md",
+      "commit": "542c71f5",
+      "acceptance": "Wave 1 accepted by test-integrity, adversarial and integration review in opus-terra session 637; committed by the operator."
+    },
+    {
+      "planId": "whu-04-web-history-screen",
+      "planPath": "impl-plans/active/workflow-history-unification-04-web-history-screen.md",
+      "commit": "542c71f5",
+      "acceptance": "Wave 1 accepted by test-integrity, adversarial and integration review in opus-terra session 637; committed by the operator."
+    },
+    {
+      "planId": "whu-05-definition-sync",
+      "planPath": "impl-plans/active/workflow-history-unification-05-definition-sync.md",
+      "commit": "e2800970",
+      "acceptance": "Accepted by test-integrity, adversarial and integration review in opus-terra session 643; committed by the operator."
+    },
+    {
+      "planId": "whu-06-registry-sync",
+      "planPath": "impl-plans/active/workflow-history-unification-06-registry-sync.md",
+      "commit": "473c4b56",
+      "acceptance": "Accepted by the session 654 integration review (needs_revision false); committed by the operator."
+    },
+    {
+      "planId": "whu-07-coordinator-sync",
+      "planPath": "impl-plans/active/workflow-history-unification-07-coordinator-sync.md",
+      "commit": "b523407f",
+      "acceptance": "Accepted by the session 657 integration review (needs_revision false); committed by the operator."
+    },
+    {
+      "planId": "whu-09-versions-graphql",
+      "planPath": "impl-plans/active/workflow-history-unification-09-versions-graphql.md",
+      "commit": "b523407f",
+      "acceptance": "Accepted by the session 657 integration review (needs_revision false); committed by the operator."
+    },
+    {
+      "planId": "whu-08-rollback-service",
+      "planPath": "impl-plans/active/workflow-history-unification-08-rollback-service.md",
+      "commit": "0628d7a5",
+      "acceptance": "Accepted by the session 665 integration review (needs_revision false); committed by the operator."
+    },
+    {
+      "planId": "whu-10-rollback-surfaces",
+      "planPath": "impl-plans/active/workflow-history-unification-10-rollback-surfaces.md",
+      "commit": "bf803c6a",
+      "acceptance": "Accepted by the session 666 integration review (needs_revision false); committed by the operator."
+    }
+  ],
+  "reviewContext": {
+    "issueReference": "none; workflowInput.requestedOutcome (opus-terra-design-and-implement-review-loop-session-631, comm-012347)",
+    "userProblem": "Workflow history is split. Self-improve and mutable-registry changes only write filesystem bundle snapshots (WorkflowHistoryStore). Service runs use the SQLite definition store, so there is no single lineage. LoopRegressionVerdict is defined but never used, so nothing proposes a rollback, and the web console has no history or rollback screen.",
+    "requiredOutcomes": [
+      "Self-improve apply, registry create/update/delete/restore and `workflow restore` create definition-store versions (reverse delta, parent_version_id, definition_change_audit with actor/reason/evidence/diff_json) visible in `workflow definition history` and GraphQL workflowDefinitionHistory; restore/undo works from CLI and GraphQL.",
+      "Bundle snapshots are demoted to a file-restore auxiliary referenced from definition audit (bundleSnapshotBefore/After). (B) applies to them: parentSnapshotId, GraphQL workflowVersions/workflowVersionDiff/restoreWorkflowVersion (dry-run by default), and a unified text content diff.",
+      "Regression-driven rollback: loop.regressionRollback.policy manual|approval-required|automatic; proposals in runtime DB generation 13; approve/reject/check from CLI and GraphQL; automatic mode restores the prior version with an audit row.",
+      "Web console Versions tab: version list (actor/reason/time), structured diff between any two versions and against current, restore with confirmation, pending proposals with approve/reject; web lint/typecheck/test/build pass.",
+      "SurfaceCatalog rows with CLI+GraphQL parity, regenerated SDL, focused swift test suites green."
+    ],
+    "nonGoals": [
+      "No change to the #179 definition document format or digest (scripts, mocks, add-on files stay out of the store).",
+      "No RielaMemory memory schema bump; no Package.swift/Package.resolved/VERSION change.",
+      "One-time CLI runs (`workflow run`, temporary workflows, `loop start`) never open definition tables.",
+      "`loop regress` stays read-only and unchanged.",
+      "No tombstone version for registry delete; service resolution after delete is unchanged.",
+      "No git push."
+    ],
+    "constraints": [
+      "Do not modify unrelated files or other worktrees.",
+      "No back-compat shims beyond the additive SQLite generation 12->13 migration.",
+      "Runtime records stay owned by the runtime store, never by workers or adapters.",
+      "Run swift build/test/swiftlint via arch -arm64 /bin/zsh -lc; .build writes are authorized.",
+      "Scratch and logs only under tmp/workflow-history-unification/.",
+      "Rollback/restore stays dry-run or approval-gated by default; automatic only when the rollback target's stored document opts in."
+    ],
+    "designDecisionsAndRationale": [
+      "Design §2: the definition store is the single lineage. Bundle snapshots cannot be unified because the definition document excludes non-authored files, so they remain the file-restore auxiliary under fallback (B).",
+      "QA Q1: file-derived writes replace store-only head changes, record overwritten_changes_json, return warnings, and keep the replaced version restorable.",
+      "QA Q2: the policy comes from the rollback target's document, so an improvement cannot raise its own policy. Absent means manual.",
+      "QA Q3: registry delete writes an audit-only registryDelete row linking the before-delete snapshot.",
+      "QA Q4: the explicit `workflow definition rollback check` always works; the post-run hook evaluates only store-pinned service runs that declare loop.regressionRollback.",
+      "QA Q5: manual stores an informational `recorded` proposal; approval-required stores a `pending` proposal.",
+      "QA Q6: a durable `applying` claim blocks store-only writers with retryable definition_rollback_in_progress; crash recovery runs in approve/check, registry and coordinator recovery, and import.",
+      "QA Q7 (binding): bounded storage. No rows from one-time runs, no version when the digest is unchanged, collapsed no-op audits, and terminal proposals pruned by definition retention and gc. Only pending/applying are protected."
+    ],
+    "intentionalTradeoffs": [
+      "Plans run as 6 serialized waves on a shared SwiftPM tree. A per-plan package-wide swift build can hit a sibling's in-progress compile errors; execution-protocol rule 4 logs these as outOfScope and reruns (WHU-R5-05 residual).",
+      "Three files are reused across waves, ordered by dependency: WorkflowSnapshotService.swift (02->07), WorkflowDefinitionCommand.swift (07->10), WorkflowDefinitionGraphQLProvider.swift (09->10).",
+      "WorkflowRegistryMutationResult needs a custom encode so JSON stays byte-identical when warnings is empty (WHU-R6-01 residual; a whu-06 test guards it).",
+      "Design §8/§9 text says '--workflow-json', but the real CLI form is a positional target; whu-08 tests the real forms (WHU-R6-02 residual, doc wording only)."
+    ],
+    "supportedEdgeCases": [
+      "A repeated identical no-op sync collapses and replay is idempotent (whu-05).",
+      "A crash between the file change and the definition write is recovered through durable sync intents (whu-07) and rollback claim recovery (whu-08).",
+      "Overwrite warnings are surfaced on registry, self-improve, restore and GraphQL restore results.",
+      "The rollback restore uses a CAS on the expected head; a dry-run restore is the default.",
+      "Proposal pruning is honored by gc dry-run (proposalsDropped)."
+    ],
+    "outOfScopeEdgeCases": [
+      "Automatic post-run regression evaluation for one-time file-origin runs (explicit/scheduled check only).",
+      "Blocking service runs after registry delete.",
+      "Byte-exact restore of non-authored assets through the definition store."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-workflow-history-unification.md",
+      "design-docs/user-qa/qa-workflow-history-unification.md",
+      "design-docs/specs/design-workflow-definition-store.md",
+      "design-docs/specs/design-evolution-history.md",
+      "impl-plans/active/workflow-history-unification.md",
+      "Sources/RielaCore/LoopRegressionVerdict.swift",
+      "Sources/RielaCore/WorkflowDefinitionStore.swift",
+      "Sources/RielaWorkflowRegistry/WorkflowHistoryStore.swift",
+      "Sources/RielaWorkflowRegistry/WorkflowMutableRegistry+Evolution.swift",
+      "Sources/RielaCLI/WorkflowSelfImproveVersioning.swift",
+      "Sources/RielaCLI/WorkflowVersionCommands.swift",
+      "Sources/RielaGraphQL/WorkflowDefinitionGraphQL.swift",
+      "web/src/views/WorkflowRunConfigurationsView.tsx"
+    ]
+  },
+  "waves": [
+    {
+      "wave": "W6",
+      "plans": [
+        "whu-11-catalog-sdl-docs"
+      ]
+    }
+  ],
+  "waveGates": [
+    "After every wave, serial reconcile runs in the foreground with logs under tmp/workflow-history-unification/wave-<n>/: arch -arm64 /bin/zsh -lc 'swift build' exits 0 and the union of the wave members' focused filters exits 0 (SurfaceParity* excluded until W6). W1 additionally runs (cd web && bun run lint && bun run typecheck && bun test src && bun run build) with exit 0.",
+    "Parallel members of a wave have disjoint writePaths: W1 01 RielaCore definition-store/loop files + RielaRetentionService, 02 history models/WorkflowHistoryStore/snapshot service/version commands, 03 RielaGraphQL, 04 web; W3 06 registry + GraphQL hosts + web REST registry handlers, 07 coordinator/self-improve/snapshot service/definition command; W4 08 rollback service + run hook, 09 definition GraphQL provider. A compile error inside a sibling's writePath is logged as outOfScope and rerun after the sibling is green; it is never fixed by the non-owner.",
+    "Cross-wave reuse of a file is intentional and serialized by dependencies: WorkflowSnapshotService.swift (02 W1 -> 07 W3), WorkflowDefinitionCommand.swift (07 W3 -> 10 W5), WorkflowDefinitionGraphQLProvider.swift (09 W4 -> 10 W5).",
+    "W6 final gates are listed in impl-plans/active/workflow-history-unification-11-catalog-sdl-docs.md."
+  ],
+  "plans": [
+    {
+      "planId": "whu-11-catalog-sdl-docs",
+      "planPath": "impl-plans/active/workflow-history-unification-11-catalog-sdl-docs.md",
+      "dependsOn": [],
+      "wave": 6,
+      "writePaths": [
+        "Sources/RielaCLI",
+        "Sources/RielaGraphQL",
+        "docs",
+        "README.md",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "impl-plans/progress/whu-11-catalog-sdl-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "SurfaceCatalog rows and help text exist for every new operation with CLI+GraphQL parity.",
+        "SDL generation is stable across two runs (equal hashes).",
+        "All final gates exit 0: build, focused filter, web gates, swiftlint, git diff --check, and an empty Package/VERSION/RielaMemory diff.",
+        "Docs describe the behavior change, recovery, rollback and bounded storage; the design §9 to test mapping is recorded."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/workflow-history-unification/wave-6/build.log 2>&1; echo exit=$?",
+        "scripts/surface-parity/generate-sdl.sh > tmp/workflow-history-unification/wave-6/sdl-1.log 2>&1; echo exit=$?",
+        "shasum -a 256 Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "scripts/surface-parity/generate-sdl.sh > tmp/workflow-history-unification/wave-6/sdl-2.log 2>&1; echo exit=$?",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDefinition|WorkflowVersionCommands|WorkflowRegistryEvolution|SelfImprove|LoopBaseline|LoopRegression|SurfaceCatalog|SurfaceParity|WorkflowRollback|WorkflowHistory|WorkflowCoordinatorDefinitionSync|WorkflowRegistryDefinitionSync|WorkflowVersionContentDiff|WorkflowVersionsGraphQL|WorkflowMutableRegistry|GraphQLWorkflowRegistry|SQLiteRuntimeSchemaMigration\"' > tmp/workflow-history-unification/wave-6/focused.log 2>&1; echo exit=$?",
+        "(cd web && bun run lint && bun run typecheck && bun test src && bun run build) > tmp/workflow-history-unification/wave-6/web.log 2>&1; echo exit=$?",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet <every .swift file changed since 28ce6a28>' > tmp/workflow-history-unification/wave-6/swiftlint.log 2>&1; echo exit=$?",
+        "git diff --check > tmp/workflow-history-unification/wave-6/diff-check.log; echo exit=$?",
+        "git diff --stat 28ce6a28 -- Package.swift Package.resolved VERSION Packages/RielaMemory"
+      ]
+    }
+  ],
+  "operatorNote": "2026-11-02 operator resume #2 (session 637): wave 1 plans whu-01..04 are accepted and committed in 542c71f5 and moved to acceptedDependencies; remaining plans no longer list them in dependsOn. whu-05 blocked on resolver ownership: operator decision = caller injection. RielaWorkflowRegistry must not depend on RielaCLI; whu-05 exposes a resolver parameter (any WorkflowBundleResolving or an equivalent closure) and RielaCLI call sites inject FileSystemWorkflowBundleResolver. whu-05 now owns Sources/RielaCLI/WorkflowResolution.swift. whu-05 WIP stays uncommitted in the tree for redispatch. Operator resume #3: WHU-INT-01 (Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift) and WHU-INT-02 (Sources/RielaGraphQL/GraphQLVariableValidation.swift) were fixed by whu-01/whu-03 and accepted by the wave-1 integration review; they are listed in operatorResolvedFindingPaths and are not redispatch targets. Operator resume #4: whu-05 blocked on WorkflowDefinitionStore+FileChanges.swift (atomic expected-head CAS for the unchanged-digest audit). Accepted wave-1 internals are granted as sharedPaths to the serial plans that build on them (05/08: definition store core; 07: bundle history; 09/10: GraphQL history contracts; 08/10: rollback proposal store). Operator resume #5: whu-05 accepted and committed in e2800970. whu-06 gets the whu-05 recorder/resolver files as sharedPaths; decision = caller injection: RielaCLI constructs the recorder with FileSystemWorkflowBundleResolver through the accepted whu-05 fileResolver: API, and whu-06 aligns its pinned recorder API to that. whu-07 owns Sources/RielaCLI/ParityCommands.swift and now depends on whu-06 (attributed withWorkflowMutationAccess overload). Operator resume #6: whu-06 owns WorkflowRegistryCLICommand.swift and WorkflowMutableRegistrationCommand.swift and gets the remaining registry-mutation call sites, web-host configuration/instance files and registry test suites as sharedPaths, so it can finish in one dispatch. Operator resume #7: GraphQL overwrite warnings use option 2: an additive `warnings: [WorkflowRegistryWarning!]!` (or equivalent) field on WorkflowMutationPayload; whu-06 owns WorkflowRegistryGraphQL.swift and WorkflowRegistryGraphQLSchema.swift; whu-11 regenerates the SDL. Standing directive for every remaining plan: when an acceptance criterion needs an API-shape choice that is additive and inside the plan's paths, choose the minimal additive option, record it in the progress file, and continue instead of blocking. Operator resume #8: whu-06 owns the whole Sources/RielaWorkflowRegistry and Sources/RielaGraphQL directories (includes WorkflowRegistryGraphQLValidation.swift) so it does not stop per file; later serial plans keep their own files in those directories. Operator resume #9: WHU-INT-02 was NOT resolved by whu-03 (the negative test in WorkflowHistoryGraphQLContractTests.swift:70 fails); it is reassigned to whu-06, which owns Sources/RielaGraphQL. The whu-06 continuation counter is reset. Operator resume #10: whu-06 owns DefinitionStoreWorkflowBundleResolver.swift (deactivation enforcement on store-first lookup) plus host/editor test suites as sharedPaths. Operator resume #11: whu-06 accepted and committed in 473c4b56. whu-07 gets the whole Sources/RielaWorkflowRegistry directory as sharedPaths (pre-publication hook carrying the replaceLocked transaction id for rollback-claim recovery). Low integration findings: MutableGeneratedWorkflowTaskRegistrar registers with no recorder (ProductionNodeAdapter+WorkflowTaskAddon.swift); recorder-less recovery activation; whu-08 should consider them. Operator resume #12: WHU-INT-02 verified fixed on 473c4b56 (swift test --filter \"WorkflowHistoryGraphQLContractTests|GraphQLWorkflowRegistryTests|WorkflowRegistryDefinitionSyncTests\": 41 tests, 0 failures, log tmp/opus-terra-history/verify-int02.log); the stale wave-1 finding is listed in operatorResolvedFindingPaths. Operator resume #13 (whu-07 decision): option 1. Project/direct workflow sources stay immutable for self-improve apply and `workflow restore` (existing WorkflowHistoryIdentity/WorkflowDirectoryTransaction rejection and its tests are kept). The project/direct first-use and overwrite-warning requirements are dropped from whu-07; they apply only to mutable registry/user sources. Import-replay coverage stays in scope. Operator resume #14: whu-07 and whu-09 accepted and committed in b523407f. whu-08 first-use coverage uses mutable sources only (design §5 and plan 08 amended); project/direct stay immutable. Operator resume #15: whu-08 gets Sources/RielaWorkflowRegistry plus WorkflowDefinitionSyncIntentStore.swift, ProductionNodeAdapter+WorkflowTaskAddon.swift and their focused tests as sharedPaths, to bind releaseRollbackClaim/replayPending to the claim transaction id (CAS on status and claim transaction id) and to fix the recorder-less generated-task registrar. Operator resume #16: every remaining plan's former sharedPaths are now writePaths (the implementer treated sharedPaths as read-only). whu-08 explicitly owns WorkflowRollbackProposalStore.swift and its tests for the status+claim-transaction-id CAS. Operator resume #17: whu-08 plan gains an ordered-kickoff amendment pointing at its owned progress checklist impl-plans/progress/whu-08-rollback-service.md (step 1 = status+claim-transaction-id CAS with the older-transaction interleaving test); every dispatch must change at least step 1 and may return implementationIncomplete with partial changes, never an empty result. The stale wave-1 checkpointAmendment input (previousCheckpointCommit 9ba57a1b, WHU-INT-03) is already resolved (9ba57a1b is an ancestor of HEAD 93f1a89d; whu-04 was accepted and committed, and no impl-plans/active path is in any plan) and is ignored. Plans, paths, dependsOn, waves, artifactRoots, acceptedDependencies and evidenceRoot are unchanged. Operator resume #18: the whu-08 plan gains a continuation amendment. The partial whu-08 work in the tree stays uncommitted and is continued, not restarted. The remaining items are bundle-mode apply with the applying claim and crash recovery (approve/check, registry and coordinator recovery, import), automatic bundle evaluation and approval, the best-effort post-run hook for store-pinned service runs, WorkflowHistoryBoundedStorageTests (Q7), and full policy coverage including the CAS interleaving test. The stale wave-1 checkpointAmendment input (previousCheckpointCommit 9ba57a1b, WHU-INT-03) is ignored again: HEAD ce20640a descends from it. Plans, paths, dependsOn, waves, artifactRoots, acceptedDependencies and evidenceRoot are unchanged. Operator resume #19: the whu-08 plan gains a second continuation amendment. The partial whu-08 work in the tree stays uncommitted and is continued. The remaining items are generic restore error cleanup and digest diagnostics, applying-claim crash recovery (approve/check, registry and coordinator recovery, import) with interruption tests, the CAS interleaving test, WorkflowHistoryBoundedStorageTests (Q7), direct post-run hook tests and full policy coverage; implementationIncomplete=false only when all of them pass the plan gates. The stale wave-1 checkpointAmendment input (previousCheckpointCommit 9ba57a1b, WHU-INT-03) is ignored again: HEAD 57084a95 descends from it. Plans, paths, dependsOn, waves, artifactRoots, acceptedDependencies and evidenceRoot are unchanged. Operator resume #20: whu-08 owns the whole Sources/RielaCLI directory (typed WorkflowResolutionError through WorkflowDirectoryTransaction.swift, and any further CLI wiring). Operator resume #21: whu-08 accepted and committed in 0628d7a5. whu-10 owns Sources/RielaCLI and the CLI definition/enumeration test suites. Operator resume #22: whu-10 accepted and committed in bf803c6a. whu-11 (last plan) owns Sources/RielaCLI, Sources/RielaGraphQL, docs and README plus its parity/catalog tests.",
+  "operatorResolvedFindingPaths": [
+    "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift",
+    "Sources/RielaGraphQL/GraphQLVariableValidation.swift"
+  ]
+}

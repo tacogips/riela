@@ -1,0 +1,12 @@
+{
+  "id": "extract-transcript",
+  "description": "Fetch or normalize a YouTube transcript and return Markdown suitable for note creation.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/extract-transcript.md",
+  "variables": {},
+  "output": {
+    "description": "Return `bodyMarkdown` for riela/note-create."
+  }
+}

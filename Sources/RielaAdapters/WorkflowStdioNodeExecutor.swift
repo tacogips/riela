@@ -1,0 +1,348 @@
+import Foundation
+import RielaCore
+
+public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
+  public var runner: any LocalProcessRunning
+  public var hostPlatform: RielaHostPlatform
+  public var hostEnvironment: [String: String]
+  public var defaultWorkingDirectory: String?
+
+  public init(
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
+    hostPlatform: RielaHostPlatform = .current,
+    hostEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+    defaultWorkingDirectory: String? = nil
+  ) {
+    self.runner = runner
+    self.hostPlatform = hostPlatform
+    self.hostEnvironment = hostEnvironment
+    self.defaultWorkingDirectory = defaultWorkingDirectory
+  }
+
+  public func execute(
+    _ input: WorkflowStdioNodeExecutionInput,
+    context: AdapterExecutionContext
+  ) async throws -> WorkflowStdioNodeExecutionResult {
+    guard input.node.sandbox == nil else {
+      throw AdapterExecutionError(.policyBlocked, "stdio node sandbox selection is not supported; use riela sandbox run explicitly")
+    }
+    try enforcePolicy(input.policy, input: input)
+    let inputLine = try invocationInputJSONL(for: input)
+    var configuration = try processConfiguration(for: input)
+    var lease: CommandExecutionLockLease?
+    if let policy = input.node.command?.executionLocks, input.kind == .command {
+      try Task.checkCancellation()
+      if let deadline = context.deadline, deadline <= Date() { throw AdapterExecutionError(.timeout, "command execution deadline reached") }
+      if let acquired = try CommandExecutionLockLease.acquire(policy, environment: hostEnvironment, workingDirectory: configuration.workingDirectoryURL) {
+        lease = acquired
+        configuration.inheritedDescriptors = acquired.descriptors
+        configuration.environment[CommandExecutionLockLease.environmentKey] = try acquired.receipt()
+        configuration.unsetEnvironmentKeys.remove(CommandExecutionLockLease.environmentKey)
+      } else if policy.onBusy != .run {
+        guard let payload = policy.busyPayload else { throw AdapterExecutionError(.policyBlocked, "command execution resources busy") }
+        return .init(payload: payload)
+      }
+    }
+    defer { lease?.release() }
+    let startedAt = Date()
+    let result = try await runner.run(configuration: configuration, stdin: inputLine, deadline: context.deadline)
+    let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
+    let diagnosticsPolicy = input.kind == .command ? input.node.command?.failureDiagnostics : nil
+    // Measure what the runner retained, not a re-encoded decoded string.
+    let retainedStdoutBytes = result.stdoutRetainedByteCount ?? result.stdout.utf8.count
+    let stdoutOverflowed = retainedStdoutBytes > WorkflowFailureDiagnostics.stdoutByteLimit
+    guard result.terminationStatus == 0 else {
+      if let diagnosticsPolicy {
+        let selected = stdoutOverflowed || result.stdoutInvalidUTF8 ? nil : diagnosticsPolicy.metadata(from: result.stdout)
+        await context.backendEventHandler?(AdapterBackendEvent(
+          provider: WorkflowFailureDiagnostics.eventProvider,
+          eventType: WorkflowFailureDiagnostics.eventType,
+          channel: .lifecycle,
+          metadata: WorkflowFailureDiagnostics.eventMetadata(exitCode: result.terminationStatus, diagnostics: selected)
+        ))
+      }
+      let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+      throw AdapterExecutionError(
+        .providerError,
+        "\(input.kind.rawValue) node '\(input.nodeId)' failed with exit code \(result.terminationStatus): \(detail)"
+      )
+    }
+    if diagnosticsPolicy != nil, stdoutOverflowed {
+      throw AdapterExecutionError(.providerError, "command stdout exceeded diagnostic capture limit")
+    }
+    if diagnosticsPolicy != nil, result.stdoutInvalidUTF8 {
+      throw AdapterExecutionError(.invalidOutput, "command node stdout is not valid UTF-8")
+    }
+    return WorkflowStdioNodeExecutionResult(
+      payload: try outputPayload(fromStdout: result.stdout, kind: input.kind),
+      commandEvidence: commandEvidence(
+        input: input,
+        configuration: configuration,
+        exitCode: Int(result.terminationStatus),
+        durationMs: durationMs
+      )
+    )
+  }
+
+  private func enforcePolicy(
+    _ policy: LoopPolicyStepDecision?,
+    input: WorkflowStdioNodeExecutionInput
+  ) throws {
+    guard let policy, !policy.allowed else {
+      return
+    }
+    let denialSummary = policy.denials
+      .map { "\($0.policy)=\($0.decision)" }
+      .joined(separator: ", ")
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "\(input.kind.rawValue) node '\(input.nodeId)' denied by loop policy: \(denialSummary)"
+    )
+  }
+
+  private func processConfiguration(
+    for input: WorkflowStdioNodeExecutionInput
+  ) throws -> LocalProcessConfiguration {
+    switch input.kind {
+    case .command:
+      guard let command = input.node.command else {
+        throw AdapterExecutionError(.providerError, "command node '\(input.nodeId)' is missing command execution metadata")
+      }
+      let templateVariables = templateVariables(for: input)
+      let invocation = processInvocation(
+        executable: renderPromptTemplate(command.executable, variables: templateVariables),
+        arguments: command.arguments.map { renderPromptTemplate($0, variables: templateVariables) }
+      )
+      return LocalProcessConfiguration(
+        executableURL: invocation.executableURL,
+        arguments: invocation.arguments,
+        environment: environment(base: renderedEnvironment(command.environment, variables: templateVariables), input: input),
+        unsetEnvironmentKeys: strippedEnvironmentKeys,
+        workingDirectoryURL: workingDirectoryURL(
+          command.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
+        ),
+        inheritEnvironment: false,
+        stdoutCaptureByteLimit: command.failureDiagnostics == nil ? nil : WorkflowFailureDiagnostics.stdoutByteLimit + 1,
+        cancellationPolicy: command.cancellationPolicy ?? .terminateGroup
+      )
+    case .container:
+      guard let container = input.node.container else {
+        throw AdapterExecutionError(.providerError, "container node '\(input.nodeId)' is missing container execution metadata")
+      }
+      let templateVariables = templateVariables(for: input)
+      let runnerPath = try containerRunnerExecutable(
+        for: container,
+        variables: templateVariables,
+        workingDirectory: container.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
+      )
+      let invocation = processInvocation(
+        executable: runnerPath,
+        arguments: containerArguments(container, variables: templateVariables)
+      )
+      return LocalProcessConfiguration(
+        executableURL: invocation.executableURL,
+        arguments: invocation.arguments,
+        environment: environment(base: renderedEnvironment(container.environment, variables: templateVariables), input: input),
+        unsetEnvironmentKeys: strippedEnvironmentKeys,
+        workingDirectoryURL: workingDirectoryURL(
+          container.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
+        ), inheritEnvironment: false
+      )
+    }
+  }
+
+  private func environment(
+    base: [String: String],
+    input: WorkflowStdioNodeExecutionInput
+  ) -> [String: String] {
+    var environment = hostEnvironment.merging(base) { _, nodeValue in nodeValue }
+    for key in strippedEnvironmentKeys {
+      environment.removeValue(forKey: key)
+    }
+    environment["RIELA_WORKFLOW_ID"] = input.workflowId
+    environment["RIELA_WORKFLOW_EXECUTION_ID"] = input.sessionId
+    environment["RIELA_NODE_ID"] = input.nodeId
+    environment["RIELA_NODE_EXEC_ID"] = "\(input.stepId)#\(input.executionIndex)"
+    if let memoryRoot = input.memoryRootDirectory {
+      environment["RIELA_MEMORY_ROOT"] = input.kind == .container ? containerMemoryRootPath : memoryRoot
+    }
+    return environment
+  }
+
+  private func containerArguments(_ container: WorkflowContainerExecution, variables: JSONObject) -> [String] {
+    var arguments = ["run", "--rm", "-i"]
+    for key in container.environment.keys.sorted() where !strippedEnvironmentKeys.contains(key) {
+      arguments += ["-e", key]
+    }
+    if let hostMemoryRoot = stringValue("memoryRoot", in: variables) {
+      try? FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: hostMemoryRoot, isDirectory: true),
+        withIntermediateDirectories: true
+      )
+      arguments += ["-e", "RIELA_MEMORY_ROOT", "-v", "\(hostMemoryRoot):\(containerMemoryRootPath)"]
+    }
+    arguments.append(container.image)
+    arguments.append(contentsOf: container.command.map { renderPromptTemplate($0, variables: variables) })
+    return arguments
+  }
+
+  private func templateVariables(for input: WorkflowStdioNodeExecutionInput) -> JSONObject {
+    var variables = input.variables
+    variables["workflowInput"] = .object(input.variables)
+    variables["input"] = .object(input.resolvedInputPayload)
+    if let memoryRootDirectory = input.memoryRootDirectory {
+      variables["memoryRoot"] = .string(memoryRootDirectory)
+    }
+    for (key, value) in input.resolvedInputPayload {
+      variables[key] = value
+    }
+    return variables
+  }
+
+  private func renderedEnvironment(_ environment: [String: String], variables: JSONObject) -> [String: String] {
+    environment.mapValues { renderPromptTemplate($0, variables: variables) }
+  }
+
+  private func invocationInputJSONL(for input: WorkflowStdioNodeExecutionInput) throws -> String {
+    let envelope = WorkflowStdioNodeInvocationEnvelope(
+      workflowId: input.workflowId,
+      workflowExecutionId: input.sessionId,
+      stepId: input.stepId,
+      nodeId: input.nodeId,
+      executionIndex: input.executionIndex,
+      nodeType: input.kind.rawValue,
+      variables: input.variables,
+      input: input.resolvedInputPayload,
+      memoryRootDirectory: input.memoryRootDirectory,
+      availableMemories: input.availableMemories,
+      policy: input.policy
+    )
+    let data = try JSONEncoder().encode(envelope)
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw AdapterExecutionError(.providerError, "failed to encode stdio node input as UTF-8")
+    }
+    return text + "\n"
+  }
+
+  private func outputPayload(fromStdout stdout: String, kind: WorkflowStdioNodeExecutionKind) throws -> JSONObject? {
+    let records = JSONLRecordFraming.records(in: stdout)
+    guard !records.isEmpty else {
+      return nil
+    }
+    guard records.count == 1 else {
+      throw AdapterExecutionError(.invalidOutput, "\(kind.rawValue) node stdout must contain at most one JSONL output record")
+    }
+    guard let data = records[0].data(using: .utf8) else {
+      throw AdapterExecutionError(.invalidOutput, "\(kind.rawValue) node stdout JSONL output must be UTF-8")
+    }
+    let decoded: JSONValue
+    do {
+      decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+    } catch {
+      throw AdapterExecutionError(.invalidOutput, "\(kind.rawValue) node stdout must contain valid JSONL: \(error.localizedDescription)")
+    }
+    guard case let .object(object) = decoded else {
+      throw AdapterExecutionError(.invalidOutput, "\(kind.rawValue) node stdout JSONL output must contain a top-level JSON object")
+    }
+    return object
+  }
+
+  private func workingDirectoryURL(_ path: String?) -> URL? {
+    path.map { URL(fileURLWithPath: $0, isDirectory: true) }
+  }
+
+  private func processInvocation(executable: String, arguments: [String]) -> (executableURL: URL, arguments: [String]) {
+    if executable.hasPrefix("/") {
+      return (URL(fileURLWithPath: executable), arguments)
+    }
+    return (URL(fileURLWithPath: "/usr/bin/env"), [executable] + arguments)
+  }
+
+  private func containerRunnerExecutable(
+    for container: WorkflowContainerExecution,
+    variables: JSONObject,
+    workingDirectory: String?
+  ) throws -> String {
+    let field: String
+    let rendered: String
+    if let runnerPath = container.runnerPath {
+      field = "runnerPath"
+      rendered = renderPromptTemplate(runnerPath, variables: variables)
+    } else {
+      field = "runnerKind"
+      rendered = renderPromptTemplate(container.runnerKind ?? "docker", variables: variables)
+    }
+    let executable = try nonEmptyContainerRunner(rendered, field: field)
+    guard URL(fileURLWithPath: executable).lastPathComponent == appleContainerExecutableName else {
+      return executable
+    }
+    guard hostPlatform == .darwin else {
+      throw AdapterExecutionError(
+        .providerError,
+        "Apple Container node '\(container.image)' is only available when the Riela host is Darwin"
+      )
+    }
+    if executable.hasPrefix("/") {
+      return executable
+    }
+    if executable.contains("/") {
+      let baseURL = workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      return URL(fileURLWithPath: executable, relativeTo: baseURL).standardizedFileURL.path
+    }
+    return resolveHostExecutable(executable) ?? appleContainerDefaultExecutablePath
+  }
+
+  private func resolveHostExecutable(_ executable: String) -> String? {
+    let searchPath = hostEnvironment["PATH"] ?? defaultExecutableSearchPath
+    for directory in searchPath.split(separator: ":").map(String.init) {
+      let candidate = URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent(executable).path
+      if FileManager.default.isExecutableFile(atPath: candidate) {
+        return candidate
+      }
+    }
+    return nil
+  }
+
+  private func nonEmptyContainerRunner(_ value: String, field: String) throws -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+      throw AdapterExecutionError(.providerError, "container node \(field) rendered empty")
+    }
+    return trimmed
+  }
+
+  private var strippedEnvironmentKeys: Set<String> {
+    ["RIELA_MAILBOX_DIR", "RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT", CommandExecutionLockLease.environmentKey]
+  }
+
+  private func commandEvidence(
+    input: WorkflowStdioNodeExecutionInput,
+    configuration: LocalProcessConfiguration,
+    exitCode: Int,
+    durationMs: Int
+  ) -> LoopCommandEvidence {
+    LoopCommandEvidence(
+      id: "\(input.stepId)#\(input.executionIndex)",
+      argvSummary: ([configuration.executableURL.path] + configuration.arguments).joined(separator: " "),
+      argvRedactionStatus: "clean",
+      workingDirectoryPolicyStatus: "allowed",
+      exitCode: exitCode,
+      durationMs: durationMs,
+      stdoutStoragePolicy: "summary-only",
+      stderrStoragePolicy: "summary-only"
+    )
+  }
+}
+
+private let containerMemoryRootPath = "/riela/memory"
+private let appleContainerExecutableName = "container"
+private let appleContainerDefaultExecutablePath = "/usr/local/bin/container"
+private let defaultExecutableSearchPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+private func stringValue(_ key: String, in object: JSONObject) -> String? {
+  guard case let .string(value)? = object[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return nil
+  }
+  return value
+}

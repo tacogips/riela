@@ -1,0 +1,38 @@
+{
+  "name": "video-pipeline-yt-dlp",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "description": "Video pipeline with adaptable downloader",
+  "tags": [
+    "video"
+  ],
+  "registry": "local",
+  "checksumAlgorithm": "md5",
+  "checksum": "bedb2b1273c84dfc393c5bb503b6a3b8",
+  "workflowDirectory": "workflow",
+  "addons": [
+    {
+      "name": "media/yt-dlp-download",
+      "version": "1",
+      "sourcePath": "addons/yt-dlp-download",
+      "execution": {
+        "kind": "container",
+        "containerfilePath": "Containerfile",
+        "entrypoint": "yt-dlp-download"
+      },
+      "contentDigest": "sha256:ce7f37111d19dea8a624f310c06ded706fb162e6380818f29ca02da37d748980",
+      "capabilities": [
+        {
+          "name": "network.egress",
+          "reason": "Download media",
+          "defaultPolicy": "allow"
+        },
+        {
+          "name": "filesystem.write",
+          "scope": "runtime.output",
+          "reason": "Write media artifacts"
+        }
+      ]
+    }
+  ]
+}

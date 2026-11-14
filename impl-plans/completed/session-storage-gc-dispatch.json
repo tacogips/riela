@@ -1,0 +1,276 @@
+{
+  "taskId": "session-storage-gc",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/message-log-storage-gc",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "9ab7058eb717549dcfc0f9cad8de2d1de3814d69",
+  "designDocPaths": [
+    "design-docs/specs/design-session-storage-efficiency-and-default-gc.md",
+    "design-docs/user-qa/qa-session-storage-default-gc.md",
+    "design-docs/specs/design-automatic-retention.md",
+    "design-docs/specs/design-efficient-history-and-storage.md",
+    "design-docs/user-qa/qa-automatic-retention.md",
+    "design-docs/user-qa/qa-efficient-history-and-storage.md"
+  ],
+  "indexPlanPath": "impl-plans/active/session-storage-gc.md",
+  "evidenceRoot": "tmp/session-storage-gc",
+  "reviewContext": {
+    "issueReference": "none (inline workflowInput.requestedOutcome; opus-terra-design-and-implement-review-loop-session-559, plan review comm-010594, design accepted comm-010590)",
+    "userProblem": "The Riela session store <session-root>/runtime-records/runtime-message-log.sqlite grows to many GiB (measured: 4.68 GB user store with 768 sessions on 0.2.85; 13 GB events-serve project store; 5.8 GB profile store). Legacy inline session_json and cli_workflow_sessions.record_json duplicate the full session JSON (1.9 GB each), nested child_terminal_json is 488 MB, executions[].inputSnapshot is about 93% of session bytes and re-embeds upstream outputs every loop iteration (848 distinct digests of 862 canonical payload rows), and retention defaults are 'no cap', so riela gc and the automatic run-end pass delete nothing without a retention config. Legacy rows are only converted by a manual riela storage compact --apply.",
+    "requiredOutcomes": [
+      "(A) New execution payloads store each inputSnapshot subtree of >=1024 bytes once per root session as a content-addressed fragment (workflow_runtime_payload_refs, schema generation 12); readers expand and verify digests and fail closed; a synthetic loop benchmark shows baseline >= 5x stored and every public read path (session status/export/logs/progress, GraphQL/web session views, resume/rerun inputs) is byte-identical to the legacy form.",
+      "(B1) With no retention config, RielaRetentionPolicy.builtInDefault applies: results 30 days, messages follow results, logs 30 days, no byte cap, automatic true; config, CLI overrides, keepForever and RIELA_RETENTION_AUTOMATIC=0 still win; riela gc --dry-run reports the defaults with policySource default instead of 'no cap'; the generated sweep never runs on a defaulted policy.",
+      "(B2) RunEndStorageMaintenance becomes the single automatic maintenance pass (runEnd and scheduled profiles): bounded, resumable, terminal-only, lock-gated conversion of legacy inline snapshots, legacy CLI copies and embedded nested payloads via the existing converters with a storage-maintenance.json cursor (busy retry, park after 3 failures, retired skip), plus bounded incremental vacuum; it runs at workflow run/session resume|rerun|continue end, in events serve and serve via RielaAutomaticStoragePass.runScheduled, and in RielaApp.",
+      "(B3) riela doctor storage reports reclaimable.remainingBytes (upper bound), reclaimable.recovery for auto_vacuum=NONE session/definitions stores, and session.maintenance parked-row visibility while staying strictly read-only.",
+      "Docs (docs/storage-doctor-and-compact.md, README Runtime Data Retention section, docs/terminal-retention.md) describe the representation, defaults, automatic maintenance and overrides.",
+      "swift build succeeds and the retention, gc, storage compact/doctor, run-end maintenance, session store and events serve suites pass."
+    ],
+    "nonGoals": [
+      "No payload compression (zlib/zstd) and no Package.swift or Packages/RielaMemory change (design §3.7).",
+      "No bulk rewrite of existing generation-11 canonical execution rows.",
+      "No new manual commands; no change to riela storage compact behavior or to retention deletion rules, planners, protections, locks or tombstones.",
+      "No GraphQL, SDL, SurfaceCatalog or web change.",
+      "No edits to Sources/RielaCLI/RielaCLIApplication.swift, Package.swift, Sources/RielaCLI/EventLiveServe.swift or Sources/RielaCLI/ServeHTTPCommand.swift.",
+      "No default byte caps; no full VACUUM; no conversion of auto_vacuum=NONE databases.",
+      "No version bump, release or push (gitPush=false)."
+    ],
+    "constraints": [
+      "Backward compatible reads of every on-disk form (legacy inline, legacy CLI copies, embedded nested, generation-11 canonical, new reduced); additive generation-12 DDL only; conversions batch-limited and resumable.",
+      "Never delete or rewrite running, paused, waiting or otherwise resumable sessions or retained tree members; never take a held execution lock blockingly or break one.",
+      "Default retention only removes fully terminal (completed|failed|cancelled) unprotected families.",
+      "Never unlink live SQLite DB/WAL/SHM files; reclamation uses incremental_vacuum plus PASSIVE checkpoint only.",
+      "Works on macOS and Linux builds without new dependencies; digests are sha256 of the stored canonical JSON and verified on read.",
+      "Tests use realpath-resolved temporary stores, temp HOME and injected clocks; never ~/.riela or a real project store.",
+      "A concurrent workflow edits main for YouTube processing; keep changes inside storage/retention/maintenance code and the stated doc sections.",
+      "Workers run swift build/test/swiftlint from an arm64 shell (arch -arm64 /bin/zsh -lc), log under tmp/session-storage-gc/<planId>/ (per-attempt subdirectories allowed) with exit status, follow the sha256 pre/post edit drift protocol, never run state-changing git, and write only their own impl-plans/progress/<planId>.md.",
+      "Build cache: .build/ and .swiftpm/ are the pre-existing gitignored shared SwiftPM cache; writes by swift build/test/swiftlint are authorized and untracked, are not part of any writePaths/sharedPaths/artifactRoots, must never block a worker or be deleted, and a locked build folder means wait and retry; artifactRoots is intentionally empty for every plan.",
+      "Serial reconciliation (not owned by any plan): full-target build, swiftlint over all touched files, fixing out-of-plan tests that hard-code generation 11 or 'no config means no deletion', and archiving the index and plans."
+    ],
+    "designDecisionsAndRationale": [
+      "Structural fragment dedup of inputSnapshot instead of compression: the CHECK(json_valid(bytes, 8)) constraint and many SQL json_extract readers make compressed bytes require a table rebuild or a parallel column, and per-payload deflate cannot see the cross-payload repetition that dominates real data (design §3.7).",
+      "Only execution payloads are reduced; top-level stepId/status/importedFrom are never hoisted, so SQL json_extract readers stay unchanged.",
+      "An escape rule returns the unreduced text when inputSnapshot already contains $rielaPayloadRef, so any stored form decodes unambiguously.",
+      "Generation 12 is additive; older binaries refuse the store via the existing newer-generation error because they cannot expand references.",
+      "effectivePolicy(for:) fills each absent category with the built-in default while policy(for:) keeps meaning 'configured', so existing callers keep their semantics; messages stay 'follow results' to avoid independent messages-only pruning with tombstones.",
+      "Automatic maintenance reuses the existing idempotent converters, SessionExecutionLockRegistry, RetentionTargetLock and RetentionRunStamp-style atomic state instead of adding a parallel mechanism; selection is keyset-on-primary-key with the legacy predicate in the same query.",
+      "Scheduler hosts (events serve, serve) already call AutomaticRetentionHook.runAutomaticPass, so extending it via RielaAutomaticStoragePass.runScheduled covers them without editing EventLiveServe.swift or ServeHTTPCommand.swift; RielaApp switches only in EntryPoint+Retention.swift.",
+      "riela doctor storage stays read-only: the cursor reader never creates files or directories and no lock is taken."
+    ],
+    "intentionalTradeoffs": [
+      "Existing generation-11 canonical rows are not rewritten; only new writes and legacy conversions produce the reduced form.",
+      "Upgrade behavior change: stores without config start removing terminal families and logs older than 30 days on the first automatic pass (documented in README and the retention doc).",
+      "auto_vacuum=NONE stores only reuse freed pages; doctor reports the required free space and the manual recovery path instead of an automatic full VACUUM.",
+      "Per-pass budgets (runEnd 16/256/2 s with retry share 8/128/1 s, vacuum 4096 pages; scheduled 64/1024/10 s with retry share 32/512/5 s, vacuum 65536 pages) defer remaining conversion to later passes.",
+      "remainingBytes is a deliberately simple upper bound that may double count.",
+      "Only the synthetic >=5x benchmark is gated; the real-store dedup ratio is not measured."
+    ],
+    "supportedEdgeCases": [
+      "Legacy inline snapshots, legacy CLI full copies, embedded nested payloads, generation-11 and reduced payloads all load equal.",
+      "Missing or corrupted fragment rows make load throw 'runtime payload fragment missing or corrupt'.",
+      "Fragments shared across executions and nested invocations are released only when no parent still references them.",
+      "keepWorkflowIds without limits keeps the default age plus the kept ids; per-category keepForever; automatic false; RIELA_RETENTION_AUTOMATIC=0 with no config.",
+      "Sessions whose execution lock is held go to busy (cap 256, otherwise rescanNeeded) and convert on a later pass; non-terminal rows are skipped permanently; retired rows are skipped; deterministic failures park after 3 attempts with exactly one warning.",
+      "Corrupt or missing storage-maintenance.json cursor restarts the scan; automatic.lock held means the pass is skipped.",
+      "session resume|rerun|continue store selection honors --scope user and an explicit --session-store.",
+      "Doctor on a store without a cursor reports maintenance null and creates nothing."
+    ],
+    "outOfScopeEdgeCases": [
+      "Shrinking auto_vacuum=NONE databases during automatic passes.",
+      "Automatic discovery of stores other than user, project and explicit (--session-store / RIELA_SESSION_STORE).",
+      "Downgrade of generation-12 stores to older binaries.",
+      "Memory, definitions, KV and cache databases (no reduction and no doctor recovery block for memory/cache/KV).",
+      "Pending user confirmation of QA Q1/Q2 default values and Q7 parking behavior (assumed defaults are implemented)."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-session-storage-efficiency-and-default-gc.md",
+      "design-docs/user-qa/qa-session-storage-default-gc.md",
+      "design-docs/specs/design-automatic-retention.md",
+      "design-docs/specs/design-efficient-history-and-storage.md",
+      "impl-plans/active/session-storage-gc.md",
+      "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift",
+      "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift",
+      "Sources/RielaCore/SQLiteRuntimeExecutionRowsSchema.swift",
+      "Sources/RielaCore/RielaRetentionConfiguration.swift",
+      "Sources/RielaCore/TerminalRetentionPlan.swift",
+      "Sources/RielaCLI/RielaRetentionService.swift",
+      "Sources/RielaCLI/RunEndStorageMaintenance.swift",
+      "Sources/RielaCLI/AutomaticRetentionHook.swift",
+      "Sources/RielaCLI/StorageCompactCommand.swift",
+      "Sources/RielaCLI/StorageDoctorCommand.swift",
+      "Sources/RielaCLI/SessionExecutionLock.swift",
+      "Sources/RielaCLI/RetentionTargetState.swift",
+      "Sources/RielaCLI/RetentionTargets.swift",
+      "Sources/RielaApp/EntryPoint+Retention.swift",
+      "docs/storage-doctor-and-compact.md"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "Step 3 design accepted (comm-010590). Step 5 impl-plan review accepted all 5 plans plus the index (comm-010594): SGC-PLAN-F1 (mid, build-cache/artifactRoots authorization) resolved; residual low items SGC-PLAN-L1 (index wording 'sgc-01 runs alongside W1 and W2' vs wave table; dispatch follows dependsOn, sgc-01 has none), SGC-PLAN-L2 (package-wide build/test while sibling plans edit; mitigated by retry, hash-drift and reconciliation rules), SGC-PLAN-L3 (built-in defaults make no-config gc/compact/hook tests destructive; keep temp HOME and --scope user or temp --working-dir/--session-store isolation).",
+    "residualRisks": [
+      "Q1/Q2 defaults (30-day results and logs, no byte cap) and Q7 parking await user confirmation.",
+      "Real-store dedup ratio is not measured; only the synthetic >=5x benchmark is gated.",
+      "SGC-PLAN-L1, SGC-PLAN-L2, SGC-PLAN-L3."
+    ],
+    "finalGate": [
+      "arch -arm64 /bin/zsh -lc 'swift build'",
+      "arch -arm64 /bin/zsh -lc 'swift test --filter \"Retention|GarbageCollection|StorageCompact|StorageDoctor|RunEndStorageMaintenance|SessionStore|AutomaticRetention|EventLiveServe|RuntimePayloadFragment|SQLiteRuntimeExecutionRows|RuntimePersistenceBoundedWrite|SQLiteRuntimeSchemaMigration|CLIWorkflowSessionEnvelope\"'",
+      "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict <touched swift files>'",
+      "Linux source-portability build (swift:6.3.3-noble) if available"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "sgc-01-payload-fragments",
+      "planPath": "impl-plans/active/session-storage-gc-01-payload-fragments.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/RuntimePayloadFragmentEncoder.swift",
+        "Sources/RielaCore/SQLiteRuntimeExecutionRowsSchema.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift",
+        "Sources/RielaCLI/TerminalRetentionExecutor.swift",
+        "Sources/RielaCLI/SessionRetentionTombstones.swift",
+        "Tests/RielaCoreTests/RuntimePayloadFragmentTests.swift",
+        "Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift",
+        "Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift",
+        "Tests/RielaCoreTests/RuntimePersistenceBoundedWriteTests.swift",
+        "Tests/RielaCLITests/RuntimePayloadFragmentReadParityTests.swift",
+        "impl-plans/progress/sgc-01-payload-fragments.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "rg -n \"workflow_runtime_payload_refs\" Sources/RielaCore Sources/RielaCLI shows the schema, writer, release, reader, retention delete and triggers.",
+        "schemaGeneration is 12 and the fromGeneration: 11 migration step exists (additive DDL only).",
+        "RuntimePayloadFragmentTests and RuntimePayloadFragmentReadParityTests pass, including the benchmark assertion baseline >= 5 * stored with both numbers logged in the progress log, fail-closed missing/corrupt fragment reads, release of orphaned fragments and refs, nested hydration, legacy reads and the 11->12 migration.",
+        "No edits outside writePaths; any other test failing because of generation 12 is listed in the progress log for serial reconciliation."
+      ],
+      "verification": [
+        "mkdir -p tmp/session-storage-gc/sgc-01-payload-fragments",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift build 2>&1 | tee tmp/session-storage-gc/sgc-01-payload-fragments/build.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-01-payload-fragments/build.log'",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter \"RuntimePayloadFragment|SQLiteRuntimeExecutionRows|RuntimePersistenceBoundedWrite|SQLiteRuntimeSchemaMigration|SQLiteWorkflowMessageLog|CLIWorkflowSessionEnvelope|CLIWorkflowSessionStoreResilience|TerminalRetentionTests|TerminalRetentionPlan|SessionMessageRetentionAdmission\" 2>&1 | tee tmp/session-storage-gc/sgc-01-payload-fragments/test.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-01-payload-fragments/test.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCore/RuntimePayloadFragmentEncoder.swift Sources/RielaCore/SQLiteRuntimeExecutionRowsSchema.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift Sources/RielaCLI/TerminalRetentionExecutor.swift Sources/RielaCLI/SessionRetentionTombstones.swift Tests/RielaCoreTests/RuntimePayloadFragmentTests.swift Tests/RielaCLITests/RuntimePayloadFragmentReadParityTests.swift 2>&1 | tee tmp/session-storage-gc/sgc-01-payload-fragments/lint.log'"
+      ]
+    },
+    {
+      "planId": "sgc-02-default-retention",
+      "planPath": "impl-plans/active/session-storage-gc-02-default-retention.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/RielaRetentionConfiguration.swift",
+        "Sources/RielaCore/RielaRetentionReport.swift",
+        "Sources/RielaCLI/RielaRetentionService.swift",
+        "Sources/RielaCLI/GarbageCollectionCommand.swift",
+        "Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift",
+        "Tests/RielaCLITests/RielaRetentionServiceTests.swift",
+        "Tests/RielaCLITests/AutomaticRetentionTests.swift",
+        "Tests/RielaCLITests/TerminalRetentionPolicyTests.swift",
+        "Tests/RielaCLITests/GarbageCollectionCommandTests.swift",
+        "Tests/RielaCLITests/StorageCompactCommandTests.swift",
+        "impl-plans/progress/sgc-02-default-retention.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "rg -n \"builtInDefault|effectivePolicy|policySource\" Sources/RielaCore Sources/RielaCLI shows the pinned contract (RielaRetentionPolicySource, RielaRetentionPolicySources, RielaEffectiveRetentionPolicy, RielaRetentionPolicy.builtInDefault, effectivePolicy(for:), RetentionCategoryReport.policySource) and its uses.",
+        "With no config, automatic passes and riela gc remove terminal families older than 30 days and logs older than 30 days while running, suspended, created, lock-held and tree-member families are kept; messages follow results.",
+        "The generated sweep is gated on a non-default results source (a test proves it).",
+        "riela gc --dry-run reports maxAgeDays 30 with policySource default and '(built-in default)' text, writes nothing, and --results-max-age-days gives policySource override.",
+        "All listed suites pass; no test asserting 'no config means no deletion' remains."
+      ],
+      "verification": [
+        "mkdir -p tmp/session-storage-gc/sgc-02-default-retention",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift build 2>&1 | tee tmp/session-storage-gc/sgc-02-default-retention/build.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-02-default-retention/build.log'",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter \"RielaRetentionConfiguration|RielaRetentionService|AutomaticRetention|TerminalRetentionPolicy|GarbageCollection|StorageCompact|RetentionLogPruner|RetentionReclamation\" 2>&1 | tee tmp/session-storage-gc/sgc-02-default-retention/test.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-02-default-retention/test.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Sources/RielaCLI/RielaRetentionService.swift Sources/RielaCLI/GarbageCollectionCommand.swift 2>&1 | tee tmp/session-storage-gc/sgc-02-default-retention/lint.log'"
+      ]
+    },
+    {
+      "planId": "sgc-03-automatic-maintenance",
+      "planPath": "impl-plans/active/session-storage-gc-03-automatic-maintenance.md",
+      "dependsOn": [
+        "sgc-02-default-retention"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/StorageMaintenanceCursor.swift",
+        "Sources/RielaCLI/RunEndStorageMaintenance.swift",
+        "Sources/RielaCLI/AutomaticRetentionHook.swift",
+        "Sources/RielaApp/EntryPoint+Retention.swift",
+        "Tests/RielaCLITests/RunEndStorageMaintenanceTests.swift",
+        "Tests/RielaCLITests/EventLiveServeMaintenanceTests.swift",
+        "impl-plans/progress/sgc-03-automatic-maintenance.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "rg -n \"completedRoots\" Sources/RielaCLI/AutomaticRetentionHook.swift shows no gating use.",
+        "rg -n \"RielaAutomaticStoragePass.runScheduled\" Sources shows use by AutomaticRetentionHook.runAutomaticPass and Sources/RielaApp/EntryPoint+Retention.swift.",
+        "rg -n \"maximumVacuumPages = 128\" Sources has no match.",
+        "RunEndStorageMaintenanceTests and EventLiveServeMaintenanceTests pass: bounded per-pass conversion to completion with a no-work fast path, lock-held sessions retried later, non-terminal rows never converted, parking after 3 failures with exactly one warning, retired skip, retry-share caps, corrupt-cursor restart, incremental store file shrink, NONE store untouched, no-config maintenance runs, RIELA_RETENTION_AUTOMATIC=0 skips, automatic.lock held skips, runEnd target selection; the progress log records per-pass conversion counts."
+      ],
+      "verification": [
+        "mkdir -p tmp/session-storage-gc/sgc-03-automatic-maintenance",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift build 2>&1 | tee tmp/session-storage-gc/sgc-03-automatic-maintenance/build.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-03-automatic-maintenance/build.log'",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter \"RunEndStorageMaintenance|EventLiveServeMaintenance|AutomaticRetention|RielaRetentionScheduler|RetentionTargetState|StorageCompact\" 2>&1 | tee tmp/session-storage-gc/sgc-03-automatic-maintenance/test.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-03-automatic-maintenance/test.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCLI/StorageMaintenanceCursor.swift Sources/RielaCLI/RunEndStorageMaintenance.swift Sources/RielaCLI/AutomaticRetentionHook.swift Sources/RielaApp/EntryPoint+Retention.swift Tests/RielaCLITests/RunEndStorageMaintenanceTests.swift Tests/RielaCLITests/EventLiveServeMaintenanceTests.swift 2>&1 | tee tmp/session-storage-gc/sgc-03-automatic-maintenance/lint.log'"
+      ]
+    },
+    {
+      "planId": "sgc-04-doctor-storage",
+      "planPath": "impl-plans/active/session-storage-gc-04-doctor-storage.md",
+      "dependsOn": [
+        "sgc-02-default-retention",
+        "sgc-03-automatic-maintenance"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/StorageDoctorCommand.swift",
+        "Tests/RielaCLITests/StorageDoctorCommandTests.swift",
+        "impl-plans/progress/sgc-04-doctor-storage.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "rg -n \"remainingBytes|StorageDoctorRecovery|StorageDoctorMaintenance\" Sources/RielaCLI/StorageDoctorCommand.swift matches the new fields.",
+        "reclaimable.remainingBytes == compactEstimateBytes + pruneEstimateBytes with remainingBytesIsUpperBound true; recovery present only for auto_vacuum=NONE session/definitions databases with requiredFreeBytes = 2*(db+wal)+268435456 and steps naming riela storage compact --apply and VACUUM INTO; session.maintenance reports parkedCount (parked + overflow), examples and hint from the sgc-03 cursor.",
+        "Read-only assertions pass: the cursor file bytes and mtime are unchanged and no retention/ state directory is created; no-config old terminal family gives pruneEstimateBytes > 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/session-storage-gc/sgc-04-doctor-storage",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift build 2>&1 | tee tmp/session-storage-gc/sgc-04-doctor-storage/build.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-04-doctor-storage/build.log'",
+        "arch -arm64 /bin/zsh -lc 'set -o pipefail; swift test --filter \"StorageDoctor|StorageHelpBackstop\" 2>&1 | tee tmp/session-storage-gc/sgc-04-doctor-storage/test.log; echo \"exit=$?\" >> tmp/session-storage-gc/sgc-04-doctor-storage/test.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCLI/StorageDoctorCommand.swift Tests/RielaCLITests/StorageDoctorCommandTests.swift 2>&1 | tee tmp/session-storage-gc/sgc-04-doctor-storage/lint.log'"
+      ]
+    },
+    {
+      "planId": "sgc-05-docs",
+      "planPath": "impl-plans/active/session-storage-gc-05-docs.md",
+      "dependsOn": [
+        "sgc-01-payload-fragments",
+        "sgc-02-default-retention",
+        "sgc-03-automatic-maintenance"
+      ],
+      "writePaths": [
+        "docs/storage-doctor-and-compact.md",
+        "README.md",
+        "docs/terminal-retention.md",
+        "impl-plans/progress/sgc-05-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "rg -n \"off when no .retention. policy\" README.md has no match.",
+        "rg -n \"built-in default\" README.md docs/storage-doctor-and-compact.md docs/terminal-retention.md matches in all three files.",
+        "rg -n \"storage-maintenance.json|parked|remainingBytes|_rielaPayloadRefs|1024\" docs/storage-doctor-and-compact.md matches each term.",
+        "git diff -U0 -- README.md hunks stay inside the Runtime Data Retention section; every documented number matches the merged sgc-01/02/03 code (design-vs-code mismatches recorded in the progress log)."
+      ],
+      "verification": [
+        "mkdir -p tmp/session-storage-gc/sgc-05-docs",
+        "/bin/zsh -c '! rg -n \"off when no .retention. policy\" README.md'",
+        "/bin/zsh -c 'set -o pipefail; rg -n \"built-in default\" README.md docs/storage-doctor-and-compact.md docs/terminal-retention.md | tee tmp/session-storage-gc/sgc-05-docs/defaults.log'",
+        "/bin/zsh -c 'set -o pipefail; rg -n \"storage-maintenance.json|parked|remainingBytes|_rielaPayloadRefs|1024\" docs/storage-doctor-and-compact.md | tee tmp/session-storage-gc/sgc-05-docs/terms.log'",
+        "/bin/zsh -c 'git diff -U0 -- README.md docs/storage-doctor-and-compact.md docs/terminal-retention.md > tmp/session-storage-gc/sgc-05-docs/docs.diff'"
+      ]
+    }
+  ]
+}

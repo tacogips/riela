@@ -1,0 +1,122 @@
+# Terminal workflow payload retention
+
+The retrieval cache owns only its own SQLite database. Workflow snapshots,
+message logs and automatic node-memory journals can contain separate body copies.
+The built-in default bounds these managed copies without deleting user-authored
+memory, persona records, checkpoints or export receipts: results and logs have
+a maximum age of 30 days, messages follow results, and there is no byte cap. This
+now applies after upgrading even when no retention policy was configured. Only
+fully terminal, unprotected families are eligible.
+
+```sh
+riela session prune \
+  --session-store /srv/example/sessions \
+  --artifact-root /srv/example/artifacts \
+  --memory-root /srv/example/memory \
+  --workflow-id latest-digest --workflow-id liked-posts \
+  --retention-hours 24 --max-payload-bytes 268435456 --dry-run --output json
+```
+
+All three roots must be explicit absolute, non-overlapping paths without symlinks.
+`--session-store` is a directory, resolving to
+`session-store/runtime-records/runtime-message-log.sqlite`; it is not a database
+filename. The artifact and memory roots must belong to the same workflow runs.
+At least one workflow ID is required. The default age is 24 hours (1–8760); the
+default charged-payload cap is 256 MiB (1 byte–64 GiB). Remove `--dry-run` to apply.
+Schedule the same scoped command hourly; no hidden background pruning is started.
+Upgrade every writer sharing these roots to this version before enabling pruning.
+Writers must use the same session admission/execution locks. Canonical runtime
+SQLite guards reject stale writes to retired IDs; arbitrary library clients that
+write artifact files or secondary databases outside that admission protocol are
+not covered and must not share roots under this policy.
+
+Only complete root/parent families whose statuses consistently agree on completed
+or failed are eligible. The family's newest update determines age. Oldest eligible
+families are removed first when over budget. Created, running, suspended, orphaned,
+locked, conflicting or future-dated families remain protected. The command does
+not resume workflows, call providers, or infer termination from a missing process.
+
+Work Runtime/specialist-owned sessions, active concurrency leases, unsettled nested
+invocations, edited automatic journals and journals with external attachments
+remain protected. Their separate ownership cannot be safely inferred from age.
+
+Before deletion, the command acquires the existing execution locks and rechecks
+all family metadata in the runtime database transaction. Compact tombstones reserve
+the old session IDs and reject resume/admission after payload expiry. Tombstones
+record only IDs, roots, timestamps, pending cleanup and byte counts, never bodies.
+An interrupted secondary cleanup is retried by the next invocation with the same
+roots and workflow scope. Errors are nonzero and never silently report completion.
+
+Managed copies are runtime session/message rows and settled nested invocation
+payloads; `artifact-root/runtime-message-log.sqlite`; each exact
+`artifact-root/<session-id>/runtime-snapshot.json`; and memory rows whose source is
+`riela-node-manager`, direction is inbox/outbox, and workflow/session IDs match.
+Other memory is preserved even in the same database. Extra files in a session
+artifact directory protect that family. Arbitrary artifact-reference paths,
+external files, application logs and user outputs are never recursively deleted.
+Keep those caller-owned outputs compact or give them a separate ownership policy.
+
+Runtime snapshots are canonical in `workflow_runtime_snapshots`. CLI session
+rows contain a small envelope and status stub, not a second full session JSON.
+Execution records are stored as ordered rows; their JSON payloads are
+content-addressed and deduplicated within a root/parent session family. Nested
+invocations store references to those payloads. Terminal family deletion removes
+its execution rows, nested references, and payload bytes together, while live
+references protect shared payloads until they are released. Older inline
+snapshots and full CLI rows remain readable and convert on write or through
+`riela storage compact --apply`. New writes store input snapshot subtrees of
+at least 1024 bytes as root-scoped SHA-256 fragments, using `$rielaPayloadRef`
+and `_rielaPayloadRefs`; reads fail closed on missing or corrupt fragments.
+Fragments are not compressed. Schema generation 12 causes older binaries to
+reject the store.
+
+JSON reports include selected families, removed session count, protected reasons,
+pending cleanup, before/remaining charged payload bytes and `capAchieved`.
+A protected family can prevent the cap from being achieved; callers must inspect
+that field. Dry-run is a metadata-only estimate and does not acquire/create locks,
+write tombstones, reclaim storage or delete files. Apply always rechecks eligibility.
+
+The cap measures managed payload bytes, not total filesystem allocation. SQLite
+indexes, compact tombstones, page allocation and concurrent rollback/WAL overhead
+are additional. Successful cleanup uses secure deletion, incremental vacuuming
+and a PASSIVE checkpoint to reclaim database storage without truncating another
+writer's WAL. The first conversion from SQLite's default `auto_vacuum=NONE`
+requires a manual `riela gc` run with sufficient free space. It never truncates
+files directly or bypasses SQLite writer locks. Durable memory records in the
+same database remain intact. See [Runtime Data Retention](../README.md#runtime-data-retention)
+for the policy and automatic schedule; `riela session prune` remains the
+low-level command for explicitly selected workflow ids and artifact roots.
+
+`riela gc` is the manual front door for the effective results, messages and
+logs policy. Unspecified categories use the built-in default; set
+`{"keepForever": true}` for a category to retain it indefinitely.
+`automatic: false` or `RIELA_RETENTION_AUTOMATIC=0` disables automatic passes.
+`RIELA_RETENTION` takes precedence over project and user configuration; project
+policy takes precedence for project data, and gc flags override limits.
+`riela gc --dry-run --output json` reports `policySource`. Artifact-root cleanup
+remains explicit through `riela session prune`.
+
+Automatic maintenance runs after workflow run, resume, rerun and continue, and
+periodically in `events serve`, `serve` and RielaApp. It converts only terminal
+legacy rows and skips held locks and retired rows. It tracks busy, failed and
+parked rows in `storage-maintenance.json`; three failed conversions park a row
+with a warning. Run-end budgets are 16 conversions, 256 examined rows and 2 seconds;
+scheduled budgets are 64, 1024 and 10 seconds, with at most half reserved for
+retries. Incremental vacuum caps are 4,096 and 65,536 pages respectively; no
+automatic full `VACUUM` is performed.
+
+The generated sweep runs only when a results age is configured or provided by
+flag, not from the default. It can make expired read-only snapshot directories
+inside the store owner-writable for removal; an unremovable path produces a
+warning rather than a failed target. `riela storage compact` reports
+`workRemaining` for pending conversion or reclamation, not retention warnings
+or abandoned-invocation verdicts alone. `riela doctor storage` reports
+`remainingBytes` as an upper bound, `payloadFragments`, maintenance counts,
+and a recovery path for `auto_vacuum=NONE`; see
+[storage inspection and compaction](storage-doctor-and-compact.md) for details.
+
+Prompt spill files under `<working-directory>/tmp/riela-prompt-spill/` are
+caller-owned working files. Session retention does not traverse agent working
+directories or remove those files. Their paths are recorded in
+`inputSnapshot.promptCompaction.spills`; apply the working directory's cleanup
+policy to these additional copies.

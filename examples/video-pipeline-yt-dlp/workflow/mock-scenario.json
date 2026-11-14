@@ -1,0 +1,37 @@
+{
+  "download": {
+    "provider": "scenario-mock",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "mediaDownload": {
+        "status": "downloaded",
+        "path": "/tmp/riela-fixture/video.mp4"
+      }
+    }
+  },
+  "audio": {
+    "provider": "scenario-mock",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "audioSegments": {
+        "sourcePath": "/tmp/riela-fixture/video.mp4",
+        "segments": []
+      }
+    }
+  },
+  "frames": {
+    "provider": "scenario-mock",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "videoFrames": {
+        "segments": []
+      }
+    }
+  }
+}

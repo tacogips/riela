@@ -1,0 +1,60 @@
+{
+  "workflowId": "apple-gateway-admin",
+  "description": "Read Apple Gateway permission status and run a read-only GraphQL passthrough query.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "check-permissions",
+  "nodes": [
+    {
+      "id": "check-permissions",
+      "addon": {
+        "name": "riela/apple-gateway-permissions-status",
+        "version": "1"
+      }
+    },
+    {
+      "id": "gateway-query",
+      "addon": {
+        "name": "riela/apple-gateway-graphql",
+        "version": "1",
+        "config": {
+          "query": "{ noteAccounts { id name isDefault } }"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "check-permissions",
+      "nodeId": "check-permissions",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "gateway-query"
+        }
+      ]
+    },
+    {
+      "id": "gateway-query",
+      "nodeId": "gateway-query",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

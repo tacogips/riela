@@ -1,0 +1,9 @@
+{
+  "id": "apply",
+  "description": "Apply the approved deployment target.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "workspace-write",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/apply.md",
+  "output": { "jsonSchema": { "type": "object", "required": ["applied"], "properties": { "applied": { "type": "boolean" } } } }
+}

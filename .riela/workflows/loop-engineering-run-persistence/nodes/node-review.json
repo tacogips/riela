@@ -1,0 +1,12 @@
+{
+  "id": "review",
+  "description": "Review run persistence projection changes.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "effort": "low",
+  "promptTemplateFile": "prompts/review.md",
+  "variables": {},
+  "output": { "jsonSchema": { "type": "object" } }
+}

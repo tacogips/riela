@@ -1,0 +1,15 @@
+{
+  "id": "write-rina-memory",
+  "modelFreeze": false,
+  "addon": {
+    "name": "kaiba/note-persona-context-write",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor"
+    }
+  },
+  "output": {
+    "description": "Persist Rina Cursor note context entries and pass through reply/handoff flags."
+  }
+}

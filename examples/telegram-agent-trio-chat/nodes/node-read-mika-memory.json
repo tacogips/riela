@@ -1,0 +1,16 @@
+{
+  "id": "read-mika-memory",
+  "modelFreeze": false,
+  "description": "Read recent Mika Trend note context from the configured local Riela Note root before the persona replies.",
+  "addon": {
+    "name": "kaiba/note-persona-context-read",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend"
+    }
+  },
+  "output": {
+    "description": "Return recent Mika Trend note context markdown and the system-memory notebook."
+  }
+}

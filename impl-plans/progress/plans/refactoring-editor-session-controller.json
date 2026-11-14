@@ -1,0 +1,1 @@
+{"phase":42,"status":"Completed","tasks":{"TASK-001":{"deps":["refactoring-editor-action-helpers:TASK-003"],"parallelizable":true,"status":"Completed"},"TASK-002":{"deps":["TASK-001","refactoring-frontend-solidjs-migration:TASK-007"],"parallelizable":false,"status":"Completed"},"TASK-003":{"deps":["TASK-002"],"parallelizable":false,"status":"Completed"}}}

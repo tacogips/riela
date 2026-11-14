@@ -1,0 +1,66 @@
+{
+  "originHash" : "64581dd6ade052db524088cbfb2ace518a0267c047426cec9d0c5946fa8f9f6b",
+  "pins" : [
+    {
+      "identity" : "anydoc-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/anydoc-swift.git",
+      "state" : {
+        "revision" : "d957c08372786b7062553e83fe9c29880fdee7a4"
+      }
+    },
+    {
+      "identity" : "google-service-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-service-gateway.git",
+      "state" : {
+        "revision" : "0c4ffa2a2f7fad777bf28540517bf0938699b943"
+      }
+    },
+    {
+      "identity" : "kaiba",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/kaiba.git",
+      "state" : {
+        "revision" : "5614bf27cabf0584ff5101256da3b5c81d82533e"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    },
+    {
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "a9a5efd40eaf558a2bcd48d64b1d1646be686008",
+        "version" : "1.7.1"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "47d3869a7291f085c1fb9fb1e6d3b97a793f45c6",
+        "version" : "4.5.1"
+      }
+    },
+    {
+      "identity" : "web-hooky",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/web-hooky.git",
+      "state" : {
+        "revision" : "34a27e3ac6b042d498673a8de9cf42c136ebb8c2",
+        "version" : "0.2.0"
+      }
+    }
+  ],
+  "version" : 3
+}

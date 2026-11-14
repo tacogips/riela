@@ -1,0 +1,189 @@
+{
+  "selected": [
+    {
+      "name": "Anywhere Capture: phone-to-Mac quick memo over the QR-registered note API",
+      "avgWeightedScore": 33.3,
+      "judgeVotes": 3,
+      "persona": "capture",
+      "effort": "M",
+      "pitch": "Finish the original vision item that matters most to this persona: bind `riela serve --note-api` to a real socket so a phone on the tailnet can fire a memo (text, photo, share-sheet URL) straight into the note store in under two seconds. All the hard parts — registration codes, QR rendering, sha256 bearer tokens, revocation — already exist locally; only the remote binding and a minimal capture endpoint/PWA page are missing. This turns riela note from a Mac-only tool into the 'never lose a thought' inbox the design doc promised.",
+      "user_story": "Walking to a meeting, an idea hits. The user opens the riela capture page pinned to their iPhone home screen (registered once by scanning a QR from the Mac app's settings), types two lines, hits send. By the time they sit down, the note is in the user-memo notebook, auto-tagged '事業アイデア' by the default auto-action, visible in the Notes window.",
+      "grounding": "TASK-009 in impl-plans/active/riela-note.md is explicitly PARTIAL: registration codes, QR, token hashing, and revocation are implemented in Sources/RielaNote/NoteService+APIClients.swift and the GraphQL note surface (Sources/RielaGraphQL/NoteGraphQLService.swift) is complete, but `riela serve --note-api` never binds a socket. Capture reuses the existing `riela/note-create` addon path proven by examples/note-quick-memo/workflow.json and the AutoActionDispatching pipeline for default tagging.",
+      "judgeComments": [
+        "Capture is the highest-frequency act and phone capture is felt every single day from day one; auth pieces verified real but socket binding + PWA + tailnet HTTPS make M optimistic.",
+        "The vision item that matters most, but 'only the remote binding is missing' hides a real HTTP server, remote auth flow, and a PWA page — verified serve --note-api is in-process only today, so this is closer to L than M.",
+        "Finishes the design doc's own capture loop (lines 29-31) so every stray thought enters the ontology and gets auto-classed — the intake valve the external brain depends on; only the socket binding and a capture page are genuinely new."
+      ]
+    },
+    {
+      "name": "Entity Pages (ontology hub per tag)",
+      "avgWeightedScore": 32.7,
+      "judgeVotes": 3,
+      "persona": "reader",
+      "effort": "M",
+      "pitch": "Turn every person/year/event tag into a first-class destination page: all notes across every notebook that carry the tag, grouped by source notebook, with snippets, co-occurring entities, and a one-click 'promote to entity note' that creates a canonical note the tag deep-links to. This is the payoff of the world-model tag classes that already exist in the schema but currently only function as list filters — it converts riela note from a pile of ingested pages into a browsable personal ontology.",
+      "user_story": "While reading an OCR'd history book, the user taps the AI-assigned 'Bismarck' (class: person) tag chip on a page note. An Entity Page opens showing 23 notes across 4 notebooks (two books, one PDF paper, one YouTube transcript) mentioning Bismarck, each with an FTS snippet, plus a sidebar of co-occurring entities ('1871', 'Franco-Prussian War'). The user hits 'Promote to entity note', writes a two-line summary, and from then on every tag chip for Bismarck jumps to that canonical note first.",
+      "grounding": "TagClass/Tag/TagAssignment with classId already in Sources/RielaNote/NoteModels.swift; listTags/listTagClasses in NoteService+Catalog.swift; tag-filtered search via appendTagPredicates + snippet generation in NoteSearch.swift (searchNotesInDatabase); tag chips already rendered provenance-distinct in RielaNoteComponents.swift/RielaNoteDetailView.swift; canonical-note link uses existing linkNotes/listLinks in NoteService+Relations.swift; expose via searchNotes/tags queries already in Sources/RielaGraphQL/NoteGraphQLService.swift. New work is one aggregation query (tag -> notes grouped by notebook + co-tag counts) and one SwiftUI screen wired into RielaNoteLibraryViewModel navigation.",
+      "judgeComments": [
+        "Turns already-applied ontology tags into a destination a reader taps repeatedly from their first ingested book; genuinely one aggregation query plus one screen on verified substrate.",
+        "The payoff for tag classes that already exist and currently do nothing but filter — one aggregation query and one screen over verified NoteSearch/Relations infrastructure is textbook leverage.",
+        "The purest payoff of the world-model tag classes already in the schema — entities become destinations and promote-to-entity-note creates canonical hub nodes, converting the pile into a browsable personal ontology; new work is one aggregation query and one screen."
+      ]
+    },
+    {
+      "name": "Scoped Ask: question the current filter, save answer as a note",
+      "avgWeightedScore": 31.7,
+      "judgeVotes": 3,
+      "persona": "retrieval",
+      "effort": "S",
+      "pitch": "Let the user point the agent at exactly what they are looking at: the Library filter pane's current scope (tags, tag classes, date range, notebook, search text) becomes the retrieval corpus for a question, and the cited answer can be saved as a note linked to its sources. Selection-QA already proves the pattern for a text selection; this generalizes it to any filter scope with almost no new infrastructure.",
+      "user_story": "Taco filters the library to tag '事業アイデア' created in the last 90 days, hits 'Ask this view', and types 'which of these ideas overlap and which contradict each other?'. The answer cites 7 notes across 4 notebooks. He hits 'Save as note'; a synthesis note lands in a notebook with source-citation links back to all 7, so next quarter's review starts from it.",
+      "grounding": "RielaNoteFilterPane already binds tags, tagClasses, createdAfter/createdBefore, and sort on RielaNoteLibraryViewModel; searchNotesInDatabase in Sources/RielaNote/NoteSearch.swift already accepts exactly these predicates (appendTagPredicates, appendCreatedAtPredicates); the Q&A round-trip clones RielaNoteLibraryViewModel+SelectionQA.swift and RielaNoteWorkflowSelectionQuestionProvider.swift with a filter payload instead of a selection; save-with-citations reuses the 'source-citation' link_kind written by saveConversation in Sources/RielaNote/NoteService+Relations.swift.",
+      "judgeComments": [
+        "Near-clone of the proven SelectionQA path with outsized leverage — asking questions of whatever you are looking at is a natural first-week behavior with almost no new infrastructure.",
+        "Generalizes the proven SelectionQA pattern to a filter payload the search layer already accepts verbatim — near-zero new infrastructure for a core knowledge-out interaction.",
+        "Near-free generalization of SelectionQA where the saved synthesis note with source-citation links to 7 sources is itself a new high-degree ontology node — small effort, genuine compounding."
+      ]
+    }
+  ],
+  "full_ranking": [
+    {
+      "name": "Anywhere Capture: phone-to-Mac quick memo over the QR-registered note API",
+      "score": 33.3,
+      "persona": "capture",
+      "effort": "M"
+    },
+    {
+      "name": "Entity Pages (ontology hub per tag)",
+      "score": 32.7,
+      "persona": "reader",
+      "effort": "M"
+    },
+    {
+      "name": "Scoped Ask: question the current filter, save answer as a note",
+      "score": 31.7,
+      "persona": "retrieval",
+      "effort": "S"
+    },
+    {
+      "name": "Filing Trust Feed: one-tap review of AI tag and link decisions",
+      "score": 31,
+      "persona": "capture",
+      "effort": "M"
+    },
+    {
+      "name": "Semantic Recall: vector retrieval for the Note Agent and a Related-Notes rail",
+      "score": 31,
+      "persona": "capture",
+      "effort": "L"
+    },
+    {
+      "name": "Semantic Recall (vector search + real RAG for the note agent)",
+      "score": 31,
+      "persona": "reader",
+      "effort": "L"
+    },
+    {
+      "name": "Notes on My Phone (Tailscale remote note API + QR pairing, end-to-end)",
+      "score": 30.3,
+      "persona": "operator",
+      "effort": "L"
+    },
+    {
+      "name": "Excerpt clipping (select text, save a cited quote note)",
+      "score": 30,
+      "persona": "reader",
+      "effort": "S"
+    },
+    {
+      "name": "Morning Brief: daily digest of everything AI filed for you",
+      "score": 29,
+      "persona": "capture",
+      "effort": "M"
+    },
+    {
+      "name": "Verified Quote Citations (trust layer for the note agent)",
+      "score": 28.7,
+      "persona": "retrieval",
+      "effort": "M"
+    },
+    {
+      "name": "Menu-bar Instant Capture with screenshot OCR and voice memo",
+      "score": 28.3,
+      "persona": "capture",
+      "effort": "M"
+    },
+    {
+      "name": "Scheduled Backup & Portable Export",
+      "score": 28.3,
+      "persona": "operator",
+      "effort": "M"
+    },
+    {
+      "name": "Ingestion Activity Feed + Chat Notifications",
+      "score": 28.3,
+      "persona": "operator",
+      "effort": "M"
+    },
+    {
+      "name": "Continuous Reader Mode with facing source pages",
+      "score": 28,
+      "persona": "reader",
+      "effort": "M"
+    },
+    {
+      "name": "Smart Collections (saved searches as virtual notebooks)",
+      "score": 27.7,
+      "persona": "reader",
+      "effort": "S"
+    },
+    {
+      "name": "Standing Digests: scheduled synthesis notes",
+      "score": 27.7,
+      "persona": "retrieval",
+      "effort": "M"
+    },
+    {
+      "name": "Semantic Recall (vector search + real RAG for the note agent) (reader/L)",
+      "score": 26,
+      "persona": null,
+      "effort": null
+    },
+    {
+      "name": "Entity Timeline view",
+      "score": 26,
+      "persona": "retrieval",
+      "effort": "M"
+    },
+    {
+      "name": "Semantic Recall: vector retrieval for the Note Agent and a Related-Notes rail (capture/L)",
+      "score": 25.5,
+      "persona": null,
+      "effort": null
+    },
+    {
+      "name": "Semantic Recall with a 'what I searched' evidence panel",
+      "score": 25,
+      "persona": "retrieval",
+      "effort": "L"
+    },
+    {
+      "name": "Note Store Doctor (one-command health check)",
+      "score": 23.3,
+      "persona": "operator",
+      "effort": "S"
+    },
+    {
+      "name": "Off-Site Replica Sync (libsql embedded replica)",
+      "score": 21,
+      "persona": null,
+      "effort": null
+    },
+    {
+      "name": "Off-Site Replica Sync (libsql embedded replica, the deferred D2 follow-up)",
+      "score": 19.5,
+      "persona": "operator",
+      "effort": "L"
+    }
+  ]
+}

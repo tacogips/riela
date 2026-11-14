@@ -1,0 +1,160 @@
+name: Linux release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to build and upload, for example v0.1.10"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-linux:
+    name: Build and upload Linux ${{ matrix.arch }} CLI archive
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            machine: x86_64
+            bun_arch: x64
+            bun_sha256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            machine: aarch64
+            bun_arch: aarch64
+            bun_sha256: efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      RELEASE_ARCH: ${{ matrix.arch }}
+      DOCKER_PLATFORM: ${{ matrix.platform }}
+      BUILD_MACHINE: ${{ matrix.machine }}
+      BUN_ARCH: ${{ matrix.bun_arch }}
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release_tag }}
+
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$'; then
+            echo "release tag must look like v<major>.<minor>.<patch>" >&2
+            exit 1
+          fi
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$'; then
+            echo "VERSION must be semver-like" >&2
+            exit 1
+          fi
+          if [ "${RELEASE_TAG#v}" != "$VERSION" ]; then
+            echo "VERSION ($VERSION) does not match release tag ($RELEASE_TAG)" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build Linux architecture-specific CLI archive
+        env:
+          SWIFT_IMAGE: swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278
+          BUN_VERSION: 1.4.3
+          BUN_SHA256: ${{ matrix.bun_sha256 }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            -e BUN_VERSION \
+            -e BUN_ARCH \
+            -e BUILD_MACHINE \
+            -e RELEASE_ARCH \
+            -e BUN_SHA256 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "$SWIFT_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              test "$(uname -m)" = "$BUILD_MACHINE"
+              swift --version
+              apt-get update >/dev/null
+              apt-get install -y libsqlite3-dev curl unzip >/dev/null
+              mkdir -p tmp/linux-release-bun
+              curl --fail --location --retry 3 \
+                "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip" \
+                -o tmp/linux-release-bun/bun.zip
+              printf "%s  %s\n" "$BUN_SHA256" tmp/linux-release-bun/bun.zip | sha256sum -c -
+              unzip -q tmp/linux-release-bun/bun.zip -d tmp/linux-release-bun
+              install -m 0755 tmp/linux-release-bun/bun-linux-${BUN_ARCH}/bun /usr/local/bin/bun
+              bun --version
+              # A macOS-only pin in the shared lock must not trigger a private
+              # fetch when SwiftPM resolves the Linux package graph.
+              swift -e '\''import Foundation
+                let file = URL(fileURLWithPath: "Package.resolved")
+                var lock = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+                let pins = lock["pins"] as! [[String: Any]]
+                lock["pins"] = pins.filter { $0["identity"] as? String != "notion-gateway" }
+                lock.removeValue(forKey: "originHash")
+                try JSONSerialization.data(withJSONObject: lock, options: [.prettyPrinted, .sortedKeys]).write(to: file)
+              '\''
+              scripts/build-homebrew-release.sh "linux-$RELEASE_ARCH"
+            '
+
+      - name: Verify Linux architecture-specific CLI archive
+        run: |
+          set -euo pipefail
+          archive="dist/homebrew/riela-$RELEASE_VERSION-linux-$RELEASE_ARCH.tar.gz"
+          checksum="$archive.sha256"
+          test -f "$archive"
+          test -f "$checksum"
+          (cd dist/homebrew && sha256sum -c "riela-$RELEASE_VERSION-linux-$RELEASE_ARCH.tar.gz.sha256")
+          tar -tzf "$archive" | grep -Fx './bin/riela'
+          "dist/homebrew/work/riela-$RELEASE_VERSION-linux-$RELEASE_ARCH/bin/riela" --version | grep -Fx "$RELEASE_VERSION"
+
+      - name: Smoke test archive on clean Ubuntu
+        env:
+          UBUNTU_IMAGE: ubuntu@sha256:353675e2a41babd526e2b837d7ec780c2a05bca0164f7ea5dbbd433d21d166fc
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            -e RELEASE_VERSION="$RELEASE_VERSION" \
+            -e RELEASE_ARCH \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "$UBUNTU_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              apt-get update >/dev/null
+              apt-get install -y ca-certificates libcurl4 libsqlite3-0 libxml2 >/dev/null
+              mkdir -p /tmp/riela-install
+              tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-$RELEASE_ARCH.tar.gz" -C /tmp/riela-install
+              install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela
+              riela --version | grep -Fx "$RELEASE_VERSION"
+            '
+
+      - name: Upload Linux architecture-specific release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$RELEASE_TAG" \
+            "dist/homebrew/riela-$RELEASE_VERSION-linux-$RELEASE_ARCH.tar.gz" \
+            "dist/homebrew/riela-$RELEASE_VERSION-linux-$RELEASE_ARCH.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY"

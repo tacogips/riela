@@ -1,0 +1,4 @@
+interface:
+  display_name: "Riela Scenario Test Creator"
+  short_description: "Create deterministic Riela package/App scenario tests."
+  default_prompt: "Use $riela-scenario-test-creator to add deterministic package, RielaApp, environment, enablement, run, and monitoring scenario tests."

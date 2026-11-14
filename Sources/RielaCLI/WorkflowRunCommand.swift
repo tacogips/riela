@@ -1,0 +1,1022 @@
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+import RielaAdapters
+import RielaAddonSupport
+import RielaAddons
+import RielaCore
+import RielaKaibaAddons
+import RielaObservability
+import RielaWork
+import RielaWorkflowRegistry
+
+public struct WorkflowRunCommand: Sendable {
+  public var resolver: any WorkflowBundleResolving
+  public var patchApplier: any WorkflowNodePatchApplying
+  public var jsonLoader: JSONReferenceLoader
+  public var graphQLTransport: any WorkflowGraphQLRunTransporting
+  public var jsonlRecordWriter: WorkflowJSONLRecordWriting?
+  var specialistMonitorControl: SpecialistMonitorControl?
+  var beforeTerminalPersistence: (@Sendable () throws -> Void)?
+  var deferTerminalPersistence: (@Sendable () -> Bool)?
+  var afterTerminalPersistence: (@Sendable () throws -> Void)?
+  var sessionStartedObserver: (@Sendable (String) -> Void)?
+  var configuredInstanceOverride: WorkflowInstanceDefinition?
+  var taskNodeAdapterOverride: (any NodeAdapter)?
+  var improvementCLIProcessRunnerOverride: (any LocalProcessRunning)?
+  /// An embedded caller can return a bounded result without serializing the
+  /// complete execution transcript. Canonical persistence is unchanged.
+  var outputProjection: (@Sendable (WorkflowRunResult) throws -> JSONObject)?
+  /// Embedded execution retains the fail-closed canonical runtime record but
+  /// does not also maintain a duplicate CLI inspection projection per event.
+  var recordsCLIProjection = true
+  /// Projects loop evidence for required-gate enforcement; injectable so a
+  /// projector failure can be exercised without a broken evidence fixture.
+  var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
+
+  public init(
+    resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
+    patchApplier: any WorkflowNodePatchApplying = DefaultWorkflowNodePatchApplier(),
+    jsonLoader: JSONReferenceLoader = JSONReferenceLoader(),
+    graphQLTransport: any WorkflowGraphQLRunTransporting = URLSessionWorkflowGraphQLRunTransport(),
+    jsonlRecordWriter: WorkflowJSONLRecordWriting? = nil
+  ) {
+    self.resolver = resolver
+    self.patchApplier = patchApplier
+    self.jsonLoader = jsonLoader
+    self.graphQLTransport = graphQLTransport
+    self.jsonlRecordWriter = jsonlRecordWriter
+    (beforeTerminalPersistence, afterTerminalPersistence, taskNodeAdapterOverride, improvementCLIProcessRunnerOverride) = (nil, nil, nil, nil)
+    deferTerminalPersistence = nil
+  }
+
+  func runWithoutSpecialistMonitor(
+    _ options: WorkflowRunOptions,
+    taskReservation: (AttemptReservation, WorkStore)? = nil,
+    taskContext: TaskPlacementExecutionContext? = nil
+  ) async -> CLICommandResult {
+    var livePersistenceState: WorkflowRunLivePersistenceState?, pendingLease: WorkflowRunPendingLease?
+    var gatewayValidationWarnings: [String] = []
+    let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
+    do {
+      try rejectUnsupportedRunOptions(options)
+      if let result = try await remoteRunResult(options) { return result }
+      let resolution = options.resolution
+        ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
+      let preparedRun = try await prepareResolvedRun(options: options, resolution: resolution, taskContext: taskContext)
+      let bundle = preparedRun.bundle
+      let variables = preparedRun.variables
+      let prepared = preparedRun.execution
+      let definitionSource = preparedRun.definitionSource
+      gatewayValidationWarnings = prepared.gatewayValidationWarnings
+      let effectiveInstance = prepared.instance
+      let effectiveVariables = effectiveInstance.configuration.defaultVariables
+      let runContext = prepared.context
+      let runWorkingDirectory = runContext.workingDirectory
+      let runEnvironment = runContext.environment
+      let kaibaSnapshot = runContext.snapshot
+      let adapter = try taskNodeAdapterOverride ?? makeScenarioBackedNodeAdapter(
+        scenarioPath: options.mockScenarioPath,
+        workingDirectory: runWorkingDirectory,
+        codexSupervisorModeEnabled: options.supervisorMode,
+        environment: runEnvironment
+      )
+      let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
+        scenarioPath: options.mockScenarioPath,
+        workingDirectory: runWorkingDirectory,
+        environment: runEnvironment
+      )
+      let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
+      let addonResolver = try await makeScenarioBackedAddonResolver(
+        scenarioPath: options.mockScenarioPath,
+        workingDirectory: runWorkingDirectory,
+        environment: runEnvironment,
+        definitionRunContext: .init(
+          definitionSource: definitionSource,
+          sessionStoreRoot: storeRoot,
+          cliProcessRunner: improvementCLIProcessRunnerOverride
+        )
+      )
+      switch try runConcurrencyPreflight(bundle: bundle, storeRoot: storeRoot, options: options) {
+      case let .finish(result):
+        return CLICommandResult(
+          exitCode: result.exitCode,
+          stdout: result.stdout,
+          stderr: gatewayValidationWarnings.map { $0 + "\n" }.joined() + result.stderr
+        )
+      case let .proceed(lease, takeoverDiagnostic):
+        pendingLease = lease
+        if let jsonlRecorder, let takeoverDiagnostic {
+          await jsonlRecorder.append(
+            ((try? jsonString(["type": "loop_concurrency_takeover", "detail": takeoverDiagnostic])) ?? "")
+              .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+          )
+        }
+      }
+      let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
+      let durableRuntime = try await makeProductionDurableRuntime(
+        storeRoot: storeRoot,
+        options: options,
+        executionLocks: executionLocks
+      )
+      let runtimeStore = durableRuntime.backingStore
+      let telemetry = makeTelemetry(environment: runEnvironment)
+      let runner = DeterministicWorkflowRunner(
+        store: durableRuntime.runtimeStore, adapter: adapter,
+        runtimeEnvironment: runEnvironment,
+        distributedExecutor: try configuredDistributedExecutor(environment: runEnvironment),
+        addonResolver: addonResolver,
+        stdioNodeExecutor: stdioNodeExecutor,
+        telemetry: telemetry,
+        simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil,
+        calleeResolver: prepared.calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: runWorkingDirectory, isDirectory: true),
+        nestedInvocationPersistenceStore: durableRuntime.nestedInvocationPersistenceStore,
+        nestedInvocationRecoveryCheckpointer: durableRuntime.nestedRecoveryCheckpointer
+      )
+      let persistedIdentity = persistenceIdentity(
+        requestedResolution: resolution,
+        bundle: bundle,
+        fromRegistry: options.fromRegistry
+      )
+      let persistenceState = WorkflowRunLivePersistenceState()
+      await persistenceState.configure(storeRoot: storeRoot, requiresCanonicalTerminal: deferTerminalPersistence != nil)
+      livePersistenceState = persistenceState
+      let persistenceBundle = bundle
+      let runEventHandler: WorkflowRunEventHandler = { event in
+        if event.type == .backendEvent {
+          taskContext?.backendEventObserver?(event)
+        }
+        if case .stepCompleted = event {
+          await taskContext?.stepBoundaryHook?(event)
+        }
+        // The fail-closed runtime store is the canonical effect boundary.
+        // This established CLI projection remains an inspectability/event
+        // record and never determines whether a node may start.
+        if !recordsCLIProjection {
+          // The event follows the canonical store's durable mutation. Keep
+          // failure/session identity without re-encoding its full transcript.
+          if workflowRunEventTriggersLiveSessionPersistence(event) {
+            await persistenceState.recordSuccess(sessionId: event.sessionId)
+          }
+        } else if await persistenceState.shouldPersist(event: event) {
+          // Cross-workflow callee sessions share the runtime store and event
+          // stream; persist them under the callee workflow identity so they
+          // stay inspectable and resumable on their own.
+          let isCalleeSession = event.workflowId != persistenceBundle.workflow.workflowId
+          await persistLiveSessionRecordIfPresent(
+            sessionId: event.sessionId,
+            workflowName: isCalleeSession ? event.workflowId : persistedIdentity.workflowName,
+            resolution: isCalleeSession
+              ? WorkflowResolutionOptions(
+                workflowName: event.workflowId,
+                scope: persistedIdentity.resolution.scope,
+                workflowDefinitionDir: persistedIdentity.resolution.workflowDefinitionDir,
+                workingDirectory: persistedIdentity.resolution.workingDirectory
+              )
+              : persistedIdentity.resolution,
+            bundle: persistenceBundle,
+            variables: effectiveVariables,
+            runtimeStore: runtimeStore,
+            options: options,
+            recorder: jsonlRecorder,
+            state: persistenceState
+          )
+        }
+        if event.type == .sessionStarted && event.workflowId == persistenceBundle.workflow.workflowId {
+          sessionStartedObserver?(event.sessionId)
+        }
+        if let jsonlRecorder {
+          await jsonlRecorder.append(event)
+          if event.type == .sessionStarted && event.workflowId == persistenceBundle.workflow.workflowId {
+            let context = WorkflowRunContextRecord(
+              sessionId: event.sessionId,
+              workflowName: persistedIdentity.workflowName,
+              sessionStore: storeRoot,
+              scope: persistedIdentity.resolution.scope,
+              artifactRoot: options.artifactRoot
+            )
+            await jsonlRecorder.append((try? jsonString(context)) ?? #"{"type":"run_context_encode_failed"}"# + "\n")
+          }
+        }
+      }
+      let processAdmission = makeSessionExecutionAdmission(registry: executionLocks)
+      let taskAdmission = makeTaskAdmission(taskReservation, processAdmission: processAdmission)
+      let initialRequest = DeterministicWorkflowRunRequest(
+        workflow: bundle.workflow,
+        nodePayloads: bundle.nodePayloads,
+        variables: effectiveVariables,
+        maxSteps: options.maxSteps,
+        maxConcurrency: options.maxConcurrency,
+        maxLoopIterations: options.maxLoopIterations,
+        disableDefaultLoopGuard: options.disableDefaultLoopGuard,
+        defaultTimeoutMs: options.defaultTimeoutMs,
+        timeoutMs: options.timeoutMs,
+        resumeSessionId: options.resumeSessionId,
+        agentSilenceWarningMs: options.agentSilenceWarningMs,
+        agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
+        effectiveInstance: effectiveInstance,
+        eventHandler: runEventHandler,
+        sessionExecutionAdmission: taskAdmission ?? processAdmission,
+        boundaryHandover: taskContext?.boundaryHandover,
+        cancellationCause: taskContext?.cancellationCause,
+        definitionSource: definitionSource
+      )
+      var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
+        kaibaSnapshot,
+        allowsMockExecution: options.mockScenarioPath != nil
+      ) {
+        try await runner.run(initialRequest)
+      }
+      return try await finalizeRun(
+        &finalResult,
+        context: RunFinalizeContext(
+          runtimeStore: runtimeStore,
+          bundle: bundle,
+          effectiveVariables: effectiveVariables,
+          options: options, hasTaskReservation: taskReservation != nil,
+          persistedIdentity: persistedIdentity,
+          storeRoot: storeRoot,
+          telemetry: telemetry,
+          jsonlRecorder: jsonlRecorder,
+          gatewayValidationWarnings: gatewayValidationWarnings,
+          canonicalPersistenceStore: durableRuntime.canonicalPersistenceStore
+        )
+      )
+    } catch let error as CLIUsageError {
+      releasePendingLease(pendingLease)
+      return await renderRunFailure(
+        options: options,
+        exitCode: .usage,
+        error: error.message,
+        state: livePersistenceState,
+        jsonlRecorder: jsonlRecorder,
+        gatewayValidationWarnings: gatewayValidationWarnings
+      )
+    } catch {
+      releasePendingLease(pendingLease)
+      return await renderRunFailure(
+        options: options,
+        exitCode: .failure,
+        error: "\(error)",
+        state: livePersistenceState,
+        jsonlRecorder: jsonlRecorder,
+        gatewayValidationWarnings: gatewayValidationWarnings
+      )
+    }
+  }
+
+  private func remoteRunResult(_ options: WorkflowRunOptions) async throws -> CLICommandResult? {
+    guard let endpoint = options.endpoint else { return nil }
+    return try await runRemote(endpoint: endpoint, options: options)
+  }
+
+  private func applyRequiredLoopGateFailureIfNeeded(
+    _ result: inout WorkflowRunResult,
+    loopEvidence: LoopEvidenceManifest?,
+    projectionFailure: (any Error)?,
+    workflow: WorkflowDefinition
+  ) {
+    guard workflow.loop?.required == true else {
+      return
+    }
+    // A projector failure leaves the required gates unverifiable; treat it
+    // as a gate failure instead of silently passing the run.
+    if projectionFailure == nil {
+      guard let loopEvidence,
+            loopEvidence.gates.contains(where: { !$0.blockingFindings.isEmpty || failsRequiredGate($0, in: workflow) }) else {
+        return
+      }
+    }
+    result.exitCode = 1
+    result.status = .failed
+    result.session.status = .failed
+  }
+
+  private func persistLiveSessionRecordIfPresent(
+    sessionId: String,
+    workflowName: String,
+    resolution: WorkflowResolutionOptions,
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    runtimeStore: InMemoryWorkflowRuntimeStore,
+    options: WorkflowRunOptions,
+    recorder: WorkflowRunJSONLRecorder?,
+    state: WorkflowRunLivePersistenceState
+  ) async {
+    await persistWorkflowRunLiveSessionRecord(
+      sessionId: sessionId,
+      context: WorkflowRunLivePersistenceContext(
+        workflowName: workflowName,
+        resolution: resolution,
+        bundle: bundle,
+        variables: variables,
+        runtimeStore: runtimeStore,
+        mockScenarioPath: options.mockScenarioPath,
+        artifactRoot: options.artifactRoot,
+        workingDirectory: options.workingDirectory,
+        recorder: recorder
+      ),
+      state: state
+    )
+  }
+
+  @discardableResult
+  func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws -> [String] {
+    let diagnostics = DefaultWorkflowValidator().validate(
+      bundle.workflow,
+      nodePayloads: bundle.nodePayloads
+    )
+    if diagnostics.contains(where: { $0.severity == .error }) {
+      throw WorkflowResolutionError.invalidWorkflow(diagnostics)
+    }
+    let productionDiagnostics = DefaultWorkflowValidator(context: .production()).validate(
+      bundle.workflow,
+      nodePayloads: bundle.nodePayloads
+    )
+    return productionDiagnostics
+      .filter { !diagnostics.contains($0) }
+      .map { "warning: \($0.path): \($0.message)" }
+  }
+
+  private func makeTelemetry(environment: [String: String]) -> any RielaTelemetry {
+    RielaTelemetryFactory.make(configuration: .fromEnvironment(environment, surface: .cli))
+  }
+
+  /// Builds the sole production runtime boundary. The backing actor is an
+  /// execution cache; the fail-closed wrapper makes all effect-enabling state
+  /// durable before it returns, and nested publication owns its single SQLite
+  /// transaction through the same database root.
+  private func makeProductionDurableRuntime(
+    storeRoot: String,
+    options: WorkflowRunOptions,
+    executionLocks: SessionExecutionLockRegistry
+  ) async throws -> WorkflowRunProductionDurableRuntime {
+    let backingStore = try await makeSeededProductionRuntimeStore(
+      sessionStoreRoot: storeRoot,
+      executionLocks: executionLocks,
+      hydration: options.resumeSessionId.map { .family(of: $0) } ?? .none
+    )
+    let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    let canonicalPersistenceStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot)
+    let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
+      backing: backingStore, rootDirectory: canonicalRoot,
+      beforeTerminalPersistence: beforeTerminalPersistence,
+      deferTerminalPersistence: deferTerminalPersistence,
+      persistenceStore: canonicalPersistenceStore
+    )
+    if let sessionId = options.resumeSessionId { try await durableStore.hydrate(familyOf: sessionId) }
+    return WorkflowRunProductionDurableRuntime(
+      backingStore: backingStore,
+      runtimeStore: durableStore,
+      nestedInvocationPersistenceStore: canonicalPersistenceStore,
+      nestedRecoveryCheckpointer: try workflowRunNestedRecoveryCheckpointer(options: options),
+      canonicalPersistenceStore: canonicalPersistenceStore
+    )
+  }
+
+  func resolveEffectiveInstance(
+    options: WorkflowRunOptions,
+    workflowId: String,
+    variables: JSONObject,
+    nodePayloads: [String: AgentNodePayload]
+  ) throws -> (instance: EffectiveWorkflowInstance, nodePayloads: [String: AgentNodePayload]) {
+    let runNodePatch = try parsedNodePatch(options.nodePatch, workingDirectory: options.workingDirectory)
+    let base = try baseInstance(options: options, workflowId: workflowId)
+    return try WorkflowInstanceResolver.resolve(
+      workflowId: workflowId,
+      base: base,
+      runVariables: variables,
+      runNodePatch: runNodePatch,
+      nodePayloads: nodePayloads
+    )
+  }
+
+  private func parsedNodePatch(
+    _ reference: String?,
+    workingDirectory: String
+  ) throws -> [String: WorkflowInstanceNodePatch] {
+    guard let reference else {
+      return [:]
+    }
+    return try WorkflowInstanceResolver.nodePatches(
+      from: jsonLoader.object(from: reference, workingDirectory: workingDirectory)
+    )
+  }
+
+  private func baseInstance(
+    options: WorkflowRunOptions,
+    workflowId: String
+  ) throws -> WorkflowInstanceDefinition? {
+    if let configuredInstanceOverride {
+      guard configuredInstanceOverride.workflowId == workflowId, options.instance == nil else {
+        throw CLIUsageError("configured workflow identity changed")
+      }
+      return configuredInstanceOverride
+    }
+    guard let identity = nonEmptyString(options.instance),
+          identity != WorkflowInstanceIdentity.defaultIdentity else {
+      return nil
+    }
+    let stores = ScopedWorkflowInstanceStore(workingDirectory: options.workingDirectory)
+    guard let resolved = try stores.find(
+      identity: identity,
+      workflowId: workflowId,
+      scope: options.instanceScope
+    ) else {
+      throw WorkflowInstanceStoreError.notFound(identity)
+    }
+    return resolved.1
+  }
+
+  func saveEffectiveInstance(
+    identity: String,
+    workflowId: String,
+    sourceIdentity: String?,
+    effectiveInstance: EffectiveWorkflowInstance,
+    options: WorkflowRunOptions
+  ) throws {
+    let scope = options.instanceScope ?? .project
+    let stores = ScopedWorkflowInstanceStore(workingDirectory: options.workingDirectory)
+    let instance = WorkflowInstanceDefinition(
+      identity: identity,
+      workflowId: workflowId,
+      sourceIdentity: sourceIdentity,
+      configuration: effectiveInstance.configuration
+    )
+    try stores.save(instance, scope: scope)
+  }
+
+  func effectiveRunWorkingDirectory(
+    options: WorkflowRunOptions,
+    instance: EffectiveWorkflowInstance
+  ) -> String {
+    guard !options.explicitWorkingDirectory,
+          let workingDirectory = instance.configuration.normalizedWorkingDirectory else {
+      return options.workingDirectory
+    }
+    return workingDirectory
+  }
+
+  func effectiveRunEnvironment(
+    configuration: WorkflowInstanceConfiguration,
+    workingDirectory: String
+  ) throws -> [String: String] {
+    var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    // App configured launches already captured the merged file/inline environment
+    // during approval. Do not re-read a mutable env file after that snapshot.
+    if configuredInstanceOverride != nil { return environment }
+    if let environmentFilePath = configuration.environmentFilePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !environmentFilePath.isEmpty {
+      let environmentFileURL = absoluteURL(
+        environmentFilePath,
+        relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true)
+      )
+      environment.merge(try parseEnvironmentFile(environmentFileURL)) { _, fileValue in fileValue }
+    }
+    environment.merge(configuration.environmentVariables) { _, instanceValue in instanceValue }
+    return environment
+  }
+
+  private func rejectUnsupportedRunOptions(_ options: WorkflowRunOptions) throws {
+    if options.entryStepId != nil && options.endpoint != nil {
+      throw CLIUsageError("--entry-step is supported only for local workflow runs")
+    }
+    if options.entryStepId != nil && options.resumeSessionId != nil {
+      throw CLIUsageError("--entry-step cannot change a resumed session's entry")
+    }
+    if options.endpoint != nil && options.runtimeEnvironmentFile != nil {
+      throw CLIUsageError("--runtime-environment-file is local-only")
+    }
+    if options.fromRegistry && isTemporaryWorkflowRunTarget(options.target, workingDirectory: options.workingDirectory) {
+      throw CLIUsageError("temporary workflow JSON cannot be combined with --from-registry")
+    }
+    if options.endpoint != nil && options.saveInstance != nil {
+      throw CLIUsageError("--save-instance is local-only and cannot be combined with --endpoint")
+    }
+  }
+
+  private func storeRootForRun(
+    options: WorkflowRunOptions,
+    resolution: WorkflowResolutionOptions,
+    resolvedSourceScope: WorkflowScope
+  ) -> String {
+    let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
+      resolution: resolution,
+      resolvedSourceScope: resolvedSourceScope
+    )
+    return CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: options.sessionStore,
+      scope: persistedResolution.scope,
+      workingDirectory: options.workingDirectory
+    )
+  }
+
+  private func persistSessionRecord(
+    workflowName: String,
+    resolution: WorkflowResolutionOptions,
+    resolvedSourceScope: WorkflowScope,
+    result: WorkflowRunResult,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    options: WorkflowRunOptions,
+    loopEvidence: LoopEvidenceManifest? = nil,
+    canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
+  ) throws {
+    let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
+      resolution: resolution,
+      resolvedSourceScope: resolvedSourceScope
+    )
+    let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: options.sessionStore,
+      scope: persistedResolution.scope,
+      workingDirectory: options.workingDirectory
+    )
+    let snapshot = runtimeSnapshot(
+      session: result.session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      recovery: result.recovery,
+      loopEvidence: loopEvidence
+    )
+    if deferTerminalPersistence != nil { try requireCommittedCanonicalTerminal(snapshot, sessionStoreRoot: storeRoot) }
+    if !recordsCLIProjection {
+      // Final evidence/gate status still belongs in the canonical record.
+      // Only the redundant CLI projection is omitted for embedded callers.
+      try (canonicalPersistenceStore ?? SQLiteWorkflowRuntimePersistenceStore(rootDirectory:
+        canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))).save(snapshot)
+      return
+    }
+    try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
+      PersistedCLIWorkflowSession(
+        workflowName: workflowName,
+        session: result.session,
+        resolution: persistedResolution,
+        mockScenarioPath: options.mockScenarioPath,
+        runtimeVariables: variables
+      ),
+      runtimeSnapshot: snapshot
+    )
+    if let artifactRoot = options.artifactRoot {
+      let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
+      try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
+    }
+  }
+
+  private func runtimeSnapshot(
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    recovery: LoopRecoveryLineage? = nil,
+    loopEvidence: LoopEvidenceManifest? = nil
+  ) -> WorkflowRuntimePersistenceSnapshot {
+    let projectedLoopEvidence = loopEvidence ?? projectLoopEvidence(
+      session: session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      recovery: recovery
+    )
+    return WorkflowRuntimePersistenceProjector.snapshot(
+      session: session,
+      workflowMessages: workflowMessages,
+      loopEvidence: projectedLoopEvidence,
+      loopMetadata: bundle.workflow.loop
+    )
+  }
+
+  private func projectLoopEvidence(
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    recovery: LoopRecoveryLineage? = nil
+  ) -> LoopEvidenceManifest? {
+    try? projectLoopEvidenceResult(
+      session: session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      recovery: recovery
+    ).get()
+  }
+
+  private func projectLoopEvidenceResult(
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    recovery: LoopRecoveryLineage? = nil
+  ) -> Result<LoopEvidenceManifest?, any Error> {
+    Result {
+      try loopEvidenceProjector.project(
+        LoopEvidenceProjectionInput(
+          workflow: bundle.workflow,
+          session: session,
+          workflowMessages: workflowMessages,
+          workflowSource: loopWorkflowSource(from: bundle),
+          variables: variables,
+          recovery: recovery
+        )
+      )
+    }
+  }
+
+  private func loopWorkflowSource(from bundle: ResolvedWorkflowBundle) -> LoopWorkflowSource {
+    LoopWorkflowSource(
+      scope: bundle.sourceScope.rawValue,
+      kind: bundle.packageManifest == nil ? "workflow-directory" : "package",
+      workflowDirectory: bundle.workflowDirectory,
+      packageName: bundle.packageManifest?.name,
+      packageVersion: bundle.packageManifest?.version,
+      packageDirectory: bundle.packageDirectory,
+      mutable: bundle.packageManifest == nil
+    )
+  }
+
+  func persistenceIdentity(
+    requestedResolution: WorkflowResolutionOptions,
+    bundle: ResolvedWorkflowBundle,
+    fromRegistry: Bool
+  ) -> (workflowName: String, resolution: WorkflowResolutionOptions) {
+    guard fromRegistry else {
+      return (requestedResolution.workflowName, requestedResolution)
+    }
+    return (
+      bundle.workflow.workflowId,
+      WorkflowResolutionOptions(
+        workflowName: bundle.workflow.workflowId,
+        scope: bundle.sourceScope,
+        workflowDefinitionDir: bundle.workflowDirectory,
+        workingDirectory: requestedResolution.workingDirectory
+      )
+    )
+  }
+
+  func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {
+    guard WorkflowPackageManifestValidator.isSafePackageName(options.target) else {
+      throw CLIUsageError("invalid package name '\(options.target)'")
+    }
+    let workingDirectory = URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
+    let roots: [(scope: WorkflowScope, root: URL)]
+    switch options.resolution?.scope ?? .auto {
+    case .project:
+      roots = [(.project, workflowRunPackageRoot(scope: .project, workingDirectory: workingDirectory))]
+    case .user:
+      roots = [(.user, workflowRunPackageRoot(scope: .user, workingDirectory: workingDirectory))]
+    case .auto, .direct:
+      roots = [
+        (.project, workflowRunPackageRoot(scope: .project, workingDirectory: workingDirectory)),
+        (.user, workflowRunPackageRoot(scope: .user, workingDirectory: workingDirectory))
+      ]
+    }
+    var errors: [String] = []
+    for (scope, root) in roots {
+      let packageDirectory = root.appendingPathComponent(options.target, isDirectory: true).standardizedFileURL
+      let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
+      guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+        errors.append("\(manifestURL.path) not found")
+        continue
+      }
+      let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
+      let issues = WorkflowPackageManifestValidator.validate(manifest)
+        + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
+      guard issues.isEmpty else {
+        throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
+      }
+      guard let normalizedWorkflowDirectory = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".") else {
+        throw CLIUsageError("package workflowDirectory must be package-relative")
+      }
+      let workflowDirectory = packageDirectory
+        .appendingPathComponent(normalizedWorkflowDirectory, isDirectory: true)
+        .standardizedFileURL
+      guard workflowRunPath(workflowDirectory.resolvingSymlinksInPath(), isContainedIn: packageDirectory.resolvingSymlinksInPath()) else {
+        throw CLIUsageError("package workflowDirectory escapes package root: \(manifest.workflowDirectory ?? ".")")
+      }
+      var bundle = try resolver.resolve(WorkflowResolutionOptions(
+        workflowName: workflowDirectory.lastPathComponent,
+        scope: .direct,
+        workflowDefinitionDir: workflowDirectory.path,
+        workingDirectory: options.workingDirectory
+      ))
+      bundle.sourceScope = scope
+      return bundle
+    }
+    throw WorkflowResolutionError.notFound(options.target, errors)
+  }
+
+  func loadTemporaryWorkflowIfPresent(_ target: String, workingDirectory: String) throws -> ResolvedWorkflowBundle? {
+    let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+    let data: Data
+    let directory: URL
+    if trimmed.hasPrefix("{") {
+      guard let inlineData = trimmed.data(using: .utf8) else {
+        throw CLIUsageError("temporary workflow JSON target must be UTF-8")
+      }
+      data = inlineData
+      directory = URL(fileURLWithPath: workingDirectory)
+    } else {
+      let url = absoluteURL(target, relativeTo: URL(fileURLWithPath: workingDirectory))
+      guard FileManager.default.fileExists(atPath: url.path), url.pathExtension == "json" else {
+        return nil
+      }
+      data = try Data(contentsOf: url)
+      directory = url.deletingLastPathComponent()
+    }
+
+    if let payload = try? JSONDecoder().decode(TemporaryWorkflowPayload.self, from: data) {
+      let materialized = materializeTemporaryWorkflowPayload(payload)
+      guard let workflow = materialized.validation.workflow else {
+        throw WorkflowResolutionError.invalidWorkflow(materialized.validation.diagnostics)
+      }
+      return ResolvedWorkflowBundle(
+        workflow: workflow,
+        nodePayloads: materialized.nodePayloads,
+        sourceScope: .direct,
+        workflowDirectory: directory.path,
+        diagnostics: materialized.validation.diagnostics
+      )
+    }
+
+    let validation = validateAuthoredWorkflowData(data)
+    guard let workflow = validation.workflow else {
+      throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
+    }
+    return ResolvedWorkflowBundle(
+      workflow: workflow,
+      nodePayloads: [:],
+      sourceScope: .direct,
+      workflowDirectory: directory.path,
+      diagnostics: validation.diagnostics
+    )
+  }
+
+  private func renderRunResult(
+    _ result: WorkflowRunResult,
+    output: WorkflowOutputFormat,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
+  ) async throws -> String {
+    switch output {
+    case .json:
+      if let outputProjection { return try jsonString(outputProjection(result)) }
+      return try jsonString(result)
+    case .jsonl:
+      let record = try jsonString(WorkflowRunResultRecord(result: result))
+      if let jsonlRecorder {
+        await jsonlRecorder.append(record)
+        return await jsonlRecorder.bufferedOutput()
+      }
+      return record
+    case .text, .table:
+      var lines = [
+        "status: \(result.session.status.rawValue)",
+        "workflowId: \(result.workflowId)",
+        "nodeExecutions: \(result.session.executions.count)"
+      ]
+      if let loopEvidence = result.loopEvidence {
+        lines.append(
+          "loopEvidence: gates=\(loopEvidence.gateCount) accepted=\(loopEvidence.acceptedGateCount) " +
+            "rejected=\(loopEvidence.rejectedGateCount) blockingFindings=\(loopEvidence.blockingFindingCount)"
+        )
+      }
+      return lines.joined(separator: "\n") + "\n"
+    }
+  }
+
+  private func renderRunFailure(
+    options: WorkflowRunOptions,
+    exitCode: CLIExitCode,
+    error: String,
+    state: WorkflowRunLivePersistenceState?,
+    jsonlRecorder: WorkflowRunJSONLRecorder?,
+    gatewayValidationWarnings: [String]
+  ) async -> CLICommandResult {
+    let stderrPrefix = gatewayValidationWarnings.map { $0 + "\n" }.joined()
+    guard options.output.isStructured else {
+      return CLICommandResult(exitCode: exitCode, stderr: stderrPrefix + error)
+    }
+    let persistence = await state?.snapshot()
+    let termination = workflowRunTerminationDiagnostic(from: error)
+    let failedSnapshot = workflowRunFailureSnapshot(
+      sessionId: persistence?.latestSessionId,
+      storeRoot: persistence?.storeRoot
+    )
+    let result = WorkflowRunFailureResult(
+      target: options.target,
+      exitCode: exitCode.rawValue,
+      error: boundedWorkflowRunDiagnostic(error),
+      sessionId: persistence?.latestSessionId,
+      sessionStore: persistence?.storeRoot,
+      persistedSession: persistence?.persistedSession,
+      failureKind: failedSnapshot?.session.failureKind,
+      stepBudgetDiagnostic: failedSnapshot?.session.stepBudgetDiagnostic,
+      diagnostics: persistence?.diagnostics.isEmpty == false ? persistence?.diagnostics : nil,
+      childExitCode: termination.childExitCode,
+      terminationSignal: termination.terminationSignal
+    )
+    let stdout = (try? jsonString(result)) ?? #"{"error":"failed to encode run failure","exitCode":1,"status":"failed","target":"workflow run"}"# + "\n"
+    if options.output == .jsonl, let jsonlRecorder {
+      await jsonlRecorder.append(stdout)
+      return CLICommandResult(exitCode: exitCode, stdout: await jsonlRecorder.bufferedOutput(), stderr: stderrPrefix)
+    }
+    return CLICommandResult(exitCode: exitCode, stdout: stdout, stderr: stderrPrefix)
+  }
+
+  private func workflowRunFailureSnapshot(
+    sessionId: String?,
+    storeRoot: String?
+  ) -> WorkflowRuntimePersistenceSnapshot? {
+    guard let sessionId, let storeRoot else {
+      return nil
+    }
+    let store = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    )
+    return try? store.load(sessionId: sessionId)
+  }
+}
+
+private struct WorkflowRunProductionDurableRuntime {
+  let backingStore: InMemoryWorkflowRuntimeStore
+  let runtimeStore: any WorkflowRuntimeStore
+  let nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
+  let nestedRecoveryCheckpointer: (any NestedRecoveryCheckpointing)?
+  let canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
+}
+
+private func isTemporaryWorkflowRunTarget(_ target: String, workingDirectory: String) -> Bool {
+  if target.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+    return true
+  }
+  let url = absoluteURL(target, relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true))
+  return FileManager.default.fileExists(atPath: url.path) && url.pathExtension == "json"
+}
+
+private func workflowRunPackageRoot(scope: WorkflowScope, workingDirectory: URL) -> URL {
+  switch scope {
+  case .user:
+    return CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("packages", isDirectory: true)
+  case .auto, .project, .direct:
+    return workingDirectory.appendingPathComponent(".riela/packages", isDirectory: true)
+  }
+}
+
+private func workflowRunPath(_ child: URL, isContainedIn parent: URL) -> Bool {
+  let parentPath = parent.standardizedFileURL.path
+  let childPath = child.standardizedFileURL.path
+  return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
+}
+
+func parseEnvironmentFile(_ url: URL) throws -> [String: String] {
+  guard FileManager.default.fileExists(atPath: url.path) else {
+    throw CLIUsageError("instance environment file not found: \(url.path)")
+  }
+  let contents = try String(contentsOf: url, encoding: .utf8)
+  var values: [String: String] = [:]
+  for rawLine in contents.components(separatedBy: .newlines) {
+    let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !line.isEmpty, !line.hasPrefix("#") else {
+      continue
+    }
+    let assignment = line.hasPrefix("export ")
+      ? String(line.dropFirst("export ".count)).trimmingCharacters(in: .whitespaces)
+      : line
+    guard let separator = assignment.firstIndex(of: "=") else {
+      continue
+    }
+    let key = assignment[..<separator].trimmingCharacters(in: .whitespaces)
+    guard isValidEnvironmentVariableName(String(key)) else {
+      continue
+    }
+    let value = assignment[assignment.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+    values[String(key)] = unquotedEnvironmentValue(String(value))
+  }
+  return values
+}
+
+private func isValidEnvironmentVariableName(_ name: String) -> Bool {
+  name.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil
+}
+
+private func unquotedEnvironmentValue(_ value: String) -> String {
+  guard value.count >= 2,
+        let first = value.first,
+        let last = value.last,
+        (first == "\"" && last == "\"") || (first == "'" && last == "'") else {
+    return value
+  }
+  return String(value.dropFirst().dropLast())
+    .replacingOccurrences(of: "'\\''", with: "'")
+}
+
+/// Shared post-run finalize sequence:
+/// evidence projection, required-gate failure application, terminal
+/// persistence, notification dispatch, telemetry flush, and rendering.
+struct RunFinalizeContext {
+  var runtimeStore: InMemoryWorkflowRuntimeStore
+  var bundle: ResolvedWorkflowBundle
+  var effectiveVariables: JSONObject
+  var options: WorkflowRunOptions
+  var hasTaskReservation: Bool
+  var persistedIdentity: (workflowName: String, resolution: WorkflowResolutionOptions)
+  var storeRoot: String
+  var telemetry: any RielaTelemetry
+  var jsonlRecorder: WorkflowRunJSONLRecorder?
+  var gatewayValidationWarnings: [String]
+  var canonicalPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil
+}
+
+private func failsRequiredGate(_ gate: LoopGateResult, in workflow: WorkflowDefinition) -> Bool {
+  guard gate.decision != .accepted else { return false }
+  return workflow.loop?.gates.contains(where: { $0.required && $0.id == gate.gateId }) == true
+}
+
+extension WorkflowRunCommand {
+  fileprivate func finalizeRun(
+    _ finalResult: inout WorkflowRunResult,
+    context: RunFinalizeContext
+  ) async throws -> CLICommandResult {
+    let workflowMessages = try await context.runtimeStore.listMessages(
+      for: finalResult.session.sessionId,
+      toStepId: nil
+    )
+    let loopEvidenceProjection = projectLoopEvidenceResult(
+      session: finalResult.session,
+      workflowMessages: workflowMessages,
+      bundle: context.bundle,
+      variables: context.effectiveVariables,
+      recovery: finalResult.recovery
+    )
+    let loopEvidence = try? loopEvidenceProjection.get()
+    var loopEvidenceProjectionFailure: (any Error)?
+    if case let .failure(error) = loopEvidenceProjection {
+      loopEvidenceProjectionFailure = error
+    }
+    finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
+    if !context.hasTaskReservation {
+      applyRequiredLoopGateFailureIfNeeded(
+        &finalResult,
+        loopEvidence: loopEvidence,
+        projectionFailure: loopEvidenceProjectionFailure,
+        workflow: context.bundle.workflow
+      )
+    }
+    let loopEvidenceDiagnostic = loopEvidenceProjectionFailure.map {
+      "loop evidence projection failed: \($0)"
+        + (context.bundle.workflow.loop?.required == true ? "; required loop gates could not be verified\n" : "\n")
+    } ?? ""
+    let terminalResult = finalResult
+    let persist: @Sendable () throws -> Void = {
+      try persistSessionRecord(
+        workflowName: context.persistedIdentity.workflowName,
+        resolution: context.persistedIdentity.resolution,
+        resolvedSourceScope: context.bundle.sourceScope,
+        result: terminalResult,
+        workflowMessages: workflowMessages,
+        bundle: context.bundle,
+        variables: context.effectiveVariables,
+        options: context.options,
+        loopEvidence: loopEvidence,
+        canonicalPersistenceStore: context.canonicalPersistenceStore
+      )
+    }
+    if Task.isCancelled {
+      let environment = CLIRuntimeEnvironment.overrides
+      try await Task.detached {
+        try CLIRuntimeEnvironment.$overrides.withValue(environment, operation: persist)
+      }.value
+    } else {
+      try persist()
+    }
+    try afterTerminalPersistence?()
+    await dispatchLoopNotificationsAfterTerminalPersistence(
+      finalResult: finalResult,
+      loopEvidence: loopEvidence,
+      bundle: context.bundle,
+      options: context.options,
+      storeRoot: context.storeRoot
+    )
+    await context.telemetry.flush(timeout: Duration.seconds(2))
+    return CLICommandResult(
+      exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
+      stdout: try await renderRunResult(finalResult, output: context.options.output, jsonlRecorder: context.jsonlRecorder),
+      stderr: context.gatewayValidationWarnings.map { $0 + "\n" }.joined() + loopEvidenceDiagnostic + (
+        context.options.output.isStructured || finalResult.session.suspend == nil
+          ? ""
+          : workflowSuspendHint(finalResult.session)
+      )
+    )
+  }
+
+  private func workflowSuspendHint(_ session: WorkflowSession) -> String {
+    let suspend = session.suspend
+    let prompt = suspend?.question?.text ?? suspend?.presence?.instructions ?? "handover requested"
+    return "session \(session.sessionId) suspended at \(suspend?.stepId ?? session.currentStepId ?? "-"): \(prompt)\n" +
+      "hand over: riela session handover \(session.sessionId)\n" +
+      "answer and resume: riela session resume \(session.sessionId) --variables '{\"handover\":{\"answer\":{...}}}'\n"
+  }
+}

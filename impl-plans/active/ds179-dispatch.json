@@ -1,0 +1,258 @@
+{
+  "taskId": "ds179",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/definition-store-179",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": false,
+  "originalHead": "c0bfc8e1e4372359c41b3908b776f5df0aca39be",
+  "designDocPaths": [
+    "design-docs/specs/design-workflow-definition-store.md",
+    "design-docs/user-qa/qa-workflow-definition-store.md",
+    "design-docs/specs/design-execution-environment-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/ds179",
+  "reviewContext": {
+    "issueReference": "tacogips/riela#179 (https://github.com/tacogips/riela/issues/179): section 2, the execution-mode policy, (A) whole-workflow CLI/GraphQL update with a mandatory reason, and (B) the builtin improvement node; workflowExecutionId opus-luna-design-and-implement-review-loop-session-500; plans accepted by step5-impl-plan-review comm-009325 (accepted true, no repair requests); ds179-01 committed at 6337aa24, ds179-02 and ds179-03 at 695c0af9, ds179-04 and ds179-05 at c0bfc8e1",
+    "userProblem": "Long-running service runs (RielaApp API, riela serve/GraphQL, daemon, events serve, cron) read workflow definitions and prompts straight from text files. There is no durable, auditable record of which definition a run used, and no way to change prompts or structure with a recorded reason, evidence and actor. One-time `riela workflow run` must keep its file-only behavior. The user also wants whole-workflow updates through the CLI/GraphQL with a mandatory reason, and a builtin improvement node that proposes a change from the latest run's digest and applies it only through that CLI command.",
+    "requiredOutcomes": [
+      "SQLite definition store in the runtime records DB (schema generation 10): definition_blobs, definition_versions, definition_heads and an append-only definition_change_audit with reason, evidence, actor, before/after digest, diff, approval state and overwritten changes (ds179-01).",
+      "Service runs resolve from the store and seed from the file on first use; once registered, later file edits are ignored. One-time `riela workflow run` reads only files and never opens or writes definition rows (ds179-03).",
+      "Sessions record definitionSource: store version id, digest and storeRoot for service runs; file origin and digest for one-time runs. Resume and rerun of a store-pinned session use the pinned version (ds179-01, ds179-03).",
+      "`riela workflow definition history|show|diff|update|update-prompt|restore|import|export` CLI with mandatory --reason on writes, import non-force no-op with diff, import --force / update --from-file --force as audited forceUpdate listing overwritten store-only changes, export to a directory or the original source (ds179-02, ds179-04).",
+      "(A) `riela workflow definition update <workflow> (--patch <file> | --from-file <path> [--force]) --reason <r> [--expected-version] [--evidence kind:id]... [--actor] [--actor-kind cli|improvementNode]` writes an audited whole-workflow store version by editing authored files and re-deriving the runtime at the head's source directory (ds179-02, ds179-04).",
+      "GraphQL parity: 3 queries and 5 mutations including updateWorkflowDefinition, catalog rows bound, SDL regenerated, SurfaceParity green (ds179-05).",
+      "(B) builtin riela/improve-workflow-context and riela/improve-workflow-apply add-ons plus an author proposer node; apply runs only the CLI update subprocess with actor improvementNode and session/stepExecution evidence; recursion guard; one-time runs skip; example definition-store-self-improvement with mock scenario registered (expectedMockScenarioCount 47 -> 48) (ds179-07).",
+      "Docs describe the service-vs-one-time policy and the CLI surface (ds179-06)."
+    ],
+    "nonGoals": [
+      "Memory/cache improvement candidates and the section 4 evaluated before/after adoption flow.",
+      "Section 5 cleanup of the old self-improve feature.",
+      "RielaApp editor UI changes; editor saves, `riela workflow register|update` and the GraphQL mutable-registry mutations stay file-only.",
+      "Extending `riela workflow update` (it stays the mutable-registry file command, design §11).",
+      "Service mode for task dispatch, loop, specialists, distributed workers, editor draft launch, --workflow-json* and --from-registry (QA Q4).",
+      "No backward-compatibility shims; no new package dependency (JSON Patch is a small in-repo RFC 6902 applier)."
+    ],
+    "constraints": [
+      "Every swift build/test/swiftlint runs as `arch -arm64 /bin/zsh -lc '...'` from the repository root in the foreground with focused --filter suites; the full suite is not a gate.",
+      "Serial plan chain 01 -> 02 -> 03 -> 04 -> 05 -> 07 -> 06 on one SwiftPM tree; each plan owns its own plan file and progress log.",
+      "Evidence and logs go only under tmp/ds179/<planId>/ (gitignored, per-attempt subdirectories allowed) and are never committed.",
+      "Verification records carry integer exitStatus, testsRun and failureCount plus the full log path; residual-risk text does not start with a severity word; blockers are dependency objects for things outside writePaths.",
+      "After GraphQL DTO or SurfaceCatalog changes, regenerate the SDL with scripts/surface-parity/generate-sdl.sh (never hand-edit) and keep SurfaceParity green.",
+      "Register the new example in rielaExampleWorkflowNames() and keep RielaExampleParityTests passing.",
+      "Runtime records stay owned by the runtime store; the improvement add-ons never write definition rows directly.",
+      "Re-read every shared path fresh before editing, record pre/post sha256, and merge on drift."
+    ],
+    "designDecisionsAndRationale": [
+      "Stored document = canonical runtime part (workflow, node payloads, package manifest) plus verbatim authoredFiles, content-addressed by sha256, so service runs read no files and export is exact (design §3).",
+      "Head commit is one BEGIN IMMEDIATE transaction with insert-or-read seeding and expectedCurrentVersionId optimistic concurrency, so concurrent first runs produce exactly one head and stale writers get definition_conflict (design §3, §5).",
+      "Generation 9 -> 10 migration in place; stores containing definition heads are never auto-discarded (design §3).",
+      "Whole-workflow edits change authored files and re-derive the runtime with the normal file resolver over an in-memory authored overlay at the head's source directory; extends bases and nodeRef targets are read from disk at write time (QA Q7, design §5).",
+      "Store selection: explicit session store, else project then user under auto; seeding goes to storeRootForRun's root; pins carry storeRoot because the head may live in another store (QA Q2, design §4).",
+      "Actor kinds user|cli|api|improvementNode; GraphQL accepts api|user only, CLI --actor-kind cli|improvementNode only; approval_state always applied (QA Q3).",
+      "Improvement node is three nodes (deterministic context builtin, author proposer agent, deterministic apply builtin) so mock scenarios replace only the LLM step and the CLI apply runs for real (QA Q5).",
+      "Latest run = newest terminal store-pinned session of the same workflow other than the current one; improve-node executions are excluded; --expected-version is the current run's pin (QA Q6, design §9)."
+    ],
+    "intentionalTradeoffs": [
+      "Registered workflows ignore registry/editor file saves until import --force or update --from-file (QA Q1).",
+      "Evidence from an older pinned session may describe older prompts than the patch's base view; the audit keeps it traceable (QA Q6).",
+      "Base-file drift for extends/nodeRef shows up in the next whole-workflow update's diff (QA Q7).",
+      "The apply add-on writes its patch to the process temp directory because AdapterExecutionContext exposes no run artifact directory.",
+      "Plan 07 omits the design §12 noEvidence apply test and targets improve-propose instead of improve-context for the recursion-guard transition test; reviewer kept both as residual risks (low)."
+    ],
+    "supportedEdgeCases": [
+      "Concurrent first service runs and concurrent cron fires seed exactly one head.",
+      "Non-force import of a registered workflow reports unchanged/differs and writes nothing.",
+      "Force import lists overwritten updatePrompt/update/restore audit ids and the replaced versions stay restorable.",
+      "Broken or changed workflow files after registration do not affect service runs, configured launches or events-serve preflight.",
+      "Shared prompt files: one updatePrompt changes every runtime field that references the file.",
+      "Blank reasons, stale expected versions, invalid patches, unreferenced or removed authored files and invalid definitions are rejected with zero rows written.",
+      "Apply conflict when the head moves between the run's pin and the CLI update returns rejected/definition_conflict unless history shows this step's own actor (resume idempotency).",
+      "Recursion guard rejects patches touching improve nodes, their steps, inbound transitions or prompt files.",
+      "Old session snapshots without definitionSource still decode."
+    ],
+    "outOfScopeEdgeCases": [
+      "SQLite writer contention between a running session and the CLI update subprocess beyond the in-process runner seam.",
+      "extends-base sibling-layout resolution during re-derivation and --from-file (known limitation, QA Q7).",
+      "Blob garbage collection.",
+      "Approval states other than applied."
+    ],
+    "ownershipNotes": [
+      "Sources/RielaCLI/RielaCommand.swift and Sources/RielaCLI/WorkflowDefinitionStoreSelection.swift are owned by ds179-03 and shared by ds179-04 (serial handoff).",
+      "Sources/RielaCore/SurfaceCatalog+Rows.swift is owned by ds179-04 and shared by ds179-05 (rebinding the 8 rows to GraphQL fields).",
+      "Sources/RielaCLI/WorkflowRunCommand.swift and Sources/RielaCLI/SessionCommands.swift are owned by ds179-03 and shared by ds179-07 (addon resolver definitionRunContext).",
+      "Plan texts name log paths as tmp/ds179/0N-*.log; the manifest verification writes the same logs under tmp/ds179/<planId>/ to keep per-plan evidence separate.",
+      "Resources/skills/riela-workflow-run/SKILL.md is owned by ds179-04 (operator amendment 2) and shared by ds179-05, ds179-07 and ds179-06 only to keep its generated command blocks in sync with SurfaceCatalog rows.",
+      "Prior integration finding INT-02-002 (WorkflowDefinitionJSONPatch internal) is resolved at 695c0af9: the enum, apply and pointer are public, so ds179-07 can call WorkflowDefinitionJSONPatch.apply from RielaCLI."
+    ],
+    "residualRisks": [
+      "Plan 07 has no noEvidence apply test (design §12 lists one).",
+      "The recursion-guard transition test targets improve-propose rather than improve-context; both are excluded nodes.",
+      "SQLite writer contention between the running session and the CLI update subprocess is exercised only through the in-process runner seam.",
+      "extends-base sibling-layout resolution during re-derivation and --from-file (QA Q7) remains a known limitation."
+    ],
+    "codexAgentReferences": [],
+    "sourcePaths": [
+      "design-docs/specs/design-workflow-definition-store.md",
+      "design-docs/user-qa/qa-workflow-definition-store.md",
+      "design-docs/specs/design-execution-environment-consolidation.md",
+      "impl-plans/active/ds179-01-store-core.md",
+      "impl-plans/active/ds179-02-definition-service.md",
+      "impl-plans/active/ds179-03-service-resolution.md",
+      "impl-plans/active/ds179-04-cli-definition-commands.md",
+      "impl-plans/active/ds179-05-graphql-definition-surface.md",
+      "impl-plans/active/ds179-07-improvement-node.md",
+      "impl-plans/active/ds179-06-docs.md"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "ds179-07-improvement-node",
+      "planPath": "impl-plans/active/ds179-07-improvement-node.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Sources/RielaCLI/BuiltinStatefulAddonRegistry.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+WorkflowImprovementAddon.swift",
+        "Sources/RielaCLI/WorkflowImprovementDigest.swift",
+        "examples/definition-store-self-improvement",
+        "examples/README.md",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/WorkflowImprovementNodeTests.swift",
+        "impl-plans/active/ds179-07-improvement-node.md",
+        "impl-plans/progress/ds179-07-improvement-node.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Resources/skills/riela-workflow-run/SKILL.md"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/WorkflowRunCommand.swift",
+          "intendedEdit": "Add the improvementCLIProcessRunnerOverride test seam and move the makeScenarioBackedAddonResolver call to just after storeRootForRun, passing definitionRunContext built from ds179-03's definitionSource. No other statement reordering."
+        },
+        {
+          "path": "Sources/RielaCLI/SessionCommands.swift",
+          "intendedEdit": "At the rerun and resume addon-resolver construction sites only, pass definitionRunContext from the persisted session's definitionSource and that command's resolved store root."
+        },
+        {
+          "path": "Resources/skills/riela-workflow-run/SKILL.md",
+          "intendedEdit": "Only if this plan adds or renames CLI SurfaceCatalog rows: regenerate the affected generated command block so SurfaceParitySkillTests stays green. No prose edits."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "riela/improve-workflow-context and riela/improve-workflow-apply are version-1 builtin descriptors with registered handlers; one-time runs skip with oneTimeRun and never open definition tables or spawn the CLI.",
+        "Context reads the pinned authored view from the store, a bounded deterministic digest of the newest terminal store-pinned previous session (improve nodes excluded) and config.guideline; evidence is session first then stepExecution ids.",
+        "Apply validates reason/patch/evidence/recursion guard before spawning, applies only via `riela workflow definition update --patch ... --actor-kind improvementNode --expected-version <run pin>` as a subprocess, and classifies conflicts per the pinned helper; no direct store writes in the add-on file.",
+        "Example definition-store-self-improvement is registered, expectedMockScenarioCount is 48, and the service-mode tests show run 2 applying an audited update (actor improvementNode, mocked reason, evidence) that run 3 uses.",
+        "Build, WorkflowImprovementNodeTests, example/addon regressions, chain regressions and swiftlint exit 0 with counts recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/ds179/ds179-07-improvement-node",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/ds179/ds179-07-improvement-node/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowImprovementNodeTests > tmp/ds179/ds179-07-improvement-node/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'RielaExampleParityTests|RielaBuiltinAddonCatalogTests|KeyValueStoreAddonTests' > tmp/ds179/ds179-07-improvement-node/regression.log 2>&1\"",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowDefinitionServiceResolutionTests|WorkflowDefinitionCommandTests' > tmp/ds179/ds179-07-improvement-node/chain-regression.log 2>&1\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaAddons/RielaAddons.swift Sources/RielaCLI/ProductionNodeAdapter+WorkflowImprovementAddon.swift Sources/RielaCLI/WorkflowImprovementDigest.swift Sources/RielaCLI/BuiltinStatefulAddonRegistry.swift Sources/RielaCLI/ProductionNodeAdapter.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCLI/SessionCommands.swift Tests/RielaCLITests/WorkflowImprovementNodeTests.swift Tests/RielaCLITests/RielaExampleCatalog.swift Tests/RielaCLITests/RielaExampleParityTests.swift > tmp/ds179/ds179-07-improvement-node/lint.log 2>&1'",
+        "grep -n 'expectedMockScenarioCount = 48' Tests/RielaCLITests/RielaExampleParityTests.swift"
+      ]
+    },
+    {
+      "planId": "ds179-06-docs",
+      "planPath": "impl-plans/active/ds179-06-docs.md",
+      "dependsOn": [
+        "ds179-07-improvement-node"
+      ],
+      "writePaths": [
+        "docs/workflow-definition-store.md",
+        "README.md",
+        "impl-plans/active/ds179-06-docs.md",
+        "impl-plans/progress/ds179-06-docs.md"
+      ],
+      "sharedPaths": [
+        "Resources/skills/riela-workflow-run/SKILL.md"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Resources/skills/riela-workflow-run/SKILL.md",
+          "intendedEdit": "Only if this plan adds or renames CLI SurfaceCatalog rows: regenerate the affected generated command block so SurfaceParitySkillTests stays green. No prose edits."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "docs/workflow-definition-store.md documents the service-vs-one-time policy table, seeding, import/force/restore, (A) `riela workflow definition update`, update-prompt, audit fields and actor kinds, the (B) improvement add-ons and example, definitionSource pins, export, the GraphQL field list and schema generation 10.",
+        "README.md has a `## Workflow Definition Store (service vs one-time runs)` section before `## Runtime Data Retention` linking the doc.",
+        "The docs never claim `riela workflow update` writes the store; every documented command appears in `riela --help`.",
+        "Verification commands exit 0 with exitStatus, testsRun and failureCount (0/0 where no tests ran) recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/ds179/ds179-06-docs",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/ds179/ds179-06-docs/build.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela --help > tmp/ds179/ds179-06-docs/help.log 2>&1'",
+        "grep -c 'riela workflow definition' tmp/ds179/ds179-06-docs/help.log",
+        "grep -n 'riela workflow definition update' docs/workflow-definition-store.md",
+        "grep -n 'riela/improve-workflow-apply' docs/workflow-definition-store.md",
+        "grep -n 'Workflow Definition Store' README.md",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParitySkillTests > tmp/ds179/ds179-06-docs/skill-parity.log 2>&1'"
+      ]
+    }
+  ],
+  "acceptedDependencies": [
+    {
+      "planId": "ds179-01-store-core",
+      "planPath": "impl-plans/active/ds179-01-store-core.md",
+      "commit": "6337aa243c7c501dfe02c652b869ca09d9323d24",
+      "provides": [
+        "definition_heads, definition_versions, definition_blobs and append-only definition_change_audit tables (schema generation 10, 9 to 10 migration)",
+        "WorkflowDefinitionStore API",
+        "WorkflowDefinitionDiff",
+        "session definitionSource pins"
+      ]
+    },
+    {
+      "planId": "ds179-02-definition-service",
+      "planPath": "impl-plans/active/ds179-02-definition-service.md",
+      "commit": "695c0af9d45a488588bad9b442e30ce92c006b8f",
+      "provides": [
+        "WorkflowDefinitionService (import, update, updatePrompt, restore, history, show, authoredView, diff, export)",
+        "WorkflowDefinitionDocument",
+        "public WorkflowDefinitionJSONPatch.apply and pointer",
+        "WorkflowAuthoredFileOverlay re-derivation"
+      ]
+    },
+    {
+      "planId": "ds179-03-service-resolution",
+      "planPath": "impl-plans/active/ds179-03-service-resolution.md",
+      "commit": "695c0af9d45a488588bad9b442e30ce92c006b8f",
+      "provides": [
+        "service-mode store-first resolution with seeding (GraphQL, configured launches, events serve and cron)",
+        "file-only one-time workflow run with a file definitionSource",
+        "WorkflowDefinitionStoreSelection candidateRoots and seedRoot",
+        "WorkflowExecutionMode in RielaCommand"
+      ]
+    },
+    {
+      "planId": "ds179-04-cli-definition-commands",
+      "planPath": "impl-plans/active/ds179-04-cli-definition-commands.md",
+      "commit": "c0bfc8e1e4372359c41b3908b776f5df0aca39be",
+      "provides": [
+        "riela workflow definition history, show, diff, update, update-prompt, restore, import and export CLI with mandatory --reason",
+        "(A) whole-workflow riela workflow definition update (--patch or --from-file [--force]) with --reason, --evidence, --actor, --actor-kind and --expected-version",
+        "8 SurfaceCatalog rows and WorkflowDefinitionStoreSelection.rootWithHead"
+      ]
+    },
+    {
+      "planId": "ds179-05-graphql-definition-surface",
+      "planPath": "impl-plans/active/ds179-05-graphql-definition-surface.md",
+      "commit": "c0bfc8e1e4372359c41b3908b776f5df0aca39be",
+      "provides": [
+        "GraphQL 3 definition queries and 5 mutations including updateWorkflowDefinition",
+        "SurfaceCatalog rows bound to GraphQL fields and regenerated SDL"
+      ]
+    }
+  ]
+}

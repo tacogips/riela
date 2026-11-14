@@ -1,0 +1,133 @@
+{
+  "workflowId": "x-window-checkpoint",
+  "description": "One native, resumable page of a specified author's posts in a fixed window. Completed scans skip the paid API. No scripts or models.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 60000
+  },
+  "entryStepId": "load",
+  "nodes": [
+    {
+      "id": "load",
+      "addon": {
+        "name": "riela/collection-checkpoint",
+        "version": "1",
+        "config": {
+          "action": "load",
+          "key": "x/{{accountScope}}/{{authorHandle}}/{{windowStart}}/{{windowEnd}}"
+        }
+      }
+    },
+    {
+      "id": "fetch",
+      "addon": {
+        "name": "riela/x-gateway-reader",
+        "version": "1",
+        "env": {
+          "X_GW_TOKEN": {
+            "fromEnv": "X_GW_TOKEN",
+            "required": false
+          },
+          "X_GW_CONSUMER_KEY": {
+            "fromEnv": "X_GW_CONSUMER_KEY",
+            "required": false
+          },
+          "X_GW_CONSUMER_SECRET": {
+            "fromEnv": "X_GW_CONSUMER_SECRET",
+            "required": false
+          },
+          "X_GW_ACCESS_TOKEN": {
+            "fromEnv": "X_GW_ACCESS_TOKEN",
+            "required": false
+          },
+          "X_GW_ACCESS_TOKEN_SECRET": {
+            "fromEnv": "X_GW_ACCESS_TOKEN_SECRET",
+            "required": false
+          }
+        },
+        "config": {
+          "operation": "searchPosts",
+          "arguments": {
+            "query": "from:{{authorHandle}}",
+            "startTime": "{{windowStart}}",
+            "endTime": "{{windowEnd}}",
+            "nextToken": "{{input.cursor}}",
+            "maxResults": 25
+          },
+          "select": {
+            "posts": {
+              "id": true,
+              "text": true,
+              "createdAt": true,
+              "author": {
+                "id": true,
+                "username": true
+              }
+            },
+            "pageInfo": {
+              "nextToken": true
+            }
+          },
+          "postprocess": [
+            {
+              "pick": "/data/searchPosts/posts"
+            },
+            {
+              "map": {
+                "id": "/id",
+                "version": "/id"
+              }
+            }
+          ],
+          "payloadExtras": {
+            "checkpointRevision": "{{input.revision}}"
+          },
+          "userCache": true,
+          "usageCache": true
+        }
+      }
+    },
+    {
+      "id": "record",
+      "addon": {
+        "name": "riela/collection-checkpoint",
+        "version": "1",
+        "config": {
+          "action": "record",
+          "key": "x/{{accountScope}}/{{authorHandle}}/{{windowStart}}/{{windowEnd}}",
+          "expectedRevision": "{{input.checkpointRevision}}",
+          "items": "{{input.processed}}",
+          "cursor": "{{input.data.searchPosts.pageInfo.nextToken}}"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "load",
+      "nodeId": "load",
+      "role": "worker",
+      "transitions": [
+        {
+          "label": "acquire",
+          "toStepId": "fetch"
+        }
+      ]
+    },
+    {
+      "id": "fetch",
+      "nodeId": "fetch",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "record"
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "nodeId": "record",
+      "role": "worker"
+    }
+  ]
+}

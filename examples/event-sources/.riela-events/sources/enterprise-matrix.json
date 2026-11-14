@@ -1,0 +1,71 @@
+{
+  "id": "enterprise-matrix",
+  "kind": "matrix",
+  "provider": "matrix",
+  "homeserverUrlEnv": "RIELA_MATRIX_HOMESERVER_URL",
+  "accessTokenEnv": "RIELA_MATRIX_ACCESS_TOKEN",
+  "userId": "@riela-enterprise:matrix.example",
+  "rooms": [
+    {
+      "roomId": "!security-incident:matrix.example",
+      "alias": "#security-incident:matrix.example"
+    },
+    {
+      "roomId": "!vendor-onboarding:matrix.example",
+      "alias": "#vendor-onboarding:matrix.example"
+    },
+    {
+      "roomId": "!customer-escalation:matrix.example",
+      "alias": "#customer-escalation:matrix.example"
+    }
+  ],
+  "sync": {
+    "pollTimeoutMs": 30000,
+    "sinceTokenPath": "tmp/matrix/enterprise-matrix-sync.json"
+  },
+  "history": {
+    "maxMessages": 100,
+    "maxBytes": 131072,
+    "maxAgeMs": 2592000000,
+    "scope": "thread-or-room",
+    "includeOwnMessages": false
+  },
+  "attachments": {
+    "downloadText": true,
+    "maxBytes": 65536,
+    "allowedMimeTypes": [
+      "text/plain",
+      "text/markdown",
+      "application/json"
+    ]
+  },
+  "replyBots": {
+    "incident-lead": {
+      "accessTokenEnv": "RIELA_MATRIX_INCIDENT_LEAD_ACCESS_TOKEN"
+    },
+    "security-analyst": {
+      "accessTokenEnv": "RIELA_MATRIX_SECURITY_ANALYST_ACCESS_TOKEN"
+    },
+    "compliance-counsel": {
+      "accessTokenEnv": "RIELA_MATRIX_COMPLIANCE_COUNSEL_ACCESS_TOKEN"
+    },
+    "procurement-lead": {
+      "accessTokenEnv": "RIELA_MATRIX_PROCUREMENT_LEAD_ACCESS_TOKEN"
+    },
+    "finance-analyst": {
+      "accessTokenEnv": "RIELA_MATRIX_FINANCE_ANALYST_ACCESS_TOKEN"
+    },
+    "legal-counsel": {
+      "accessTokenEnv": "RIELA_MATRIX_LEGAL_COUNSEL_ACCESS_TOKEN"
+    },
+    "support-lead": {
+      "accessTokenEnv": "RIELA_MATRIX_SUPPORT_LEAD_ACCESS_TOKEN"
+    },
+    "product-engineer": {
+      "accessTokenEnv": "RIELA_MATRIX_PRODUCT_ENGINEER_ACCESS_TOKEN"
+    },
+    "customer-success": {
+      "accessTokenEnv": "RIELA_MATRIX_CUSTOMER_SUCCESS_ACCESS_TOKEN"
+    }
+  }
+}

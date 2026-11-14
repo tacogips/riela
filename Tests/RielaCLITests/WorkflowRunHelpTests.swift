@@ -1,0 +1,85 @@
+import XCTest
+@testable import RielaCLI
+
+final class WorkflowRunHelpTests: XCTestCase {
+  func testTopLevelHelpRecommendsJSONLForAgentsAndLLMs() async {
+    let result = await RielaCLIApplication().run(["--help"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.isEmpty)
+    XCTAssertTrue(result.stdout.contains("Prefer --output jsonl"))
+    XCTAssertTrue(result.stdout.contains("for automation, agents, and LLM-driven tool use"))
+    XCTAssertTrue(result.stdout.contains("session rerun"))
+    XCTAssertTrue(result.stdout.contains("session resume stream lifecycle and backend events"))
+    XCTAssertTrue(result.stdout.contains("Use --output json when a caller"))
+    XCTAssertTrue(result.stdout.contains("requires one non-streaming JSON document"))
+    XCTAssertTrue(result.stdout.contains("riela serve [--host <host>] [--port <port>]"))
+    XCTAssertTrue(result.stdout.contains("remains active until SIGINT or"))
+    XCTAssertTrue(result.stdout.contains("The default address is 127.0.0.1:8787"))
+    XCTAssertTrue(result.stdout.contains("serve subcommands remain one-shot commands"))
+  }
+
+  func testWorkflowRunHelpDocumentsVariablesAndSessionStartOutput() async {
+    let result = await RielaCLIApplication().run(["workflow", "run", "worker-only-single-step", "--help"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.isEmpty)
+    XCTAssertTrue(result.stdout.contains("Riela workflow run"))
+    XCTAssertTrue(result.stdout.contains("--variables <json|@file>"))
+    XCTAssertFalse(result.stdout.contains("--stall-timeout-ms"))
+    XCTAssertFalse(result.stdout.contains("--auto-improve"))
+    XCTAssertFalse(result.stdout.contains("--nested-superviser"))
+    XCTAssertTrue(result.stdout.contains("--max-steps <n>"))
+    XCTAssertTrue(result.stdout.contains("--disable-default-loop-guard"))
+    XCTAssertTrue(result.stdout.contains("--supervisor-mode"))
+    XCTAssertTrue(result.stdout.contains("Defaults to off"))
+    XCTAssertTrue(result.stdout.contains("Disable the synthesized loop convergence guard"))
+    XCTAssertTrue(result.stdout.contains("Agent silence warnings are observability hints"))
+    XCTAssertTrue(result.stdout.contains("Prefer jsonl for agents/LLMs"))
+    XCTAssertTrue(result.stdout.contains("json emits one document after completion"))
+    XCTAssertTrue(result.stdout.contains("riela workflow run worker-only-single-step --variables"))
+    XCTAssertTrue(result.stdout.contains("--output jsonl"))
+  }
+
+  func testPackageHelpDocumentsArchiveAndAppImportFlow() async {
+    let result = await RielaCLIApplication().run(["package", "--help"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.isEmpty)
+    XCTAssertTrue(result.stdout.contains("Riela package"))
+    XCTAssertTrue(result.stdout.contains("init <workflow-or-package-dir>"))
+    XCTAssertTrue(result.stdout.contains("pack <package-dir>"))
+    XCTAssertTrue(result.stdout.contains("validate <package-dir|archive.rielapkg|archive.zip>"))
+    XCTAssertTrue(result.stdout.contains("install [package-name|package-dir|archive.rielapkg|archive.zip]"))
+    XCTAssertTrue(result.stdout.contains("ci [package-name]"))
+    XCTAssertTrue(result.stdout.contains("run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip>"))
+    XCTAssertTrue(result.stdout.contains("Package init:"))
+    XCTAssertTrue(result.stdout.contains("content-derived checksum"))
+    XCTAssertTrue(result.stdout.contains("contains exactly one workflows/<name>/workflow.json"))
+    XCTAssertTrue(result.stdout.contains("pass --workflow-definition-dir"))
+    XCTAssertTrue(result.stdout.contains("multiple workflows are present"))
+    XCTAssertTrue(result.stdout.contains("Manual manifests:"))
+    XCTAssertTrue(result.stdout.contains("checksumAlgorithm"))
+    XCTAssertTrue(result.stdout.contains("md5"))
+    XCTAssertTrue(result.stdout.contains("A .rielapkg or .zip is a portable package archive"))
+    XCTAssertTrue(result.stdout.contains("Lockfile installs:"))
+    XCTAssertTrue(result.stdout.contains("riela-lock.json"))
+    XCTAssertTrue(result.stdout.contains("archive sha256 pins"))
+    XCTAssertTrue(result.stdout.contains("RielaApp can import the same package folder, .rielapkg, or .zip"))
+    XCTAssertTrue(result.stdout.contains("--import-workflow-or-package <path>"))
+    XCTAssertTrue(result.stdout.contains("--import-workflow-or-package <path> --open-workflows"))
+    XCTAssertTrue(result.stdout.contains("launch RielaApp with --import-workflow-or-package <path> --open-workflows"))
+    XCTAssertTrue(result.stdout.contains("profiles keeps enabled workflows and imported packages separate"))
+  }
+
+  func testWorkflowPackageHelpUsesWorkflowPackagePrefix() async {
+    let result = await RielaCLIApplication().run(["workflow", "package", "--help"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.isEmpty)
+    XCTAssertTrue(result.stdout.contains("riela workflow package pack <package-dir>"))
+    XCTAssertTrue(result.stdout.contains("riela workflow package init <workflow-or-package-dir>"))
+    XCTAssertTrue(result.stdout.contains("riela workflow package install"))
+    XCTAssertTrue(result.stdout.contains("riela workflow package ci"))
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "loop-plan",
+  "description": "Map the loop boundary and propose the next engineering pass.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/loop-plan.md",
+  "variables": {},
+  "output": {
+    "description": "Return the loop map, suspected failure mode, next changes, and expected probe signal."
+  }
+}

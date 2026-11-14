@@ -1,0 +1,12 @@
+{
+  "report": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summary": "Held the loop lease for the sleep duration, then completed."
+    }
+  }
+}

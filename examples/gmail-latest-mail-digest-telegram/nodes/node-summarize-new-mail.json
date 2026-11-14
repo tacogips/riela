@@ -1,0 +1,73 @@
+{
+  "id": "summarize-new-mail",
+  "description": "Summarizes newly seen Gmail messages into a compact Telegram digest.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": true,
+  "promptTemplateFile": "prompts/summarize-new-mail.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with when.should_send_telegram, payload.replyText, payload.messageDigests, and payload.fetchedMessageIds.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "shouldSendTelegram": {
+          "type": "boolean"
+        },
+        "fetchedMessageIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "replyText": {
+          "type": "string"
+        },
+        "messageDigests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "summary",
+              "from",
+              "receivedAt",
+              "messageIds"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "receivedAt": {
+                "type": "string"
+              },
+              "messageIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "discardedCount": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "shouldSendTelegram",
+        "fetchedMessageIds",
+        "replyText",
+        "messageDigests",
+        "discardedCount"
+      ]
+    }
+  }
+}

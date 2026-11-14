@@ -1,0 +1,18 @@
+{
+	"name": "monja-project-task-orchestrator-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "bun test scheduler.test.ts",
+		"verify": "bun verify.ts",
+		"typecheck": "tsc --noEmit",
+		"format": "biome format --write .",
+		"lint": "biome check . --diagnostic-level=warn"
+	},
+	"devDependencies": {
+		"@types/bun": "1.1.14",
+		"typescript": "5.7.2",
+		"@biomejs/biome": "2.4.13"
+	},
+	"trustedDependencies": []
+}

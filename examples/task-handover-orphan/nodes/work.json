@@ -1,0 +1,9 @@
+{
+  "id": "work",
+  "description": "Complete the task's bounded work.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "workspace-write",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/work.md",
+  "output": { "jsonSchema": { "type": "object", "required": ["summary"], "properties": { "summary": { "type": "string" } } } }
+}

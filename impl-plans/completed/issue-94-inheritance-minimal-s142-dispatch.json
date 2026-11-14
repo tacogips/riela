@@ -1,0 +1,131 @@
+{
+  "taskId": "issue-94-inheritance-minimal-s142",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "2389e97857178d1c7da418526075d8773a72b9bc",
+  "evidenceRoot": "tmp/issue-94-inheritance-minimal-s142",
+  "designDocPaths": [
+    "design-docs/specs/design-workflow-json.md"
+  ],
+  "reviewContext": {
+    "issueReference": "https://github.com/tacogips/riela/issues/94",
+    "userProblem": "Riela validates a sparse installed derived workflow as a complete workflow before resolving extends.workflowId, so documented user-scope Claude, Cursor, and Hydra variants cannot validate, inspect, or run against their installed base.",
+    "requiredOutcomes": [
+      "A sparse derived workflow resolves its installed user-scope base before complete validation.",
+      "Validate, inspect, and deterministic run consume the same resolved derived bundle while ordinary workflows retain existing behavior.",
+      "String replacements, agent-node convenience patches, explicit node patches, caller instance patches, and caller run patches apply in the documented precedence order.",
+      "Focused Swift tests cover transformation precedence, installed derived CLI behavior, malformed or missing bases, direct and indirect cycles, and an ordinary workflow control.",
+      "The currently installed derived package passes deterministic validate, inspect, and run smoke checks with no real agent, command, add-on, commit, or push execution.",
+      "Implementation, independent reviews, broader verification, documentation and progress reconciliation, and exact commit/push evidence complete without performing the 0.1.39 release."
+    ],
+    "nonGoals": [
+      "Do not redesign catalog selection, workflow provenance, or cross-workflow dispatch without a focused failing release-blocker test.",
+      "Do not perform the Riela 0.1.39 release, signing, notarization, or publication.",
+      "Do not add exhaustive inheritance conformance coverage or unrelated refactoring."
+    ],
+    "constraints": [
+      "Keep production changes within the existing shared loader and resolver path plus the minimum representation needed for sparse extends declarations.",
+      "Resolve the required base through existing eligible user-scope installed-workflow lookup while preserving selection, activation, containment, package validation, and coordinated-read rules.",
+      "Preserve unrelated tracked and untracked work; use no worktrees, private implementation branches, concurrent Git operations, or shared-manifest worker edits.",
+      "Run foreground verification from the repository root, retain complete logs with terminal exit statuses under the evidence root, and serialize shared Swift build-directory use.",
+      "Use fresh reads, pre/post hashes, immutable intent evidence, worker-owned progress, serial reconciliation, and independent combined-tree review before finalization."
+    ],
+    "designDecisionsAndRationale": [
+      "Recognize and validate the sparse inheritance declaration before ordinary complete decoding because manufacturing missing ordinary fields would hide the actual schema boundary.",
+      "Extend WorkflowRegistryBundleLoader.loadBundle with only base-resolution capability and active canonical-path/workflow-ID ancestry so validate, inspect, and run share one resolved bundle without a resolver redesign.",
+      "Use existing user-scope installed lookup and metadata-only inventory when workflow-ID discovery is needed to preserve established eligibility and package safety rules.",
+      "Recursively hydrate and validate the base, transform the materialized bundle in memory, validate each complete derived bundle, and retain derived source, scope, and package identity.",
+      "Apply literal replacements deterministically by descending UTF-8 source length then ascending UTF-8 bytes; patch originally file-backed agent nodes only; merge explicit node patches over convenience patches; apply caller patches once after inheritance.",
+      "Keep the tightly coupled declaration, transformation, loader, resolver, and CLI regression work in one implementation plan with ordered T1 through T4 waves; reserve shared indexes, documentation decisions, lockfiles, and broad formatting for serial reconciliation."
+    ],
+    "intentionalTradeoffs": [
+      "One compact serial assignment limits merge and ownership risk at the cost of parallelism.",
+      "The patch supports the installed user-scope release blocker rather than a general inheritance resolver, favoring lower implementation and regression cost over completeness.",
+      "A small focused test set and one deterministic installed-package smoke replace an exhaustive scope and package matrix.",
+      "New helper files are optional bounded implementation locations, not required public abstractions; unused helpers should be omitted."
+    ],
+    "supportedEdgeCases": [
+      "Malformed or null inheritance declarations, unknown inheritance keys, unsupported overlays, empty replacement sources, invalid patch shapes, unknown nodes, model-freeze violations, and transformation collisions fail with field-oriented diagnostics.",
+      "Missing installed bases identify derived and base IDs, searched user roots, and installation or scope guidance; selected invalid bases retain original file and field context.",
+      "Direct and indirect inheritance cycles are detected before recursive loading or lock reentry, and completed ancestry is removed so independent repeated base loads succeed.",
+      "Inherited prompt, command, and container resource paths remain usable without synthesizing replacement filenames or mutating either source bundle.",
+      "Convenience patches exclude shared nodeRef, add-on, command, and container nodes; explicit and caller patches retain documented precedence.",
+      "Workflows without extends continue through the ordinary strict validation path."
+    ],
+    "outOfScopeEdgeCases": [
+      "Exhaustive project, user, detached, mutable, and mixed scope-tier matrices.",
+      "Inheritance through --from-registry and generalized ambiguity policy expansion.",
+      "Generalized callee redesign or live cross-workflow machinery changes unless a focused failing installed-workflow regression proves the minimum repair is required.",
+      "Unrelated provenance abstractions, dependency changes, large-file splits, broad formatting, and speculative future-proofing."
+    ],
+    "sourcePaths": [
+      "tmp/issue-94-intake/intake-evidence.log",
+      "design-docs/specs/design-workflow-json.md#swift-inheritance-resolution-issue-94",
+      "impl-plans/active/issue-94-inheritance-minimal.md",
+      "tmp/issue-94-plan-step4/verification.log",
+      "tmp/issue-94-plan-step5/verification.log"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "issue-94-inheritance-minimal",
+      "planPath": "impl-plans/active/issue-94-inheritance-minimal.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowInheritanceDeclaration.swift",
+        "Sources/RielaCore/WorkflowInheritanceTransformation.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader+Inheritance.swift",
+        "Sources/RielaCLI/WorkflowResolution.swift",
+        "Tests/RielaCoreTests/WorkflowInheritanceValidationTests.swift",
+        "Tests/RielaCLITests/WorkflowInheritanceResolutionTests.swift",
+        "impl-plans/progress/issue-94-inheritance-minimal.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/WorkflowRawValidation.swift",
+        "Sources/RielaCore/WorkflowInstanceModel.swift",
+        "Sources/RielaCore/WorkflowInstanceResolver.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryCatalog.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader+SharedNodeRefs.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Tests/RielaCLITests/WorkflowCommandTestHelpers.swift",
+        "README.md",
+        "design-docs/specs/design-workflow-json.md",
+        ".codex/skills/riela-impl-workflow/SKILL.md",
+        "impl-plans/active/issue-94-inheritance-minimal.md",
+        "impl-plans/README.md",
+        "impl-plans/PROGRESS.json",
+        "impl-plans/progress/plans-index.json",
+        "Package.swift",
+        "Package.resolved"
+      ],
+      "acceptanceCriteria": [
+        "A sparse derived workflow using extends validates from user scope when its installed base package is available.",
+        "The same derived workflow inspects and runs deterministically from the shared resolved bundle with derived identity, inherited steps, effective payloads, package identity, and exact mock output asserted.",
+        "Transformation precedence, malformed declarations, missing or invalid bases, direct and indirect cycles, repeated independent base loading, collisions, patch validation, and ordinary-workflow behavior have focused regression coverage.",
+        "The actual installed Claude derived package passes deterministic validate, inspect, and planning-only run smoke assertions with complete scenario coverage, unchanged installed bytes, and unchanged repository state.",
+        "Focused tests, the ordinary control, Swift build, RielaCoreTests and RielaCLITests, SwiftLint, and whitespace verification finish with complete logs and terminal exit statuses.",
+        "Implementation, test-integrity, adversarial, and combined-tree reviews leave no unresolved high or mid finding; documentation and progress state are reconciled serially.",
+        "Final commit and push evidence record matching hashes and exact files; the 0.1.39 release remains excluded.",
+        "Any shared-path production expansion is justified first by a retained focused failing blocker test, while shared indexes, documentation decisions, lockfiles, and broad formatting are edited only during serial reconciliation."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkflowInheritanceValidationTests|WorkflowInheritanceResolutionTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests.testValidateInspectAndDeterministicRunWorkerFixture",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'RielaCoreTests|RielaCLITests'",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --show-bin-path",
+        ".build/debug/riela workflow validate claude-code-design-and-implement-review-loop --scope user --output json",
+        ".build/debug/riela workflow inspect claude-code-design-and-implement-review-loop --scope user --output json",
+        ".build/debug/riela workflow run claude-code-design-and-implement-review-loop --scope user --mock-scenario /Users/taco/.riela/packages/codex-design-and-implement-review-loop/workflows/codex-design-and-implement-review-loop/mock-scenario-planning-only.json --variables '{\"workflowInput\":{\"executionMode\":\"design-plan-only\",\"requestedOutcome\":\"Deterministic issue-94 inheritance smoke\"}}' --session-store /Users/taco/gits/tacogips/riela/tmp/issue-94-implementation/smoke/sessions-1 --output json",
+        "git diff --check"
+      ]
+    }
+  ]
+}

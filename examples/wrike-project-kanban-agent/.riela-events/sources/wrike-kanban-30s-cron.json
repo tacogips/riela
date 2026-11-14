@@ -1,0 +1,6 @@
+{
+  "id": "wrike-kanban-30s-cron",
+  "kind": "cron",
+  "schedule": "*/30 * * * * *",
+  "timezone": "Asia/Tokyo"
+}

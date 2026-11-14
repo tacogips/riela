@@ -1,0 +1,1 @@
+Implement read-only `riela loop status`, `riela loop evidence`, and `riela loop gates` commands using persisted runtime snapshots. Preserve unrelated dirty changes. Return JSON with `changed_files`, `implemented`, `verification_to_run`, and `risks`.

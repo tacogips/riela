@@ -1,0 +1,111 @@
+{
+  "workflowId": "managed-cache-checkpoint",
+  "description": "Native cache reference lifecycle, without Python or command nodes.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 30000
+  },
+  "entryStepId": "configure",
+  "nodes": [
+    {
+      "id": "configure",
+      "addon": {
+        "name": "riela/cache-configure",
+        "version": "1",
+        "config": {
+          "cacheId": "managed-example",
+          "scope": "example",
+          "cacheRoot": "{{cacheRoot}}",
+          "ttlSeconds": 86400,
+          "maxBytes": 268435456
+        }
+      }
+    },
+    {
+      "id": "reconcile",
+      "addon": {
+        "name": "riela/cache-reconcile",
+        "version": "1",
+        "config": {
+          "cacheId": "managed-example",
+          "scope": "example",
+          "cacheRoot": "{{cacheRoot}}",
+          "references": "{{references}}"
+        }
+      }
+    },
+    {
+      "id": "put",
+      "addon": {
+        "name": "riela/cache-put",
+        "version": "1",
+        "config": {
+          "cacheId": "managed-example",
+          "scope": "example",
+          "cacheRoot": "{{cacheRoot}}",
+          "entries": [
+            {
+              "key": "{{key}}",
+              "fetchedAt": "{{fetchedAt}}",
+              "payload": "{{payload}}",
+              "protectFromEviction": true
+            }
+          ],
+          "retainedReferences": "{{references}}"
+        }
+      }
+    },
+    {
+      "id": "get",
+      "addon": {
+        "name": "riela/cache-get",
+        "version": "1",
+        "config": {
+          "cacheId": "managed-example",
+          "scope": "example",
+          "cacheRoot": "{{cacheRoot}}",
+          "keys": [
+            "{{key}}"
+          ]
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "configure",
+      "nodeId": "configure",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "reconcile"
+        }
+      ]
+    },
+    {
+      "id": "reconcile",
+      "nodeId": "reconcile",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "put"
+        }
+      ]
+    },
+    {
+      "id": "put",
+      "nodeId": "put",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "get"
+        }
+      ]
+    },
+    {
+      "id": "get",
+      "nodeId": "get",
+      "role": "worker"
+    }
+  ]
+}

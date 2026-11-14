@@ -1,0 +1,256 @@
+{
+  "taskId": "manual-overlap-terminal-reserve",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/manual-overlap-terminal-reserve",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "c6e127b62a6f3190f513d809ebdd34b89df14815",
+  "evidenceRoot": "tmp/manual-overlap-terminal-reserve",
+  "designDocPaths": [
+    "design-docs/specs/design-manual-run-overlap-and-terminal-reserve.md",
+    "design-docs/specs/design-scheduled-overlap-policy.md",
+    "design-docs/specs/design-loop-engineering-convergence-and-operations.md"
+  ],
+  "reviewContext": {
+    "issueReference": "No GitHub issue. Inline workflowInput.requestedBehavior (ART hourly recovery 2026-11-11: Bug A manual-run overlap, Bug B terminal-step reserve); accepted at step5-impl-plan-review comm-000008 in opus-terra-design-and-implement-review-loop-session-1.",
+    "userProblem": "Bug A: a manual `riela instance run` (App route POST /api/v1/instances/{identity}/runs) session (hourly-refresh-session-249) was invisible to the cron overlapPolicy skip, so cron ticks launched sessions 250 and 252 concurrently on the same state and double-published; the run route also starts a second concurrent manual execution. Bug B: DeterministicWorkflowRunner.redirectForTerminalReservationIfNeeded redirects to the terminal corridor whenever remaining budget <= max(3, corridor size), so a 2-step acyclic workflow with maxLoopIterations 1 (budget 3) jumped straight to `remediate` without running `check` (output-monitor-session-251/255); long acyclic chains likewise skip steps.",
+    "requiredOutcomes": [
+      "With a manual instance run in progress, a cron tick of the same instance with overlapPolicy skip is skipped with an overlap-skip receipt naming the manual session.",
+      "`riela instance run` while an execution is running returns a stable `instance_busy` error naming the running session; `--allow-overlap` bypasses it.",
+      "A 2-step acyclic workflow with maxLoopIterations 1 executes both steps; no terminal-step-reserve redirect occurs.",
+      "A 15-step linear workflow with maxLoopIterations 1 executes every step.",
+      "Existing loop-guard tests for cyclic workflows still pass unchanged.",
+      "swift build and focused swift test filters pass; lint clean on changed files; docs/app-instance-control.md and README updated."
+    ],
+    "nonGoals": [
+      "No change to cron-vs-cron overlap behavior, reason formats, receipt shapes, routine gate or admission-gate semantics.",
+      "No cancellation of sessions owned by another process (cancelRunning with only external blockers skips).",
+      "No change to reserve window arithmetic, marker shape, payload carry-over, maxStepsExceeded, LoopTerminalCorridorSelector.select, corridor construction or authored loop policy.",
+      "No leases, timers or persistence beyond the design; no change to reload/executions response shapes (only added fields/error codes).",
+      "No user-doc entry for the terminal-reserve bug fix."
+    ],
+    "constraints": [
+      "Work only in worktree /Users/taco/gits/tacogips/riela-worktrees/overlap-reserve on branch fix/manual-overlap-terminal-reserve; never modify the main checkout /Users/taco/gits/tacogips/riela or its .build.",
+      "Do not restart/kill/reconfigure the running RielaApp; do not modify ~/.riela/** or installed binaries; tests use temp stores under tmp/.",
+      "Run swift build / swift test / swiftlint via /usr/bin/arch -arm64 /bin/zsh -lc.",
+      "Each worker edits only its writePaths and its own impl-plans/progress/<planId>.md; logs go under tmp/manual-overlap-terminal-reserve/<plan short id>/.",
+      "Fresh-read sha256 before/after each edit; stop on drift.",
+      "Do not modify unrelated files; existing tests (DefaultLoopGuardTests, EventCronOverlapTests, ConfiguredWorkflowLaunchTests, InstanceAppCommandsTests) stay unmodified."
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "Shared public RielaCLI contract LiveRootSession / LiveRootSessionProbe.liveRootSessions(workflowId:sessionStoreRoot:) (mrot-02): read-only SQLite overview of created/running root sessions plus non-creating O_RDONLY flock probe of execution-locks/<sessionId>.lock; isManual = named kind or ephemeral with non-default base identity.",
+        "rationale": "App (manual) and events-serve (cron) processes share one per-profile store; flock OFD semantics report same-process holders as live; crashed/orphaned sessions never block (design §3.1)."
+      },
+      {
+        "decision": "CronOverlapDispatcher consults external manual blockers only when the binding scope is idle (no in-process run/queue/pending); skip and cancelRunning both skip naming the manual session; queue enters a queued-idle state advanced FIFO by advanceExternallyBlocked with no await between probe and start; concurrent counts external runs toward the cap; probe errors fail open with telemetry.",
+        "rationale": "Keeps cron-vs-cron unchanged, never cancels foreign sessions, and closes the DR-001 FIFO interleaving race (design §3.2)."
+      },
+      {
+        "decision": "App configured-run route refuses with HTTP 409 {error:{code:instance_busy,runningSessionId}} unless body allowOverlap:true; check runs synchronously inside launchConfiguredWorkflow before run_limit and before launch registration; CLI adds --allow-overlap (sent only when set) and maps 409 to stdout {error,sessionId,exitCode} exit 1.",
+        "rationale": "Atomic check-and-claim inside the serialized App route; older Apps keep exact key set (design §3.3, §3.4)."
+      },
+      {
+        "decision": "Terminal reserve precondition: skip redirect when LoopTerminalCorridorSelector.acyclicRemainingStepBound(origin) is non-nil and <= remainingSteps; any reachable cycle returns nil and keeps today's behavior.",
+        "rationale": "Reserve exists only to stop undeclared loops; acyclic paths that fit the budget must run every step; explicit small maxSteps still redirects (design §4)."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Cross-process sub-second race window before session allocation is accepted (design §3.5).",
+      "Instances sharing a workflow id in one profile share the busy/overlap check.",
+      "External probe failures fail open (fire starts) with telemetry rather than blocking cron.",
+      "Store probe in App route counts all live root sessions (cron and manual) as busy."
+    ],
+    "supportedEdgeCases": [
+      "Manual session live while cron scope idle under skip/cancelRunning/queue/concurrent policies.",
+      "Queue head deferred by an external blocker then FIFO-advanced on next submit or serve-loop/drain tick; routine-deactivated head skipped with gate reason.",
+      "In-process cron run plus manual run under skip names the in-process session.",
+      "Orphaned lock (released/missing) does not block; child sessions and other workflow ids ignored.",
+      "409 instance_busy without runningSessionId keeps generic CLI failure output; --allow-overlap rejected for non-run actions.",
+      "Diamond/labelled-edge acyclic graphs, self-loops and downstream 2-cycles in acyclicRemainingStepBound; maxSteps smaller than longest path still redirects."
+    ],
+    "outOfScopeEdgeCases": [
+      "Cancelling or coordinating sessions owned by another process.",
+      "Leases/persistence to close the pre-allocation race window.",
+      "Per-instance (rather than per-workflow-id) discrimination within a profile."
+    ],
+    "sourcePaths": [
+      "Sources/RielaCore/LoopTerminalCorridor.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift",
+      "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+      "Sources/RielaCLI/EventLiveServe.swift",
+      "Sources/RielaCLI/SessionExecutionLock.swift",
+      "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+      "Sources/RielaCLI/InstanceAppCommands.swift",
+      "Sources/RielaCLI/RielaCLIApplication.swift",
+      "Sources/RielaCLI/WebWorkflowLaunch.swift",
+      "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+      "Sources/RielaApp/RielaAppConfiguredRunAPI.swift",
+      "docs/app-instance-control.md",
+      "README.md"
+    ],
+    "residualRisks": [
+      "DR-001 correctness depends on the no-await discipline in advanceExternallyBlocked and the finish/advanceDeferred probe guard; the mrot-04 FIFO interleaving test must run.",
+      "EventLiveServe default session-store root resolution must reuse the WorkflowRunCommand resolver; a wrong root makes the probe silently return []; App always passes --session-store.",
+      "Known flaky interleaved-submit test in the full suite; verification uses focused filters only.",
+      "Shared .build contention across parallel RielaCLI plans: log sibling breaks and re-run, never fix sibling files."
+    ],
+    "codexAgentReferences": [],
+    "reconcileVerification": [
+      "mkdir -p tmp/manual-overlap-terminal-reserve/reconcile && /usr/bin/arch -arm64 /bin/zsh -lc 'swift build > tmp/manual-overlap-terminal-reserve/reconcile/build.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/reconcile/build.exit'",
+      "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalReservePreconditionTests|DefaultLoopGuard|LiveRootSessionProbeTests|EventCronOverlap|EventLiveServe|InstanceAppCommandsTests|ConfiguredRunOverlapTests|ConfiguredWorkflowLaunchTests\" > tmp/manual-overlap-terminal-reserve/reconcile/test.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/reconcile/test.exit'",
+      "/usr/bin/git diff --check > tmp/manual-overlap-terminal-reserve/reconcile/diff-check.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/reconcile/diff-check.exit"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "mrot-01-terminal-reserve-precondition",
+      "planPath": "impl-plans/active/mrot-01-terminal-reserve-precondition.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/LoopTerminalCorridor.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift",
+        "Tests/RielaCoreTests/TerminalReservePreconditionTests.swift",
+        "impl-plans/progress/mrot-01-terminal-reserve-precondition.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "LoopTerminalCorridorSelector.acyclicRemainingStepBound(workflow:originStepId:) added (nil on reachable cycle or unknown origin, longest local path step count otherwise) and redirectForTerminalReservationIfNeeded returns nil when bound <= remainingSteps, checked after the window guard and before input resolution.",
+        "2-step labelled acyclic workflow (budget 3) runs [check, remediate] with no loopGuardOutcome; 15-step labelled chain with maxLoopIterations 1 runs s1..s15 in order; both fail on c6e127b6 (recorded) and pass after.",
+        "Unit cases (self-loop nil, downstream 2-cycle nil, diamond 4, chain 3, isolated 1) and maxSteps-smaller-than-path still-redirects case pass.",
+        "DefaultLoopGuardTests/DefaultLoopGuardRecoveryTests pass unmodified; build, test and lint exit 0 under tmp/manual-overlap-terminal-reserve/mrot-01/."
+      ],
+      "verification": [
+        "mkdir -p tmp/manual-overlap-terminal-reserve/mrot-01 && /usr/bin/arch -arm64 /bin/zsh -lc 'swift build --target RielaCore > tmp/manual-overlap-terminal-reserve/mrot-01/build.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-01/build.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter TerminalReservePreconditionTests > tmp/manual-overlap-terminal-reserve/mrot-01/test-precondition.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-01/test-precondition.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter DefaultLoopGuard > tmp/manual-overlap-terminal-reserve/mrot-01/test-loopguard.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-01/test-loopguard.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCore/LoopTerminalCorridor.swift Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift Tests/RielaCoreTests/TerminalReservePreconditionTests.swift > tmp/manual-overlap-terminal-reserve/mrot-01/lint.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-01/lint.exit'"
+      ]
+    },
+    {
+      "planId": "mrot-02-live-root-session-probe",
+      "planPath": "impl-plans/active/mrot-02-live-root-session-probe.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/LiveRootSessionProbe.swift",
+        "Tests/RielaCLITests/LiveRootSessionProbeTests.swift",
+        "impl-plans/progress/mrot-02-live-root-session-probe.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Public LiveRootSession {sessionId, createdAt, isManual} and LiveRootSessionProbe.liveRootSessions(workflowId:sessionStoreRoot:) throws compile exactly as pinned, sorted by createdAt then sessionId.",
+        "Probe is read-only: missing store returns [] and creates nothing; lock probe uses O_RDONLY without O_CREAT, never SessionExecutionLockRegistry.acquire, and leaves an in-process holder's lock held.",
+        "All LiveRootSessionProbeTests bullets (status filter, root-only, workflowId filter, isManual classification, ordering, same-process liveness) pass.",
+        "build, test and lint exit 0 under tmp/manual-overlap-terminal-reserve/mrot-02/."
+      ],
+      "verification": [
+        "mkdir -p tmp/manual-overlap-terminal-reserve/mrot-02 && /usr/bin/arch -arm64 /bin/zsh -lc 'swift build --target RielaCLI > tmp/manual-overlap-terminal-reserve/mrot-02/build.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-02/build.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter LiveRootSessionProbeTests > tmp/manual-overlap-terminal-reserve/mrot-02/test.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-02/test.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/LiveRootSessionProbe.swift Tests/RielaCLITests/LiveRootSessionProbeTests.swift > tmp/manual-overlap-terminal-reserve/mrot-02/lint.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-02/lint.exit'"
+      ]
+    },
+    {
+      "planId": "mrot-03-cli-allow-overlap",
+      "planPath": "impl-plans/active/mrot-03-cli-allow-overlap.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/InstanceAppCommands.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Tests/RielaCLITests/InstanceAppCommandsTests.swift",
+        "impl-plans/progress/mrot-03-cli-allow-overlap.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela instance run --allow-overlap` sends allowOverlap:true; without the flag the POST body keys are exactly expectedProfile, expectedRevision, variables.",
+        "409 instance_busy with runningSessionId prints stdout {\"error\":\"instance_busy\",\"sessionId\":\"<id>\",\"exitCode\":1}, stderr instance_busy, exit 1, no polling; without runningSessionId the generic failure output is unchanged.",
+        "--allow-overlap on non-run actions fails with instance_invalid_options exit 2 and no request; RielaCLIApplication.swift changes only the instance run help line.",
+        "Existing InstanceAppCommandsTests pass; five new tests pass; build, test and lint exit 0 under tmp/manual-overlap-terminal-reserve/mrot-03/."
+      ],
+      "verification": [
+        "mkdir -p tmp/manual-overlap-terminal-reserve/mrot-03 && /usr/bin/arch -arm64 /bin/zsh -lc 'swift build --target RielaCLI > tmp/manual-overlap-terminal-reserve/mrot-03/build.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-03/build.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter InstanceAppCommandsTests > tmp/manual-overlap-terminal-reserve/mrot-03/test.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-03/test.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/InstanceAppCommands.swift Tests/RielaCLITests/InstanceAppCommandsTests.swift > tmp/manual-overlap-terminal-reserve/mrot-03/lint.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-03/lint.exit'"
+      ]
+    },
+    {
+      "planId": "mrot-04-cron-dispatcher-manual-sessions",
+      "planPath": "impl-plans/active/mrot-04-cron-dispatcher-manual-sessions.md",
+      "dependsOn": [
+        "mrot-02-live-root-session-probe"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+        "Sources/RielaCLI/EventLiveServe.swift",
+        "Tests/RielaCLITests/EventCronOverlapManualSessionTests.swift",
+        "impl-plans/progress/mrot-04-cron-dispatcher-manual-sessions.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "With an idle scope and live manual blockers: skip and cancelRunning record overlap-skip:<bindingId>:<manualSessionId> without cancelling; queue enqueues; concurrent counts external runs toward the cap; probe errors fail open with overlap-external-probe-failed telemetry.",
+        "DR-001: queued head is FIFO-advanced by advanceExternallyBlocked at the top of submitReserved and via advanceAllExternallyBlocked in the serve loop and --limit drain, with no await between probe and start; finish/advanceDeferred keeps the head queued while blockers exist.",
+        "EventLiveServe passes StoreExternalRunProbe on the effective session store root and per-binding workflowIds (protocol-extension default nil keeps existing fakes compiling).",
+        "EventCronOverlapTests pass unmodified; all EventCronOverlapManualSessionTests pass; build, test and lint exit 0 under tmp/manual-overlap-terminal-reserve/mrot-04/."
+      ],
+      "verification": [
+        "mkdir -p tmp/manual-overlap-terminal-reserve/mrot-04 && /usr/bin/arch -arm64 /bin/zsh -lc 'swift build --target RielaCLI > tmp/manual-overlap-terminal-reserve/mrot-04/build.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-04/build.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter EventCronOverlap > tmp/manual-overlap-terminal-reserve/mrot-04/test-overlap.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-04/test-overlap.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter EventLiveServe > tmp/manual-overlap-terminal-reserve/mrot-04/test-serve.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-04/test-serve.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaCLI/EventCronOverlapDispatcher.swift Sources/RielaCLI/EventLiveServe.swift Tests/RielaCLITests/EventCronOverlapManualSessionTests.swift > tmp/manual-overlap-terminal-reserve/mrot-04/lint.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-04/lint.exit'"
+      ]
+    },
+    {
+      "planId": "mrot-05-app-run-busy-check",
+      "planPath": "impl-plans/active/mrot-05-app-run-busy-check.md",
+      "dependsOn": [
+        "mrot-02-live-root-session-probe"
+      ],
+      "writePaths": [
+        "Sources/RielaApp/RielaAppConfiguredRunAPI.swift",
+        "Sources/RielaCLI/WebWorkflowLaunch.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+        "Tests/RielaAppSupportTests/ConfiguredRunOverlapTests.swift",
+        "impl-plans/progress/mrot-05-app-run-busy-check.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Configured-run body accepts exactly {expectedProfile, expectedRevision, variables} plus optional boolean allowOverlap; anything else is 400 invalid_configured_run.",
+        "Busy instance (in-memory running launch with the same identity, or a live store root session via LiveRootSessionProbe) without allowOverlap returns 409 {error:{code:instance_busy,runningSessionId:<sid|pending>}} and launches nothing; check is synchronous before run_limit and launch registration; probe errors fail open.",
+        "Orphaned store session (lock released) returns 202; allowOverlap:true while busy returns 202; ConfiguredWorkflowLaunchTests pass unmodified.",
+        "Six ConfiguredRunOverlapTests pass; build, tests and lint exit 0 under tmp/manual-overlap-terminal-reserve/mrot-05/."
+      ],
+      "verification": [
+        "mkdir -p tmp/manual-overlap-terminal-reserve/mrot-05 && /usr/bin/arch -arm64 /bin/zsh -lc 'swift build > tmp/manual-overlap-terminal-reserve/mrot-05/build.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-05/build.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter ConfiguredRunOverlapTests > tmp/manual-overlap-terminal-reserve/mrot-05/test-overlap.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-05/test-overlap.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swift test --filter ConfiguredWorkflowLaunchTests > tmp/manual-overlap-terminal-reserve/mrot-05/test-launch.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-05/test-launch.exit'",
+        "/usr/bin/arch -arm64 /bin/zsh -lc 'swiftlint lint Sources/RielaApp/RielaAppConfiguredRunAPI.swift Sources/RielaCLI/WebWorkflowLaunch.swift Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift Tests/RielaAppSupportTests/ConfiguredRunOverlapTests.swift > tmp/manual-overlap-terminal-reserve/mrot-05/lint.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-05/lint.exit'"
+      ]
+    },
+    {
+      "planId": "mrot-06-docs",
+      "planPath": "impl-plans/active/mrot-06-docs.md",
+      "dependsOn": [],
+      "writePaths": [
+        "docs/app-instance-control.md",
+        "README.md",
+        "impl-plans/progress/mrot-06-docs.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "docs/app-instance-control.md Run section documents [--allow-overlap], instance_busy (exit 1, stdout {\"error\":\"instance_busy\",\"sessionId\":\"<id|pending>\",\"exitCode\":1}), older-App invalid_configured_run, orphaned sessions never block, plus a 'Cron overlap with manual runs' paragraph (skip reason, queue FIFO, concurrent cap, cancelRunning skips, known limits).",
+        "README.md cron overlap paragraph gains one sentence that live manual sessions count as running, linking docs/app-instance-control.md; reload instance_busy table row unchanged.",
+        "git diff --check clean; grep allow-overlap >= 2 matches in docs/app-instance-control.md."
+      ],
+      "verification": [
+        "mkdir -p tmp/manual-overlap-terminal-reserve/mrot-06 && /usr/bin/git diff --check -- docs/app-instance-control.md README.md > tmp/manual-overlap-terminal-reserve/mrot-06/diff-check.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-06/diff-check.exit",
+        "/usr/bin/grep -n allow-overlap docs/app-instance-control.md > tmp/manual-overlap-terminal-reserve/mrot-06/grep-allow-overlap.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-06/grep-allow-overlap.exit",
+        "/usr/bin/grep -n instance_busy docs/app-instance-control.md > tmp/manual-overlap-terminal-reserve/mrot-06/grep-instance-busy.log 2>&1; echo $? > tmp/manual-overlap-terminal-reserve/mrot-06/grep-instance-busy.exit"
+      ]
+    }
+  ]
+}

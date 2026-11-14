@@ -1,0 +1,160 @@
+{
+  "taskId": "work-runtime-p1-6c-repair-0a3605e9eafe",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "ce703014c3d78113897d640f85825f5115ae0376",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6c-repair-0a3605e9eafe",
+  "reviewContext": {
+    "issueReference": "Work Runtime P1-6c; no GitHub issue supplied",
+    "userProblem": "A capable-host run of the selected-host late-cancellation regression executed one test and failed three assertions: canonical state was terminal at injection, failureKind was adapterFailure, and no cancellation record existed.",
+    "requiredOutcomes": [
+      "Diagnose the winning terminal writer and repair deterministic late-injection timing or a demonstrated request-first arbitration bypass without weakening assertions.",
+      "Run selected-host, affected focused, compatibility, and serial aggregate verification on matching repaired source with full logs, positive focused counts and actual exits.",
+      "Obtain independent test-integrity, single adversarial, and Astra exact combined-tree acceptance with no material P1-6c finding before completion documentation and exact-file commit/non-force push."
+    ],
+    "nonGoals": [
+      "P1-6d, P1-7a/b, parent P1, unrelated broad-gate failures, main integration and release.",
+      "Reopening merged subprocess helper repair or adding a new schema, transport, scheduler, framework or adapter."
+    ],
+    "constraints": [
+      "Preserve checkpoint ce70301, helper merge b06295d and all tracked/untracked WIP; no reset, force push, broad staging, private branch or concurrent Git writes.",
+      "One serial owner edits coupled source; read-only reviews may be independent.",
+      "Capable-host listener execution and source-matched evidence are required; sandbox listener denial and older logs are not acceptance.",
+      "All scratch evidence stays under the repository tmp directory; preserve complete logs and source hashes."
+    ],
+    "designDecisionsAndRationale": [
+      "Shared SQLite transaction arbitration remains request-first blocks ordinary terminal commit and terminal-first rejects late cancellation without changing the winner.",
+      "Trace initial terminal candidate, hook error, later saves, observer join and cancellation observation because a one-shot throw only blocks one write and does not prove a nonterminal injection boundary.",
+      "Repair only the demonstrated seam and establish selected-host stop proof before joined cancellation persistence; uncertain stop stays fenced."
+    ],
+    "intentionalTradeoffs": [
+      "Conditional edits to existing seams and minimal test-only instrumentation avoid a general hook framework.",
+      "A failed broad aggregate remains visible and separately classified; historical non-slice failures do not become a passing gate."
+    ],
+    "supportedEdgeCases": [
+      "Request-first and terminal-first races",
+      "Selected host completion proof and proof-required retry",
+      "Running-worker leader/child stop checks and uncertain-proof fencing",
+      "SIGINT and external triggers, stable replay and once-only accounting",
+      "Persistence failure coverage and unset-hook production behavior"
+    ],
+    "outOfScopeEdgeCases": [
+      "Unrelated doctor/backend-capability, examples, workflow-command/host-readiness, runner-admission and temporary-registration failures in the historical broad inventory"
+    ],
+    "sourcePaths": [
+      "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+      "Sources/RielaCLI/WorkflowRunCommand.swift",
+      "Sources/RielaCLI/TaskRunCancellation.swift",
+      "Sources/RielaCLI/TaskDispatch.swift",
+      "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+      "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+      "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+      "Sources/RielaWork/WorkStore+Decisions.swift",
+      "Sources/RielaWork/WorkStore+Reservation.swift",
+      "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+      "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+      "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+      "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
+      "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+      "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+      "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+      "README.md",
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md"
+    ],
+    "reviewDecision": "Step 5 accepted with no findings via comm-000006; accepted design and single active plan proceed to planning checkpoint only.",
+    "codexAgentReferences": [
+      "serial implementation owner",
+      "independent test-integrity reviewer",
+      "single adversarial reviewer",
+      "Astra exact combined-tree reviewer"
+    ],
+    "intakeEvidence": {
+      "manifest": "tmp/work-runtime-p1-6c-after-helper-review-20260924-9fbcc7126181/final-source-after-retry.sha256",
+      "manifestSha256": "dc6cec7251a8607b20b65ccaddb775606352b7556556209e6985bf1328409cd6",
+      "matchedEntries": 973,
+      "failedHostLog": "tmp/work-runtime-p1-6c-final-host/selected-host.log",
+      "failedHostLogSha256": "4dc832737ba4ace589f4bcf26ea0aa76d141a7cdb92a4673b3f28d6343a857b2",
+      "testExitStatus": 1,
+      "testCount": 1,
+      "assertionFailures": 3
+    }
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+        "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+        "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+        "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+        "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+        "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+        "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "acceptanceCriteria": [
+        "The selected-host regression executes with a positive test count and exit 0 on a listener-capable host against repaired source.",
+        "Affected focused suites and serial aggregate have complete source-matched logs, counts and exit statuses.",
+        "Actual terminal/cancellation behavior is repaired without assertion weakening or adapterFailure reinterpretation.",
+        "Independent test-integrity, single adversarial and Astra exact combined-tree reviews accept with no material P1-6c finding.",
+        "Completion docs distinguish remaining P1 work and failed broad gate before exact-file commit and non-force push."
+      ],
+      "verification": [
+        "shasum -a 256 -c tmp/work-runtime-p1-6c-after-helper-review-20260924-9fbcc7126181/final-source-after-retry.sha256",
+        "swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests/testLateSelectedHostCancellationAfterObservationRetriesWithStopProof'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionDecisionApplierStoreTests|DecisionApplierStoreTests|TaskCommandParsingTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests|DistributedProcessCancellationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|WorkflowCommandLivePersistenceTests|WorkflowCommandLivePersistenceEventTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests|SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel --filter 'RielaCLITests|RielaWorkTests|RielaCoreTests|RielaServerTests'",
+        "xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-6c-repair-0a3605e9eafe/p1-dispatch/attempt-001/changed-swift-files.nul",
+        "git diff --check",
+        "git diff --cached --check"
+      ],
+      "progressPath": "impl-plans/progress/p1-dispatch.md"
+    }
+  ]
+}

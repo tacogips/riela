@@ -1,0 +1,10 @@
+# Selected-host stop-proof progress
+
+Status: blocked; the fixture bound is 14 seconds, but the suite fails after the stop gate releases. No assertions were changed. Formal review and integration remain downstream.
+
+- Historical static diff: `static-main-diff.txt` empty, exit 0; `c8-diff.txt` shows the 5-second grace. Historical `at-293527c8.log`: exit 1, one test and one delayed-stop-receipt failure; archive size 3.4G, removed.
+- Current-tree negative control: `head-before.log`, exit 1, one test and one delayed-stop-receipt failure; command: `/usr/bin/arch -arm64 /bin/zsh -lc "swift test --scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof"`.
+- Fixture SHA-256 before: 7e38c5429cb164f42ad255e64695ce55d6c8df89382b6cd7272aac5e15bb09aa; after: 8620f4bdf9661e6b31455036eeb1008e8f9c33c275d958d9597159dc125512c8. Intended hunk and fresh snapshot are recorded in `fixture-edit-intent.txt` and `fixture-before.txt` under the evidence directory.
+- `/usr/bin/arch -arm64 /bin/zsh -lc "swift test --scratch-path tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/head-scratch --filter TaskCancellationIntegrationTests"`: `after.log`, exit 1, 18 tests, eight assertion failures at fixture lines 216–236. The stop gate was reached, but stoppedAt, durable cancellation, reconciliation and session state assertions failed. The plan requires stopping when later assertions fail after the longer wait.
+- `/usr/bin/arch -arm64 /bin/zsh -lc "swiftlint lint --no-cache Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift"`: `lint.log`, exit 0. Strict manifest-based lint: `lint-strict.log`, exit 0.
+- Repeat runs, successful suite verification, and scratch size/cleanup remain pending diagnosis and an authorized repair. Scratch retained to preserve prerequisites. Evidence directory: `tmp/instance-cancel-integration/instance-cancel-int-02-selected-host-stop-proof/`.

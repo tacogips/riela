@@ -1,0 +1,18 @@
+{
+  "source": {
+    "provider": "scenario-mock",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "segments": [
+        {
+          "id": "s1"
+        },
+        {
+          "id": "s2"
+        }
+      ]
+    }
+  }
+}

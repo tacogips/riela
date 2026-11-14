@@ -1,0 +1,41 @@
+{
+  "workflowInput": {
+    "accountUsername": "@yu_kawa_taco",
+    "lookbackMinutes": 60,
+    "maxPosts": 50,
+    "kvRoot": ".riela-data/x-follower-ai-business-digest/mock-kv",
+    "replyTarget": {
+      "sourceId": "telegram-gateway-personas",
+      "provider": "telegram",
+      "conversationId": "-1001234567890"
+    }
+  },
+  "fetch-follower-posts": {
+    "payload": {
+      "xGateway": {
+        "data": {
+          "data": {
+            "followingTimeline": {
+              "posts": [],
+              "pageInfo": {
+                "resultCount": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "summarize-posts": {
+    "when": {
+      "should_send_telegram": false
+    },
+    "payload": {
+      "shouldSendTelegram": false,
+      "maxFetchedPostId": "",
+      "replyText": "",
+      "topicDigests": [],
+      "discardedCount": 0
+    }
+  }
+}

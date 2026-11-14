@@ -1,0 +1,6 @@
+{
+  "accounts": {
+    "provider": "scenario-mock",
+    "payload": {"data": {"accounts": [{"id": "fixture-account"}]}}
+  }
+}

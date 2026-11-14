@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the rewrite payload as workflow output.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest note rewrite payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest note rewrite payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

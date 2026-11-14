@@ -1,0 +1,241 @@
+{
+  "workflowId": "workflow-knowledge-base",
+  "description": "Run a task with prior knowledge recalled from the kaiba knowledge base, then self-review the run before completion and create, merge, or skip durable knowledge so the base grows without bloating.",
+  "defaults": {
+    "maxLoopIterations": 2,
+    "nodeTimeoutMs": 300000
+  },
+  "memories": [
+    {
+      "id": "kb-run-journal",
+      "description": "Per-run journal of the task node's inputs and outputs.",
+      "purpose": "Reconstruct what happened in this run so the self-review step can extract durable knowledge.",
+      "scope": "workflow",
+      "defaultLimit": 30
+    }
+  ],
+  "entryStepId": "kb-seed",
+  "nodes": [
+    {
+      "id": "kb-seed",
+      "addon": {
+        "name": "kaiba/memory-consolidate",
+        "version": "1",
+        "config": {
+          "entries": "{{workflowInput.seedKnowledge}}",
+          "allowEmptyEntries": true,
+          "autoAssociate": true,
+          "associationLimit": 8,
+          "idempotencyKey": "{{workflowInput.seedKey}}"
+        }
+      }
+    },
+    {
+      "id": "recall-prior-knowledge",
+      "addon": {
+        "name": "kaiba/memory-recall",
+        "version": "1",
+        "config": {
+          "query": "{{workflowInput.knowledgeQuery}}",
+          "limit": 5,
+          "includeAssociations": true,
+          "associationDepth": 2,
+          "passthrough": "{\"task\":\"{{workflowInput.task}}\"}"
+        }
+      }
+    },
+    {
+      "id": "do-task",
+      "nodeFile": "nodes/node-do-task.json",
+      "memories": [
+        {
+          "id": "kb-run-journal",
+          "purpose": "Record the task node's input and output for the self-review step."
+        }
+      ]
+    },
+    {
+      "id": "load-run-journal",
+      "addon": {
+        "name": "riela/memory-load",
+        "version": "1",
+        "config": {
+          "memoryId": "kb-run-journal",
+          "workflowScopeOnly": true,
+          "limit": 30
+        }
+      },
+      "memories": [
+        {
+          "id": "kb-run-journal",
+          "purpose": "Load this run's journal for the self-review step."
+        }
+      ]
+    },
+    {
+      "id": "self-review",
+      "nodeFile": "nodes/node-self-review.json"
+    },
+    {
+      "id": "recall-related-knowledge",
+      "addon": {
+        "name": "kaiba/memory-recall",
+        "version": "1",
+        "config": {
+          "query": "{{knowledgeQuery}}",
+          "limit": 5,
+          "includeAssociations": true,
+          "associationDepth": 2,
+          "passthrough": "{\"candidateContent\":\"{{candidateContent}}\",\"candidateTags\":\"{{candidateTags}}\",\"knowledgeQuery\":\"{{knowledgeQuery}}\"}"
+        }
+      }
+    },
+    {
+      "id": "merge-judge",
+      "nodeFile": "nodes/node-merge-judge.json"
+    },
+    {
+      "id": "kb-create",
+      "addon": {
+        "name": "kaiba/memory-consolidate",
+        "version": "1",
+        "config": {
+          "autoAssociate": true,
+          "associationLimit": 8,
+          "idempotencyKey": "{{workflowInput.runKey}}"
+        }
+      }
+    },
+    {
+      "id": "kb-merge",
+      "addon": {
+        "name": "kaiba/note-update",
+        "version": "1",
+        "config": {
+          "noteId": "{{mergeNoteId}}",
+          "bodyMarkdown": "{{mergedBody}}"
+        }
+      }
+    },
+    {
+      "id": "archive-brief",
+      "nodeFile": "nodes/node-archive-brief.json"
+    },
+    {
+      "id": "kb-archive",
+      "addon": {
+        "name": "kaiba/note-update",
+        "version": "1",
+        "config": {
+          "noteId": "{{archiveNoteId}}",
+          "bodyMarkdown": "{{archivedPointerBody}}"
+        }
+      }
+    },
+    {
+      "id": "recall-verify",
+      "addon": {
+        "name": "kaiba/memory-recall",
+        "version": "1",
+        "config": {
+          "query": "{{workflowInput.knowledgeQuery}}",
+          "limit": 5,
+          "includeAssociations": true,
+          "associationDepth": 2
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "kb-seed",
+      "nodeId": "kb-seed",
+      "role": "worker",
+      "transitions": [{ "toStepId": "recall-prior-knowledge" }]
+    },
+    {
+      "id": "recall-prior-knowledge",
+      "nodeId": "recall-prior-knowledge",
+      "role": "worker",
+      "transitions": [{ "toStepId": "do-task" }]
+    },
+    {
+      "id": "do-task",
+      "nodeId": "do-task",
+      "role": "worker",
+      "transitions": [{ "toStepId": "load-run-journal" }]
+    },
+    {
+      "id": "load-run-journal",
+      "nodeId": "load-run-journal",
+      "role": "worker",
+      "transitions": [{ "toStepId": "self-review" }]
+    },
+    {
+      "id": "self-review",
+      "nodeId": "self-review",
+      "role": "worker",
+      "transitions": [{ "toStepId": "recall-related-knowledge" }]
+    },
+    {
+      "id": "recall-related-knowledge",
+      "nodeId": "recall-related-knowledge",
+      "role": "worker",
+      "transitions": [{ "toStepId": "merge-judge" }]
+    },
+    {
+      "id": "merge-judge",
+      "nodeId": "merge-judge",
+      "role": "worker",
+      "transitions": [
+        { "toStepId": "kb-create", "label": "create_knowledge" },
+        { "toStepId": "kb-merge", "label": "merge_knowledge" },
+        { "toStepId": "workflow-output", "label": "!(create_knowledge || merge_knowledge)" }
+      ]
+    },
+    {
+      "id": "kb-create",
+      "nodeId": "kb-create",
+      "role": "worker",
+      "transitions": [{ "toStepId": "recall-verify" }]
+    },
+    {
+      "id": "kb-merge",
+      "nodeId": "kb-merge",
+      "role": "worker",
+      "transitions": [{ "toStepId": "archive-brief" }]
+    },
+    {
+      "id": "archive-brief",
+      "nodeId": "archive-brief",
+      "role": "worker",
+      "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "merge-judge" },
+      "transitions": [
+        { "toStepId": "kb-archive", "label": "archive_note" },
+        { "toStepId": "recall-verify", "label": "!(archive_note)" }
+      ]
+    },
+    {
+      "id": "kb-archive",
+      "nodeId": "kb-archive",
+      "role": "worker",
+      "transitions": [{ "toStepId": "recall-verify" }]
+    },
+    {
+      "id": "recall-verify",
+      "nodeId": "recall-verify",
+      "role": "worker",
+      "transitions": [{ "toStepId": "workflow-output" }]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

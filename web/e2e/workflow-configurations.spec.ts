@@ -1,0 +1,279 @@
+import { expect, test, type Page } from '@playwright/test'
+
+const sourceId = 'project-workflow:/repos/a:review'
+const otherSource = 'project-workflow:/repos/b:review'
+const configuration = (id: string, source = sourceId, name = 'Default') => ({
+  id, sourceId: source, isDefault: id === source, name, workflowId: 'review', source: 'project',
+  sourceKind: 'directory', status: 'stopped', statusDetail: 'Stopped', active: false, enabledAtLaunch: false,
+  workingDirectory: null, environmentFilePath: null, environmentVariables: [], requiredEnvironment: [],
+  workflowVariables: {}, nodePatchCount: 0, nodePatches: {}, eventSources: [],
+})
+
+async function fixture(page: Page, withRun = false) {
+  page.on('pageerror', error => { throw error })
+  const items = [configuration(sourceId), configuration(otherSource, otherSource), configuration('other-named', otherSource, 'Repository B only')]
+  const mutations: Array<{ path: string; body: Record<string, unknown> }> = []
+  let revision = 1
+  await page.route('**/graphql', route => {
+    const body = route.request().postDataJSON() as { operationName?: string; variables?: { identity?: string } }
+    const data = (value: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) })
+    // Console reads moved off /api/v1 onto the control plane (design 2.4).
+    if (body.operationName === 'WebConsoleInstances') return data({ consoleInstances: { profile: 'test', revision, items } })
+    if (body.operationName === 'WebConsoleInstance') {
+      return data({ consoleInstance: { profile: 'test', revision, item: items.find(item => item.id === body.variables?.identity) ?? null } })
+    }
+    if (body.operationName === 'WebOpsOverview') {
+      return data({ opsOverview: { profile: 'test', revision, workflows: [], workflowsTruncated: false, instances: [], runs: [], runsTruncated: false, diagnostics: [] } })
+    }
+    return data({ workflows: { workflows: [], errors: [] } })
+  })
+  await page.route('**/api/v1/**', async route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) })
+    if (path === '/api/v1/bootstrap') return json({ apiVersion: 'v1', profile: 'test', csrfToken: 'test', revision, capabilities: [], server: { state: 'running' } })
+    if (path === '/api/v1/workflows/sources') return json({ profile: 'test', revision, directories: [], projectDirectories: [], repositories: [], discovered: [
+      { id: sourceId, name: 'Repository A', description: 'Reviews pull requests and publishes results', workflowId: 'review', scope: 'project', sourceKind: 'directory' },
+      { id: otherSource, name: 'Repository B', workflowId: 'review', scope: 'project', sourceKind: 'directory' },
+    ] })
+    if (path.endsWith('/definition')) return json({ revision, sourceId, workflowId: 'review', name: 'Repository A', scope: 'project', sourceKind: 'directory', definitionRevision: '1',
+      definition: { description: 'Review then publish', descriptionTruncated: false, entryStepId: 'review', managerStepId: null,
+        steps: [{ id: 'review', nodeId: 'review', role: 'worker', transitions: [{ toStepId: 'publish', label: null, fanoutJoinStepId: null }], transitionsTotalCount: 1, transitionsTruncated: false },
+          { id: 'publish', nodeId: 'publish', role: 'worker', transitions: [], transitionsTotalCount: 0, transitionsTruncated: false }], stepsTotalCount: 2, stepsTruncated: false,
+        nodes: [{ id: 'review', kind: 'agent' }, { id: 'publish', kind: 'output' }], nodesTotalCount: 2, nodesTruncated: false, transitionsTotalCount: 1, transitionsTruncated: false },
+      diagnostics: [], diagnosticsTotalCount: 0, diagnosticsTruncated: false, truncated: false })
+    if (request.method() === 'POST') {
+      const body = request.postDataJSON()
+      mutations.push({ path, body })
+      expect(body.expectedProfile).toBe('test')
+      expect(body.expectedRevision).toBe(revision)
+      revision += 1
+      if (path === '/api/v1/instances') {
+        items.push(configuration('named-a', body.sourceId, body.name))
+        return json({ profile: 'test', revision, identity: 'named-a' }, 201)
+      }
+      return json({ profile: 'test', revision })
+    }
+    if (path.endsWith('/executions')) return json({ revision, items: withRun ? [{ sessionId: 'run-1', workflowId: 'review', status: 'completed', updatedAt: '2026-09-10T00:00:00Z', currentStepId: null, activeStepIds: [] }] : [], diagnostics: [], truncated: false })
+    if (path.endsWith('/executions/run-1')) return json({ revision, session: { sessionId: 'run-1', workflowId: 'review', status: 'completed', updatedAt: '2026-09-10T00:00:00Z', currentStepId: null }, steps: [], stepsTotalCount: 0, logs: [], gates: [], gatesTotalCount: 0, recovery: null, diagnostics: [] })
+    return json({ error: { message: `Unexpected ${path}` } }, 418)
+  })
+  return mutations
+}
+
+test('workflow contains isolated default and named configurations, actions and history', async ({ page }) => {
+  const mutations = await fixture(page)
+  await page.goto('/')
+  await expect(page).toHaveURL(/#\/workflows$/)
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).not.toContainText('Instances')
+  await page.getByRole('button', { name: 'Open workflow Repository A' }).click()
+  await expect(page.getByRole('heading', { name: 'Run configurations', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Workflow graph Repository A' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Repository B only/ })).toHaveCount(0)
+  expect(mutations).toEqual([])
+  await page.getByRole('button', { name: /Default/ }).click()
+  await page.getByRole('button', { name: 'Run', exact: true }).click()
+  await expect.poll(() => mutations.length).toBe(1)
+  expect(mutations[0]?.path).toBe(`/api/v1/instances/${encodeURIComponent(sourceId)}/actions`)
+  expect(mutations[0]?.body.action).toBe('start')
+  await page.getByRole('button', { name: 'History', exact: true }).click()
+  await expect(page.getByText('No runs yet', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('No runs yet', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Add run configuration' }).click()
+  await page.getByLabel('Run configuration name').fill('Nightly review')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Nightly review', exact: true })).toBeVisible()
+  expect(mutations).toHaveLength(2)
+  expect(mutations[1]?.body.sourceId).toBe(sourceId)
+  await expect(page.getByRole('button', { name: /Default/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Repository B only/ })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Back to workflows' }).click()
+  await page.getByRole('button', { name: 'Open workflow Repository B' }).click()
+  await expect(page.getByRole('button', { name: /Repository B only/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Nightly review/ })).toHaveCount(0)
+})
+
+test('compact workflow and configuration screens preserve navigation', async ({ page }) => {
+  await fixture(page)
+  await page.setViewportSize({ width: 640, height: 780 })
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Open workflow Repository A' })).toBeVisible()
+  await page.screenshot({ path: '../tmp/workflow-navigation/workflows.png' })
+  await page.getByRole('button', { name: 'Open workflow Repository A' }).click()
+  await page.getByRole('button', { name: /Default/ }).click()
+  await page.screenshot({ path: '../tmp/workflow-navigation/configuration.png', fullPage: true })
+  await expect(page.getByRole('button', { name: 'Run', exact: true })).toBeVisible()
+  const width = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }))
+  expect(width.content).toBeLessThanOrEqual(width.viewport)
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Run configurations', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole('button', { name: 'Open workflow Repository A' })).toBeVisible()
+})
+
+
+test('central graph stays visible beside configuration history and nodes can be arranged', async ({ page }) => {
+  await fixture(page)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Open workflow Repository A' }).click()
+  const graph = page.getByRole('group', { name: 'Workflow graph Repository A' })
+  const right = page.getByRole('complementary', { name: 'Run configurations', exact: true })
+  await expect(graph).toBeVisible()
+  const graphBox = await graph.boundingBox()
+  const rightBox = await right.boundingBox()
+  expect(graphBox!.x + graphBox!.width).toBeLessThanOrEqual(rightBox!.x)
+  const node = page.getByRole('button', { name: 'Inspect node review', exact: true })
+  const before = await node.boundingBox()
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(before!.x + before!.width / 2 + 60, before!.y + before!.height / 2 + 30, { steps: 5 })
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('')
+  await page.mouse.up()
+  const after = await node.boundingBox()
+  expect(after!.x).toBeGreaterThan(before!.x + 40)
+  await page.getByRole('button', { name: /Default/ }).click()
+  await page.getByRole('button', { name: 'History', exact: true }).click()
+  await expect(graph).toBeVisible()
+  await expect(right.getByText('No runs yet')).toBeVisible()
+  await page.screenshot({ path: '../tmp/workflow-navigation/graph-workspace.png' })
+})
+
+
+test('run reload and browser back-forward retain the parent configuration history', async ({ page }) => {
+  await fixture(page, true)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Open workflow Repository A' }).click()
+  await page.getByRole('button', { name: /Default/ }).click()
+  await page.getByRole('button', { name: 'History', exact: true }).click()
+  await page.getByRole('button', { name: 'Open run run-1' }).click()
+  await expect(page).toHaveURL(new RegExp('/configurations/.*?/runs/run-1$'))
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'run-1', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole('button', { name: 'Open run run-1' })).toBeVisible()
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'run-1', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to Run logs' }).click()
+  await expect(page.getByRole('button', { name: 'Open run run-1' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Workflow graph Repository A' })).toBeVisible()
+})
+
+
+test('invalid graph shows a recoverable error without breaking configuration selection', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/v1/workflows/sources/*/definition', route => route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_workflow', message: 'The workflow definition is invalid' } }) }))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Open workflow Repository A' }).click()
+  await expect(page.getByRole('alert')).toHaveText('Error: The workflow definition is invalid')
+  await expect(page.getByText('Loading workflow graph…')).toHaveCount(0)
+  await page.getByRole('button', { name: /Default/ }).click()
+  await expect(page.getByRole('button', { name: 'Run', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to workflows' }).click()
+  await expect(page.getByRole('button', { name: 'Open workflow Repository A' })).toBeVisible()
+})
+
+test('graph does not wait for slow metadata or reload the registry', async ({ page }) => {
+  await fixture(page)
+  const items = [configuration(sourceId)]
+  let metadataReads = 0
+  let registryReads = 0
+  let releaseMetadata: () => void = () => {}
+  const metadataGate = new Promise<void>(resolve => { releaseMetadata = resolve })
+  // /graphql now also carries the console reads, so the registry assertion
+  // counts the registry operations rather than every GraphQL request.
+  await page.route('**/graphql', route => {
+    const operation = (route.request().postDataJSON() as { operationName?: string }).operationName
+    const data = (value: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) })
+    if (operation === 'WebConsoleInstances') return data({ consoleInstances: { profile: 'test', revision: 1, items } })
+    if (operation === 'WebConsoleInstance') return data({ consoleInstance: { profile: 'test', revision: 1, item: items[0] ?? null } })
+    registryReads += 1
+    return data({ workflows: { workflows: [], errors: [] } })
+  })
+  await page.route('**/api/v1/workflows/sources', async route => {
+    metadataReads += 1
+    if (metadataReads > 1) await metadataGate
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ profile: 'test', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [{ id: sourceId, name: 'Repository A', workflowId: 'review', scope: 'project', sourceKind: 'directory' }] }) })
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Open workflow Repository A' }).click()
+  try {
+    await expect(page.getByRole('group', { name: 'Workflow graph Repository A' })).toBeVisible({ timeout: 1500 })
+    await expect(page.getByText('This run configuration cannot find its workflow source.')).toHaveCount(0)
+    expect(registryReads).toBe(1)
+  } finally { releaseMetadata() }
+})
+
+for (const width of [320, 640, 1440]) {
+  test(`workflow list is compact, searchable and opens graph creation at ${width}px`, async ({ page }) => {
+    await fixture(page)
+    await page.setViewportSize({ width, height: 700 })
+    await page.goto('/')
+    const pane = page.getByRole('region', { name: 'Workflow list' })
+    await expect(pane).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Workflows', exact: true })).toHaveCount(0)
+    const search = page.getByRole('searchbox', { name: 'Search workflows (regex)' })
+    await search.fill('pull.*requests')
+    await expect(pane.getByRole('button', { name: 'Open workflow Repository A' })).toBeVisible()
+    await expect(pane.getByRole('button', { name: 'Open workflow Repository B' })).toHaveCount(0)
+    await search.fill('[')
+    await expect(search).toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByRole('alert')).toBeVisible()
+    await search.fill('')
+    await expect(pane.getByRole('button', { name: 'Open workflow Repository B' })).toBeVisible()
+    const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
+    await expect(refresh).toHaveAttribute('title', 'Refresh')
+    expect(await refresh.evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(40)
+    const size = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth }))
+    expect(size.width).toBeLessThanOrEqual(size.viewport)
+    await page.getByRole('button', { name: 'New workflow' }).click()
+    await expect(page.getByRole('region', { name: 'Workflow graph editor' })).toBeVisible()
+    await page.getByRole('button', { name: 'Add agent step' }).click()
+    await expect(page.getByRole('button', { name: 'Edit step-1' })).toBeVisible()
+    await page.screenshot({ path: `../tmp/ui-audit/create-graph-${width}.png`, fullPage: true })
+  })
+}
+
+test('long workflow lists scroll without moving the search toolbar', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/v1/workflows/sources', route => route.fulfill({ json: {
+    profile: 'test', revision: 1, directories: [], projectDirectories: [], repositories: [],
+    discovered: Array.from({ length: 80 }, (_, i) => ({ id: `source-${i}`, name: `Workflow ${i}`, workflowId: `workflow-${i}`, scope: 'project', sourceKind: 'directory' })),
+  } }))
+  await page.setViewportSize({ width: 640, height: 500 })
+  await page.goto('/')
+  const pane = page.getByRole('region', { name: 'Workflow list' })
+  await expect(pane.getByRole('button', { name: /^Open workflow / })).toHaveCount(80)
+  const search = page.getByRole('searchbox')
+  const before = await search.boundingBox()
+  await pane.hover()
+  await page.mouse.wheel(0, 700)
+  await expect.poll(() => pane.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  expect((await search.boundingBox())?.y).toBe(before?.y)
+  expect(await page.locator('main').evaluate(element => element.scrollTop)).toBe(0)
+  await page.screenshot({ path: '../tmp/ui-audit/scrolled-workflows.png' })
+})
+
+test('imported workflows open an editable copy in the graph editor', async ({ page }) => {
+  await fixture(page)
+  const copied = { originId: 'user:review-copy', workflowId: 'review', name: 'review', description: null, scope: 'USER', provenance: 'MUTABLE',
+    mutable: true, activationState: 'DEACTIVATED', valid: true, definitionRevision: 'rev-1', diagnostics: [],
+    definition: { workflowId: 'review', defaults: { nodeTimeoutMs: 120000, maxLoopIterations: 3 }, entryStepId: 'review',
+      nodes: [{ id: 'review', nodeFile: 'nodes/review.json' }], steps: [{ id: 'review', nodeId: 'review', role: 'worker', transitions: [] }] } }
+  const copies: string[] = []
+  await page.route(`**/api/v1/workflows/sources/${encodeURIComponent(sourceId)}/editable-copy`, route => {
+    copies.push(route.request().method())
+    return route.fulfill({ json: { accepted: true, workflow: copied, errors: [] } })
+  })
+  await page.route('**/api/v1/workflow-editor/definition', route => route.fulfill({ json: copied }))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Edit a copy of Repository A', exact: true }).click()
+  // The copy opens straight in the graph editor; there is no intermediate studio list.
+  await expect(page.getByRole('region', { name: 'Workflow graph editor' })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Editing a copy of Repository A' })).toBeVisible()
+  expect(copies).toEqual(['POST'])
+  await expect(page.getByRole('button', { name: 'Activate workflow' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close editor', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Workflow list' })).toBeVisible()
+})

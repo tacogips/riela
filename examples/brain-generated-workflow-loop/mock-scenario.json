@@ -1,0 +1,146 @@
+{
+  "brain": [
+    {
+      "provider": "scenario-mock",
+      "model": "claude-opus-5-5",
+      "when": {
+        "execute_workflow": true
+      },
+      "payload": {
+        "decision": "execute_workflow",
+        "rationale": "Inventory the supplied fixture records before checking completeness.",
+        "workflow": {
+          "workflowId": "generated-inventory",
+          "entryStepId": "inventory",
+          "nodes": [
+            {
+              "id": "inventory",
+              "nodeFile": "inventory"
+            }
+          ],
+          "steps": [
+            {
+              "id": "inventory",
+              "nodeId": "inventory"
+            }
+          ],
+          "defaults": {
+            "nodeTimeoutMs": 120000,
+            "maxLoopIterations": 6
+          }
+        },
+        "nodePayloads": {
+          "inventory": {
+            "id": "inventory",
+            "executionBackend": "claude-code-agent",
+            "model": "claude-opus-5-5",
+            "promptTemplate": "Inventory the fixture records: fixture-a has checksum checksum-of-fixture-a; fixture-b has checksum checksum-of-fixture-b. Return JSON with items and missingVerification set to checksum-of-fixture-a.",
+            "output": {
+              "jsonSchema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "input": {
+          "fixture": "sample-records"
+        }
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "claude-opus-5-5",
+      "when": {
+        "execute_workflow": true
+      },
+      "payload": {
+        "decision": "execute_workflow",
+        "rationale": "Verify the missing checksum identified by the inventory result.",
+        "workflow": {
+          "workflowId": "generated-verify",
+          "entryStepId": "verify",
+          "nodes": [
+            {
+              "id": "verify",
+              "nodeFile": "verify"
+            }
+          ],
+          "steps": [
+            {
+              "id": "verify",
+              "nodeId": "verify"
+            }
+          ],
+          "defaults": {
+            "nodeTimeoutMs": 120000,
+            "maxLoopIterations": 6
+          }
+        },
+        "nodePayloads": {
+          "verify": {
+            "id": "verify",
+            "executionBackend": "claude-code-agent",
+            "model": "claude-opus-5-5",
+            "promptTemplate": "Verify that the provided missingVerification value is checksum-of-fixture-a. Return JSON with verified set to that value and ok true.",
+            "output": {
+              "jsonSchema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "input": {
+          "missingVerification": "checksum-of-fixture-a"
+        }
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "claude-opus-5-5",
+      "when": {
+        "finish": true
+      },
+      "payload": {
+        "decision": "finish",
+        "rationale": "The inventory and checksum verification agree.",
+        "finalResult": {
+          "inventory": [
+            "fixture-a",
+            "fixture-b"
+          ],
+          "verification": {
+            "verified": "checksum-of-fixture-a",
+            "ok": true
+          }
+        },
+        "evidenceRefs": [
+          "generated-inventory",
+          "generated-verify"
+        ]
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "provider": "scenario-mock",
+      "model": "claude-opus-5-5",
+      "payload": {
+        "items": [
+          "fixture-a",
+          "fixture-b"
+        ],
+        "missingVerification": "checksum-of-fixture-a"
+      }
+    }
+  ],
+  "verify": [
+    {
+      "provider": "scenario-mock",
+      "model": "claude-opus-5-5",
+      "payload": {
+        "verified": "checksum-of-fixture-a",
+        "ok": true
+      }
+    }
+  ]
+}

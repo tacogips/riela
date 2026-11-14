@@ -1,0 +1,146 @@
+{
+  "workflowId": "video-pipeline-yt-dlp",
+  "description": "Download and process video with a package add-on",
+  "defaults": {
+    "nodeTimeoutMs": 120000,
+    "maxLoopIterations": 1
+  },
+  "entryStepId": "download",
+  "nodeRegistry": [
+    {
+      "id": "download",
+      "addon": {
+        "name": "media/yt-dlp-download",
+        "version": "1",
+        "config": {
+          "options": {
+            "url": "https://www.youtube.com/watch?v=8QxKwYOyUaE"
+          }
+        }
+      }
+    },
+    {
+      "id": "audio",
+      "addon": {
+        "name": "riela/audio-segments",
+        "version": "1",
+        "config": {
+          "options": {
+            "path": "{{input.mediaDownload.path}}",
+            "segmentSeconds": 180
+          }
+        }
+      }
+    },
+    {
+      "id": "frames",
+      "addon": {
+        "name": "riela/video-frames",
+        "version": "1",
+        "config": {
+          "options": {
+            "path": "{{input.audioSegments.sourcePath}}",
+            "segments": "{{input.audioSegments.segments}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "summary",
+      "addon": {
+        "name": "riela/json-compose",
+        "version": "1",
+        "config": {
+          "payload": {
+            "result": "{{input}}"
+          }
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "download",
+      "addon": {
+        "name": "media/yt-dlp-download",
+        "version": "1",
+        "config": {
+          "options": {
+            "url": "https://www.youtube.com/watch?v=8QxKwYOyUaE"
+          }
+        }
+      }
+    },
+    {
+      "id": "audio",
+      "addon": {
+        "name": "riela/audio-segments",
+        "version": "1",
+        "config": {
+          "options": {
+            "path": "{{input.mediaDownload.path}}",
+            "segmentSeconds": 180
+          }
+        }
+      }
+    },
+    {
+      "id": "frames",
+      "addon": {
+        "name": "riela/video-frames",
+        "version": "1",
+        "config": {
+          "options": {
+            "path": "{{input.audioSegments.sourcePath}}",
+            "segments": "{{input.audioSegments.segments}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "summary",
+      "addon": {
+        "name": "riela/json-compose",
+        "version": "1",
+        "config": {
+          "payload": {
+            "result": "{{input}}"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "download",
+      "nodeId": "download",
+      "transitions": [
+        {
+          "toStepId": "audio"
+        }
+      ]
+    },
+    {
+      "id": "audio",
+      "nodeId": "audio",
+      "transitions": [
+        {
+          "toStepId": "frames"
+        }
+      ]
+    },
+    {
+      "id": "frames",
+      "nodeId": "frames",
+      "transitions": [
+        {
+          "toStepId": "summary"
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "nodeId": "summary"
+    }
+  ]
+}

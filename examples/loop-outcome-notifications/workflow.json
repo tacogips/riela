@@ -1,0 +1,69 @@
+{
+  "workflowId": "loop-outcome-notifications",
+  "description": "Demonstrates terminal loop-outcome notifications: after terminal persistence the runtime classifies the outcome (accepted/rejected/stalled/failed) and dispatches a schema-versioned payload to declared command/webhook channels.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise structured review JSON only."
+  },
+  "entryStepId": "implementation-review",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": true,
+    "description": "Example of terminal outcome notification dispatch.",
+    "notifications": {
+      "on": [
+        "accepted",
+        "failed"
+      ],
+      "channels": [
+        {
+          "type": "command",
+          "argv": [
+            "scripts/record-notification.sh"
+          ]
+        },
+        {
+          "type": "webhook",
+          "urlEnv": "RIELA_DEMO_LOOP_WEBHOOK_URL",
+          "bearerTokenEnv": "RIELA_DEMO_LOOP_WEBHOOK_TOKEN"
+        }
+      ]
+    },
+    "gates": [
+      {
+        "id": "implementation-review",
+        "stepId": "implementation-review",
+        "required": true,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "implementation-review",
+      "nodeFile": "nodes/node-implementation-review.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "implementation-review",
+      "nodeId": "implementation-review",
+      "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-review",
+        "evidenceTags": [
+          "review"
+        ],
+        "recordsVerification": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+/* Settings extensions: S3 storage profile, Note API client registration, appearance. */
+
+.button-row { display: flex; align-items: center; gap: 10px; }
+.button-row > button { flex: none; }
+
+.registration-card {
+  display: flex;
+  align-items: start;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #28404d;
+  border-radius: 9px;
+  background: #0b1720;
+}
+.registration-card .qr-code { flex: none; padding: 8px; border-radius: 6px; background: #ffffff; }
+.registration-detail { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 8px; }
+.registration-code {
+  color: #d9e5ef;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: .12em;
+}
+.registration-url {
+  overflow: hidden;
+  margin: 0;
+  color: #79ccd0;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.registration-expiry { color: #6f8799; font-size: 11px; }
+.qr-failure { margin: 0; color: #f0a2a2; font-size: 11px; }
+
+.client-row { justify-content: space-between; }
+.client-row > div { flex: 1; }
+.client-empty { margin: 0 0 8px; color: #6f8799; font-size: 11px; }
+
+@media (max-width: 800px) {
+  .registration-card { flex-direction: column; align-items: stretch; }
+  .registration-card .qr-code { align-self: center; }
+}
+.worker-settings-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+.api-key-panel .section-title { margin-bottom: 18px; }
+.api-key-list { border: 0; padding: 0; margin: 24px 0 0; }
+.api-key-list legend { padding: 0; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+.api-key-row { flex-direction: row; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line, #404040); cursor: pointer; }
+.api-key-row > input { flex: none; width: 16px; height: 16px; padding: 0; }
+.api-key-row > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.api-key-row strong { color: #f5f5f5; font-size: 13px; overflow-wrap: anywhere; }
+.api-key-row span { color: #a3a3a3; }
+.api-key-danger-zone { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 18px; margin-top: 8px; border-top: 1px solid var(--line, #404040); }
+.api-key-danger-zone > span { color: #a3a3a3; font-size: 12px; }
+.key-list-empty { color: #a3a3a3; font-size: 12px; margin: 24px 0 0; }
+.settings-confirmation { margin: auto; max-height: calc(100dvh - 48px); overflow: auto; width: min(440px, calc(100vw - 48px)); box-sizing: border-box; border: 1px solid #525252; border-radius: 14px; padding: 24px; color: #f5f5f5; background: #171717; }
+.settings-confirmation::backdrop { background: rgb(0 0 0 / 65%); }
+.settings-confirmation h2 { margin: 0 0 16px; font-size: 20px; }
+.settings-confirmation p { color: #d4d4d4; font-size: 14px; line-height: 1.55; }
+.confirmation-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 24px; }

@@ -1,0 +1,326 @@
+{
+  "riela-manager": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopSymptom": "The quality loop repeats without proving why the second pass exits.",
+      "targetScope": [
+        "Sources/RielaCore/LoopEvidenceProjector.swift",
+        "Tests/RielaCoreTests/LoopSessionOverviewTests.swift"
+      ],
+      "acceptanceTarget": "Second pass must show stable exit evidence with no blocking review findings.",
+      "notes": [
+        "Start loop-intake and preserve mutation policy."
+      ]
+    }
+  },
+  "loop-intake": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopSymptom": "The quality loop repeats without proving why the second pass exits.",
+      "targetScope": [
+        "Sources/RielaCore/LoopEvidenceProjector.swift",
+        "Tests/RielaCoreTests/LoopSessionOverviewTests.swift"
+      ],
+      "existingEvidence": [
+        "Loop evidence records accepted and rejected gate counts.",
+        "Exit path has a deterministic mock scenario."
+      ],
+      "evidenceGaps": [
+        "No explicit counter proves the first pass repeated and the second pass exited."
+      ],
+      "acceptanceTarget": "Second pass must show stable exit evidence with no blocking review findings.",
+      "exitCriteria": [
+        "repeat_count == 1",
+        "exit_decision_count == 1",
+        "blocking_findings == 0"
+      ]
+    }
+  },
+  "loop-plan": [
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "always": true
+      },
+      "payload": {
+        "iteration": 1,
+        "loopMap": {
+          "entry": "loop-intake",
+          "repeatedStep": "loop-plan",
+          "progressState": "probe evidence completeness",
+          "exitCondition": "loop-exit-gate sees complete counters and regression probes"
+        },
+        "suspectedFailureMode": "The probe summarizes review status but omits explicit transition counters.",
+        "nextPassChanges": [
+          "Add repeat and exit-decision counters to probe evidence.",
+          "Require the exit gate to explain missing evidence before repeating."
+        ],
+        "changedFiles": [
+          "examples/loop-engineer-quality-loop/workflow.json",
+          "examples/loop-engineer-quality-loop/mock-scenario.json"
+        ],
+        "expectedProbeSignal": "Probe reports repeat_count and exit_decision_count.",
+        "openQuestions": [
+          "Whether the final review should expose the counters as evidence refs."
+        ]
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "always": true
+      },
+      "payload": {
+        "iteration": 2,
+        "loopMap": {
+          "entry": "loop-intake",
+          "repeatedStep": "loop-plan",
+          "progressState": "probe evidence completeness",
+          "exitCondition": "loop-exit-gate sees complete counters and regression probes"
+        },
+        "suspectedFailureMode": "Resolved by making the repeated pass and exit pass explicit in probe evidence.",
+        "nextPassChanges": [
+          "Preserve counters in loop-review evidence.",
+          "Record repeat and exit regression probes in final output."
+        ],
+        "changedFiles": [
+          "examples/loop-engineer-quality-loop/workflow.json",
+          "examples/loop-engineer-quality-loop/EXPECTED_RESULTS.md"
+        ],
+        "expectedProbeSignal": "repeat_count=1, exit_decision_count=1, regression_probes=2",
+        "openQuestions": []
+      }
+    }
+  ],
+  "instrumentation-plan": [
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "always": true
+      },
+      "payload": {
+        "iteration": 1,
+        "counters": [
+          "repeat_count",
+          "exit_decision_count"
+        ],
+        "traceFields": [
+          "gate_decision",
+          "missing_evidence"
+        ],
+        "regressionProbes": [
+          "repeat path probe"
+        ],
+        "redaction": "summary-only",
+        "missingEvidenceTriggers": [
+          "regression probe for exit path is absent"
+        ]
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "always": true
+      },
+      "payload": {
+        "iteration": 2,
+        "counters": [
+          "repeat_count",
+          "exit_decision_count",
+          "regression_probe_count"
+        ],
+        "traceFields": [
+          "gate_decision",
+          "missing_evidence",
+          "accepted_exit_reason"
+        ],
+        "regressionProbes": [
+          "repeat path probe",
+          "exit path probe"
+        ],
+        "redaction": "summary-only",
+        "missingEvidenceTriggers": []
+      }
+    }
+  ],
+  "loop-probe": [
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "always": true
+      },
+      "payload": {
+        "iteration": 1,
+        "probeStatus": "incomplete",
+        "observedCounters": {
+          "repeat_count": 1,
+          "exit_decision_count": 0
+        },
+        "traceSummary": "Repeat path observed, exit path not yet covered.",
+        "verification": [
+          "swift test --filter LoopSessionOverviewTests"
+        ],
+        "missingEvidence": [
+          "exit path regression probe"
+        ],
+        "evidenceComplete": false
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "always": true
+      },
+      "payload": {
+        "iteration": 2,
+        "probeStatus": "complete",
+        "observedCounters": {
+          "repeat_count": 1,
+          "exit_decision_count": 1,
+          "regression_probe_count": 2
+        },
+        "traceSummary": "Repeat and exit paths are both covered with stable evidence.",
+        "verification": [
+          "swift test --filter LoopSessionOverviewTests",
+          "swift run riela workflow validate loop-engineer-quality-loop --workflow-definition-dir ./examples"
+        ],
+        "missingEvidence": [],
+        "evidenceComplete": true
+      }
+    }
+  ],
+  "loop-exit-gate": [
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "needs_iteration": true
+      },
+      "payload": {
+        "needs_iteration": true,
+        "decision": "repeat",
+        "reason": "The first probe observed the repeat path but did not cover the exit path.",
+        "requiredNextEvidence": [
+          "Add exit_decision_count",
+          "Add exit path regression probe"
+        ]
+      }
+    },
+    {
+      "provider": "scenario-mock",
+      "model": "gpt-5.5",
+      "when": {
+        "needs_iteration": false
+      },
+      "payload": {
+        "needs_iteration": false,
+        "decision": "review",
+        "reason": "Repeat and exit paths are both covered and no blocking evidence gap remains.",
+        "acceptedEvidence": [
+          "repeat_count=1",
+          "exit_decision_count=1",
+          "regression_probe_count=2"
+        ]
+      }
+    }
+  ],
+  "loop-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "reviewSummary": "Loop engineer gate accepted after one repeated planning pass.",
+      "loopGate": {
+        "gateId": "loop-engineer-review",
+        "stepId": "loop-review",
+        "decision": "accepted",
+        "severityCounts": {
+          "high": 0,
+          "medium": 0,
+          "low": 1,
+          "informational": 1
+        },
+        "blockingFindings": [],
+        "evidenceRefs": [
+          "runtime:loop-map",
+          "runtime:instrumentation",
+          "runtime:regression-probes"
+        ],
+        "residualRisks": [
+          {
+            "id": "loop-engineer-doc-polish",
+            "severity": "low",
+            "message": "Future examples could include a live command-node probe instead of mock-only evidence."
+          }
+        ],
+        "diagnostics": []
+      }
+    }
+  },
+  "workflow-output": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "status": "accepted",
+      "loopSymptom": "The quality loop repeats without proving why the second pass exits.",
+      "iterations": 2,
+      "loopMap": {
+        "entry": "loop-intake",
+        "repeatedStep": "loop-plan",
+        "progressState": "probe evidence completeness",
+        "exitCondition": "loop-exit-gate sees complete counters and regression probes"
+      },
+      "instrumentation": {
+        "counters": [
+          "repeat_count",
+          "exit_decision_count",
+          "regression_probe_count"
+        ],
+        "traceFields": [
+          "gate_decision",
+          "missing_evidence",
+          "accepted_exit_reason"
+        ]
+      },
+      "verification": [
+        "swift test --filter LoopSessionOverviewTests",
+        "swift run riela workflow validate loop-engineer-quality-loop --workflow-definition-dir ./examples"
+      ],
+      "gate": {
+        "gateId": "loop-engineer-review",
+        "decision": "accepted",
+        "blockingFindings": 0
+      },
+      "changedFiles": [
+        "examples/loop-engineer-quality-loop/workflow.json",
+        "examples/loop-engineer-quality-loop/mock-scenario.json",
+        "examples/loop-engineer-quality-loop/EXPECTED_RESULTS.md"
+      ],
+      "residualRisks": [
+        "Future examples could include a live command-node probe instead of mock-only evidence."
+      ],
+      "operatorNotes": [
+        "The deterministic scenario repeats planning once, then exits through the required loop engineer review gate."
+      ]
+    }
+  }
+}

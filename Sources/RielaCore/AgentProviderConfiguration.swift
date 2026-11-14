@@ -1,0 +1,5 @@
+import AgentGateway
+
+public typealias AgentProviderConfiguration = AgentGateway.AgentProviderConfiguration
+public typealias AgentProviderConfigurationError = AgentGateway.AgentProviderConfigurationError
+public typealias AgentProviderProxy = AgentGateway.AgentProviderProxy

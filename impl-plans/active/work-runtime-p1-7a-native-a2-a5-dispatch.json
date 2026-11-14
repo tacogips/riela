@@ -1,0 +1,166 @@
+{
+  "taskId": "work-runtime-p1-7a-native-a2-a5",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "2f472b3bd4d203f21bf72497900e58b88c2ece3b",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5",
+  "reviewContext": {
+    "issueReference": {
+      "repository": "tacogips/riela",
+      "issueNumber": null,
+      "draftPR": 109,
+      "intakeCommunication": "comm-000002",
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+    },
+    "userProblem": "Complete P1-7a A4 independent evidence handoff and A5 publication after A2/A3 completion; prior integration rejected lost review decisions and checkpoint provenance.",
+    "requiredOutcomes": [
+      "Preserve source-matched A2/A3 behavior, V7 comparison and separate strict changed-file lint pass.",
+      "Give both failed exit-1 broad aggregates separate independent test-integrity, Sol adversarial and Astra integration dispositions; carry the A0 historical metadata limitation.",
+      "Verify runtime-owned checkpoint projection and manifest identity against Git object 2f472b3 without worker manifest edits.",
+      "After A4 acceptance, publish only exact reviewed A5 files by non-force push to Draft PR #109."
+    ],
+    "nonGoals": [
+      "No A1, Native Remote or P1-7b reimplementation.",
+      "No archived rielflow, Monja tenant-sharding-d48 or other-session/worktree edits.",
+      "No main merge, release, speculative redesign, broad test rerun without material invalidation or fabricated green gate."
+    ],
+    "constraints": [
+      "Use runner-resolved immutable codex-design-and-implement-review-loop package 0.3.42 or later.",
+      "Preserve dirty A2/A3 source and staged state; checkpoint only reviewed design, plan and manifest paths.",
+      "Keep all new evidence and command logs under repository-root tmp/.",
+      "One serial mutation owner; independent A4 reviews precede A5 publication."
+    ],
+    "designDecisionsAndRationale": [
+      "Reuse complete source-matched receipts to avoid repeating broad suites without a material change.",
+      "Keep failed broad aggregate exits and assertion identities explicit so reviewers can independently determine baseline attribution.",
+      "Treat runtime dispatch projection as checkpoint provenance and compare it with the historical Git object; originalHead denotes predecessor input.",
+      "Keep coupled A4/A5 work in one plan because evidence handoff, review, documentation and publication share an exact file set."
+    ],
+    "intentionalTradeoffs": [
+      "A0 historical per-command environment snapshots are missing; report the limitation without reconstructing metadata.",
+      "Both broad aggregates remain failed exit 1 even if independently attributed and slice acceptance is granted."
+    ],
+    "supportedEdgeCases": [
+      "Retired top-level autoImprove and nestedSuperviser keys reject presence including false and null before provider effects while opaque runtimeVariables pass.",
+      "Preserve task-free plain workflows, authentication, cancellation, guard/director policy, specialist/event supervision, loops and routines.",
+      "Preserve dirty deletions and unrelated tracked or untracked changes during scoped checkpoint."
+    ],
+    "outOfScopeEdgeCases": [
+      "No new GraphQL/UI task counterpart or recursive runtimeVariables validation.",
+      "No remote drift repair by force push or broad unrelated lint cleanup."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md §17.10",
+      "design-docs/specs/design-native-remote-workflow-execution.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-4/v7/comparison.json"
+    ],
+    "acceptedReviews": {
+      "design": {
+        "communicationId": "comm-000006",
+        "decision": "accepted",
+        "findings": []
+      },
+      "plan": {
+        "communicationId": "comm-000008",
+        "decision": "accepted",
+        "findings": [],
+        "codexAgentReferences": []
+      }
+    },
+    "historicalCheckpoint": {
+      "commit": "2f472b3bd4d203f21bf72497900e58b88c2ece3b",
+      "manifestPath": "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
+    }
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Resources/skills/riela-workflow-run/SKILL.md",
+        "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/SessionCommandModels.swift",
+        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
+        "Sources/RielaCLI/LoopCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCore/WorkflowRunResult.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandPackageLifecycleTests.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
+        "impl-plans/progress/p1-dispatch.md",
+        "examples/auto-improve/README.md",
+        "examples/default-superviser/EXPECTED_RESULTS.md",
+        "examples/default-superviser/workflow.json",
+        "examples/supervised-mock-retry/EXPECTED_RESULTS.md",
+        "examples/supervised-mock-retry/mock-scenario.json",
+        "examples/supervised-mock-retry/nodes/node-main-worker.json",
+        "examples/supervised-mock-retry/prompts/main-worker.md",
+        "examples/supervised-mock-retry/workflow.json",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "examples/catalog/chat-persona-and-agent-trio.md",
+        "examples/monja-project-task-orchestrator/executor.ts",
+        "examples/monja-agent-collaboration/riela.ts",
+        "examples/monja-agent-collaboration/verify-workflow.ts",
+        "Sources/RielaCLI/WorkflowExecutionProvider.swift",
+        "Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift",
+        "Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift",
+        "Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift",
+        "Tests/RielaCLITests/ServeHTTPCommandTests.swift"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "design-docs/specs/design-native-remote-workflow-execution.md",
+        "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "acceptanceCriteria": [
+        "Reconcile A2/A3 and V7 receipts against current source; strict changed-file lint stays separately passing.",
+        "Obtain independent typed integrity, Sol adversarial and Astra integration decisions for each failed broad aggregate with explicit A0 limitation and no unresolved material finding.",
+        "Astra verifies runtime-owned checkpoint projection and manifest Git object identity.",
+        "A5 exact reviewed allowlist is committed and non-force pushed to feat/remaining-impl-plans; Draft PR #109 head equals live remote tip."
+      ],
+      "verification": [
+        "git rev-parse HEAD",
+        "git status --porcelain=v1 -uall",
+        "git show --format=fuller --stat 2f472b3bd4d203f21bf72497900e58b88c2ece3b",
+        "git show 2f472b3bd4d203f21bf72497900e58b88c2ece3b:impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-4/v7/comparison.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/V5-work-cli-core/comparison-shortbuild.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/full-suite-no-parallel/comparison-full.json",
+        "git diff --check",
+        "git diff --cached --check",
+        "git diff --cached --name-status",
+        "git ls-remote --heads origin refs/heads/feat/remaining-impl-plans",
+        "gh pr view 109 --repo tacogips/riela --json number,state,isDraft,headRefName,headRefOid,url"
+      ]
+    }
+  ]
+}

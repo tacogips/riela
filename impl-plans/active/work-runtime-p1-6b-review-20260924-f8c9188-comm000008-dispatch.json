@@ -1,0 +1,136 @@
+{
+  "taskId": "work-runtime-p1-6b-review-20260924-f8c9188-comm000008",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "f8c91887d4021ccd3ebfec5dda39cbc555b6b040",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008",
+  "reviewContext": {
+    "issueReference": "Work Runtime P1-6b; no GitHub issue number supplied",
+    "userProblem": "The prior P1-6b workflow retained implemented task-run results and read-only dry-run WIP but ended on sandbox listener denial; source-matched host verification passed 194/194, while independent implementation and SQLite amendment acceptance remain pending.",
+    "requiredOutcomes": [
+      "Independently assess existing P1-6b results, dry-run byte/row invariance, output identity, and bounded zero-byte-WAL SQLite amendment.",
+      "Accept only with no unresolved material correctness, data-loss, security or verification defect; preserve exact source identity or rerun affected gates after changes.",
+      "After acceptance, align directly affected docs/progress and publish the exact P1-6b file set by non-force push on feat/remaining-impl-plans, leaving later P1 slices and parent plan active."
+    ],
+    "nonGoals": [
+      "No automatic recoding without an independently proven material defect; no P1-6c/d, P1-7a/b, parent P1 certification, main merge, new schema, redesign or unrelated baseline repair."
+    ],
+    "constraints": [
+      "Use the immutable user-scope codex-design-and-implement-review-loop in issue-resolution mode; preserve WIP, checkpoint history, unrelated worktrees and Monja tenant-sharding-d48.",
+      "Keep all scratch and complete foreground logs under repository-root tmp/; failed sandbox gates remain failures.",
+      "Preserve unrelated tracked, untracked and staged changes; no force push or broad staging."
+    ],
+    "designDecisionsAndRationale": [
+      "Keep the existing task run result model and P1-6a dispatcher; preview resolves the same task/workflow/placement information and stops before reservation or launch.",
+      "Select read-only dependencies before any initializer or writable loader, and diagnose nonempty WAL before opening relevant stores to avoid stale immutable reads.",
+      "Treat an existing zero-byte WAL as idle for immutable reads only, subject to explicit independent review of shared-reader behavior and concurrent-writer races."
+    ],
+    "intentionalTradeoffs": [
+      "One plan retains coupled source, test and documentation ownership; independent test-integrity and adversarial reviews are read-only, with serial reconciliation and Astra combined-tree review.",
+      "Reuse the completed listener-capable host aggregate on identical nine source/test hashes; rerun affected gates only after changes or a material evidence gap."
+    ],
+    "supportedEdgeCases": [
+      "Ready, dependency/capacity wait, admitted execution failure and pre-admission error in text and JSON, with exact reserved identities only after allocation.",
+      "Existing/absent/incompatible/corrupt stores, WAL/SHM sidecars, and existing/absent/corrupt host profiles; affected row values include work_hosts.",
+      "Selected-host and called-workflow placement, pending entry, reservation races and concurrent-writer review."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live cancellation/director redesign, legacy removal, new examples, real credential probes and unrelated store repairs."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "tmp/work-runtime-p1-6b-host/evidence.json",
+      "tmp/work-runtime-p1-6b-host/aggregate.log",
+      "tmp/work-runtime-p1-6b-20260924-2f10916-comm000006/plans/p1-dispatch/attempt-1/verification-evidence-exact.json"
+    ],
+    "reviewDecision": "Step 3 design accepted at comm-000004. Step 5 accepted the revised plan at comm-000008 with no findings; comm-000006 commit-order finding resolved by comm-000007. Implementation and SQLite amendment acceptance remain pending.",
+    "codexAgentReferences": [
+      "codex-design-and-implement-review-loop-session-1",
+      "step1-issue-intake",
+      "step2-design-doc-update",
+      "step3-design-review",
+      "step4-impl-plan-create",
+      "step5-impl-plan-review",
+      "comm-000006",
+      "comm-000007",
+      "comm-000008"
+    ],
+    "verificationEvidence": [
+      {
+        "command": "Python commit-order/history/JSON/DAG/design-hash/nine-source-hash assertions",
+        "exitCode": 0,
+        "completeLogPath": "tmp/p1-6b-step4-plan-revision-2/verification.log"
+      },
+      {
+        "command": "git diff --check",
+        "exitCode": 0,
+        "completeLogPath": "tmp/p1-6b-step4-plan-revision-2/verification.log"
+      },
+      {
+        "command": "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --scratch-path tmp/p1-6a-host-verify/build --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'",
+        "exitCode": 0,
+        "testsPassed": 194,
+        "completeLogPath": "tmp/work-runtime-p1-6b-host/aggregate.log"
+      }
+    ]
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/HostCapabilityResolver.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaSQLite/SQLiteDatabase.swift",
+        "Sources/RielaWork/TaskDispatcher.swift",
+        "Sources/RielaWork/WorkStore.swift",
+        "Tests/RielaCLITests/TaskCommandParsingTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
+        "Tests/RielaCLITests/TaskRunResultTests.swift",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/HostCapabilityResolver.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaSQLite/SQLiteDatabase.swift",
+        "Sources/RielaWork/TaskDispatcher.swift",
+        "Sources/RielaWork/WorkStore.swift",
+        "Tests/RielaCLITests/TaskCommandParsingTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
+        "Tests/RielaCLITests/TaskRunResultTests.swift",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPathIntent": "The single plan owns coupled P1-6b source and test paths. Read-only reviewers inspect them; the serial owner makes only independently justified repairs and updates design, plan, and progress evidence after acceptance.",
+      "progressFile": "tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/progress.jsonl",
+      "attemptDirTemplate": "tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/attempt-<n>",
+      "acceptanceCriteria": [
+        "Independent test-integrity, adversarial and Astra combined-tree reviews explicitly accept the bounded SQLiteDatabase.swift amendment and find no unresolved material defect.",
+        "Task run text/JSON ready, wait, admitted failure and pre-admission error results match accepted §17.5, including placement and exact reserved attempt/session IDs where allocated.",
+        "Dry-run preserves database and sidecar bytes, file inventory, affected row values including work_hosts, and host profiles across the accepted existing, absent, corrupt and incompatible matrix.",
+        "All nine final Swift source/test hashes match the 194/194 host evidence or affected gates are rerun after any code changes; the earlier sandbox listener aggregate remains recorded as failed.",
+        "Final P1-6b publication uses an exact reviewed allowlist and non-force push; P1-6c/d, P1-7a/b and parent P1 remain active."
+      ],
+      "verification": [
+        "python3 -c 'import hashlib,json,pathlib; h=json.loads(pathlib.Path(\"tmp/work-runtime-p1-6b-host/evidence.json\").read_text())[\"sourceHashes\"]; p=json.loads(pathlib.Path(\"tmp/work-runtime-p1-6b-20260924-2f10916-comm000006/plans/p1-dispatch/attempt-1/verification-evidence-exact.json\").read_text())[\"sourceHashes\"]; assert len(h)==9; assert all(hashlib.sha256(pathlib.Path(k).read_bytes()).hexdigest()==v==p[k] for k,v in h.items()); print(\"PASS: 9/9 source hashes match both manifests\")'",
+        "git diff --check",
+        "git diff --cached --check",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --scratch-path tmp/p1-6a-host-verify/build --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6b/changed-swift-files.nul"
+      ]
+    }
+  ]
+}

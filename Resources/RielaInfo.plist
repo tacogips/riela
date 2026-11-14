@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>me.tacogips.riela</string>
+  <key>CFBundleName</key>
+  <string>riela</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Riela needs Apple Events access so workflow steps can read and automate the local Apple applications the workflow names.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Riela needs Contacts access so workflow steps can place calls to contacts identified by name.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Riela needs full calendar access so workflow steps can read and manage the calendar data they request.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Riela needs calendar access so workflow steps can read the calendar data they request.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>Riela needs full reminders access so workflow steps can read and manage the reminders they request.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>Riela needs reminders access so workflow steps can read the reminders they request.</string>
+</dict>
+</plist>

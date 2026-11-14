@@ -1,0 +1,96 @@
+{
+	"id": "integrator",
+	"description": "Mira weighs the proposal and critique, then owns a final decision without hiding unresolved risks.",
+	"executionBackend": "codex-agent",
+	"agentSandbox": "read-only",
+	"model": "gpt-5.6-luna",
+	"modelFreeze": true,
+	"systemPromptTemplateFile": "prompts/integrator-system.md",
+	"promptTemplateFile": "prompts/integrator.md",
+	"variables": {},
+	"output": {
+		"description": "Mira's typed synthesis and solved decision for the Monja discussion.",
+		"jsonSchema": {
+			"type": "object",
+			"required": [
+				"persona",
+				"message",
+				"details",
+				"priorTurns",
+				"solved",
+				"unresolved",
+				"acceptanceCriteria"
+			],
+			"properties": {
+				"persona": {
+					"type": "string",
+					"const": "integrator"
+				},
+				"message": {
+					"type": "string",
+					"minLength": 1
+				},
+				"details": {
+					"type": "object",
+					"required": ["decision", "actions"],
+					"properties": {
+						"decision": {
+							"type": "string",
+							"minLength": 1
+						},
+						"actions": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							},
+							"minItems": 1
+						}
+					},
+					"additionalProperties": false
+				},
+				"priorTurns": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["persona", "message", "details"],
+						"properties": {
+							"persona": {
+								"type": "string",
+								"minLength": 1
+							},
+							"message": {
+								"type": "string",
+								"minLength": 1
+							},
+							"details": {
+								"type": "object"
+							}
+						},
+						"additionalProperties": false
+					}
+				},
+				"solved": {
+					"type": "boolean"
+				},
+				"unresolved": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					}
+				},
+				"acceptanceCriteria": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"minItems": 5
+				}
+			},
+			"additionalProperties": false
+		},
+		"maxValidationAttempts": 2
+	}
+}

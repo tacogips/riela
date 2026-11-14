@@ -1,0 +1,160 @@
+#if os(macOS)
+import AppKit
+
+@MainActor
+extension DaemonWorkflowWindowController {
+  func showContentPane(_ visiblePane: NSView?) {
+    let panes = [
+      instancesListView,
+      instanceDetailView,
+      addInstanceSelectionView,
+      sourcesOverviewView,
+      workflowSourceDetailView,
+      marketplaceOverviewView,
+      marketplaceWorkflowDetailView,
+      assistantOverviewView,
+      profilesOverviewView,
+      kaibaOverviewView
+    ].compactMap { $0 }
+    for pane in panes where pane !== visiblePane {
+      pane.isHidden = true
+    }
+    guard let visiblePane else {
+      contentHost?.needsLayout = true
+      return
+    }
+    visiblePane.isHidden = false
+    if visiblePane.superview !== contentHost {
+      contentHost?.addSubview(visiblePane)
+    }
+    contentHost?.needsLayout = true
+  }
+
+  @objc func goBack() {
+    guard isBackNavigationAvailable else {
+      return
+    }
+    if isShowingAddInstanceSelection {
+      returnToWorkflow()
+      return
+    }
+    if isShowingInstanceDetail, instanceDetailPane == .removalConfirmation {
+      showInstanceDetailOverview()
+      return
+    }
+    if isShowingInstanceDetail {
+      returnToWorkflow()
+      return
+    }
+    if isShowingWorkflowSourceDetail {
+      showSourcesPane()
+      return
+    }
+    if isShowingMarketplaceWorkflowDetail {
+      showMarketplacePane()
+      return
+    }
+    showInstancesPane()
+  }
+
+  @objc func showInstancesPane() {
+    showSourcesPane()
+  }
+
+  @objc func showSourcesPane() {
+    activeSidebarPane = .sources
+    rebuildSourcesOverviewView()
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
+    showContentPane(sourcesOverviewView)
+    navigationTitleLabel.stringValue = "Workflows"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  @objc func showMarketplacePane() {
+    activeSidebarPane = .marketplace
+    rebuildMarketplaceOverviewView()
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
+    showContentPane(marketplaceOverviewView)
+    navigationTitleLabel.stringValue = "Install Workflow"
+    updateNavigationState()
+    updateSidebarSelection()
+    requestMarketplaceCatalogsIfNeeded()
+  }
+
+  @objc func showProfilesPane() {
+    activeSidebarPane = .profiles
+    rebuildProfilesOverviewView()
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
+    showContentPane(profilesOverviewView)
+    navigationTitleLabel.stringValue = "Profiles"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  @objc func showAssistantPane() {
+    activeSidebarPane = .assistant
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
+    showContentPane(assistantOverviewView)
+    navigationTitleLabel.stringValue = "Assistant"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  @objc func showKaibaPane() {
+    activeSidebarPane = .kaiba
+    rebuildKaibaOverviewView()
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
+    showContentPane(kaibaOverviewView)
+    navigationTitleLabel.stringValue = "Kaiba API Instances"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  func updateNavigationState() {
+    let isAvailable = isBackNavigationAvailable
+    navigationBackButton.isEnabled = isAvailable
+    navigationBackButton.isHidden = !isAvailable
+    navigationBackButton.superview?.isHidden = !isAvailable
+  }
+
+  var isBackNavigationAvailable: Bool {
+    isShowingAddInstanceSelection
+      || isShowingInstanceDetail
+      || isShowingWorkflowSourceDetail
+      || isShowingMarketplaceWorkflowDetail
+      || (activeSidebarPane != .sources && activeSidebarPane != .instances)
+  }
+
+  func updateSidebarSelection() {
+    updateSidebarButton(sidebarInstancesButton, selected: activeSidebarPane == .instances || activeSidebarPane == .sources)
+    updateSidebarButton(sidebarSourcesButton, selected: activeSidebarPane == .sources)
+    updateSidebarButton(sidebarMarketplaceButton, selected: activeSidebarPane == .marketplace)
+    updateSidebarButton(sidebarAssistantButton, selected: activeSidebarPane == .assistant)
+    updateSidebarButton(sidebarProfilesButton, selected: activeSidebarPane == .profiles)
+    updateSidebarButton(sidebarKaibaButton, selected: activeSidebarPane == .kaiba)
+  }
+
+  private func updateSidebarButton(_ button: NSButton, selected: Bool) {
+    button.wantsLayer = true
+    button.layer?.cornerRadius = 10
+    button.layer?.backgroundColor = selected ? NSColor.labelColor.cgColor : NSColor.clear.cgColor
+    button.contentTintColor = selected ? .windowBackgroundColor : .labelColor
+  }
+}
+#endif

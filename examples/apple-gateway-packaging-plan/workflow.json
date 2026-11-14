@@ -1,0 +1,37 @@
+{
+  "workflowId": "apple-gateway-packaging-plan",
+  "description": "Read-only Apple Gateway packaging dry-run example using a deterministic command-node mock.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "packaging-plan",
+  "nodes": [
+    {
+      "id": "packaging-plan",
+      "nodeFile": "nodes/node-packaging-plan.json"
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "packaging-plan",
+      "nodeId": "packaging-plan",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

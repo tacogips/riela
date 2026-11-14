@@ -1,0 +1,19 @@
+import Foundation
+
+public enum DeterministicWorkflowRunnerError: Error, Equatable, Sendable {
+  case invalidWorkflow(String)
+  case missingNode(String)
+  case missingStep(String)
+  case missingNodePayload(String)
+  case missingPromptVariant(String, String)
+  case maxStepsExceeded(Int)
+  case rerunValidation(String)
+  case resumeValidation(String)
+}
+
+func errorMessage(_ error: WorkflowSessionEntryValidationError) -> String {
+  switch error {
+  case let .usage(message), let .validation(message):
+    message
+  }
+}

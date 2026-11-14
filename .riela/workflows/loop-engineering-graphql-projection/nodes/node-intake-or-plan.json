@@ -1,0 +1,8 @@
+{
+  "id": "intake-or-plan",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptFile": "../prompts/intake-or-plan.md",
+  "variables": {}
+}

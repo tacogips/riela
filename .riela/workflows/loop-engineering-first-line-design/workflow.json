@@ -1,0 +1,73 @@
+{
+  "workflowId": "loop-engineering-first-line-design",
+  "description": "Project-scoped discussion workflow where two Codex GPT-5.5 LLM lanes debate what Riela needs to become a first-line loop-engineering tool, then an arbitrator synthesizes a design proposal.",
+  "defaults": {
+    "nodeTimeoutMs": 3600000,
+    "maxLoopIterations": 1
+  },
+  "prompts": {
+    "rielaPromptTemplate": "Run {{workflowId}}. Execute intake-or-plan as LLM A, then work as LLM B, then review as the arbitrator. The arbitrator must synthesize the debate into the requested design proposal and write the design document. Reuse the arbitrator session for workflow-output and finish without committing or pushing.",
+    "workerSystemPromptTemplate": "Return concise business JSON only. Preserve unrelated dirty worktree changes. Do not commit or push. Keep inspected files, claims, tradeoffs, rejected alternatives, design proposal paths, and residual risks explicit."
+  },
+  "entryStepId": "intake-or-plan",
+  "nodes": [
+    {
+      "id": "llm-a-product-architect",
+      "nodeFile": "nodes/node-llm-a-product-architect.json"
+    },
+    {
+      "id": "llm-b-systems-architect",
+      "nodeFile": "nodes/node-llm-b-systems-architect.json"
+    },
+    {
+      "id": "arbitrator",
+      "nodeFile": "nodes/node-arbitrator.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "intake-or-plan",
+      "nodeId": "llm-a-product-architect",
+      "description": "LLM A proposes the product and workflow-system changes required for first-line loop engineering.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work"
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "nodeId": "llm-b-systems-architect",
+      "description": "LLM B critiques LLM A and proposes a competing runtime and reliability design.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "nodeId": "arbitrator",
+      "description": "Arbitrator resolves the debate and writes the design proposal.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "arbitrator",
+      "description": "Publish the arbitrated design proposal summary.",
+      "role": "worker",
+      "promptVariant": "workflow-output",
+      "sessionPolicy": {
+        "mode": "reuse",
+        "inheritFromStepId": "review"
+      }
+    }
+  ]
+}

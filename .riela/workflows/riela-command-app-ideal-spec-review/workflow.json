@@ -1,0 +1,101 @@
+{
+  "workflowId": "riela-command-app-ideal-spec-review",
+  "description": "Review and improve a user-facing ideal specification for both the riela command and RielaApp surfaces.",
+  "defaults": {
+    "nodeTimeoutMs": 1800000,
+    "maxLoopIterations": 2
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise business JSON only. Preserve unrelated dirty worktree changes. Do not commit or push. Do not start nested Riela or Codex processes. Keep file paths repository-relative."
+  },
+  "entryStepId": "intake",
+  "nodes": [
+    {
+      "id": "intake",
+      "nodeFile": "nodes/node-intake.json"
+    },
+    {
+      "id": "riela-command-review",
+      "nodeFile": "nodes/node-riela-command-review.json"
+    },
+    {
+      "id": "riela-app-review",
+      "nodeFile": "nodes/node-riela-app-review.json"
+    },
+    {
+      "id": "ideal-spec-synthesis",
+      "nodeFile": "nodes/node-ideal-spec-synthesis.json"
+    },
+    {
+      "id": "review-and-improve",
+      "nodeFile": "nodes/node-review-and-improve.json"
+    },
+    {
+      "id": "workflow-output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "intake",
+      "nodeId": "intake",
+      "description": "Normalize the requested user-facing ideal-spec review scope and identify source documents.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "riela-command-review"
+        }
+      ]
+    },
+    {
+      "id": "riela-command-review",
+      "nodeId": "riela-command-review",
+      "description": "Review the ideal spec from the riela command user perspective.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "riela-app-review"
+        }
+      ]
+    },
+    {
+      "id": "riela-app-review",
+      "nodeId": "riela-app-review",
+      "description": "Review the ideal spec from the RielaApp user perspective.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "ideal-spec-synthesis"
+        }
+      ]
+    },
+    {
+      "id": "ideal-spec-synthesis",
+      "nodeId": "ideal-spec-synthesis",
+      "description": "Synthesize a unified ideal specification across command and app surfaces.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review-and-improve"
+        }
+      ]
+    },
+    {
+      "id": "review-and-improve",
+      "nodeId": "review-and-improve",
+      "description": "Review the synthesized spec and improve it until it is actionable.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "description": "Return the final workflow summary, changed files, verification, and residual risks.",
+      "role": "worker"
+    }
+  ]
+}

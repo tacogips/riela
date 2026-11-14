@@ -1,0 +1,12 @@
+{
+  "id": "no-digest-output",
+  "description": "Completes the digest workflow when no validated topic should be sent.",
+  "nodeType": "command",
+  "variables": {},
+  "command": {
+    "scriptPath": "scripts/no-digest-output.sh"
+  },
+  "output": {
+    "description": "Return a stable no-digest root output."
+  }
+}

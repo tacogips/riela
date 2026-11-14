@@ -1,0 +1,309 @@
+#if os(macOS)
+import Foundation
+import RielaAdapters
+import RielaAppSupport
+import RielaCore
+
+extension RielaApp {
+  func saveAssistantAssistance(_ assistance: String) -> String? {
+    daemonState.assistant.assistance = assistance
+    guard saveDaemonState() else {
+      return status
+    }
+    status = "Updated assistant assistance"
+    refreshDaemonWorkflowWindow()
+    return nil
+  }
+
+  func saveAssistantSettings(_ settings: RielaAppAssistantSettings) -> String? {
+    daemonState.assistant = settings
+    guard saveDaemonState() else {
+      return status
+    }
+    status = "Updated assistant settings"
+    refreshDaemonWorkflowWindow()
+    return nil
+  }
+
+  func submitAssistantMessage(_ message: String, workingDirectory: String?) {
+    let prompt = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !prompt.isEmpty else {
+      return
+    }
+    let resolvedWorkingDirectory = normalizedAssistantWorkingDirectory(workingDirectory)
+    daemonState.assistant.appendMessage(role: .user, content: prompt)
+    guard saveDaemonState() else {
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    status = "Assistant running in \(resolvedWorkingDirectory)"
+    refreshDaemonWorkflowWindow()
+    let settings = daemonState.assistant
+    Task { @MainActor in
+      let reply = await runAssistantAgent(
+        settings: settings,
+        message: prompt,
+        workingDirectory: resolvedWorkingDirectory
+      )
+      daemonState.assistant.appendMessage(role: .assistant, content: reply)
+      _ = saveDaemonState()
+      status = "Assistant replied"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  private func normalizedAssistantWorkingDirectory(_ workingDirectory: String?) -> String {
+    if let workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !workingDirectory.isEmpty {
+      return URL(fileURLWithPath: workingDirectory, isDirectory: true).standardizedFileURL.path
+    }
+    return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .standardizedFileURL.path
+  }
+
+  private func runAssistantAgent(
+    settings: RielaAppAssistantSettings,
+    message: String,
+    workingDirectory: String
+  ) async -> String {
+    do {
+      let invocation = try makeAssistantInvocation()
+      do {
+        let vendor = try resolvedAssistantVendor(settings.vendor)
+        let output = try await assistantAdapter(for: vendor).execute(
+          assistantInput(settings: settings, vendor: vendor, message: message, workingDirectory: workingDirectory, invocation: invocation),
+          // Complex tasks now include workflow authoring, validation, execution, and
+          // Note handoff. Keep a finite invocation boundary without cutting normal
+          // multi-step runs off at the former two-minute limit.
+          context: AdapterExecutionContext(deadline: Date().addingTimeInterval(60 * 60))
+        )
+        try FileManager.default.removeItem(at: invocation.root)
+        return assistantReplyText(from: output)
+      } catch {
+        do {
+          if FileManager.default.fileExists(atPath: invocation.root.path) {
+            try FileManager.default.removeItem(at: invocation.root)
+          }
+        } catch {
+          return "Assistant error: private workflow cleanup failed: \(error.localizedDescription)"
+        }
+        throw error
+      }
+    } catch let error as AdapterExecutionError {
+      return "Assistant error: \(error.message)"
+    } catch {
+      return "Assistant error: \(error.localizedDescription)"
+    }
+  }
+
+  private func resolvedAssistantVendor(_ vendor: RielaAppAssistantVendor) throws -> RielaAppAssistantVendor {
+    if vendor != .automatic {
+      return vendor
+    }
+    if executablePath(named: "codex") != nil {
+      return .codexCLI
+    }
+    if executablePath(named: "claude") != nil {
+      return .claudeCodeCLI
+    }
+    if executablePath(named: "cursor-agent") != nil {
+      return .cursorCLI
+    }
+    let environment = ProcessInfo.processInfo.environment
+    if environment["OPENAI_API_KEY"]?.isEmpty == false {
+      return .openAIAPI
+    }
+    if environment["ANTHROPIC_API_KEY"]?.isEmpty == false || environment["CLAUDE_API_KEY"]?.isEmpty == false {
+      return .anthropicAPI
+    }
+    if environment["CURSOR_API_KEY"]?.isEmpty == false {
+      return .cursorAPI
+    }
+    throw AdapterExecutionError(.policyBlocked, "No assistant agent is available. Install codex/claude/cursor-agent or set OPENAI_API_KEY, ANTHROPIC_API_KEY, or CURSOR_API_KEY.")
+  }
+
+  private func assistantAdapter(for vendor: RielaAppAssistantVendor) throws -> any NodeAdapter {
+    if vendor == .automatic { return try assistantAdapter(for: resolvedAssistantVendor(vendor)) }
+    let environment = ProcessInfo.processInfo.environment
+    return AgentGatewayNodeAdapter(
+      executableName: environment["RIELA_AGENT_GATEWAY_EXECUTABLE"] ?? "agent-gateway",
+      environment: environment
+    )
+  }
+
+  private func assistantInput(
+    settings: RielaAppAssistantSettings,
+    vendor: RielaAppAssistantVendor,
+    message: String,
+    workingDirectory: String,
+    invocation: AssistantInvocation
+  ) -> AdapterExecutionInput {
+    AdapterExecutionInput(
+      node: AgentNodePayload(
+        id: "riela-app-assistant",
+        executionBackend: assistantExecutionBackend(for: vendor),
+        model: settings.normalizedModel,
+        workingDirectory: workingDirectory
+      ),
+      promptText: assistantPrompt(message: message, settings: settings, workingDirectory: workingDirectory),
+      systemPromptText: assistantSystemPrompt(workingDirectory: workingDirectory),
+      agentEnvironment: assistantAgentEnvironment(vendor: vendor, workingDirectory: workingDirectory, invocation: invocation)
+    )
+  }
+
+  private func assistantAgentEnvironment(
+    vendor: RielaAppAssistantVendor,
+    workingDirectory: String,
+    invocation: AssistantInvocation
+  ) -> [String: String] {
+    var values = invocation.environment
+    guard vendor == .cursorAPI else { return values }
+    let environment = ProcessInfo.processInfo.environment
+    values.merge([
+      "CURSOR_REPOSITORY_URL": environment["CURSOR_REPOSITORY_URL"] ?? gitValue(
+        arguments: ["config", "--get", "remote.origin.url"],
+        workingDirectory: workingDirectory
+      ),
+      "CURSOR_STARTING_REF": environment["CURSOR_STARTING_REF"] ?? gitValue(
+        arguments: ["branch", "--show-current"],
+        workingDirectory: workingDirectory
+      ),
+      "CURSOR_AUTO_CREATE_PR": environment["CURSOR_AUTO_CREATE_PR"] ?? "false",
+      "CURSOR_WORK_ON_CURRENT_BRANCH": environment["CURSOR_WORK_ON_CURRENT_BRANCH"] ?? "true"
+    ].compactMapValues { value in
+      let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      return trimmed.isEmpty ? nil : trimmed
+    }, uniquingKeysWith: { _, new in new })
+    return values
+  }
+
+  private func assistantExecutionBackend(for vendor: RielaAppAssistantVendor) -> NodeExecutionBackend {
+    switch vendor {
+    case .automatic, .codexCLI:
+      .codexAgent
+    case .claudeCodeCLI:
+      .claudeCodeAgent
+    case .cursorCLI:
+      .cursorCliAgent
+    case .openAIAPI:
+      .officialOpenAISDK
+    case .anthropicAPI:
+      .officialAnthropicSDK
+    case .cursorAPI:
+      .officialCursorSDK
+    }
+  }
+
+  func assistantSystemPrompt(workingDirectory: String) -> String {
+    [
+      "You are the Riela Assistant inside RielaApp.",
+      "For every non-trivial task, create a dedicated workflow only under " +
+        "RIELA_PRIVATE_WORKFLOW_ROOT, validate it, execute it directly using " +
+        "RIELA_WORKFLOW_DEFINITION_DIR, and record its session ID. Your task is incomplete " +
+        "until a run has produced that session ID; authoring or validating alone is insufficient.",
+      "Never register, import, catalog, list, configure as an instance, or reuse that private " +
+        "definition. It is invocation-private at Riela's registry/discovery/reuse boundary; it is " +
+        "not a security boundary against arbitrary processes under the same OS account.",
+      "The app removes the private root after this invocation. Do not move or copy it elsewhere.",
+      "Use RIELA_SESSION_STORE. The final response must include the session ID and a link " +
+        "made from RIELA_WEB_RUN_LINK_TEMPLATE.",
+      "When using the Riela CLI, validate with --workflow-definition-dir " +
+        "RIELA_WORKFLOW_DEFINITION_DIR and run with both --workflow-definition-dir " +
+        "RIELA_WORKFLOW_DEFINITION_DIR and --session-store RIELA_SESSION_STORE so the Web " +
+        "application can read the resulting session.",
+      "Only work for the active RielaApp profile named '\(daemonProfileName.rawValue)'.",
+      "Treat '\(workingDirectory)' as the only allowed working directory.",
+      "Do not suggest or perform file operations outside that directory or this profile's workflow/package state.",
+      "Use the current profile instances as source of truth. Distinguish creating a new instance from editing an existing one.",
+      "For instance creation, identify the workflow/package, display name or id, working directory, required environment values, event sources, and auto-start preference.",
+      "If required information is missing, ask concise follow-up questions. Otherwise give exact RielaApp actions or riela CLI commands.",
+      "Never invent configured secrets or claim that an instance exists unless it is present in the provided context.",
+      "After creation guidance, include a validation or first-run check and the next fix for missing environment values.",
+      "Reply in the user's language and prefer concrete Riela instance steps over general coding advice."
+    ].joined(separator: "\n")
+  }
+
+  private func makeAssistantInvocation() throws -> AssistantInvocation {
+    let profileRoot = appHomeDirectory.appendingPathComponent(".riela/profiles/\(daemonProfileName.rawValue)", isDirectory: true)
+    let root = profileRoot.appendingPathComponent("private-workflows/\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o700]
+    )
+    return AssistantInvocation(root: root, environment: [
+      "RIELA_PRIVATE_WORKFLOW_ROOT": root.path,
+      "RIELA_WORKFLOW_DEFINITION_DIR": root.path,
+      "RIELA_SESSION_STORE": profileRoot.appendingPathComponent("sessions", isDirectory: true).path,
+      "RIELA_WEB_RUN_LINK_TEMPLATE": "#/runs/{sessionId}"
+    ])
+  }
+
+  private func assistantPrompt(
+    message: String,
+    settings: RielaAppAssistantSettings,
+    workingDirectory: String
+  ) -> String {
+    let instances = daemonInstances.map { instance in
+      "- \(instance.id): \(instance.displayName), workflow \(instance.candidate.workflowId), cwd \(instance.preference.workingDirectory ?? instance.candidate.workingDirectory)"
+    }.joined(separator: "\n")
+    let history = settings.messages.suffix(12).map {
+      "\($0.role.label): \($0.content)"
+    }.joined(separator: "\n")
+    return [
+      settings.normalizedAssistance.isEmpty ? nil : "Profile assistance:\n\(settings.normalizedAssistance)",
+      instances.isEmpty ? "No workflow instances are configured in this profile." : "Current profile instances:\n\(instances)",
+      "Current working directory: \(workingDirectory)",
+      history.isEmpty ? nil : "Recent chat:\n\(history)",
+      "User request:\n\(message)"
+    ].compactMap { $0 }.joined(separator: "\n\n")
+  }
+
+  private func assistantReplyText(from output: AdapterExecutionOutput) -> String {
+    if case let .string(text) = output.payload["text"], !text.isEmpty {
+      return text
+    }
+    if case let .string(text) = output.payload["replyText"], !text.isEmpty {
+      return text
+    }
+    if case let .string(text) = output.payload["summary"], !text.isEmpty {
+      return text
+    }
+    return "Assistant finished without a text response."
+  }
+
+  private func executablePath(named name: String) -> String? {
+    let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin")
+      .split(separator: ":")
+      .map(String.init)
+    return paths
+      .map { URL(fileURLWithPath: $0, isDirectory: true).appendingPathComponent(name).path }
+      .first { FileManager.default.isExecutableFile(atPath: $0) }
+  }
+
+  private func gitValue(arguments: [String], workingDirectory: String) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = arguments
+    process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = Pipe()
+    do {
+      try process.run()
+    } catch {
+      return nil
+    }
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+      return nil
+    }
+    return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+  }
+}
+
+private struct AssistantInvocation {
+  let root: URL
+  let environment: [String: String]
+}
+#endif

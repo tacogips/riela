@@ -1,0 +1,59 @@
+{
+  "workflowId": "loop-stall-guard",
+  "description": "Demonstrates the loop convergence guard: repeated gate rejections with identical finding fingerprints trigger a loop_stall event and fail the session closed with failureKind loopNotConverging.",
+  "defaults": {
+    "maxLoopIterations": 4,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise structured review JSON only."
+  },
+  "entryStepId": "review",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": false,
+    "description": "Example of convergence stall detection on repeated identical findings.",
+    "convergence": {
+      "maxRepeatedFindingRounds": 2,
+      "onStall": "fail"
+    },
+    "gates": [
+      {
+        "id": "implementation-review",
+        "stepId": "review",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted"
+        }
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "review",
+      "nodeFile": "nodes/node-review.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "review",
+      "nodeId": "review",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review",
+          "label": "needs_work"
+        }
+      ],
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-review",
+        "evidenceTags": [
+          "review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"phase":43,"status":"Completed","tasks":{"TASK-001":{"deps":["refactoring-server-ui-asset-serving:TASK-003"],"parallelizable":true,"status":"Completed"},"TASK-002":{"deps":["TASK-001","refactoring-frontend-solidjs-migration:TASK-008"],"parallelizable":false,"status":"Completed"}}}

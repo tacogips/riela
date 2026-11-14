@@ -1,0 +1,6 @@
+ARG WORKER_IMAGE=riela-builtin-addons:local
+
+FROM ${WORKER_IMAGE}
+RUN grep -aFq 'riela/video-frames' /opt/riela/riela && grep -aFq 'riela/audio-segments' /opt/riela/riela || { echo "base worker binary lacks video add-on registration; rebuild the base image with scripts/build-builtin-addon-container.sh" >&2; exit 1; }
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*

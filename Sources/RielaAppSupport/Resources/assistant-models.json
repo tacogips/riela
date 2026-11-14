@@ -1,0 +1,32 @@
+{
+  "codex-cli": [
+    "gpt-5.5-medium",
+    "gpt-5.5",
+    "gpt-5",
+    "gpt-5-mini"
+  ],
+  "claude-code-cli": [
+    "claude-opus-4.8",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1"
+  ],
+  "cursor-cli": [
+    "composer-2",
+    "claude-opus-4.8",
+    "gpt-5.5-medium"
+  ],
+  "openai-api": [
+    "gpt-5.5-medium",
+    "gpt-5.5",
+    "gpt-5",
+    "gpt-5-mini"
+  ],
+  "anthropic-api": [
+    "claude-opus-4.8",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1"
+  ],
+  "cursor-api": [
+    "composer-2"
+  ]
+}

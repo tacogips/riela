@@ -1,0 +1,29 @@
+[package]
+name = "riela-dashboard"
+version = "0.1.0"
+description = "Riela dashboard desktop shell"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "riela_dashboard_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+thiserror = "2"
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# The unit tests drive the async lifecycle directly, so they need a runtime of
+# their own rather than the one Tauri supplies at run time.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

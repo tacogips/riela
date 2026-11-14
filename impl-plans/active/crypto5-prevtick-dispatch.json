@@ -1,0 +1,259 @@
+{
+  "taskId": "crypto5-prevtick",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "main",
+  "baseBranch": "main",
+  "remote": "origin",
+  "gitPush": true,
+  "originalHead": "c14c3b302fcea8e22f1f03fb89ca5f14f98efed7",
+  "designDocPaths": [
+    "design-docs/specs/design-crypto5-dependency-refresh-and-cron-previous-tick.md",
+    "design-docs/specs/event-listener-workflow-trigger/provider-source-types.md"
+  ],
+  "evidenceRoot": "tmp/crypto5-prevtick",
+  "acceptedDependencies": [
+    {
+      "planId": "c5pt-01-deps",
+      "planPath": "impl-plans/active/crypto5-prevtick-01-deps.md",
+      "status": "completed",
+      "commit": "35a910d53705c5f76b73331fcca7ecb8a32e109d",
+      "progress": "impl-plans/progress/c5pt-01-deps.md"
+    }
+  ],
+  "reviewContext": {
+    "issueReference": "workflowInput issue 'Cron ticks expose previousScheduledAt (continuation; deps already merged)' (no GitHub number); workflowExecutionId opus-luna-design-and-implement-review-loop-session-519; design accepted by step3-design-review comm-009611; Part 1 landed as 35a910d5",
+    "userProblem": "Part 1 (swift-crypto 5.x, swift-webauthn revision, gateway/kaiba pins) is merged as 35a910d5. Remaining: the notion-gateway v0.1.6 operations findChildPage/ensurePagePath need a focused catalog test and README docs, and cron.tick envelopes carry only the current tick, so workflows cannot derive a deterministic run window [previous tick, this tick) without run history (design §1.4, Part 2, Continuation rollout).",
+    "requiredOutcomes": [
+      "riela/notion-gateway-write JSON mode accepts ensurePagePath and both roles accept findChildPage via the catalog, proven by a focused NotionGatewayAddonTests test with no Sources change (design §1.4, c5pt-04).",
+      "CronSchedule.previousOccurrence(before:calendar:) returns the latest whole second strictly before the input that matches the schedule, via a DST-aware bounded skip-scan starting at ceil(before)-1s, sharing predicates with matches, nil beyond a 9-year horizon (design §2.2, c5pt-02).",
+      "dispatchCronTick adds previousScheduledAt / previousScheduledLocalTime using the existing formatters, computed only from schedule, resolved timezone and scheduledAt; keys omitted when nil (design §2.1/§2.3, c5pt-06).",
+      "RoutineService.eventBinding default template exposes {{event.input.previousScheduledAt}} and {{event.input.previousScheduledLocalTime}} (design §2.3, c5pt-03).",
+      "The held patch tmp/crypto5-prevtick/held/cron-docs.patch is re-applied: authored cron fixtures and the memory-consolidation sample carry schedule-derived previous values (checked by the c5pt-06 fixture-agreement test), README 'Cron tick input' subsection with the 0 55 * * * * Asia/Tokyo [previousScheduledAt, scheduledAt) example, README Notion sentence (design §1.4/§2.3/§2.5, c5pt-05).",
+      "Plan c5pt-01-deps is recorded as completed and is not redone.",
+      "Final gate: swift package resolve, swift build, focused suites, RielaMemory tests, full swift test with no NEW failures compared with the baseline list, swiftlint --strict on touched Swift files."
+    ],
+    "nonGoals": [
+      "No VERSION bump and no release.",
+      "No change to Part 1 files (Package.swift, Package.resolved, Packages/RielaMemory manifests) or redo of 35a910d5.",
+      "No revert or rework of the definition store (#179/#180) or the agent tool-policy presets (0b25d5b2).",
+      "No fix of the baseline pre-existing failures.",
+      "No next-occurrence fields, run-history windows, receipt backfill, maximumCatchUpSeconds/dueTicks change or new cron syntax.",
+      "No explicit Notion catalog entries in Riela sources.",
+      "No forks, .package(path:) overrides, unsafe flags or edits inside .build/checkouts."
+    ],
+    "constraints": [
+      "Single working directory /Users/taco/gits/tacogips/riela on main; no worktrees or branches; workers run no git write operations (git apply to the working tree is allowed for c5pt-05 only); serial finalization commits and pushes main (gitPush=true).",
+      "Each worker edits only its own writePaths, records pre/post shasum -a 256 per edit, re-applies intent on drift and never reverts a foreign change; out-of-scope compile errors are logged as outOfScope and the plan is marked blocked for a checkpoint amendment.",
+      "Every swift/swiftlint command runs in the foreground as arch -arm64 /bin/zsh -lc with output under tmp/crypto5-prevtick/<planId>/ and an exit status recorded; a filter matching 0 tests is a failure; blocked checks are never recorded as passes.",
+      "Blockers: upstream-reader-catalog-missing-findChildPage and a Riela-side list-argument rejection for ensurePagePath are reported, never worked around in Sources by c5pt-04.",
+      "Three wave-1 Swift plans run swift test concurrently; .build lock contention is handled by the peer-breakage retry rule."
+    ],
+    "designDecisionsAndRationale": [
+      "Previous tick is schedule-derived, not history-derived, so skipped, coalesced or missed ticks still define the window and the value is deterministic (design §2.1).",
+      "Bounded coarse-to-fine skip-scan with calendar.dateInterval jumps keeps the result exact against a per-second matches scan while staying DST-correct and cheap; 9-year horizon covers the Feb 29 gap (design §2.2).",
+      "matches and previousOccurrence share per-field predicate helpers so the dom/dow OR rule is not reimplemented (design §2.2).",
+      "Only dispatchCronTick builds the envelope; read-only receipts, the overlap dispatcher and replay reuse it, so one change makes every runtime producer agree (design §2.3).",
+      "Fall-back local-time strings can repeat; windows use the UTC pair (design §2.1).",
+      "Notion operations arrive via NotionGatewaySDK(role:).catalog, so only a test and docs are added (design §1.4).",
+      "c5pt-05 re-applies the held patch in wave 1 because the c5pt-06 fixture-agreement test reads the fixtures; docs and code ship in one push (design Continuation rollout)."
+    ],
+    "intentionalTradeoffs": [
+      "Receipts written before this change lack the new keys and events replay reuses them verbatim (no backfill).",
+      "Existing routine binding files pick up the new template keys only when the routine is next created or updated (no migration).",
+      "c5pt-02 brute-force equivalence test may take tens of seconds in a debug build."
+    ],
+    "supportedEdgeCases": [
+      "America/New_York spring-forward: nonexistent local time has no occurrence (hourly and daily 02:30 cases).",
+      "America/New_York fall-back: repeated 01:30 occurs twice.",
+      "Seconds-field schedules (*/15, */30, 30 0 * * * *).",
+      "Sparse Feb 29 schedule and impossible 31 Feb schedule returning nil within the horizon.",
+      "dom/dow OR rule when both day fields are restricted.",
+      "Fractional before instants (largest whole second strictly before).",
+      "Coalesced catch-up ticks each get their own schedule-derived previous value."
+    ],
+    "outOfScopeEdgeCases": [
+      "Backfilling previous-tick keys into historical receipts.",
+      "Next-occurrence or last-successful-run windows.",
+      "Updating the untracked riela-event-sources skill doc (text delta recorded in design §2.5)."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-crypto5-dependency-refresh-and-cron-previous-tick.md",
+      "design-docs/specs/event-listener-workflow-trigger/provider-source-types.md",
+      "impl-plans/active/crypto5-prevtick.md",
+      "impl-plans/active/crypto5-prevtick-01-deps.md",
+      "impl-plans/active/crypto5-prevtick-02-cron-core.md",
+      "impl-plans/active/crypto5-prevtick-03-routine-template.md",
+      "impl-plans/active/crypto5-prevtick-04-notion-catalog-test.md",
+      "impl-plans/active/crypto5-prevtick-05-docs-fixtures.md",
+      "impl-plans/active/crypto5-prevtick-06-cron-envelope.md",
+      "tmp/crypto5-prevtick/held/cron-docs.patch"
+    ],
+    "codexAgentReferences": [],
+    "baselinePreExistingFailures": {
+      "evidence": "tmp/crypto5-prevtick/c5pt-01/baseline-failures.txt",
+      "tests": [
+        "DeterministicWorkflowRunnerFailureStateTests.testRetryFailedStepErrorNamesTimeoutForCompletedSession",
+        "HandoverContractsTests.testSessionSuspendAndClosedStatusRoundTrip",
+        "ServeWebHostTests.testBrowserExecutionUsesProfileStoreAndGatesSummaryReads",
+        "SessionObservabilityTests.testTransitionalCancelledFailureKindIsTerminal",
+        "WorkflowCommandTests.testCancellationWithoutAutoImprovePersistsTerminalFailure",
+        "WorkflowHostCapabilityTests.testIssue116BuiltinsResolveWithoutExternalExecutable",
+        "WorkflowCommandTests.testConcurrentFreshRunsReceiveDistinctSessionIds (flaky)"
+      ]
+    },
+    "residualFindings": [
+      "low: impl-plans/active/crypto5-prevtick-02-cron-core.md brute-force equivalence helper may scan ~18M seconds in total; runtime cost only."
+    ],
+    "residualRisks": [
+      "notion-gateway v0.1.6 reader catalog lacking findChildPage would block c5pt-04 (checkout NotionCatalog.swift:29 shows it is a reader query, so unlikely).",
+      "Held patch may need hand application if main drifts; values are fixed in c5pt-05 and checked by the c5pt-06 fixture-agreement test.",
+      "Known flaky WorkflowCommandTests.testConcurrentFreshRunsReceiveDistinctSessionIds in the full suite."
+    ],
+    "finalGate": [
+      "arch -arm64 /bin/zsh -lc 'swift package resolve'",
+      "arch -arm64 /bin/zsh -lc 'swift build'",
+      "arch -arm64 /bin/zsh -lc \"swift test --filter 'RielaPasskeyTests|PasskeyCommandTests|NotionGatewayAddonTests|BuiltinGatewayJSONBehaviorTests|WorkflowGatewayValidationTests|Kaiba|EventLiveServeCronTests|EventCronOverlapTests|EventCronOverlapServeTests|EventRoutineBindingTests|EventReadOnlyPolicyTests|TimeSignalAddonTests|RoutineCommandTests|CronSchedulePreviousOccurrenceTests'\"",
+      "arch -arm64 /bin/zsh -lc 'swift test --package-path Packages/RielaMemory'",
+      "arch -arm64 /bin/zsh -lc 'swift test'",
+      "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache <every touched Swift file>'"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "c5pt-02-cron-core",
+      "planPath": "impl-plans/active/crypto5-prevtick-02-cron-core.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/CronSchedule.swift",
+        "Tests/RielaCoreTests/CronSchedulePreviousOccurrenceTests.swift",
+        "impl-plans/progress/c5pt-02-cron-core.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "public func previousOccurrence(before date: Date, calendar: Calendar) -> Date? exists in Sources/RielaCore/CronSchedule.swift with a doc comment stating the contract (latest matching whole second strictly before date; nil beyond a 9-year horizon).",
+        "Implementation is a coarse-to-fine skip-scan starting at ceil(date) - 1s using calendar.dateInterval(of:for:) unit starts, no force unwraps, no fixed-duration jumps, no Date() or global state, and no call to dueTicks.",
+        "matches(_:calendar:) keeps its signature and results; per-field predicates (including the dom/dow day rule) are shared helpers; maximumCatchUpSeconds = 3_600 unchanged.",
+        "CronSchedulePreviousOccurrenceTests covers every row of the plan table (Tokyo 0 55, daily, weekly, NY spring-forward hourly and daily 02:30, fall-back 01:30, */15 seconds, 30 0 * * * *, Feb 29, impossible 31 Feb -> nil), dom/dow OR, fractional input and brute-force equivalence; testsRun >= 12, failureCount 0; EventLiveServeCronTests still pass; lint exits 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/crypto5-prevtick/c5pt-02-cron-core",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'CronSchedulePreviousOccurrenceTests|EventLiveServeCronTests' > tmp/crypto5-prevtick/c5pt-02-cron-core/test.log 2>&1; echo exit=\\$?\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaCore/CronSchedule.swift Tests/RielaCoreTests/CronSchedulePreviousOccurrenceTests.swift > tmp/crypto5-prevtick/c5pt-02-cron-core/lint.log 2>&1; echo exit=$?'",
+        "grep -n 'public func previousOccurrence(before date: Date, calendar: Calendar) -> Date?' Sources/RielaCore/CronSchedule.swift",
+        "grep -n 'maximumCatchUpSeconds = 3_600' Sources/RielaCore/CronSchedule.swift"
+      ]
+    },
+    {
+      "planId": "c5pt-03-routine-template",
+      "planPath": "impl-plans/active/crypto5-prevtick-03-routine-template.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaWorkflowRegistry/RoutineService.swift",
+        "Tests/RielaCLITests/RoutineCommandTests.swift",
+        "impl-plans/progress/c5pt-03-routine-template.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "RoutineService.eventBinding(for:storeRoot:) template adds previousScheduledAt = {{event.input.previousScheduledAt}} and previousScheduledLocalTime = {{event.input.previousScheduledLocalTime}} next to scheduledAt/scheduledLocalTime; nothing else changes (no migration, overlap/enabled/completionCriteria paths untouched).",
+        "A new RoutineCommandTests test decodes the created routine binding as EventBindingContract and asserts both new template entries plus unchanged scheduledAt, scheduledLocalTime, firedAt and timezone.",
+        "RoutineCommandTests|EventRoutineBindingTests exit 0 with testsRun > 0, failureCount 0 and the new test listed as passed; lint exits 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/crypto5-prevtick/c5pt-03-routine-template",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'RoutineCommandTests|EventRoutineBindingTests' > tmp/crypto5-prevtick/c5pt-03-routine-template/test.log 2>&1; echo exit=\\$?\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaWorkflowRegistry/RoutineService.swift Tests/RielaCLITests/RoutineCommandTests.swift > tmp/crypto5-prevtick/c5pt-03-routine-template/lint.log 2>&1; echo exit=$?'",
+        "grep -c 'event.input.previousScheduled' Sources/RielaWorkflowRegistry/RoutineService.swift"
+      ]
+    },
+    {
+      "planId": "c5pt-04-notion-catalog-test",
+      "planPath": "impl-plans/active/crypto5-prevtick-04-notion-catalog-test.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Tests/RielaCLITests/NotionGatewayAddonTests.swift",
+        "impl-plans/progress/c5pt-04-notion-catalog-test.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Writer and reader notion schemas are captured to tmp/crypto5-prevtick/c5pt-04-notion-catalog-test/schema-*.log and the argument names used in tests come only from them (expected: findChildPage(parentId: ID!, title: String!), ensurePagePath(parentId: ID!, titles: [String!]!, children: JSON, markdown: String)).",
+        "NotionGatewayAddonTests adds: writer JSON-mode ensurePagePath (1 writer call, document contains ensurePagePath( ), reader findChildPage (1 reader call, document contains findChildPage( ), writer findChildPage (1 writer call), reader ensurePagePath rejected before dispatch (0 calls), and macOS schema checks for both roles; no network, synthetic credentials only.",
+        "No Sources/ file changes; a reader catalog lacking findChildPage blocks as upstream-reader-catalog-missing-findChildPage, and a Riela-side list-argument rejection blocks as outOfScope, each with logs.",
+        "NotionGatewayAddonTests|BuiltinGatewayJSONBehaviorTests exit 0 with testsRun > 0 and failureCount 0; lint exits 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/crypto5-prevtick/c5pt-04-notion-catalog-test",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela gateway notion --role writer schema > tmp/crypto5-prevtick/c5pt-04-notion-catalog-test/schema-writer.log 2>&1; echo exit=$?'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela gateway notion --role reader schema > tmp/crypto5-prevtick/c5pt-04-notion-catalog-test/schema-reader.log 2>&1; echo exit=$?'",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'NotionGatewayAddonTests|BuiltinGatewayJSONBehaviorTests' > tmp/crypto5-prevtick/c5pt-04-notion-catalog-test/test.log 2>&1; echo exit=\\$?\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Tests/RielaCLITests/NotionGatewayAddonTests.swift > tmp/crypto5-prevtick/c5pt-04-notion-catalog-test/lint.log 2>&1; echo exit=$?'",
+        "grep -c 'ensurePagePath\\|findChildPage' Tests/RielaCLITests/NotionGatewayAddonTests.swift"
+      ]
+    },
+    {
+      "planId": "c5pt-05-docs-fixtures",
+      "planPath": "impl-plans/active/crypto5-prevtick-05-docs-fixtures.md",
+      "dependsOn": [],
+      "writePaths": [
+        "README.md",
+        "examples/event-sources/README.md",
+        "examples/event-sources/payloads/gmail-latest-mail-hourly-cron.json",
+        "examples/event-sources/payloads/x-follower-ai-business-hourly-cron.json",
+        "examples/wrike-project-kanban-agent/payloads/wrike-kanban-cron-tick.json",
+        "examples/memory-consolidation/README.md",
+        "impl-plans/progress/c5pt-05-docs-fixtures.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "tmp/crypto5-prevtick/held/cron-docs.patch is re-applied to the working tree with git apply (no --index/--cached), or, if it does not apply, the same hunks are applied by hand with identical values; apply-check.log/apply.log record the exit status.",
+        "README.md Notion section names findChildPage (reader and writer) and ensurePagePath (writer) and points to riela gateway notion --role writer schema.",
+        "README.md has '### Cron tick input' directly before '### Overlapping cron fires' with the six keys, the schedule-derived DST-aware definition, the 0 55 * * * * Asia/Tokyo example (2026-10-27T05:55:00.000Z -> previous 2026-10-27T04:55:00.000Z / 2026-10-27 13:55:00), the windowStart/windowEnd [windowStart, windowEnd) run window and the no-backfill note.",
+        "examples/event-sources/README.md names both keys and links to README#cron-tick-input.",
+        "The three cron fixtures and the memory-consolidation sample carry the design §2.3 previous values directly after scheduledLocalTime; JSON stays valid; telegram-time-signal-cron.json and docs/builtin-gateway-json.md are unchanged.",
+        "impl-plans/progress/c5pt-05-docs-fixtures.md is overwritten for this run with method, hashes and verification records."
+      ],
+      "verification": [
+        "mkdir -p tmp/crypto5-prevtick/c5pt-05-docs-fixtures",
+        "git apply --check -v tmp/crypto5-prevtick/held/cron-docs.patch > tmp/crypto5-prevtick/c5pt-05-docs-fixtures/apply-check.log 2>&1; echo exit=$?",
+        "git apply -v tmp/crypto5-prevtick/held/cron-docs.patch > tmp/crypto5-prevtick/c5pt-05-docs-fixtures/apply.log 2>&1; echo exit=$?",
+        "python3 -I -m json.tool examples/event-sources/payloads/gmail-latest-mail-hourly-cron.json > /dev/null; echo exit=$?",
+        "python3 -I -m json.tool examples/event-sources/payloads/x-follower-ai-business-hourly-cron.json > /dev/null; echo exit=$?",
+        "python3 -I -m json.tool examples/wrike-project-kanban-agent/payloads/wrike-kanban-cron-tick.json > /dev/null; echo exit=$?",
+        "grep -c 'previousScheduled' README.md examples/event-sources/README.md examples/memory-consolidation/README.md examples/event-sources/payloads/gmail-latest-mail-hourly-cron.json examples/event-sources/payloads/x-follower-ai-business-hourly-cron.json examples/wrike-project-kanban-agent/payloads/wrike-kanban-cron-tick.json",
+        "grep -n 'findChildPage\\|ensurePagePath' README.md docs/builtin-gateway-json.md",
+        "grep -n '0 55 \\* \\* \\* \\*' README.md",
+        "grep -n '### Cron tick input\\|### Overlapping cron fires' README.md",
+        "git diff --quiet -- examples/event-sources/payloads/telegram-time-signal-cron.json docs/builtin-gateway-json.md; echo exit=$?",
+        "git diff --check -- README.md examples; echo exit=$?"
+      ]
+    },
+    {
+      "planId": "c5pt-06-cron-envelope",
+      "planPath": "impl-plans/active/crypto5-prevtick-06-cron-envelope.md",
+      "dependsOn": ["c5pt-02-cron-core", "c5pt-05-docs-fixtures"],
+      "writePaths": [
+        "Sources/RielaCLI/EventLiveServe+Cron.swift",
+        "Tests/RielaCLITests/EventLiveServeCronTests.swift",
+        "impl-plans/progress/c5pt-06-cron-envelope.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "CronScheduleSource gains func previousTick(before scheduledAt: Date) -> Date? that parses the schedule (nil on failure), uses a Gregorian calendar with resolvedTimeZone and returns CronSchedule.previousOccurrence.",
+        "dispatchCronTick adds previousScheduledAt (cronISOTimestamp) and previousScheduledLocalTime (cronLocalTimestamp in the source timezone) only when previousTick returns a value; value depends only on schedule, resolved timezone and scheduledAt; eventId, dedupeKey, event type, dueTicks, maximumCatchUpSeconds and other files unchanged.",
+        "New EventLiveServeCronTests: Tokyo 0 55 read-only envelope (2026-10-27T04:55:00.000Z / 2026-10-27 13:55:00 / scheduledLocalTime 2026-10-27 14:55:00), NY spring-forward hourly (2026-03-08T06:00:00.000Z / 2026-03-08 01:00:00), DeterministicEventDryRunTrigger binding template rendering windowStart/windowStartLocal/windowEnd, previousTick unit check (*/30 seconds -> t - 30, invalid schedule -> nil), and fixture agreement for the three payload/source pairs with #filePath repository-root resolution (no hard-coded /Users paths).",
+        "Cron/overlap/routine/time-signal/read-only suites exit 0 with testsRun > 0 and failureCount 0; lint exits 0."
+      ],
+      "verification": [
+        "mkdir -p tmp/crypto5-prevtick/c5pt-06-cron-envelope",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'EventLiveServeCronTests|EventCronOverlapTests|EventCronOverlapServeTests|EventRoutineBindingTests|TimeSignalAddonTests|EventReadOnlyPolicyTests' > tmp/crypto5-prevtick/c5pt-06-cron-envelope/test.log 2>&1; echo exit=\\$?\"",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/EventLiveServe+Cron.swift Tests/RielaCLITests/EventLiveServeCronTests.swift > tmp/crypto5-prevtick/c5pt-06-cron-envelope/lint.log 2>&1; echo exit=$?'",
+        "grep -c 'previousScheduled' Sources/RielaCLI/EventLiveServe+Cron.swift",
+        "grep -n 'func previousTick(before' Sources/RielaCLI/EventLiveServe+Cron.swift"
+      ]
+    }
+  ]
+}

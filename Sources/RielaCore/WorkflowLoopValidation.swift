@@ -1,0 +1,852 @@
+import Foundation
+import CoreFoundation
+
+private let loopGateDecisionValues: Set<String> = ["accepted", "rejected", "needs_work", "skipped"]
+private let loopPromptPolicyValues: Set<String> = ["allow", "deny", "prompt"]
+private let loopNetworkModeValues: Set<String> = ["allow", "deny", "inherit-command"]
+private let loopArtifactRootPolicyValues: Set<String> = ["runtime-owned"]
+private let loopConvergenceOnStallValues: Set<String> = ["fail", "warn"]
+private let loopBudgetOnExceededValues: Set<String> = ["fail", "warn"]
+private let loopConcurrencyOnBusyValues: Set<String> = ["fail", "skip"]
+private let loopNotificationOutcomeValues: Set<String> = Set(LoopOutcome.allCases.map(\.rawValue))
+private let loopNotificationChannelTypes: Set<String> = ["webhook", "command"]
+
+func validateTypedLoopMetadata(
+  _ loop: WorkflowLoopMetadata?,
+  stepIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let loop else {
+    return
+  }
+
+  if let artifactRootPolicy = loop.evidence?.artifactRootPolicy {
+    validateAllowedValue(
+      artifactRootPolicy,
+      allowed: loopArtifactRootPolicyValues,
+      path: "workflow.loop.evidence.artifactRootPolicy",
+      diagnostics: &diagnostics
+    )
+  }
+
+  if let mutation = loop.policies?.mutation {
+    for (index, root) in mutation.allowedWriteRoots.enumerated() {
+      validateLoopWorkflowRelativePath(
+        root,
+        fieldName: "allowedWriteRoots",
+        path: "workflow.loop.policies.mutation.allowedWriteRoots[\(index)]",
+        diagnostics: &diagnostics
+      )
+    }
+    if let scratchRoot = mutation.scratchRoot {
+      validateLoopWorkflowRelativePath(
+        scratchRoot,
+        fieldName: "scratchRoot",
+        path: "workflow.loop.policies.mutation.scratchRoot",
+        diagnostics: &diagnostics
+      )
+    }
+    if let commit = mutation.commit {
+      validateAllowedValue(
+        commit,
+        allowed: loopPromptPolicyValues,
+        path: "workflow.loop.policies.mutation.commit",
+        diagnostics: &diagnostics
+      )
+    }
+    if let push = mutation.push {
+      validateAllowedValue(
+        push,
+        allowed: loopPromptPolicyValues,
+        path: "workflow.loop.policies.mutation.push",
+        diagnostics: &diagnostics
+      )
+    }
+  }
+
+  if let process = loop.policies?.process {
+    if let nestedRiela = process.nestedRiela {
+      validateAllowedValue(
+        nestedRiela,
+        allowed: loopPromptPolicyValues,
+        path: "workflow.loop.policies.process.nestedRiela",
+        diagnostics: &diagnostics
+      )
+    }
+    if let nestedCodex = process.nestedCodex {
+      validateAllowedValue(
+        nestedCodex,
+        allowed: loopPromptPolicyValues,
+        path: "workflow.loop.policies.process.nestedCodex",
+        diagnostics: &diagnostics
+      )
+    }
+  }
+
+  if let networkMode = loop.policies?.network?.mode {
+    validateAllowedValue(
+      networkMode,
+      allowed: loopNetworkModeValues,
+      path: "workflow.loop.policies.network.mode",
+      diagnostics: &diagnostics
+    )
+  }
+
+  if let convergence = loop.convergence {
+    validateTypedLoopConvergence(convergence, loopRequired: loop.required, diagnostics: &diagnostics)
+  }
+
+  if let budget = loop.budget {
+    validateTypedLoopBudget(budget, loopRequired: loop.required, diagnostics: &diagnostics)
+  }
+
+  if let concurrency = loop.concurrency {
+    validateTypedLoopConcurrency(concurrency, diagnostics: &diagnostics)
+  }
+
+  if let notifications = loop.notifications {
+    validateTypedLoopNotifications(notifications, diagnostics: &diagnostics)
+  }
+
+  var seenGateIds: Set<String> = []
+  for (index, gate) in loop.gates.enumerated() {
+    let path = "workflow.loop.gates[\(index)]"
+    validateNonEmptyLoopString(gate.id, path: "\(path).id", diagnostics: &diagnostics)
+    if !gate.id.isEmpty {
+      if seenGateIds.contains(gate.id) {
+        diagnostics.append(loopValidationError("\(path).id", "must be unique across workflow.loop.gates[]"))
+      }
+      seenGateIds.insert(gate.id)
+    }
+    validateNonEmptyLoopString(gate.stepId, path: "\(path).stepId", diagnostics: &diagnostics)
+    if !gate.stepId.isEmpty && !stepIds.contains(gate.stepId) {
+      diagnostics.append(loopValidationError("\(path).stepId", "must reference workflow.steps[] entry '\(gate.stepId)'"))
+    }
+    if let maxHighFindings = gate.acceptWhen.maxHighFindings, maxHighFindings < 0 {
+      diagnostics.append(loopValidationError("\(path).acceptWhen.maxHighFindings", "must be a non-negative integer"))
+    }
+    if let maxMediumFindings = gate.acceptWhen.maxMediumFindings, maxMediumFindings < 0 {
+      diagnostics.append(loopValidationError("\(path).acceptWhen.maxMediumFindings", "must be a non-negative integer"))
+    }
+  }
+
+  if let pathPattern = loop.implementationPlan?.pathPattern {
+    validateLoopWorkflowRelativePath(
+      pathPattern,
+      fieldName: "pathPattern",
+      path: "workflow.loop.implementationPlan.pathPattern",
+      diagnostics: &diagnostics
+    )
+  }
+
+  if let selfEvolution = loop.selfEvolution {
+    validateLoopWorkflowRelativePath(
+      selfEvolution.historyRoot,
+      fieldName: "historyRoot",
+      path: "workflow.loop.selfEvolution.historyRoot",
+      diagnostics: &diagnostics
+    )
+    if selfEvolution.allowed, !selfEvolution.requiresReviewGate {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.selfEvolution.requiresReviewGate",
+        "must be true when workflow self-evolution is allowed"
+      ))
+    }
+    if Set(selfEvolution.requiredVerification).count != selfEvolution.requiredVerification.count {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.selfEvolution.requiredVerification",
+        "must not contain duplicate verification requirements"
+      ))
+    }
+  }
+}
+
+func validateTypedStepLoop(
+  _ loop: WorkflowStepLoopMetadata?,
+  path: String,
+  gateIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let loop, let gateId = loop.gateId else {
+    return
+  }
+  if gateId.isEmpty {
+    diagnostics.append(loopValidationError("\(path).gateId", "must be a non-empty string"))
+  } else if !gateIds.isEmpty && !gateIds.contains(gateId) {
+    diagnostics.append(loopValidationError("\(path).gateId", "must reference workflow.loop.gates[] entry '\(gateId)'"))
+  }
+}
+
+func validateRawLoopMetadata(
+  _ raw: Any?,
+  stepIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let loop = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop", "must be an object when provided"))
+    return
+  }
+
+  validateRawLoopEvidence(loop["evidence"], diagnostics: &diagnostics)
+  validateRawLoopPolicies(loop["policies"], diagnostics: &diagnostics)
+  validateRawLoopConvergence(loop["convergence"], loopRequired: loop["required"] as? Bool == true, diagnostics: &diagnostics)
+  validateRawLoopBudget(loop["budget"], loopRequired: loop["required"] as? Bool == true, diagnostics: &diagnostics)
+  validateRawLoopConcurrency(loop["concurrency"], diagnostics: &diagnostics)
+  validateRawLoopNotifications(loop["notifications"], diagnostics: &diagnostics)
+  validateRawLoopGates(loop["gates"], stepIds: stepIds, diagnostics: &diagnostics)
+  validateRawLoopImplementationPlan(loop["implementationPlan"], diagnostics: &diagnostics)
+}
+
+func rawLoopGateIds(_ raw: Any?) -> Set<String> {
+  guard let loop = raw as? [String: Any], let gates = loop["gates"] as? [Any] else {
+    return []
+  }
+  return Set(gates.compactMap { gate -> String? in
+    guard let gate = gate as? [String: Any], let id = gate["id"] as? String, !id.isEmpty else {
+      return nil
+    }
+    return id
+  })
+}
+
+func validateRawStepLoop(
+  _ raw: Any?,
+  path: String,
+  gateIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let loop = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError(path, "must be an object when provided"))
+    return
+  }
+  guard let gateId = loop["gateId"] else {
+    return
+  }
+  validateNonEmptyLoopString(gateId, path: "\(path).gateId", diagnostics: &diagnostics)
+  if let gateId = gateId as? String, !gateId.isEmpty, !gateIds.isEmpty, !gateIds.contains(gateId) {
+    diagnostics.append(loopValidationError("\(path).gateId", "must reference workflow.loop.gates[] entry '\(gateId)'"))
+  }
+}
+
+private func validateRawLoopEvidence(_ raw: Any?, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard let raw else {
+    return
+  }
+  guard let evidence = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.evidence", "must be an object when provided"))
+    return
+  }
+  validateAllowedRawString(
+    evidence["artifactRootPolicy"],
+    allowed: loopArtifactRootPolicyValues,
+    path: "workflow.loop.evidence.artifactRootPolicy",
+    diagnostics: &diagnostics
+  )
+}
+
+private func validateRawLoopPolicies(_ raw: Any?, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard let raw else {
+    return
+  }
+  guard let policies = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.policies", "must be an object when provided"))
+    return
+  }
+
+  validateRawLoopMutationPolicy(policies["mutation"], diagnostics: &diagnostics)
+  validateRawLoopProcessPolicy(policies["process"], diagnostics: &diagnostics)
+
+  if let rawNetwork = policies["network"] {
+    guard let network = rawNetwork as? [String: Any] else {
+      diagnostics.append(loopValidationError("workflow.loop.policies.network", "must be an object when provided"))
+      return
+    }
+    validateAllowedRawString(
+      network["mode"],
+      allowed: loopNetworkModeValues,
+      path: "workflow.loop.policies.network.mode",
+      diagnostics: &diagnostics
+    )
+  }
+}
+
+private func validateTypedLoopConvergence(
+  _ convergence: LoopConvergenceDeclaration,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if !convergence.enabled {
+    if convergence.maxGateVisits != nil || convergence.maxRepeatedFindingRounds != nil || convergence.onStall != .fail {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.convergence",
+        "enabled false cannot be combined with convergence bounds or a non-default onStall"
+      ))
+    }
+    return
+  }
+  if convergence.maxGateVisits == nil && convergence.maxRepeatedFindingRounds == nil {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence",
+      "must define maxGateVisits or maxRepeatedFindingRounds"
+    ))
+  }
+  if let maxGateVisits = convergence.maxGateVisits, maxGateVisits <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.convergence.maxGateVisits", "must be a positive integer"))
+  }
+  if let maxRepeatedFindingRounds = convergence.maxRepeatedFindingRounds, maxRepeatedFindingRounds <= 0 {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence.maxRepeatedFindingRounds",
+      "must be a positive integer"
+    ))
+  }
+  if convergence.onStall == .warn && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence.onStall",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateRawLoopConvergence(
+  _ raw: Any?,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let convergence = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.convergence", "must be an object when provided"))
+    return
+  }
+
+  let enabled: Bool
+  if let rawEnabled = convergence["enabled"] {
+    guard let bool = rawEnabled as? Bool else {
+      diagnostics.append(loopValidationError("workflow.loop.convergence.enabled", "must be a boolean"))
+      return
+    }
+    enabled = bool
+  } else {
+    enabled = true
+  }
+
+  let hasMaxGateVisits = convergence["maxGateVisits"] != nil
+  let hasMaxRepeatedFindingRounds = convergence["maxRepeatedFindingRounds"] != nil
+  if !enabled {
+    if hasMaxGateVisits || hasMaxRepeatedFindingRounds || (convergence["onStall"] as? String).map({ $0 != "fail" }) == true {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.convergence",
+        "enabled false cannot be combined with convergence bounds or a non-default onStall"
+      ))
+    }
+    return
+  }
+  if !hasMaxGateVisits && !hasMaxRepeatedFindingRounds {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence",
+      "must define maxGateVisits or maxRepeatedFindingRounds"
+    ))
+  }
+  validatePositiveRawInteger(
+    convergence["maxGateVisits"],
+    path: "workflow.loop.convergence.maxGateVisits",
+    diagnostics: &diagnostics
+  )
+  validatePositiveRawInteger(
+    convergence["maxRepeatedFindingRounds"],
+    path: "workflow.loop.convergence.maxRepeatedFindingRounds",
+    diagnostics: &diagnostics
+  )
+  validateAllowedRawString(
+    convergence["onStall"],
+    allowed: loopConvergenceOnStallValues,
+    path: "workflow.loop.convergence.onStall",
+    diagnostics: &diagnostics
+  )
+  if convergence["onStall"] as? String == "warn" && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence.onStall",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateTypedLoopBudget(
+  _ budget: LoopBudgetDeclaration,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if budget.maxTotalTokens == nil && budget.maxWallClockMs == nil && budget.maxSessionAttempts == nil {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget",
+      "must define maxTotalTokens, maxWallClockMs, or maxSessionAttempts"
+    ))
+  }
+  if let maxTotalTokens = budget.maxTotalTokens, maxTotalTokens <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.budget.maxTotalTokens", "must be a positive integer"))
+  }
+  if let maxWallClockMs = budget.maxWallClockMs, maxWallClockMs <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.budget.maxWallClockMs", "must be a positive integer"))
+  }
+  if let maxSessionAttempts = budget.maxSessionAttempts, maxSessionAttempts <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.budget.maxSessionAttempts", "must be a positive integer"))
+  }
+  if !loopBudgetOnExceededValues.contains(budget.onExceeded) {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget.onExceeded",
+      "must be one of: \(loopBudgetOnExceededValues.sorted().joined(separator: ", "))"
+    ))
+  }
+  if budget.onExceeded == "warn" && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget.onExceeded",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateTypedLoopConcurrency(
+  _ concurrency: LoopConcurrencyDeclaration,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if concurrency.maxActive != 1 {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.concurrency.maxActive",
+      "must be 1 (single-lease MVP; N>1 pools are not yet supported)"
+    ))
+  }
+  if !loopConcurrencyOnBusyValues.contains(concurrency.onBusy) {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.concurrency.onBusy",
+      "must be one of: \(loopConcurrencyOnBusyValues.sorted().joined(separator: ", "))"
+    ))
+  }
+}
+
+private func validateRawLoopConcurrency(
+  _ raw: Any?,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let concurrency = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.concurrency", "must be an object when provided"))
+    return
+  }
+  if let maxActive = concurrency["maxActive"] {
+    if (maxActive as? Int) != 1 {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.concurrency.maxActive",
+        "must be 1 (single-lease MVP; N>1 pools are not yet supported)"
+      ))
+    }
+  }
+  validateAllowedRawString(
+    concurrency["onBusy"],
+    allowed: loopConcurrencyOnBusyValues,
+    path: "workflow.loop.concurrency.onBusy",
+    diagnostics: &diagnostics
+  )
+}
+
+private func validateTypedLoopNotifications(
+  _ notifications: LoopNotificationDeclaration,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  for (index, outcome) in notifications.on.enumerated() where !loopNotificationOutcomeValues.contains(outcome) {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.notifications.on[\(index)]",
+      "must be one of: \(loopNotificationOutcomeValues.sorted().joined(separator: ", "))"
+    ))
+  }
+  for (index, channel) in notifications.channels.enumerated() {
+    let path = "workflow.loop.notifications.channels[\(index)]"
+    if !loopNotificationChannelTypes.contains(channel.type) {
+      diagnostics.append(loopValidationError(
+        "\(path).type",
+        "must be one of: \(loopNotificationChannelTypes.sorted().joined(separator: ", "))"
+      ))
+      continue
+    }
+    if channel.type == "webhook", channel.urlEnv?.isEmpty != false {
+      diagnostics.append(loopValidationError("\(path).urlEnv", "webhook channels must name a URL environment variable"))
+    }
+    if channel.type == "command", channel.argv.isEmpty || channel.argv.contains(where: { $0.isEmpty }) {
+      diagnostics.append(loopValidationError("\(path).argv", "command channels must declare a non-empty argv"))
+    }
+  }
+}
+
+private func validateRawLoopNotifications(
+  _ raw: Any?,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let notifications = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.notifications", "must be an object when provided"))
+    return
+  }
+  if let on = notifications["on"] {
+    guard let outcomes = on as? [Any] else {
+      diagnostics.append(loopValidationError("workflow.loop.notifications.on", "must be an array when provided"))
+      return
+    }
+    for (index, outcome) in outcomes.enumerated()
+    where !(outcome is String) || !loopNotificationOutcomeValues.contains(outcome as? String ?? "") {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.notifications.on[\(index)]",
+        "must be one of: \(loopNotificationOutcomeValues.sorted().joined(separator: ", "))"
+      ))
+    }
+  }
+  guard let channels = notifications["channels"] else {
+    return
+  }
+  guard let channelList = channels as? [Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.notifications.channels", "must be an array when provided"))
+    return
+  }
+  for (index, rawChannel) in channelList.enumerated() {
+    let path = "workflow.loop.notifications.channels[\(index)]"
+    guard let channel = rawChannel as? [String: Any] else {
+      diagnostics.append(loopValidationError(path, "must be an object"))
+      continue
+    }
+    let type = channel["type"] as? String ?? ""
+    if !loopNotificationChannelTypes.contains(type) {
+      diagnostics.append(loopValidationError(
+        "\(path).type",
+        "must be one of: \(loopNotificationChannelTypes.sorted().joined(separator: ", "))"
+      ))
+      continue
+    }
+    if type == "webhook", (channel["urlEnv"] as? String)?.isEmpty != false {
+      diagnostics.append(loopValidationError("\(path).urlEnv", "webhook channels must name a URL environment variable"))
+    }
+    if type == "command" {
+      let argv = channel["argv"] as? [String] ?? []
+      if argv.isEmpty || argv.contains(where: \.isEmpty) {
+        diagnostics.append(loopValidationError("\(path).argv", "command channels must declare a non-empty argv"))
+      }
+    }
+  }
+}
+
+private func validateRawLoopBudget(
+  _ raw: Any?,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let budget = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.budget", "must be an object when provided"))
+    return
+  }
+
+  if budget["maxTotalTokens"] == nil && budget["maxWallClockMs"] == nil && budget["maxSessionAttempts"] == nil {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget",
+      "must define maxTotalTokens, maxWallClockMs, or maxSessionAttempts"
+    ))
+  }
+  validatePositiveRawInteger(
+    budget["maxTotalTokens"],
+    path: "workflow.loop.budget.maxTotalTokens",
+    diagnostics: &diagnostics
+  )
+  validatePositiveRawInteger(
+    budget["maxWallClockMs"],
+    path: "workflow.loop.budget.maxWallClockMs",
+    diagnostics: &diagnostics
+  )
+  validatePositiveRawInteger(
+    budget["maxSessionAttempts"],
+    path: "workflow.loop.budget.maxSessionAttempts",
+    diagnostics: &diagnostics
+  )
+  validateAllowedRawString(
+    budget["onExceeded"],
+    allowed: loopBudgetOnExceededValues,
+    path: "workflow.loop.budget.onExceeded",
+    diagnostics: &diagnostics
+  )
+  if budget["onExceeded"] as? String == "warn" && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget.onExceeded",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateRawLoopMutationPolicy(_ raw: Any?, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard let raw else {
+    return
+  }
+  guard let mutation = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.policies.mutation", "must be an object when provided"))
+    return
+  }
+
+  if let rawAllowedWriteRoots = mutation["allowedWriteRoots"] {
+    guard let roots = rawAllowedWriteRoots as? [Any] else {
+      diagnostics.append(loopValidationError("workflow.loop.policies.mutation.allowedWriteRoots", "must be an array when provided"))
+      return
+    }
+    for (index, root) in roots.enumerated() {
+      validateLoopWorkflowRelativePath(
+        root,
+        fieldName: "allowedWriteRoots",
+        path: "workflow.loop.policies.mutation.allowedWriteRoots[\(index)]",
+        diagnostics: &diagnostics
+      )
+    }
+  }
+
+  if let scratchRoot = mutation["scratchRoot"] {
+    validateLoopWorkflowRelativePath(
+      scratchRoot,
+      fieldName: "scratchRoot",
+      path: "workflow.loop.policies.mutation.scratchRoot",
+      diagnostics: &diagnostics
+    )
+  }
+  validateAllowedRawString(
+    mutation["commit"],
+    allowed: loopPromptPolicyValues,
+    path: "workflow.loop.policies.mutation.commit",
+    diagnostics: &diagnostics
+  )
+  validateAllowedRawString(
+    mutation["push"],
+    allowed: loopPromptPolicyValues,
+    path: "workflow.loop.policies.mutation.push",
+    diagnostics: &diagnostics
+  )
+}
+
+private func validateRawLoopProcessPolicy(_ raw: Any?, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard let raw else {
+    return
+  }
+  guard let process = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.policies.process", "must be an object when provided"))
+    return
+  }
+  validateAllowedRawString(
+    process["nestedRiela"],
+    allowed: loopPromptPolicyValues,
+    path: "workflow.loop.policies.process.nestedRiela",
+    diagnostics: &diagnostics
+  )
+  validateAllowedRawString(
+    process["nestedCodex"],
+    allowed: loopPromptPolicyValues,
+    path: "workflow.loop.policies.process.nestedCodex",
+    diagnostics: &diagnostics
+  )
+}
+
+private func validateRawLoopGates(
+  _ raw: Any?,
+  stepIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let gates = raw as? [Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.gates", "must be an array when provided"))
+    return
+  }
+
+  var seenGateIds: Set<String> = []
+  for (index, rawGate) in gates.enumerated() {
+    let path = "workflow.loop.gates[\(index)]"
+    guard let gate = rawGate as? [String: Any] else {
+      diagnostics.append(loopValidationError(path, "must be an object"))
+      continue
+    }
+    validateNonEmptyLoopString(gate["id"], path: "\(path).id", diagnostics: &diagnostics)
+    if let id = gate["id"] as? String, !id.isEmpty {
+      if seenGateIds.contains(id) {
+        diagnostics.append(loopValidationError("\(path).id", "must be unique across workflow.loop.gates[]"))
+      }
+      seenGateIds.insert(id)
+    }
+    validateNonEmptyLoopString(gate["stepId"], path: "\(path).stepId", diagnostics: &diagnostics)
+    if let stepId = gate["stepId"] as? String, !stepId.isEmpty, !stepIds.contains(stepId) {
+      diagnostics.append(loopValidationError("\(path).stepId", "must reference workflow.steps[] entry '\(stepId)'"))
+    }
+    validateRawLoopGateAcceptance(gate["acceptWhen"], path: "\(path).acceptWhen", diagnostics: &diagnostics)
+  }
+}
+
+private func validateRawLoopGateAcceptance(
+  _ raw: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let acceptWhen = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError(path, "must be an object when provided"))
+    return
+  }
+  validateAllowedRawString(
+    acceptWhen["decision"],
+    allowed: loopGateDecisionValues,
+    path: "\(path).decision",
+    diagnostics: &diagnostics
+  )
+  if let maxHighFindings = acceptWhen["maxHighFindings"] {
+    validateNonNegativeInteger(maxHighFindings, path: "\(path).maxHighFindings", diagnostics: &diagnostics)
+  }
+  if let maxMediumFindings = acceptWhen["maxMediumFindings"] {
+    validateNonNegativeInteger(maxMediumFindings, path: "\(path).maxMediumFindings", diagnostics: &diagnostics)
+  }
+}
+
+private func validateRawLoopImplementationPlan(_ raw: Any?, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard let raw else {
+    return
+  }
+  guard let implementationPlan = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.implementationPlan", "must be an object when provided"))
+    return
+  }
+  if let pathPattern = implementationPlan["pathPattern"] {
+    validateLoopWorkflowRelativePath(
+      pathPattern,
+      fieldName: "pathPattern",
+      path: "workflow.loop.implementationPlan.pathPattern",
+      diagnostics: &diagnostics
+    )
+  }
+}
+
+private func validateAllowedValue(
+  _ value: String,
+  allowed: Set<String>,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if !allowed.contains(value) {
+    diagnostics.append(loopValidationError(path, "must be one of \(allowed.sorted().joined(separator: ", "))"))
+  }
+}
+
+private func validateAllowedRawString(
+  _ value: Any?,
+  allowed: Set<String>,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let value else {
+    return
+  }
+  guard let string = value as? String else {
+    diagnostics.append(loopValidationError(path, "must be one of \(allowed.sorted().joined(separator: ", "))"))
+    return
+  }
+  validateAllowedValue(string, allowed: allowed, path: path, diagnostics: &diagnostics)
+}
+
+private func validateNonNegativeInteger(
+  _ value: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let number = value as? NSNumber,
+    !isLoopValidationBooleanNumber(number),
+    floor(number.doubleValue) == number.doubleValue,
+    number.intValue >= 0
+  else {
+    diagnostics.append(loopValidationError(path, "must be a non-negative integer"))
+    return
+  }
+}
+
+private func validatePositiveRawInteger(
+  _ value: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let value else {
+    return
+  }
+  guard let number = value as? NSNumber,
+    !isLoopValidationBooleanNumber(number),
+    floor(number.doubleValue) == number.doubleValue,
+    number.intValue > 0
+  else {
+    diagnostics.append(loopValidationError(path, "must be a positive integer"))
+    return
+  }
+}
+
+private func validateNonEmptyLoopString(
+  _ value: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let string = value as? String, !string.isEmpty else {
+    diagnostics.append(loopValidationError(path, "must be a non-empty string"))
+    return
+  }
+}
+
+private func validateLoopWorkflowRelativePath(
+  _ value: Any?,
+  fieldName: String,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let string = value as? String, !string.isEmpty else {
+    diagnostics.append(loopValidationError(path, "must be a non-empty string"))
+    return
+  }
+  guard isSafeLoopWorkflowRelativePath(string) else {
+    diagnostics.append(loopValidationError(path, "\(fieldName) '\(string)' must be a workflow-relative path without '.' or '..' segments"))
+    return
+  }
+}
+
+private func isSafeLoopWorkflowRelativePath(_ value: String) -> Bool {
+  if value.isEmpty || value.hasPrefix("/") || value.hasPrefix("\\") || matchesLoopValidation(value, pattern: #"^[A-Za-z]:[\\/]"#) {
+    return false
+  }
+  let segments = value.split { character in
+    character == "/" || character == "\\"
+  }
+  if segments.isEmpty {
+    return false
+  }
+  return !segments.contains { segment in
+    segment == "." || segment == ".."
+  }
+}
+
+private func isLoopValidationBooleanNumber(_ number: NSNumber) -> Bool {
+  CFGetTypeID(number) == CFBooleanGetTypeID()
+}
+
+private func matchesLoopValidation(_ value: String, pattern: String) -> Bool {
+  value.range(of: pattern, options: .regularExpression) != nil
+}
+
+private func loopValidationError(_ path: String, _ message: String) -> WorkflowValidationDiagnostic {
+  WorkflowValidationDiagnostic(severity: .error, path: path, message: message)
+}

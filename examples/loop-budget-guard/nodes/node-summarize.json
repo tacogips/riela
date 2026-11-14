@@ -1,0 +1,12 @@
+{
+  "id": "summarize",
+  "description": "Second worker step; never dispatched because the wall-clock budget is exceeded at the step boundary.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/summarize.md",
+  "variables": {},
+  "output": {
+    "description": "Return a JSON object with a run summary."
+  }
+}

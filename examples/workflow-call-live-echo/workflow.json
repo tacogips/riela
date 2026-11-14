@@ -1,0 +1,38 @@
+{
+  "workflowId": "workflow-call-live-echo",
+  "description": "Live cross-workflow dispatch smoke fixture without any agent backend: produce-request hands off to the workflow-call-live-echo-callee echo worker through a cross-workflow step transition and resumes at apply-result with the callee result.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "produce-request",
+  "nodes": [
+    {
+      "id": "produce-request",
+      "nodeFile": "nodes/node-produce-request.json"
+    },
+    {
+      "id": "apply-result",
+      "nodeFile": "nodes/node-apply-result.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "produce-request",
+      "nodeId": "produce-request",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "workflow-call-live-echo-callee",
+          "toStepId": "echo-worker",
+          "resumeStepId": "apply-result"
+        }
+      ]
+    },
+    {
+      "id": "apply-result",
+      "nodeId": "apply-result",
+      "role": "worker"
+    }
+  ]
+}

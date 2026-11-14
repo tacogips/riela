@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the consolidation counts and the long-term recall used for prompting.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest long-term memory payload.",
+  "variables": {},
+  "output": {
+    "description": "Consolidation counts plus the long-term recall results.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

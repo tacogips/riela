@@ -1,0 +1,12 @@
+{
+  "id": "parse-instruction",
+  "executionBackend": "claude-code-agent",
+  "model": "claude-haiku-4-5",
+  "modelFreeze": false,
+  "description": "Parse a natural-language routine instruction from chat into a routine name, task, six-field cron schedule, and optional completion criteria.",
+  "promptTemplateFile": "prompts/parse-instruction.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with name, task, schedule (six-field cron), timezone, completionCriteria, and replyText."
+  }
+}

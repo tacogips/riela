@@ -1,0 +1,8 @@
+{
+  "id": "negative-manager",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/negative-manager.md",
+  "variables": {}
+}

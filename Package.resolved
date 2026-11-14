@@ -1,0 +1,158 @@
+{
+  "originHash" : "77d32af5e7c7814b7943764a6f9b1695939654870116379c2506604b2ef9593d",
+  "pins" : [
+    {
+      "identity" : "agent-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/agent-gateway.git",
+      "state" : {
+        "revision" : "dae69561f05b75be6d680af1267da1af9db16d13"
+      }
+    },
+    {
+      "identity" : "anydoc-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/anydoc-swift.git",
+      "state" : {
+        "revision" : "0aa4756d0ce3f97cc94f1de9efe26879808097c8"
+      }
+    },
+    {
+      "identity" : "apple-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/apple-gateway.git",
+      "state" : {
+        "revision" : "ac0dd8f0f5f100e2f4d4e44a2c18f49d11a0c1cd"
+      }
+    },
+    {
+      "identity" : "gateway-sdk-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/gateway-sdk-kit.git",
+      "state" : {
+        "revision" : "4d4b56c686f6875defccb54f74e2276022eb524e",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "gmail-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/gmail-gateway.git",
+      "state" : {
+        "revision" : "a7b0204e5869b3be8475fec8460b1881e54fb174"
+      }
+    },
+    {
+      "identity" : "google-analytics-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-analytics-gateway.git",
+      "state" : {
+        "revision" : "6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0"
+      }
+    },
+    {
+      "identity" : "google-documents-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-documents-gateway.git",
+      "state" : {
+        "revision" : "dadc2f7d0070f92df07278873262f9f7aad5d16e"
+      }
+    },
+    {
+      "identity" : "google-gateway-auth",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-gateway-auth.git",
+      "state" : {
+        "revision" : "48e0112fb5eb057cf012194cfffaa2581ba29d76"
+      }
+    },
+    {
+      "identity" : "google-service-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-service-gateway.git",
+      "state" : {
+        "revision" : "4cfef44b245893e6de4f30780c70fb0314da70eb"
+      }
+    },
+    {
+      "identity" : "kaiba",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/kaiba.git",
+      "state" : {
+        "revision" : "24fc356a3073821c31866279c419abb707077a8d"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    },
+    {
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "3b6410f7dee09eb33cdd26260c5fd47fda19b0e2",
+        "version" : "1.7.3"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
+        "version" : "4.5.2"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-log.git",
+      "state" : {
+        "revision" : "4038b6a4f74a1426f47eb1dd5b4bb5628a15d597",
+        "version" : "1.16.1"
+      }
+    },
+    {
+      "identity" : "swift-webauthn",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swift-server/swift-webauthn.git",
+      "state" : {
+        "revision" : "909cf4193cde7d64196553c4245ab647a68aaaca",
+        "version" : "1.0.0-beta.1"
+      }
+    },
+    {
+      "identity" : "swiftcbor",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/unrelentingtech/SwiftCBOR.git",
+      "state" : {
+        "revision" : "fd929a6d8f7651ce0f63fc99397fd5762358cc29",
+        "version" : "0.6.0"
+      }
+    },
+    {
+      "identity" : "web-hooky",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/web-hooky.git",
+      "state" : {
+        "revision" : "34a27e3ac6b042d498673a8de9cf42c136ebb8c2",
+        "version" : "0.2.0"
+      }
+    },
+    {
+      "identity" : "wrike-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/wrike-gateway.git",
+      "state" : {
+        "revision" : "ec1b9e770a18e5a2b463b09becb69492a21abf5d"
+      }
+    }
+  ],
+  "version" : 3
+}

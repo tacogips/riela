@@ -1,0 +1,16 @@
+{
+  "entry" : {
+    "gateId" : "implementation-review",
+    "kind" : "recoverFromGate"
+  },
+  "generation" : 2,
+  "id" : "attempt-4e9c2a77-1d5b-4a3e-8c2f-6b0d9e1a3f45",
+  "isolation" : {
+    "baseRevision" : "60b8fe8",
+    "branch" : "work/attempt-4e9c2a77",
+    "path" : "/repo/.riela/worktrees/attempt-4e9c2a77"
+  },
+  "sessionId" : "session-2026-09-21-0001",
+  "state" : "terminal",
+  "taskId" : "task-0f0d0d48-2b3e-4c1d-9f0a-5a9a3b1e7c22"
+}

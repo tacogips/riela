@@ -1,0 +1,796 @@
+# Implementation Plans
+
+Completed: [Monja multi-agent collaboration](completed/monja-agent-collaboration.md).
+
+Completed: [Monja project task orchestrator](completed/monja-project-task-orchestrator.md)
+and [workflow cancellation finalization](completed/workflow-cancellation-finalization.md).
+
+This directory contains implementation plans that translate design documents into actionable implementation specifications.
+
+## Purpose
+
+Implementation plans bridge design documents (what to build) and actual code (how to build). They provide:
+
+- Clear deliverables without code
+- Interface and function specifications
+- Dependency mapping for concurrent execution
+- Progress tracking across sessions
+
+Current cross-plan continuation state, dependency ordering, dirty-worktree
+ownership, and verification evidence are consolidated in
+[`REMAINING-WORK-HANDOVER.md`](REMAINING-WORK-HANDOVER.md).
+
+## Directory Structure
+
+```
+impl-plans/
+├── README.md
+├── PROGRESS.json
+├── <feature>.md
+├── completed/
+└── templates/
+```
+
+Issue [#118](https://github.com/tacogips/riela/issues/118) directory change
+evidence is implemented and accepted. Its plan is archived at
+[`completed/fanout-directory-change-tracking.md`](completed/fanout-directory-change-tracking.md);
+the [progress log](progress/fanout-directory-change-tracking.md) records focused
+verification and review. Final commit and push remain workflow steps.
+
+Work handover and takeover (2026-10-01) is implemented and accepted on
+`feat/work-handover-and-takeover`. The umbrella plan is archived at
+[`completed/work-handover-and-takeover.md`](completed/work-handover-and-takeover.md),
+and its child plans `wh-00` … `wh-20` are archived under `completed/wh-*.md`.
+The feature continues a stalled task attempt on another worker. It adds the
+session `suspended` status, a digest-sealed `HandoverPacket` with deliverable
+locators, `AttemptEntry.takeover`, the answer channel, lease heartbeat and
+fence, sinks, host traits and GraphQL remote takeover. User docs are in
+[`docs/work-handover.md`](../docs/work-handover.md). The
+[wh-20 progress log](progress/wh-20-reconcile.md) records the closing
+evidence: 218/218 focused tests, green SurfaceParity and catalog gates, three
+mock examples, and a full suite of 2,967 tests with no failure beyond the
+wh-00 baseline. The dispatch manifest `active/work-handover-dispatch.json`
+stays active until the dispatch run closes. The final commit and push remain
+workflow steps.
+
+## Active Plans
+
+Issue [#116](https://github.com/tacogips/riela/issues/116):
+[`builtin-addon-116-03-verification`](active/builtin-addon-116-03-verification.md)
+remains active for its historical final completion record. Its isolated source
+verification found 74/75 examples valid and zero
+`unresolvedAddonExecutable` diagnostics; the separate
+[`EXAMPLE-116-01`](active/builtin-addon-116-verification-findings.md) schema
+finding was resolved by the example contract migration. The integrated 0.2.2
+source CLI validates all 75 examples. The completed catalog and
+deferred-response slices are indexed below.
+
+For the P1 release remediation on Draft PR #113,
+[`p1-release-integration`](active/work-runtime-p1-release-integration.md)
+remains active pending documentation closure, exact-file commit, non-force push,
+and local/remote/PR head equality. The accepted CLI and runtime predecessors
+are archived below. Current-source Work/CLI/Core passed 2,062/2,062; the full
+nonparallel Swift suite passed 2,717 cases with two disclosed skips and zero
+failures. See the [integration progress](progress/p1-release-integration.md).
+
+Unchecked-checkbox counts below are reconciled from the actual plan files as of
+2026-09-21; the Work Runtime status was refreshed on 2026-09-26. Workstream tags
+(W0–W13) map to
+`impl-plans/REMAINING-WORK-HANDOVER.md`. "Unchecked" counts remaining plan
+checkboxes; zero-unchecked plans marked *archive candidate* are complete pending
+only the W13 read-through/move to `completed/`.
+
+**Active implementation work remaining (open checkboxes):**
+
+| Plan | Unchecked | Status | Workstream |
+| ---- | --------: | ------ | ---------- |
+| `active/gateway-sdk-addons-01`–`05` | 23 | Design and five plans accepted on `feat/gateway-sdk-addons` (`03eaee1f`, 2026-09-23); public Google Documents v0.3.3 and GatewaySDKKit v0.1.0 tags verified. Planning artifacts only; implementation, dependency resolution and tests remain open. Earlier pending-review wording in the authored documents is historical. | Gateway SDK add-ons |
+| `active/workflow-defect-detection-and-repair` | 6 | D1–D9 design and exact plan accepted by Step 3/Step 5 (2026-09-23, `d11527a`); six serial runtime tasks including backend liveness remain unimplemented. Pending-review wording inside the accepted documents records earlier author stages. | Workflow correctness |
+| `active/execution-environment-consolidation` | 13 | Planned 2026-09-21, no code written; eight implementation boxes and five final acceptance boxes remain. Zero-based definitions, workspace, policy, model, placement and runner consolidation (`design-docs/specs/design-execution-environment-consolidation.md`); supersedes intake adoptions A/C/D/F/G. | Execution environment consolidation |
+| `active/agent-node-output-contract` | 6 | Planned 2026-09-21, no code written; agent-node execution contract (`design-docs/specs/design-agent-node-output-contract.md`): validate-time agentSandbox + output.jsonSchema requirements, no-contract text-wrap simplification, output-block-default retry 2, typed template-resolution error naming producer/path/consumer; D4 bundle edits are a riela-packages follow-up work package | Agent-node output contract |
+| `active/work-runtime-p0-model-and-store` | 0 | Implemented 2026-09-21 (archive candidate); P0 of the Work Runtime consolidation (`design-docs/specs/design-work-runtime-consolidation.md`): `RielaWork` module, work_* tables in the runtime records DB, evidence/finding projection from existing sessions, completion evaluator, read-only `riela task show|list` (delta D2: `import-session` was never in the plan's task table and is not built). Later phases delete auto-improve and fold loop/routine/specialist | Work Runtime consolidation |
+| `active/loop-engineering-convergence-and-operations` | 1 | S9a implementation and focused review complete; the final full `swift test` rerun and recorded evidence remain open. Do not reimplement the 12 checked items. | Loop engineering |
+| `active/apple-mail-addons` | 3 | Implemented in Swift + `AppleMailAddonTests` (15) green; every implementation/verification box reconciled+checked with per-box evidence 2026-07-12. The 3 open boxes are the upstream `apple-gateway file download` output-contract confirmation, its contingent code change, and closing the QA note — all **DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
+| `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); all 4 open boxes are TASK-001 **live envelope/time-format QA DEFERRED (accepted): blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
+| `active/rielaapp-instance-execution-timeline` | 2 | Implemented + unit-tested (RielaViewer data/layout; RielaApp pane/popover/integration/entry-point compile); RielaViewerTests 16/0. Interactive UI-visual verification **DEFERRED** to a RielaApp session with the rielaapp-ui-verification workflow; the second box is index/archive finalization | W6 |
+| `active/bounded-fanout-join-workflow-execution` | 10 | Historical plan marked Ready (2026-07-16); reconcile its ten boxes against the current native fanout runtime and tests before dispatching implementation | Runtime fanout audit |
+| `active/cli-session-store-decode-resilience` | 2 | Resilient reads implemented; plan records a pending scope decision. Recheck the two boxes and current behavior before closing or expanding scope | Session store audit |
+| `active/kaiba-api-instances` | 13 | Plan records implementation in progress and external KaibaClient publication/current-executable visual gates; current branch and evidence need reconciliation | Kaiba instances audit |
+| `active/mutable-workflow-registry` | 2 | Plan records implementation complete with independent adversarial review pending; current code and review evidence need reconciliation | Workflow registry audit |
+| `active/riela-note-system-memory` | 1 | Plan records remediation complete with implementation self-review and pre-browser artifact gate pending; current evidence needs reconciliation | Note memory audit |
+| `active/rielaapp-web-server-http-transport` | 117 | Historical plan marked Ready (2026-07-17); reconcile its checklist with current web/API implementation before treating boxes as new work | RielaApp web audit |
+| `active/rielaapp-web-server-lifecycle-packaging` | 45 | Historical plan marked Ready (2026-07-17); reconcile its checklist with current lifecycle/asset packaging before treating boxes as new work | RielaApp web audit |
+| `active/wrike-web-notebook-view` | 2 | Plan records implementation complete with independent review pending; current evidence needs reconciliation | Note web audit |
+| `active/riela-note-new-features` | 33 | Historical Riela-targeted checklist after Note extraction; Kaiba has completed F1 capture and F2 entity-page work, but parity with this plan's full accepted behavior remains unverified. F3 ownership and acceptance need rebase. See `progress/riela-note-extraction-audit.md`; do not implement the old 33 items verbatim | W8 |
+
+**Prose/decision/external plans (kept active, no open checkboxes or non-checkbox scope):**
+
+| Plan | Status | Workstream |
+| ---- | ------ | ---------- |
+| `active/workflow-working-table` | Design and plan accepted 2026-09-23 (`cb3470f`); implementation pending. Uses a separate `working_entries` table in the existing workspace KV SQLite file, scoped by workflow ID, with six-hour default and thirty-day maximum TTL. | Workflow working table |
+| `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
+| `active/swift-cli-runtime-parity-gap-closure` | Implementation largely present; TypeScript deletion gate blocked on accepted review/adversarial metadata + final evidence | W9 |
+| `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
+| `active/monja-typescript-sdk-command-node` | Owned by the separate Monja branch/worktree specified by the user; do not modify from this continuation | external ownership |
+
+**W5 package plans — superseded by the Swift migration (reconciled 2026-07-12):**
+
+The five package plans below were authored against the removed TypeScript tree
+(`packages/riela/src/...`). On 2026-07-12 all ≈72 unchecked boxes were
+reconciled via a Swift-native gap analysis (evidence: `Sources/RielaCLI/
+WorkflowPackage*.swift`, `WorkflowPackageCommandRunner+*.swift`,
+`Sources/RielaAddons/WorkflowPackage*.swift`, exercised by `RielaCLITests`
+package suites — `swift test --filter 'Package'` = 92 tests, 0 failures). Each
+box was resolved as covered-with-Swift-evidence, superseded-and-not-carried, or
+left as a documented **genuine Swift gap**.
+
+- **Complete via supersession** (0 open boxes, moved to `completed/`):
+  `package-checkout-content-digest-metadata` (checksum/digest review — zero
+  high/medium findings), `workflow-package-registry` (invalid-package
+  diagnostics covered; sqlite/cache-refresh-hook are TS-only), and
+  `workflow-package-registry-migration` (registry evolved past the `project-*`
+  fixture scheme; all capabilities implemented + tested; sibling
+  `../riela-packages` verified clean).
+- **Swift gaps closed and moved to `completed/`** (2 plans, 30 gap boxes, closed
+  2026-07-12): `workflow-package-checkout-search` (opt-in pre-install security
+  feature implemented — static scanner + findings/redaction, warn/reject,
+  no-network container command builder, `--pre-install-check*` flags; 10 tests)
+  and `workflow-package-publish` (git-integrated publish transport implemented —
+  real md5 checksum, normalized manifest, backend hints, clone/remote-URL
+  verification, dirty-worktree refusal, push-permission probe, direct push, and
+  `--create-pr`/`--pr-base` PR mode; 8 tests).
+
+14 implemented+verified plans with zero open checkboxes were moved to
+`completed/` on 2026-07-12 after a per-plan read-through (no open follow-ups; all
+their tests are green in the 1,753-test full suite). `apple-notes-crud-addons`
+was also moved to `completed/` on 2026-07-12 during W4 reconciliation once all
+three accepted hardening findings were confirmed implemented+tested (0 open
+boxes, no deferred live QA). See "Recently Completed" below.
+
+## Recently Completed
+
+Scheduled workflow overlap policy
+([design](../design-docs/specs/design-scheduled-overlap-policy.md)):
+[`schedule-overlap-policy-01-contracts`](completed/schedule-overlap-policy-01-contracts.md),
+[`schedule-overlap-policy-02-serve-dispatch`](completed/schedule-overlap-policy-02-serve-dispatch.md),
+[`schedule-overlap-policy-03-inspection`](completed/schedule-overlap-policy-03-inspection.md),
+[`schedule-overlap-policy-04-routine-surfaces`](completed/schedule-overlap-policy-04-routine-surfaces.md),
+and [`schedule-overlap-policy-05-integration`](completed/schedule-overlap-policy-05-integration.md)
+were archived on 2026-10-22 after the session-474 integration review accepted
+the combined tree at `6a5ea0f3`. The combined build passed. The focused suites
+ran 60 and 153 tests (1 skipped by design) with 0 failures. The SDL hash was
+unchanged by regeneration, selected-file strict SwiftLint passed, and the S1-S4
+CLI smoke checks passed. Browser E2E was skipped because no browser-facing file
+changed. User-QA Q1 (cancelled runs are recorded as `failed` with
+`failureKind: cancelled`) is still open in
+[`qa-scheduled-overlap-policy.md`](../design-docs/user-qa/qa-scheduled-overlap-policy.md).
+The dispatch manifest stays at
+[`active/schedule-overlap-policy-20261021-session-471-dispatch.json`](active/schedule-overlap-policy-20261021-session-471-dispatch.json).
+Progress logs: [`progress/overlap-01-contracts.md`](progress/overlap-01-contracts.md)
+through [`progress/overlap-05-integration.md`](progress/overlap-05-integration.md).
+
+Issue [#117](https://github.com/tacogips/riela/issues/117):
+[`issue-117-installed-local-command`](completed/issue-117-installed-local-command.md)
+was archived after accepted implementation and integration reviews. The
+source-matched final gates passed 12 focused tests, 22 host tests, build,
+SwiftLint, six installed selections, 75 example validations, two user-scope
+precondition checks, and 52 expected CLI rejections. Browser E2E was skipped
+because no browser-facing file changed. The historical pre-production failing
+baseline was not captured. Commit and non-force push remain downstream workflow
+steps. [Progress and complete logs](progress/issue-117-installed-local-command.md).
+
+Issue [#117](https://github.com/tacogips/riela/issues/117), earlier
+native/container slice:
+[`issue-117-installed-addon-metadata`](completed/issue-117-installed-addon-metadata.md)
+was archived after branch adversarial and test-integrity rereview accepted the
+implementation in `comm-000017`. Nine focused tests, 22 host tests, build,
+SwiftLint, 12 installed native/container selections, and all 75 example
+validations passed. Combined-tree integration review, exact-file commit,
+non-force push, and remote-head verification remain TASK-117-05 publication
+gates. [Progress and complete evidence](progress/issue-117-installed-addon-metadata.md).
+
+Issue [#116](https://github.com/tacogips/riela/issues/116):
+[`builtin-addon-116-01-catalog`](completed/builtin-addon-116-01-catalog.md)
+and [`builtin-addon-116-02-deferred`](completed/builtin-addon-116-02-deferred.md)
+completed their assigned implementation, focused tests, and accepted reviews
+on 2026-09-27. Their [catalog progress](completed/builtin-addon-116-01-catalog-progress.md)
+and [deferred progress](completed/builtin-addon-116-02-deferred-progress.md)
+retain command logs and final exit status paths. Publication remains with the
+active verification plan.
+
+| Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
+| -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`fanout-directory-change-tracking`](completed/fanout-directory-change-tracking.md) | 2026-09-27 | [Fanout change evidence design](../design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md) §Issue #118; bounded directory snapshots and membership drift accepted, with [focused verification and reviews](progress/fanout-directory-change-tracking.md). Final commit and push remain workflow steps. |
+| [`work-runtime-p1-release-cli`](completed/work-runtime-p1-release-cli.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; 19 historical assertion rows including the version-1 chat reply catalog repair, focused CLI 165/165, unknown add-on rejection retained. Publication is owned by the active integration plan. |
+| [`work-runtime-p1-release-runtime`](completed/work-runtime-p1-release-runtime.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; IDs 08/19 and focused 16/16, with combined-tree verification in the integration progress. Publication is owned by the active integration plan. |
+| `work-runtime-p1-dispatcher-guard-director` | 2026-09-26 | `design-work-runtime-consolidation` P1 accepted implementation and native join; independent test-integrity, Codex Sol adversarial and Codex Astra integration accepted. N7 exact-file commit, non-force push and Draft PR #109 head equality remain a workflow publication gate. Both broad Swift aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; A0 environment snapshots and older slice-local receipts are unavailable. Historical unchecked boxes are preserved in the archived plan |
+| `work-runtime-p1-selected-host-delivery` | 2026-09-24 | `design-work-runtime-consolidation` P1-6a selected-host delivery; independent reviews accepted the slice with a bounded V5 CLI/Core exception (22 failing cases, 24 assertions). Parent P1 remains open |
+| `cli-session-store-decode-resilience` | 2026-09-21 | `design-cli-session-store-decode-resilience` (resilient strict decoding, aggregate warning, raw identity collision prevention) |
+| `rielaapp-instance-execution-timeline` | 2026-09-21 | Historical AppKit design superseded by Web UI in `684eeca7`; retained viewer/trace contract verified with Swift, Web unit/typecheck, and Playwright evidence |
+| `workflow-runtime-fanout-capabilities` | 2026-09-21 | `design-bounded-fanout-join-workflow-execution` plus cross-workflow/recovery and child-session observability |
+| `swift-cli-runtime-parity-gap-closure` | 2026-09-21 | `design-swift-cli-runtime-parity-gap-closure` (accepted deletion gate and completed TypeScript source removal) |
+| `specialist-task-supervisor` | 2026-09-21 | `specialist-task-supervisor` (durable ownership, process/recovery fencing, Matrix/Wrike boundaries, independent acceptance) |
+| `distributed-registry-container-node-roadmap` | 2026-09-21 | `design-distributed-registry-container-node-roadmap` (local scope complete; external release deferral retained) |
+| `apple-mail-addons` | 2026-09-21 | `gateway-built-ins#built-in-rielaapple-mail-` and confirmed apple-gateway `file download` JSON-manifest contract |
+| `issue-94-inheritance-minimal` | 2026-09-21 | `design-workflow-json#swift-inheritance-resolution-issue-94` |
+| `workflow-graph-studio` | 2026-09-10 | `design-workflow-graph-studio` |
+| `work-runtime-p0-model-and-store` | 2026-09-21 | `design-work-runtime-consolidation` P0 (model/store/projection/completion evaluator and read-only task surface) |
+| `session-follow-rollup-backend-liveness` | 2026-07-24 | `design-workflow-progress-observability#session-follow-rollup-and-backend-liveness-extension-2026-07-23` |
+| `agent-node-output-contract` | 2026-09-21 | `design-agent-node-output-contract` (explicit CLI sandbox, producer-schema validation, strict addon payload templates, output-contract retry defaults) |
+| `loop-engineering-default-guardrails-and-terminal-preservation` | 2026-09-21 | `design-loop-engineering-convergence-and-operations` S9/S9a |
+| `native-remote-01-graphql-contract` | 2026-09-25 | `design-native-remote-workflow-execution` (accepted GraphQL contract and authorization; progress: `active/native-remote-nre-01-progress.md`) |
+| `native-remote-02-strict-storage` | 2026-09-25 | `design-native-remote-workflow-execution` (accepted strict persisted summary reads; progress: `active/native-remote-nre-02-progress.md`) |
+| `native-remote-03-provider-host-integration` | 2026-09-25 | `design-native-remote-workflow-execution` (adversarial and Astra integration reviews accepted; aggregate Swift exit 1 independently attributed to baseline App failures; browser E2E rerun passed 42/42 with writable task TMPDIR; Draft PR #110 remains open; progress: `active/native-remote-nre-03-progress.md`) |
+| `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |
+| `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
+| `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |
+| `riela-note-kanban-status-sets-and-orchestration` | 2026-07-31 | `design-riela-note-kanban-status-sets-and-orchestration` (historical Riela Note completion, PR #77; Riela Note extracted to Kaiba in #86) |
+| `web-cross-tag-filter-and-fixes` | 2026-07-27 | `design-web-cross-tag-filter-and-fixes` |
+| `web-tags-and-card-preview` | 2026-07-26 | `design-web-tags-and-card-preview` |
+| `riela-note-book-like-reader`                 | 2026-07-21 | `design-riela-note-ui-refinements#book-like-reader-addendum-2026-07-20`                                                                                                                      |
+| `riela-note-workspace-hardening` | 2026-07-19 | `design-riela-note-ui-refinements#workspace-hardening-addendum-2026-07-19` |
+| `rielaapp-live-filters-and-back-navigation` | 2026-07-16 | `design-rielaapp-ui-consistency-and-native-ux-review` F15 |
+| `riela-note-adversarial-review-fixes` | 2026-07-12 | `design-riela-note-adversarial-review-2026-07-12` |
+| `workflow-package-publish` | 2026-07-12 | `design-workflow-package-publish#workflow-package-publish` |
+| `workflow-package-checkout-search` | 2026-07-12 | `design-workflow-package-checkout-search` |
+| `package-checkout-content-digest-metadata` | 2026-07-12 | `architecture#workflow-checkout-boundary` |
+| `codex-unified-exec-stall-followup` | 2026-07-12 | `design-codex-unified-exec-stall-followup` |
+| `loop-engineering-application-gap-closure` | 2026-07-12 | `design-loop-engineering-application-gap-closure` |
+| `loop-engineering-convergence-and-operations` | 2026-07-12 | `design-loop-engineering-convergence-and-operations` |
+| `shared-workflow-serving-library` | 2026-07-12 | `design-shared-workflow-serving-library` |
+| `workflow-package-registry` | 2026-07-12 | `design-workflow-package-registry#workflow-package-registry` |
+| `workflow-package-registry-migration` | 2026-07-12 | `design-workflow-package-migration` |
+| `workflow-instance-unification` | 2026-07-12 | `design-workflow-instance-unification` |
+| `loop-engineering-first-line-tool` | 2026-07-12 | `design-loop-engineering-first-line-tool-detail` |
+| `installed-package-workflow-resolution` | 2026-07-12 | `design-installed-package-workflow-resolution` |
+| `apple-calendar-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-calendar-` |
+| `apple-notes-list-addon` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-notes-list` |
+| `apple-notes-crud-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-note-` |
+| `apple-reminders-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-reminders-` |
+| `apple-gateway-admin-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-gateway--admin-cli-add-ons` |
+| `macos-workflow-viewer` | 2026-07-12 | `design-macos-workflow-viewer` |
+| `node-input-filters` | 2026-07-12 | `design-node-input-filters` |
+| `official-sdk-adapter-improvements` | 2026-07-12 | `design-official-sdk-adapter-improvements` |
+| `official-sdk-adapter-review-improvements` | 2026-07-12 | `design-official-sdk-adapter-review-improvements` |
+| `package-manager-ux-gap-closure` | 2026-07-12 | `design-package-manager-ux-gap-closure` |
+| `riela-note-ui-refinements` | 2026-07-12 | `design-riela-note-ui-refinements` |
+| `riela-seatbelt-sandbox` | 2026-07-12 | `design-riela-seatbelt-sandbox` |
+| `rielaapp-ux-onboarding-improvements` | 2026-07-12 | `design-rielaapp-ux-onboarding-improvements` |
+| `three-axis-issue-resolution-review` | 2026-07-12 | `design-three-axis-issue-resolution-review` |
+| `workflow-progress-observability` | 2026-07-12 | `design-workflow-progress-observability` |
+| `agent-response-streaming` | 2026-07-11 | `design-agent-response-streaming#phase-1` |
+| `apple-gateway-packaging-plan` | 2026-07-07 | `gateway-built-ins#packaging-coverage-decision` |
+| `riela-note-selection-qa-comments` | 2026-07-07 | `design-riela-note-selection-qa-comments` |
+| `riela-note-edit-agent-ui` | 2026-07-07 | `design-riela-note-edit-agent-ui` |
+| `apple-notifications-addons` | 2026-07-07 | `design-docs/specs/node-addon-catalog-and-chat-reply-worker/gateway-built-ins.md` |
+| `codex-agent-swift-migration-adversarial-fix` | 2026-06-17 | `design-swift-native-migration#codexagent-blocking-adversarial-fix-design` |
+| `typescript-deletion-readiness-completion` | 2026-06-16 | `design-swift-native-migration#deletion-readiness-completion-pass` |
+| `boundary-addon-source-tree-loading` | 2026-06-16 | `design-workflow-json#built-in-add-on-package-boundary` |
+| `chat-event-attachment-judgement` | 2026-06-16 | `design-chat-sdk-event-sources#attachment-judgement-workflow-extension` |
+| `chat-gateway-trio-review-improvements` | 2026-06-16 | `design-telegram-gateway-agent-trio#review-decisions-and-issue-mapping` |
+| `discord-gateway-chat-history` | 2026-06-16 | `design-discord-gateway-chat-history` |
+| `executable-node-addon-manifest-dependencies` | 2026-06-16 | `design-executable-node-addon-manifest-dependencies` |
+| `matrix-attachment-text` | 2026-06-16 | `design-matrix-attachment-text`, `design-event-listener-workflow-trigger`, `architecture` |
+| `native-bash-dispatch-regression-test` | 2026-06-16 | `architecture#native-command-script-dispatch` |
+| `native-command-bash-script-dispatch` | 2026-06-16 | `architecture#native-command-script-dispatch`, `command#workflow-run-name-or-registry-target` |
+| `opentelemetry-instrumentation` | 2026-06-16 | `architecture#opentelemetry-runtime-instrumentation`, `command#telemetry-and-jaeger-verification` |
+| `run-log-workflow-definition-body` | 2026-06-16 | `design-graphql-manager-control-plane#run-scoped-workflow-definition-body` |
+| `sdk-node-addons-review-improvements` | 2026-06-16 | `architecture#sdk-backed-agent-adapter-boundary`, `design-node-addon-catalog-and-chat-reply-worker#built-in-agent-worker-add-ons` |
+| `sequential-list-event-source` | 2026-06-16 | `design-event-listener-workflow-trigger#sequential-list`, `command#events` |
+| `server-workflow-manifest` | 2026-06-16 | `design-server-workflow-manifest`, `command#subcommands` |
+| `swift-migration-v017-adversarial-gap-closure` | 2026-06-16 | `design-swift-native-migration#v0.1.17-cursor-cli-goal-parity-slice` |
+| `workflow-definition-inheritance-loader` | 2026-06-16 | `design-workflow-json#extends` |
+| `workflow-node-package-install` | 2026-06-16 | `design-workflow-node-package-install` |
+| `workflow-package-checkout` | 2026-06-16 | `design-workflow-package-checkout` |
+| `workflow-package-dependency-install` | 2026-06-16 | `design-workflow-package-registry#issue-43-dependency-install-contract` |
+| `workflow-package-install-scoped-callee-validation` | 2026-06-16 | `design-workflow-package-checkout#scoped-cross-workflow-validation-during-install`, `architecture#workflow-checkout-boundary` |
+| `workflow-package-raw-checkout-status` | 2026-06-16 | `design-workflow-package-commands#package-lifecycle-commands`, `design-workflow-package-checkout` |
+| `workflow-registry-run-temp-checkout` | 2026-06-16 | `command#command-surface`, `design-workflow-package-checkout#temporary-registry-run-checkout`, `design-workflow-package-registry#temporary-run-integration` |
+| `swift-deletion-readiness-gate` | 2026-06-16 | `design-swift-native-migration#typescript-deletion-readiness-todo-loop` |
+| `swift-homebrew-production-cutover` | 2026-06-12 | `design-swift-native-migration#branch-production-swift-homebrew-release-cutover`, `architecture`, `qa-swift-native-migration#release-cutover-threshold` |
+| `swift-native-migration` | 2026-06-12 | `design-swift-native-migration`, `architecture`, `qa-swift-native-migration` |
+| `swift-native-migration-task-009-final-cutover-gate` | 2026-06-12 | `design-swift-native-migration#task-009-final-parity-security-and-cutover-gate` |
+| `swift-native-migration-task-008-packaging-cutover-readiness` | 2026-06-12 | `design-swift-native-migration#task-008-packaging-and-homebrew-cutover-readiness-gates` |
+| `swift-native-migration-task-007-cli-parity` | 2026-06-12 | `design-swift-native-migration#task-007-swift-cli-validate-inspect-and-deterministic-run-parity`, `command#swift-native-migration-cli-parity` |
+| `swift-native-migration-task-006-contracts` | 2026-06-12 | `design-swift-native-migration#task-006-package-add-on-event-hook-graphql-and-server-contract-boundary` |
+| `swift-native-migration-task-005-runtime-session` | 2026-06-12 | `design-swift-native-migration#task-005-runtime-session-message-store-and-publication-boundary` |
+| `sqlite-only-node-io-mailbox-removal` | 2026-06-08 | `design-node-execution-inbox-contract#contract-shape`, `design-sqlite-message-store#node-execution-io-boundary`, `design-sqlite-message-store#file-mailbox-removal-boundary`, `architecture#message-architecture`, `design-node-output-contract#runtime-artifact-model`, `design-graphql-manager-control-plane#communication-query-model` |
+| `sqlite-message-payload-attachment-snapshot-preservation` | 2026-06-08 | `design-sqlite-message-store#payload-attachment-snapshot-rules` |
+| `manager-control-idempotency-atomic-claim` | 2026-06-07 | `design-graphql-manager-control-plane#idempotency-contract`, `design-graphql-manager-control-plane#atomic-idempotency-claim-flow`, `notes#manager-authidempotency-contract` |
+| `sqlite-runtime-json-checks` | 2026-06-07 | `design-sqlite-message-store#runtime-json-validation-policy`, `architecture#runtime-storage-layout` |
+| `sqlite-message-store` | 2026-06-07 | `design-sqlite-message-store`, `command`, `design-node-mailbox` |
+| `inherited-cross-workflow-callee-validation` | 2026-06-05 | `architecture`, `command#workflow-validate-name`, `design-workflow-json#extends` |
+| `temporary-workflow-execution` | 2026-05-31 | `design-temporary-workflow-execution`, `command`, `architecture` |
+| `chat-source-restart-history` | 2026-05-29 | `design-matrix-chat-history`, `design-chat-sdk-chat-history`, `design-matrix-attachment-text` |
+| `adapter-reused-session-prompt-splitting` | 2026-05-29 | `architecture#adapter-layer`, `command` |
+| `refactoring-graphql-runtime-node-execution-ordinal` | 2026-05-29 | `codex-refactoring-divide-and-conquer` slice reviews |
+| `workflow-registry-list-command` | 2026-05-29 | `design-workflow-package-commands#registry-list-issue-addendum` |
+| `product-rename-riela` | 2026-05-26 | `architecture#product-rename-to-riela`, `command#product-rename-command-surface` |
+| `homebrew-deployment-support` | 2026-05-20 | `architecture`, `command` |
+| `duplicate-scavenge-refactoring-workflow-mode` | 2026-05-19 | `architecture` |
+| `refactoring-duplicate-scavenge-product-code` | 2026-05-19 | `refactoring-divide-and-conquer`, `step3-merge-review-plan`, `architecture` |
+| `refactoring-event-path-resolution-package-ownership` | 2026-05-19 | `refactoring-divide-and-conquer`, `step3-merge-review-plan` |
+| `root-src-removal-cutover-review` | 2026-05-19 | `architecture` |
+| `schedule-registration-blocking-fixes` | 2026-05-19 | `design-scheduled-workflow-execution` |
+| `schedule-registration-policy-surface-cleanup` | 2026-05-19 | `design-scheduled-workflow-execution` |
+| `schedule-registration-safe-reply-gating` | 2026-05-19 | `design-scheduled-workflow-execution` |
+| `scheduled-workflow-execution` | 2026-05-19 | `design-scheduled-workflow-execution` |
+| `self-improve-package-boundary-contract-reconciliation` | 2026-05-19 | `design-self-improve`, `architecture` |
+| `self-improve-review-hardening` | 2026-05-19 | `design-self-improve` |
+| `self-improve-shared-function-reuse-audit` | 2026-05-19 | `design-self-improve` |
+| `self-improve` | 2026-05-19 | `design-self-improve`, `architecture`, `command`, `design-workflow-json`, `design-auto-improve-superviser-mode` |
+| `workflow-status-active-session-loadability-issue-25` | 2026-05-19 | `design-workflow-overview-status-surface`, `command` |
+| `refactoring-workflow-duplicate-guidance-consolidation` | 2026-05-19 | `refactoring-divide-and-conquer duplicate-scavenge slice reviews` |
+| `workflow-node-runtime-patches` | 2026-05-17 | `architecture#workflow-node-runtime-patches`, `command`, `design-workflow-node-executability-validation` |
+| `package-boundary-architecture` | 2026-05-17 | `architecture` |
+| `workflow-checkout-github-directory` | 2026-05-17 | `command`, `architecture`, `design-user-scope-workflows` |
+| `async-third-party-resolver-validation-error-handling` | 2026-05-17 | `architecture`, `design-node-addon-catalog-and-chat-reply-worker` |
+| `refactoring-package-source-ownership` | 2026-05-17 | `architecture` |
+| `loaded-workflow-addon-validation-results` | 2026-05-17 | `design-workflow-node-executability-validation#loaded-workflow-result-consistency`, `command` |
+| `workflow-node-executability-validation` | 2026-05-17 | `design-workflow-node-executability-validation` |
+| `refactoring-runtime-boundaries` | 2026-05-16 | `refactoring-divide-and-conquer slice reviews` |
+| `chat-event-sources-review-improvements` | 2026-05-15 | `design-event-listener-workflow-trigger`, `design-chat-sdk-event-sources`, `design-chat-sdk-event-sources` |
+| `chat-sdk-event-sources` | 2026-05-15 | `design-chat-sdk-event-sources`, `design-chat-sdk-event-sources`, `design-chat-sdk-event-sources`, `design-chat-sdk-event-sources`, `design-event-listener-workflow-trigger` |
+| `scheduled-sleep-node-runtime` | 2026-05-15 | `design-scheduled-sleep-node-runtime`, `design-workflow-json`, `design-event-listener-workflow-trigger` |
+| `scheduled-sleep-runtime-review-improvements` | 2026-05-15 | `design-scheduled-sleep-node-runtime` |
+| `supervisor-runner-pool-multi-run-follow-up-review` | 2026-05-15 | `architecture` |
+| `supervisor-runner-pool-package-boundary` | 2026-05-15 | `architecture`, `design-event-supervisor-control` |
+| `reject-numbered-part-filenames-biome-lint`      | 2026-05-13 | `architecture`                                                                                                                                                                           |
+| `workflow-inspect-structure-description-lines`   | 2026-05-13 | `command`                                                                                                                                                                                |
+| `workflow-inspect-structure-compact-routing`     | 2026-05-13 | `command`                                                                                                                                                                                |
+| `workflow-inspect-structure`                     | 2026-05-13 | `command`                                                                                                                                                                                |
+| `workflow-runner-module-split`                   | 2026-05-13 | `architecture#workflow-runner-module-split`                                                                                                                                              |
+| `typescript-source-module-size-boundary`         | 2026-05-13 | `architecture#typescript-source-module-size-boundary`                                                                                                                                    |
+| `matrix-recent-change-blocking-fixes`            | 2026-05-13 | `design-event-listener-workflow-trigger#checked-in-matrix-sample-and-local-synapse-verification`                                                                                            |
+| `matrix-send-receive-synapse-sample`             | 2026-05-13 | `design-event-listener-workflow-trigger#checked-in-matrix-sample-and-local-synapse-verification`, `design-output-destinations-and-supervisor-memory#matrix-local-sample-reply-verification` |
+| `matrix-event-source`                            | 2026-05-13 | `design-event-listener-workflow-trigger#matrix`                                                                                                                                          |
+| `precommit-management`                           | 2026-05-07 | `README.md`, `AGENTS.md`                                                                                                                                                              |
+| `chat-task-planning-and-supervisor-collaboration`  | 2026-05-07 | `design-chat-task-planning-lifecycle`, `design-supervisor-chat-collaboration`                                                                                                               |
+| `output-destinations-supervisor-memory-foundation` | 2026-05-06 | `design-output-destinations-and-supervisor-memory`                                                                                                                                          |
+| `default-supervision-runner-pool-regression-fixes` | 2026-05-06 | `architecture`, `command`, `design-event-supervisor-control`                                                                                                                                |
+| `workflow-runner-event-channel`                  | 2026-05-06 | `design-event-supervisor-control`                                                                                                                                                        |
+| `deterministic-supervisor-runner-pool`           | 2026-05-06 | `architecture`, `command`, `design-event-supervisor-control`                                                                                                                        |
+| `default-supervisor-backed-workflow-run`         | 2026-05-06 | `architecture`, `command`                                                                                                                                                             |
+| `bounded-fanout-join-workflow-execution`         | 2026-05-06 | `design-bounded-fanout-join-workflow-execution`                                                                                                                                          |
+| `default-node-timeout-60-minutes`                | 2026-05-06 | `design-workflow-json`                                                                                                                                                                   |
+| `inline-workflow-variables-and-inspect-usage`    | 2026-05-06 | `command`, `notes`                                                                                                                                                                    |
+| `output-contract-candidate-path-prompt`          | 2026-05-06 | `architecture`                                                                                                                                                                           |
+| `real-backend-runtime-artifact-audit`            | 2026-05-06 | `design-node-execution-inbox-contract`                                                                                                                                                   |
+| `session-command-project-scope`                  | 2026-05-06 | `design-user-scope-workflows`                                                                                                                                                            |
+| `output-contract-adapter-envelope-normalization` | 2026-05-05 | `design-node-output-contract`, `architecture`                                                                                                                                          |
+| `graphql-llm-session-message-selection`          | 2026-05-04 | `architecture`                                                                                                                                                                           |
+| `graphql-llm-session-message-field-selection`    | 2026-05-04 | `architecture`                                                                                                                                                                           |
+| `session-health-command`                         | 2026-05-04 | `design-session-health`                                                                                                                                                                  |
+| `robust-manager-output-parsing`                  | 2026-05-04 | `architecture`                                                                                                                                                                           |
+| `graphql-llm-session-messages`                   | 2026-05-04 | `architecture`                                                                                                                                                                           |
+| `step-run-history-rerun-runtime`                 | 2026-05-02 | `design-step-run-history-rerun`                                                                                                                                                          |
+| `step-run-history-rerun-foundation`              | 2026-05-02 | `design-step-run-history-rerun`                                                                                                                                                          |
+| `workflow-overview-status-surface`               | 2026-05-02 | `design-workflow-overview-status-surface`, `architecture`, `command`                                                                                                               |
+| `workflow-supervisor-dispatcher`                 | 2026-05-02 | `design-workflow-supervisor-dispatcher`                                                                                                                                                  |
+| `workflow-supervisor-dispatcher-foundation`      | 2026-05-01 | `design-workflow-supervisor-dispatcher`                                                                                                                                                  |
+| `workflow-supervisor-dispatcher-runtime`         | 2026-05-02 | `design-workflow-supervisor-dispatcher`                                                                                                                                                  |
+
+## Completed Plans
+
+| Plan                                                     | Completed  | Design Reference                                                                                                                              |
+| -------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event-external-mailbox-binding-foundation`              | 2026-04-30 | `design-event-external-mailbox-binding`                                                                                                       |
+| `supervisor-natural-language-control`                    | 2026-04-29 | `design-event-supervisor-control`, `design-auto-improve-superviser-mode`                                                                      |
+| `event-supervisor-control-review-hardening`              | 2026-04-29 | `design-event-supervisor-control`, `event-supervisor-control-foundation`                                                                      |
+| `event-supervisor-control-foundation`                    | 2026-04-29 | `design-event-supervisor-control`, `design-event-listener-workflow-trigger`, `design-auto-improve-superviser-mode`                            |
+| `workflow-legacy-compatibility-removal`                  | 2026-04-29 | `design-workflow-json`, `design-node-jump-and-code-manager-runtime`, `design-unified-workflow-role-model`, `architecture`, `command`, `notes` |
+| `workflow-legacy-compatibility-removal-tail-cleanup`     | 2026-04-29 | `design-workflow-json`, `design-unified-workflow-role-model`, `architecture`, `command`, `notes`                                              |
+| `auto-improve-superviser-workflow-phase-2`               | 2026-04-25 | `design-auto-improve-superviser-mode`, `architecture`, `command`                                                                              |
+| `graphql-supervision-execution-parity`                   | 2026-04-26 | `design-auto-improve-superviser-mode`, `command`                                                                                              |
+| `step-addressed-workflow-runtime-cutover`                | 2026-04-29 | `design-workflow-json`, `design-node-jump-and-code-manager-runtime`, `design-workflow-steps-and-node-reuse`, `architecture`, `command`        |
+| `auto-improve-superviser-mode`                           | 2026-04-25 | `design-auto-improve-superviser-mode`, `design-node-jump-and-code-manager-runtime`, `architecture`, `command`                                 |
+| `auto-improve-supervision-review-follow-up`              | 2026-04-25 | `design-auto-improve-superviser-mode`, `architecture`, `command`                                                                              |
+| `scoped-local-addons`                                    | 2026-04-21 | `design-node-addon-catalog-and-chat-reply-worker`, `design-user-scope-workflows`                                                              |
+| `event-root-manager-session-stickiness-record-lifecycle` | 2026-04-22 | `design-event-listener-workflow-trigger`                                                                                                      |
+| `event-root-manager-session-stickiness-binding-scope`    | 2026-04-22 | `design-event-listener-workflow-trigger`                                                                                                      |
+| `event-root-manager-session-stickiness`                  | 2026-04-22 | `design-node-session-reuse`, `design-event-listener-workflow-trigger`, `design-node-jump-and-code-manager-runtime`                            |
+| `scoped-workflow-catalog-safety-follow-up`               | 2026-04-21 | `design-user-scope-workflows`, `architecture`                                                                                                 |
+| `scoped-workflow-source-visibility`                      | 2026-04-21 | `design-user-scope-workflows`, `command`                                                                                                      |
+| `scoped-workflow-graphql-server`                         | 2026-04-21 | `design-user-scope-workflows`                                                                                                                 |
+| `scoped-workflow-runtime-follow-up`                      | 2026-04-21 | `design-user-scope-workflows`, `command`                                                                                                      |
+| `scoped-workflow-catalog`                                | 2026-04-21 | `design-user-scope-workflows`                                                                                                                 |
+| `third-party-addon-async-resolution`                     | 2026-04-21 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-definition-registry`                  | 2026-04-21 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-resolver-ergonomics`                  | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-resolver-unhandled-return`            | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-editor-revision`                      | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-graphql-validation`                   | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-package-root-entrypoint`              | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`, `architecture`                                                                             |
+| `third-party-addon-public-api`                           | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-resolver-validation`                  | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `third-party-addon-resolution`                           | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `gmail-gateway-addons`                                    | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `node-addon-authored-payload-guard`                      | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `node-addon-worker-role-validation`                      | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `x-gateway-addon`                                        | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `x-gateway-read-env-readiness`                           | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `x-gateway-read-addon`                                   | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `agent-worker-addons`                                    | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `workflow-role-unification-structural-cleanup`           | 2026-04-20 | `design-unified-workflow-role-model`                                                                                                          |
+| `event-reply-dispatch-persistence`                       | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `event-chat-reply-webhook-example`                       | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `event-reply-dispatcher`                                 | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `node-addon-chat-reply-worker`                           | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `event-replay-controls`                                  | 2026-04-20 | `design-event-listener-workflow-trigger`, `command`                                                                                           |
+| `event-mock-scenario-dispatch`                           | 2026-04-20 | `design-event-listener-workflow-trigger`, `command`                                                                                           |
+| `gemini-hook-support`                                    | 2026-04-20 | `design-hook-command`, `command`                                                                                                              |
+| `event-receipt-operator-commands`                        | 2026-04-20 | `design-event-listener-workflow-trigger`, `command`                                                                                           |
+| `hook-snippet-command`                                   | 2026-04-20 | `design-hook-command`, `command`                                                                                                              |
+| `hook-event-recording`                                   | 2026-04-20 | `design-hook-command`, `command`, `design-data-model`                                                                                         |
+| `event-source-adapters`                                  | 2026-04-20 | `design-event-listener-workflow-trigger`                                                                                                      |
+| `event-listener-workflow-trigger-foundation`             | 2026-04-20 | `design-event-listener-workflow-trigger`                                                                                                      |
+| `container-runtime-env-isolation`                        | 2026-04-20 | `design-container-runtime-contract`                                                                                                           |
+| `root-data-dir-project-root-scoping`                     | 2026-03-26 | `command`, `architecture`                                                                                                                     |
+| `workflow-execution-working-directory`                   | 2026-04-12 | `command`, `architecture`, `notes`                                                                                                            |
+| `hook-command-review-follow-up`                          | 2026-04-09 | `design-hook-command`                                                                                                                         |
+| `hook-command-cross-vendor-alignment`                    | 2026-04-09 | `design-hook-command`, `command`                                                                                                              |
+| `hook-command-hardening`                                 | 2026-04-09 | `design-hook-command`, `command`                                                                                                              |
+| `hook-command`                                           | 2026-04-09 | `design-hook-command`, `command`                                                                                                              |
+| `workflow-role-unification`                              | 2026-04-05 | `design-unified-workflow-role-model`                                                                                                          |
+| `tui-solid-runtime-fallback-hardening`                   | 2026-03-26 | `design-tui`, `architecture`                                                                                                                  |
+| `tui-opentui-solid-migration`                            | 2026-03-26 | `design-tui`, `command`                                                                                                                       |
+| `tui-workflow-browser-and-json-input`                    | 2026-03-26 | `design-tui`                                                                                                                                  |
+| `remove-web-ui`                                          | 2026-03-24 | `command`                                                                                                                                     |
+| `manager-kind-simplification`                            | 2026-03-18 | `design-workflow-json`, `architecture`, `notes`                                                                                               |
+| `workflow-core-and-validation`                           | 2026-02-23 | `design-data-model`, `design-workflow-json`, `architecture`                                                                                   |
+| `workflow-cli-mvp`                                       | 2026-02-23 | `command`, `design-workflow-json`                                                                                                             |
+| `workflow-execution-and-session`                         | 2026-02-24 | `architecture`, `command`                                                                                                                     |
+| `workflow-serve-mvp`                                     | 2026-02-23 | `architecture`, `command`, `notes`                                                                                                            |
+| `workflow-vcs-handoff-checkpoints`                       | 2026-02-23 | `architecture`, `notes`                                                                                                                       |
+| `workflow-save-revision-api`                             | 2026-02-24 | `architecture`, `notes`                                                                                                                       |
+| `workflow-web-editor-execution`                          | 2026-03-15 | `architecture`, `notes`                                                                                                                       |
+| `workflow-deterministic-mock-and-rerun`                  | 2026-02-24 | `architecture`, `command`                                                                                                                     |
+| `autonomous-execution-gap-closure`                       | 2026-02-24 | `architecture`, `notes`                                                                                                                       |
+| `workflow-tui-mvp`                                       | 2026-02-25 | `design-tui`                                                                                                                                  |
+| `workflow-tui-cli-parity`                                | 2026-02-25 | `design-tui`                                                                                                                                  |
+| `workflow-tui-resume-decoupling`                         | 2026-02-25 | `design-tui`                                                                                                                                  |
+| `node-execution-backend-selection`                       | 2026-03-07 | `architecture`                                                                                                                                |
+| `node-output-contract-and-validation`                    | 2026-03-07 | `design-node-output-contract`, `design-data-model`, `architecture`                                                                            |
+| `riela-manager-prompt-contract`                        | 2026-03-07 | `architecture`, `notes`                                                                                                                       |
+| `node-session-reuse`                                     | 2026-03-07 | `design-node-session-reuse`, `architecture`, `design-data-model`                                                                              |
+| `node-backend-model-separation`                          | 2026-03-07 | `design-data-model`, `design-workflow-json`, `architecture`, `notes`                                                                          |
+| `runtime-owned-external-output-publication`              | 2026-03-08 | `architecture`, `design-node-output-contract`, `notes`                                                                                        |
+| `mailbox-delivery-manager-ownership`                     | 2026-03-08 | `design-node-mailbox`, `architecture`                                                                                                         |
+| `mailbox-output-snapshot-fidelity`                       | 2026-03-08 | `design-node-mailbox`, `architecture`                                                                                                         |
+| `mailbox-cross-boundary-routing-scope`                   | 2026-03-09 | `design-node-mailbox`, `architecture`                                                                                                         |
+| `mailbox-cross-boundary-edge-validation`                 | 2026-03-09 | `design-node-mailbox`, `design-workflow-json`, `architecture`                                                                                 |
+| `mailbox-artifact-atomic-writes`                         | 2026-03-09 | `design-node-mailbox`, `architecture`                                                                                                         |
+| `branch-and-loop-block-subworkflows`                     | 2026-03-09 | `design-workflow-json`, `design-data-model`, `architecture`, `notes`                                                                          |
+| `refactoring-shared-ui-contract`                         | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-shared-visualization-derivation`            | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-shared-editable-workflow-types`             | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-api-client`                          | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-workflow-operations`                 | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-support-helpers`                     | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-state-helpers`                       | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-mutation-helpers`                    | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-data-loaders`                        | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-field-updates`                       | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-server-api-request-parsing`                 | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-execution-helpers`                   | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-action-helpers`                      | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-server-ui-asset-serving`                    | 2026-03-10 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-component-boundaries`                | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-server-workflow-bundle-parsing`             | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-main-panel-component`                | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-frontend-solidjs-migration`                 | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `refactoring-editor-session-controller`                  | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `frontend-mode-built-asset-contract`                     | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `frontend-mode-package-root-alignment`                   | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `frontend-tooling-package-root-alignment`                | 2026-03-09 | `architecture`, `notes`                                                                                                                       |
+| `graphql-manager-control-plane`                          | 2026-03-15 | `design-graphql-manager-control-plane`                                                                                                        |
+| `graphql-manager-control-plane-surface`                  | 2026-03-15 | `design-graphql-manager-control-plane`                                                                                                        |
+| `graphql-manager-ambient-context-transport`              | 2026-03-15 | `design-graphql-manager-control-plane`                                                                                                        |
+| `graphql-manager-artifact-atomic-writes`                 | 2026-03-15 | `architecture`, `design-graphql-manager-control-plane`                                                                                        |
+| `graphql-manager-runtime-session-lifecycle`              | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-manager-http-context-isolation`                 | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-manager-control-mode-exclusivity`               | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-manager-control-mode-claim-atomicity`           | 2026-03-15 | `design-graphql-manager-control-plane`, `notes`                                                                                               |
+| `graphql-manager-message-id-collision-safety`            | 2026-03-15 | `design-graphql-manager-control-plane`, `notes`                                                                                               |
+| `graphql-manager-idempotency-canonicalization`           | 2026-03-15 | `design-graphql-manager-control-plane`                                                                                                        |
+| `graphql-manager-communication-scope-enforcement`        | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-manager-attachment-scope-enforcement`           | 2026-03-15 | `design-graphql-manager-control-plane`, `command`, `notes`                                                                                    |
+| `graphql-manager-http-transport-context-hardening`       | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-cli-execution-transport`                        | 2026-03-15 | `design-graphql-manager-control-plane`, `command`                                                                                             |
+| `graphql-browser-execution-session-migration`            | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-browser-workflow-definition-migration`          | 2026-03-15 | `design-graphql-manager-control-plane`, `architecture`                                                                                        |
+| `graphql-library-rest-surface-simplification`            | 2026-03-16 | `design-graphql-manager-control-plane`, `architecture`, `command`                                                                             |
+| `runtime-artifact-atomic-write-collision-safety`         | 2026-03-15 | `architecture`, `design-graphql-manager-control-plane`                                                                                        |
+| `tui-resume-runtime-variable-merge`                      | 2026-03-15 | `design-tui`, `command`                                                                                                                       |
+| `example-node-combination-showcase`                      | 2026-03-17 | `design-workflow-json`, `design-container-runtime-contract`, `architecture`                                                                   |
+| `node-execution-inbox-contract`                          | 2026-03-17 | `design-node-execution-inbox-contract`, `design-node-mailbox`, `architecture`                                                                 |
+| `user-action-and-optional-node-execution`                | 2026-03-18 | `design-user-action-and-optional-node-execution`                                                                                              |
+
+## Phase Dependencies
+
+| Phase | Status    | Depends On                                   |
+| ----- | --------- | -------------------------------------------- |
+| 1     | COMPLETED | -                                            |
+| 2     | COMPLETED | Phase 1                                      |
+| 3     | COMPLETED | Phase 2                                      |
+| 4     | COMPLETED | Phase 3                                      |
+| 5     | COMPLETED | Phase 4                                      |
+| 6     | COMPLETED | Phase 5                                      |
+| 7     | COMPLETED | Phase 6                                      |
+| 8     | COMPLETED | Phase 7                                      |
+| 9     | COMPLETED | Phase 8                                      |
+| 10    | COMPLETED | Phase 9                                      |
+| 11    | COMPLETED | Phase 10                                     |
+| 12    | COMPLETED | Phase 11                                     |
+| 13    | COMPLETED | Phase 12                                     |
+| 14    | COMPLETED | Phase 13                                     |
+| 15    | COMPLETED | Phase 14                                     |
+| 16    | COMPLETED | Phase 15                                     |
+| 17    | COMPLETED | Phase 16                                     |
+| 18    | COMPLETED | Phase 17                                     |
+| 19    | COMPLETED | Phase 18                                     |
+| 20    | COMPLETED | Phase 19                                     |
+| 21    | COMPLETED | Phase 20                                     |
+| 22    | COMPLETED | Phase 21                                     |
+| 23    | COMPLETED | Phase 22                                     |
+| 24    | COMPLETED | Phase 23                                     |
+| 25    | COMPLETED | Phase 24                                     |
+| 26    | COMPLETED | Phase 25                                     |
+| 27    | COMPLETED | Phase 26                                     |
+| 28    | COMPLETED | Phase 27                                     |
+| 29    | COMPLETED | Phase 28                                     |
+| 30    | COMPLETED | Phase 29                                     |
+| 31    | COMPLETED | Phase 30                                     |
+| 32    | COMPLETED | Phase 31                                     |
+| 33    | COMPLETED | Phase 32                                     |
+| 34    | COMPLETED | Phase 33                                     |
+| 35    | COMPLETED | Phase 34                                     |
+| 36    | COMPLETED | Phase 35                                     |
+| 37    | COMPLETED | Phase 36                                     |
+| 38    | COMPLETED | Phase 37                                     |
+| 39    | COMPLETED | Phase 38                                     |
+| 40    | COMPLETED | Phase 39                                     |
+| 41    | COMPLETED | Phase 40                                     |
+| 42    | COMPLETED | Phase 41                                     |
+| 43    | COMPLETED | Phase 42                                     |
+| 44    | COMPLETED | Phase 43                                     |
+| 45    | COMPLETED | Phase 44                                     |
+| 46    | COMPLETED | Phase 45                                     |
+| 47    | COMPLETED | Phase 46                                     |
+| 48    | COMPLETED | Phase 47                                     |
+| 49    | COMPLETED | Phase 48                                     |
+| 50    | COMPLETED | Phase 49                                     |
+| 51    | COMPLETED | Phase 50                                     |
+| 52    | COMPLETED | Phase 51                                     |
+| 53    | COMPLETED | Phase 52                                     |
+| 54    | COMPLETED | Phase 53                                     |
+| 55    | COMPLETED | Phase 54                                     |
+| 56    | COMPLETED | Phase 55                                     |
+| 57    | COMPLETED | Phase 56                                     |
+| 58    | COMPLETED | Phase 57                                     |
+| 59    | COMPLETED | Phase 58                                     |
+| 60    | COMPLETED | Phase 59                                     |
+| 61    | COMPLETED | Phase 60                                     |
+| 62    | COMPLETED | Phase 61                                     |
+| 63    | COMPLETED | Phase 62                                     |
+| 64    | COMPLETED | Phase 63                                     |
+| 65    | COMPLETED | Phase 64                                     |
+| 66    | COMPLETED | Phase 65                                     |
+| 67    | COMPLETED | Phase 66                                     |
+| 68    | COMPLETED | Phase 67                                     |
+| 69    | COMPLETED | Phase 68                                     |
+| 70    | COMPLETED | Phase 69                                     |
+| 71    | COMPLETED | Phase 70                                     |
+| 72    | COMPLETED | Phase 71                                     |
+| 73    | COMPLETED | -                                            |
+| 74    | COMPLETED | Phase 71                                     |
+| 75    | COMPLETED | -                                            |
+| 76    | COMPLETED | -                                            |
+| 77    | COMPLETED | -                                            |
+| 78    | COMPLETED | Phase 77                                     |
+| 79    | COMPLETED | -                                            |
+| 80    | COMPLETED | -                                            |
+| 81    | COMPLETED | -                                            |
+| 82    | COMPLETED | Phase 71                                     |
+| 83    | COMPLETED | Phase 71                                     |
+| 84    | COMPLETED | Phase 83                                     |
+| 85    | COMPLETED | Phase 84                                     |
+| 86    | COMPLETED | Phase 85                                     |
+| 87    | COMPLETED | -                                            |
+| 88    | COMPLETED | Phase 64                                     |
+| 89    | COMPLETED | Phase 88                                     |
+| 90    | COMPLETED | -                                            |
+| 91    | COMPLETED | Phase 90                                     |
+| 92    | COMPLETED | Phases 83, 84, 85, 86                        |
+| 93    | COMPLETED | Phase 92                                     |
+| 94    | COMPLETED | Phase 91                                     |
+| 95    | COMPLETED | Phases 92, 93                                |
+| 96    | COMPLETED | Phase 94                                     |
+| 97    | COMPLETED | Phase 96                                     |
+| 98    | COMPLETED | -                                            |
+| 99    | COMPLETED | Phase 98                                     |
+| 100   | COMPLETED | Phase 99                                     |
+| 101   | COMPLETED | Phase 99                                     |
+| 102   | COMPLETED | Phase 101                                    |
+| 103   | COMPLETED | Phase 98                                     |
+| 104   | COMPLETED | Phase 103                                    |
+| 105   | COMPLETED | Phase 103                                    |
+| 106   | COMPLETED | Phase 98                                     |
+| 107   | COMPLETED | Phase 106                                    |
+| 108   | COMPLETED | Phase 105                                    |
+| 109   | COMPLETED | Phase 98                                     |
+| 110   | COMPLETED | Phase 109                                    |
+| 111   | COMPLETED | Phase 110                                    |
+| 112   | COMPLETED | Phase 111                                    |
+| 113   | COMPLETED | Phase 111                                    |
+| 114   | COMPLETED | Phase 111                                    |
+| 115   | COMPLETED | Phase 114                                    |
+| 116   | COMPLETED | Phases 110, 111                              |
+| 117   | COMPLETED | Phases 114, 116                              |
+| 118   | COMPLETED | -                                            |
+| 119   | COMPLETED | -                                            |
+| 120   | COMPLETED | -                                            |
+| 121   | COMPLETED | Phase 120                                    |
+| 122   | COMPLETED | Phase 121                                    |
+| 123   | COMPLETED | Phase 122                                    |
+| 124   | COMPLETED | Phase 121                                    |
+| 125   | COMPLETED | Phase 124                                    |
+| 126   | COMPLETED | -                                            |
+| 127   | COMPLETED | -                                            |
+| 128   | COMPLETED | -                                            |
+| 129   | COMPLETED | Phases 16, 65, 71, 82                        |
+| 130   | COMPLETED | Phases 125, 128, 129 (+ earlier foundations) |
+| 131   | COMPLETED | Phase 130                                    |
+| 132   | COMPLETED | Phase 130                                    |
+| 133   | COMPLETED | Phases 129, 132                              |
+| 153   | COMPLETED | Phase 152                                    |
+| 154   | COMPLETED | Phase 153                                    |
+| 155   | COMPLETED | Phase 154                                    |
+| 173   | READY     | -                                            |
+
+### Phase to Plans Mapping
+
+```
+PHASE_TO_PLANS = {
+  1: ["impl-plans/completed/workflow-core-and-validation.md"],
+  2: ["impl-plans/completed/workflow-cli-mvp.md"],
+  3: ["impl-plans/completed/workflow-execution-and-session.md"],
+  4: ["impl-plans/completed/workflow-serve-mvp.md"],
+  5: ["impl-plans/completed/workflow-vcs-handoff-checkpoints.md"],
+  6: ["impl-plans/completed/workflow-save-revision-api.md"],
+  7: ["impl-plans/completed/workflow-deterministic-mock-and-rerun.md"],
+  8: ["impl-plans/completed/autonomous-execution-gap-closure.md"],
+  9: ["impl-plans/completed/workflow-tui-mvp.md"],
+  10: ["impl-plans/completed/workflow-tui-cli-parity.md"],
+  11: ["impl-plans/completed/workflow-tui-resume-decoupling.md"],
+  12: ["impl-plans/node-execution-backend-selection.md"],
+  13: ["impl-plans/node-output-contract-and-validation.md"],
+  14: ["impl-plans/workflow-web-editor-execution.md"],
+  15: ["impl-plans/riela-manager-prompt-contract.md"],
+  16: ["impl-plans/node-session-reuse.md"],
+  17: ["impl-plans/node-backend-model-separation.md"],
+  18: ["impl-plans/runtime-owned-external-output-publication.md"],
+  19: ["impl-plans/mailbox-delivery-manager-ownership.md"],
+  20: ["impl-plans/mailbox-output-snapshot-fidelity.md"],
+  21: ["impl-plans/mailbox-cross-boundary-routing-scope.md"],
+  22: ["impl-plans/mailbox-cross-boundary-edge-validation.md"],
+  23: ["impl-plans/mailbox-artifact-atomic-writes.md"],
+  24: ["impl-plans/branch-and-loop-block-subworkflows.md"],
+  25: ["impl-plans/refactoring-shared-ui-contract.md"],
+  26: ["impl-plans/refactoring-shared-visualization-derivation.md"],
+  27: ["impl-plans/refactoring-shared-editable-workflow-types.md"],
+  28: ["impl-plans/refactoring-editor-api-client.md"],
+  29: ["impl-plans/refactoring-editor-workflow-operations.md"],
+  30: ["impl-plans/refactoring-editor-support-helpers.md"],
+  31: ["impl-plans/refactoring-editor-state-helpers.md"],
+  32: ["impl-plans/refactoring-editor-mutation-helpers.md"],
+  33: ["impl-plans/refactoring-editor-data-loaders.md"],
+  34: ["impl-plans/refactoring-editor-field-updates.md"],
+  35: ["impl-plans/refactoring-server-api-request-parsing.md"],
+  36: ["impl-plans/refactoring-editor-execution-helpers.md"],
+  37: ["impl-plans/refactoring-editor-action-helpers.md"],
+  38: ["impl-plans/refactoring-server-ui-asset-serving.md"],
+  39: ["impl-plans/refactoring-editor-component-boundaries.md"],
+  40: ["impl-plans/refactoring-server-workflow-bundle-parsing.md"],
+  41: ["impl-plans/refactoring-editor-main-panel-component.md"],
+  42: ["impl-plans/refactoring-frontend-solidjs-migration.md", "impl-plans/refactoring-editor-session-controller.md"],
+  43: ["impl-plans/frontend-mode-built-asset-contract.md"],
+  44: ["impl-plans/frontend-mode-package-root-alignment.md"],
+  45: ["impl-plans/frontend-tooling-package-root-alignment.md"],
+  46: ["impl-plans/graphql-manager-control-plane.md"],
+  47: ["impl-plans/graphql-manager-control-plane-surface.md"],
+  48: ["impl-plans/graphql-manager-ambient-context-transport.md"],
+  49: ["impl-plans/graphql-manager-artifact-atomic-writes.md"],
+  50: ["impl-plans/graphql-manager-runtime-session-lifecycle.md"],
+  51: ["impl-plans/graphql-manager-http-context-isolation.md"],
+  52: ["impl-plans/runtime-artifact-atomic-write-collision-safety.md"],
+  53: ["impl-plans/tui-resume-runtime-variable-merge.md"],
+  54: ["impl-plans/graphql-manager-control-mode-exclusivity.md"],
+  55: ["impl-plans/graphql-manager-control-mode-claim-atomicity.md"],
+  56: ["impl-plans/graphql-manager-message-id-collision-safety.md"],
+  57: ["impl-plans/graphql-manager-idempotency-canonicalization.md"],
+  58: ["impl-plans/graphql-manager-communication-scope-enforcement.md"],
+  59: ["impl-plans/graphql-manager-attachment-scope-enforcement.md"],
+  60: ["impl-plans/graphql-manager-http-transport-context-hardening.md"],
+  61: ["impl-plans/graphql-cli-execution-transport.md"],
+  62: ["impl-plans/graphql-browser-execution-session-migration.md"],
+  63: ["impl-plans/graphql-browser-workflow-definition-migration.md"],
+  64: ["impl-plans/graphql-workflow-execution-overview.md"],
+  65: ["impl-plans/manager-driven-call-node-runtime.md"],
+  66: ["impl-plans/graphql-library-rest-surface-simplification.md"],
+  67: ["impl-plans/example-node-combination-showcase.md"],
+  68: ["impl-plans/node-execution-inbox-contract.md"],
+  69: ["impl-plans/user-action-and-optional-node-execution.md"],
+  70: ["impl-plans/manager-kind-simplification.md"],
+  71: ["impl-plans/workflow-role-unification.md", "impl-plans/tui-workflow-browser-and-json-input.md"],
+  72: ["impl-plans/completed/tui-opentui-solid-migration.md", "impl-plans/completed/tui-solid-runtime-fallback-hardening.md", "impl-plans/completed/remove-web-ui.md", "impl-plans/completed/root-data-dir-project-root-scoping.md"],
+  73: ["impl-plans/node-system-and-session-prompts.md"],
+  74: ["impl-plans/tui-workflow-definition-screen.md"],
+  75: ["impl-plans/example-workflow-expected-results-and-verification.md"],
+  76: ["impl-plans/simplified-workflow-json-transition-examples.md"],
+  77: ["impl-plans/inline-node-and-nested-example-layout.md"],
+  78: ["impl-plans/workflow-definition-alignment-follow-up.md"],
+  79: ["impl-plans/tui-workflow-history-delete-all.md"],
+  80: ["impl-plans/workflow-id-filesystem-safety.md"],
+  81: ["impl-plans/completed/v2-cutover-command-container-runtime.md"],
+  82: ["impl-plans/workflow-role-unification-structural-cleanup.md"],
+  83: ["impl-plans/hook-command.md"],
+  84: ["impl-plans/hook-command-hardening.md"],
+  85: ["impl-plans/hook-command-cross-vendor-alignment.md"],
+  86: ["impl-plans/hook-command-review-follow-up.md"],
+  87: ["impl-plans/workflow-execution-working-directory.md"],
+  88: ["impl-plans/web-workflow-viewer.md"],
+  89: ["impl-plans/container-runtime-env-isolation.md"],
+  90: ["impl-plans/event-listener-workflow-trigger-foundation.md"],
+  91: ["impl-plans/completed/event-source-adapters.md"],
+  92: ["impl-plans/hook-event-recording.md"],
+  93: ["impl-plans/hook-snippet-command.md"],
+  94: ["impl-plans/event-receipt-operator-commands.md"],
+  95: ["impl-plans/gemini-hook-support.md"],
+  96: ["impl-plans/event-mock-scenario-dispatch.md"],
+  97: ["impl-plans/event-replay-controls.md"],
+  98: ["impl-plans/node-addon-chat-reply-worker.md"],
+  99: ["impl-plans/event-reply-dispatcher.md"],
+  100: ["impl-plans/event-chat-reply-webhook-example.md"],
+  101: ["impl-plans/event-reply-dispatch-persistence.md"],
+  102: ["impl-plans/agent-worker-addons.md"],
+  103: ["impl-plans/x-gateway-read-addon.md"],
+  104: ["impl-plans/x-gateway-read-env-readiness.md"],
+  105: ["impl-plans/x-gateway-addon.md"],
+  106: ["impl-plans/node-addon-worker-role-validation.md"],
+  107: ["impl-plans/node-addon-authored-payload-guard.md"],
+  108: ["impl-plans/gmail-gateway-addons.md"],
+  109: ["impl-plans/third-party-addon-resolution.md"],
+  110: ["impl-plans/third-party-addon-resolver-validation.md"],
+  111: ["impl-plans/third-party-addon-public-api.md"],
+  112: ["impl-plans/third-party-addon-payload-shape-guard.md"],
+  113: ["impl-plans/third-party-addon-package-root-entrypoint.md"],
+  114: ["impl-plans/third-party-addon-graphql-validation.md"],
+  115: ["impl-plans/third-party-addon-editor-revision.md"],
+  116: ["impl-plans/third-party-addon-resolver-unhandled-return.md"],
+  117: ["impl-plans/third-party-addon-resolver-ergonomics.md"],
+  118: ["impl-plans/third-party-addon-definition-registry.md"],
+  119: ["impl-plans/third-party-addon-async-resolution.md"],
+  120: ["impl-plans/scoped-workflow-catalog.md"],
+  121: ["impl-plans/scoped-workflow-runtime-follow-up.md"],
+  122: ["impl-plans/scoped-workflow-graphql-server.md"],
+  123: ["impl-plans/scoped-workflow-source-visibility.md"],
+  124: ["impl-plans/scoped-workflow-catalog-safety-follow-up.md"],
+  125: ["impl-plans/scoped-local-addons.md"],
+  126: ["impl-plans/event-root-manager-session-stickiness.md"],
+  127: ["impl-plans/event-root-manager-session-stickiness-binding-scope.md"],
+  128: ["impl-plans/event-root-manager-session-stickiness-record-lifecycle.md"],
+  129: ["impl-plans/completed/step-addressed-workflow-runtime-cutover.md"],
+  130: ["impl-plans/completed/auto-improve-superviser-mode.md"],
+  131: ["impl-plans/completed/auto-improve-supervision-review-follow-up.md"],
+  132: ["impl-plans/completed/auto-improve-superviser-workflow-phase-2.md"],
+  133: ["impl-plans/workflow-legacy-compatibility-removal.md", "impl-plans/completed/workflow-legacy-compatibility-removal-tail-cleanup.md"],
+  134: ["impl-plans/graphql-supervision-execution-parity.md"],
+  153: ["impl-plans/completed/workflow-overview-status-surface.md"],
+  154: ["impl-plans/completed/step-run-history-rerun-foundation.md"],
+  155: ["impl-plans/completed/step-run-history-rerun-runtime.md"],
+  173: ["impl-plans/workflow-status-active-session-loadability.md"],
+  200: ["impl-plans/swift-stdio-node-io.md"],
+  201: ["impl-plans/native-stdio-node-io.md"],
+}
+```

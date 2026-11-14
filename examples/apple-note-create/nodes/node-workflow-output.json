@@ -1,0 +1,16 @@
+{
+  "id": "workflow-output",
+  "description": "Project the Apple Note create add-on payload as the workflow root output.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest Apple Note create add-on payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest Apple Note create payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

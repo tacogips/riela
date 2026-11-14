@@ -1,0 +1,25 @@
+.auth-panel {
+  flex-direction: column;
+  min-height: calc(100dvh - 100px);
+  width: min(100%, 620px);
+  margin: 0 auto;
+  padding: 32px 24px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.auth-panel h1 { margin: 0 0 12px; color: var(--ink, #d4e2ed); font-size: 24px; font-weight: 650; }
+.auth-panel p { max-width: 480px; margin: 4px 0; line-height: 1.6; }
+.auth-panel > strong { font-size: 28px; letter-spacing: .16em; color: var(--ink, #d4e2ed); margin: 12px 0; }
+.auth-panel button { min-height: 44px; margin: 8px 0; padding: 10px 18px; }
+.auth-panel [role="alert"] { color: #b44141; }
+.desktop-connection { position: relative; flex: none; font-size: 12px; }
+.desktop-connection summary { cursor: pointer; padding: 8px; }
+.desktop-connection form {
+  position: absolute; right: 0; top: 100%; z-index: 30;
+  display: flex; flex-direction: column; gap: 12px;
+  width: min(340px, calc(100vw - 32px)); padding: 20px;
+  border: 1px solid var(--line, #29414f); border-radius: 12px;
+  background: var(--surface, #13212b); box-shadow: 0 12px 36px #0002;
+}
+.desktop-connection label { display: flex; flex-direction: column; gap: 6px; }
+.desktop-connection p { margin: 0; line-height: 1.5; }

@@ -1,0 +1,4 @@
+{
+  "summarize": { "provider": "scenario-mock", "model": "gpt-5.5", "when": { "always": true }, "payload": { "summary": "Project update", "actionItems": ["Send the draft"] } },
+  "improve-propose": { "provider": "scenario-mock", "model": "gpt-5.5", "when": { "always": true }, "payload": { "patch": [{ "op": "replace", "path": "/prompts~1summarize.md", "value": "Summarize the request. End with a concise, explicit action-item list.\\n" }], "reason": "summaries omitted the action items; require an action-item list" } }
+}

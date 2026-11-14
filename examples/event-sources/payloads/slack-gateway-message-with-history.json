@@ -1,0 +1,21 @@
+{
+  "type": "message",
+  "channel": "C0123456789",
+  "user": "U0123456789",
+  "text": "Riela, can you summarize what we decided?",
+  "ts": "1780000000.000100",
+  "thread_ts": "1780000000.000000",
+  "historySourceMode": "memory",
+  "history": [
+    {
+      "messageId": "1780000000.000000",
+      "authorId": "U0123456789",
+      "displayName": "Operator",
+      "isBot": false,
+      "createdAt": "2026-06-26T00:00:00.000Z",
+      "text": "We decided to keep the Slack example worker-only and reply in thread.",
+      "conversationId": "C0123456789",
+      "threadId": "1780000000.000000"
+    }
+  ]
+}

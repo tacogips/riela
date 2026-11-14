@@ -1,0 +1,97 @@
+{
+  "workflowId": "claude-riela-codex-coding",
+  "description": "Reference workflow that keeps riela orchestration on claude-code while delegating concrete coding work to codex, authored in the step-addressed workflow shape.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "rielaPromptTemplate": "Coordinate {{workflowId}} so claude-code managers preserve scope, keep instructions concrete, and hand coding tasks to codex only when the implementation brief is ready. When `riela graphql` is available, use it for manager control actions such as retries and manager-authored routing instead of relying only on prose.",
+    "workerSystemPromptTemplate": "Work only on the current node's responsibility. Return a concise business JSON payload that is useful to the next node."
+  },
+  "managerStepId": "riela-manager",
+  "entryStepId": "riela-manager",
+  "nodes": [
+    {
+      "id": "riela-manager",
+      "nodeFile": "nodes/node-riela-manager.json"
+    },
+    {
+      "id": "main-riela",
+      "nodeFile": "nodes/node-main-riela.json"
+    },
+    {
+      "id": "workflow-input",
+      "nodeFile": "nodes/node-workflow-input.json"
+    },
+    {
+      "id": "implementation-brief",
+      "nodeFile": "nodes/node-implementation-brief.json"
+    },
+    {
+      "id": "implement",
+      "nodeFile": "nodes/node-implement.json"
+    },
+    {
+      "id": "workflow-output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "riela-manager",
+      "nodeId": "riela-manager",
+      "role": "manager",
+      "transitions": [
+        {
+          "toStepId": "main-riela"
+        }
+      ]
+    },
+    {
+      "id": "main-riela",
+      "nodeId": "main-riela",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-input"
+        }
+      ]
+    },
+    {
+      "id": "workflow-input",
+      "nodeId": "workflow-input",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "implementation-brief"
+        }
+      ]
+    },
+    {
+      "id": "implementation-brief",
+      "nodeId": "implementation-brief",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "implement"
+        }
+      ]
+    },
+    {
+      "id": "implement",
+      "nodeId": "implement",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

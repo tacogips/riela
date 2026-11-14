@@ -1,0 +1,16 @@
+{
+  "id": "write-yui-memory",
+  "modelFreeze": false,
+  "description": "Persist Yui Codex note context entries proposed by the persona and pass through reply/handoff flags.",
+  "addon": {
+    "name": "riela/note-persona-context-write",
+    "version": "1",
+    "config": {
+      "personaId": "yui",
+      "personaName": "Yui Codex"
+    }
+  },
+  "output": {
+    "description": "Return Yui Codex replyText and handoff flags after writing any note context entries."
+  }
+}

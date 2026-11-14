@@ -1,0 +1,16 @@
+{
+  "id": "read-rina-memory",
+  "modelFreeze": false,
+  "description": "Read recent Rina Cursor note context from the configured local Riela Note root before the persona replies.",
+  "addon": {
+    "name": "riela/note-persona-context-read",
+    "version": "1",
+    "config": {
+      "personaId": "rina",
+      "personaName": "Rina Cursor"
+    }
+  },
+  "output": {
+    "description": "Return recent Rina Cursor note context markdown and the system-memory notebook."
+  }
+}

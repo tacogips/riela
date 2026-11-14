@@ -1,0 +1,39 @@
+{
+  "taskId": "agent-node-output-contract",
+  "workflowMode": "feature",
+  "implementationBranch": "design/agent-node-output-contract",
+  "baseBranch": "design/agent-node-output-contract",
+  "remote": "origin",
+  "originalHead": "ca1ce34235e5d2d358ea32a45e7d435d272763b4",
+  "evidenceRoot": "tmp/agent-node-output-contract",
+  "designDocPaths": [
+    "design-docs/specs/design-agent-node-output-contract.md"
+  ],
+  "plans": [
+    {
+      "planId": "agent-node-output-contract",
+      "planPath": "impl-plans/active/agent-node-output-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "design-docs/specs/design-agent-node-output-contract.md",
+        "impl-plans/active/agent-node-output-contract.md"
+      ],
+      "sharedPaths": [
+        "impl-plans/README.md"
+      ],
+      "acceptanceCriteria": "All eight workflowInput acceptance criteria of the planning-only run. AC1 design doc states, per defect, the verified seam (file+symbol), decision, rejected alternatives with reasons, and runtime-vs-bundle assignment. AC2 the agent-node output contract is stated precisely (answer shape, non-conforming handling, attempt count, operator-visible failure). AC3 workflow-validate rules decided as ERROR for omitted agentSandbox on sandbox-consuming backends and for missing output.jsonSchema on templated/label-driving payloads, with costs stated. AC4 template-resolution failure names producing step, field path and consuming step rather than the consumer's domain error. AC5 impl plan carries task table (deliverables, primary write scope, dependencies, parallelizable), per-task completion evidence, explicit riela-runtime vs riela-packages split, and a first progress-log entry recording that no code was written. AC6 impl-plans/README.md active table carries the plan with unchecked count 6 and status. AC7 zero files under Sources/ or Tests/ added or modified. AC8 work committed on design/agent-node-output-contract and pushed to that branch only; main untouched. Single feature, single work package: has_feature_fanout is false.",
+      "verification": "Read-back of both documents against the eight acceptance criteria (recorded in the design author's self-check, all PASS except AC8 which this checkpoint and the following push satisfy). Working-tree proof: `git status --porcelain` lists exactly ` M impl-plans/README.md`, `?? design-docs/specs/design-agent-node-output-contract.md`, `?? impl-plans/active/agent-node-output-contract.md` (plus this manifest once written); index empty (`git diff --cached --name-only` empty). Post-commit proof for AC7 must use `git diff --stat ca1ce34..HEAD` and NOT `git diff --stat main..HEAD`: local main (c33a783) has advanced past this branch's base, and `git merge-base main HEAD` = HEAD = ca1ce34235e5d2d358ea32a45e7d435d272763b4, so bare main..HEAD surfaces main's unrelated commits. The post-commit output must list only the design doc, the plan, the README row and this manifest, with no Sources/ or Tests/ path; paste it into the plan's progress-log placeholder.",
+      "notes": {
+        "intraPlanWaves": [
+          "wave 1 (parallel): T1 D1 sandbox validation, T3 D2b answer path + retry default, T4 D3 templateResolutionFailed",
+          "wave 2 (serial): T2 D2a schema validation — shares Sources/RielaCore/WorkflowValidation.swift with T1, fresh read required before editing",
+          "wave 3 (parallel): T5 example/fixture reconciliation, T6 docs/skills contract text"
+        ],
+        "sharedImplementationFile": "Sources/RielaCore/WorkflowValidation.swift is edited by T1 then T2; never concurrently.",
+        "serialReconciliation": "impl-plans/README.md is a shared index and belongs to the serial checkpoint/reconciliation phase, not to a worker.",
+        "outOfScopeRepository": "tacogips/riela-packages (D4/T7 bundle edits: agentSandbox on all 16 agent nodes, output.jsonSchema + maxValidationAttempts on payload-referenced and label-driving nodes) is a separate follow-up work package and is read-only evidence here.",
+        "planningOnly": "This dispatch records an accepted planning-only deliverable. No Sources/ or Tests/ path may be created or modified under this manifest."
+      }
+    }
+  ]
+}

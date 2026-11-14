@@ -1,0 +1,77 @@
+{
+	"id": "architect",
+	"description": "Aster frames the problem and proposes a concrete solution with explicit assumptions and success criteria.",
+	"executionBackend": "codex-agent",
+	"agentSandbox": "read-only",
+	"model": "gpt-5.6-luna",
+	"modelFreeze": true,
+	"systemPromptTemplateFile": "prompts/architect-system.md",
+	"promptTemplateFile": "prompts/architect.md",
+	"variables": {},
+	"output": {
+		"description": "Aster's typed proposal for the Monja discussion.",
+		"jsonSchema": {
+			"type": "object",
+			"required": ["persona", "message", "details", "priorTurns"],
+			"properties": {
+				"persona": {
+					"type": "string",
+					"const": "architect"
+				},
+				"message": {
+					"type": "string",
+					"minLength": 1
+				},
+				"details": {
+					"type": "object",
+					"required": ["proposal", "assumptions", "successCriteria"],
+					"properties": {
+						"proposal": {
+							"type": "string",
+							"minLength": 1
+						},
+						"assumptions": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							}
+						},
+						"successCriteria": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							},
+							"minItems": 1
+						}
+					},
+					"additionalProperties": false
+				},
+				"priorTurns": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["persona", "message", "details"],
+						"properties": {
+							"persona": {
+								"type": "string",
+								"minLength": 1
+							},
+							"message": {
+								"type": "string",
+								"minLength": 1
+							},
+							"details": {
+								"type": "object"
+							}
+						},
+						"additionalProperties": false
+					}
+				}
+			},
+			"additionalProperties": false
+		},
+		"maxValidationAttempts": 2
+	}
+}

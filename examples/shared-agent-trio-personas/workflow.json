@@ -1,0 +1,71 @@
+{
+  "workflowId": "shared-agent-trio-personas",
+  "description": "Shared Yui Codex, Mika Trend, and Rina Cursor persona nodes reused by Telegram, Discord, and Matrix agent trio chat examples.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 180000
+  },
+  "memories": [
+    {
+      "id": "persona-chat-memory",
+      "description": "Persona-specific durable chat memory shared by chat vendor examples.",
+      "purpose": "Declare the shared memory contract inherited by persona nodes that read and write persona-scoped chat memory.",
+      "dataSchema": {
+        "type": "object",
+        "required": ["personaId", "content", "recordedAt"]
+      },
+      "scope": "cross-workflow",
+      "defaultLimit": 3
+    }
+  ],
+  "entryStepId": "yui-codex",
+  "nodes": [
+    {
+      "id": "yui-codex",
+      "nodeFile": "nodes/node-yui-codex.json",
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "use recent Yui memory while replying"
+        }
+      ]
+    },
+    {
+      "id": "mika-claude",
+      "nodeFile": "nodes/node-mika-claude.json",
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "use recent Mika memory while replying"
+        }
+      ]
+    },
+    {
+      "id": "rina-cursor",
+      "nodeFile": "nodes/node-rina-cursor.json",
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "use recent Rina memory while replying"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "yui-codex",
+      "nodeId": "yui-codex",
+      "role": "worker"
+    },
+    {
+      "id": "mika-claude",
+      "nodeId": "mika-claude",
+      "role": "worker"
+    },
+    {
+      "id": "rina-cursor",
+      "nodeId": "rina-cursor",
+      "role": "worker"
+    }
+  ]
+}

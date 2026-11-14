@@ -1,0 +1,12 @@
+{
+  "id": "select-link-proposals",
+  "description": "Select reviewable related-note link proposals from retrieved candidates.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/select-link-proposals.md",
+  "variables": {},
+  "output": {
+    "description": "Return proposals: [{ targetNoteId, linkKind, reason }]."
+  }
+}

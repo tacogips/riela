@@ -1,0 +1,11 @@
+{
+  "id": "workflow-output",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": true,
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {},
+  "output": {
+    "description": "Return the final user-facing collaboration summary."
+  }
+}

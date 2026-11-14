@@ -1,0 +1,12 @@
+{
+  "id": "step1-decompose",
+  "description": "Decompose the requested task into independent notebook-content subtasks.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/step1-decompose.md",
+  "variables": {},
+  "output": {
+    "description": "Return folderTagName and tasks[] where each task has taskKey, title, briefMarkdown, and acceptanceMarkdown."
+  }
+}

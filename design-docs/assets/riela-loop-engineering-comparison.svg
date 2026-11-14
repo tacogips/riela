@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1220" viewBox="0 0 1800 1220" role="img" aria-labelledby="title desc">
+  <title id="title">Riela loop engineering comparison</title>
+  <desc id="desc">Diagram comparing multiple workflow composition with loop flow for Riela loop engineering examples.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#394150"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#356AC3"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#B86C2E"/>
+    </marker>
+    <marker id="arrow-teal" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L12,7 L2,12 Z" fill="#2D8C8C"/>
+    </marker>
+    <style>
+      .canvas { fill: #fbfcfe; }
+      .title { font: 700 34px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #121826; }
+      .subtitle { font: 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4b5563; }
+      .panel-title { font: 700 24px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #121826; }
+      .panel-subtitle { font: 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4b5563; }
+      .box-title { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .box-text { font: 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #1f2933; }
+      .small { font: 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4b5563; }
+      .line { stroke: #394150; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .line-blue { stroke: #356AC3; stroke-width: 3; fill: none; marker-end: url(#arrow-blue); }
+      .line-orange { stroke: #B86C2E; stroke-width: 3; fill: none; marker-end: url(#arrow-orange); }
+      .line-teal { stroke: #2D8C8C; stroke-width: 3; fill: none; marker-end: url(#arrow-teal); }
+      .frame-blue { fill: #f8fbff; stroke: #356ac3; stroke-width: 3; }
+      .frame-orange { fill: #fff8f0; stroke: #b86c2e; stroke-width: 3; }
+      .combine { fill: #f6f8fa; stroke: #394150; stroke-width: 3; }
+    </style>
+  </defs>
+
+  <rect class="canvas" width="1800" height="1220"/>
+  <text class="title" x="900" y="58" text-anchor="middle">Riela loop engineering examples</text>
+  <text class="subtitle" x="900" y="88" text-anchor="middle">Multiple workflows define execution boundaries. Loop flow defines repetition, gates, evidence, and recovery.</text>
+
+  <g id="multiple-workflows">
+    <rect class="frame-blue" x="70" y="135" width="785" height="760" rx="14"/>
+    <text class="panel-title" x="462" y="184" text-anchor="middle">A. Multiple workflow composition</text>
+    <text class="panel-subtitle" x="462" y="212" text-anchor="middle">Structure boundary: parent workflow, callee workflow, fanout branch, join</text>
+
+    <path class="line-blue" d="M278 315 L365 315"/>
+    <path class="line-blue" d="M575 315 L662 315"/>
+    <path class="line-teal" d="M662 385 C596 460 504 458 474 427"/>
+    <path class="line-blue" d="M279 575 C390 575 500 575 612 575"/>
+    <path class="line-teal" d="M720 628 L720 698"/>
+
+    <g>
+      <rect x="110" y="255" width="168" height="120" rx="10" fill="#E8F0FE" stroke="#356AC3" stroke-width="2.5"/>
+      <text class="box-title" x="194" y="292" text-anchor="middle">Parent workflow</text>
+      <text class="box-text" x="194" y="322" text-anchor="middle">workflow-call-simple</text>
+      <text class="box-text" x="194" y="350" text-anchor="middle">or design-and-implement</text>
+    </g>
+    <g>
+      <rect x="365" y="255" width="210" height="120" rx="10" fill="#F2EFFB" stroke="#6F55B5" stroke-width="2.5"/>
+      <text class="box-title" x="470" y="292" text-anchor="middle">Cross-workflow edge</text>
+      <text class="box-text" x="470" y="322" text-anchor="middle">toWorkflowId + toStepId</text>
+      <text class="box-text" x="470" y="350" text-anchor="middle">resumeStepId in parent</text>
+    </g>
+    <g>
+      <rect x="662" y="255" width="168" height="120" rx="10" fill="#EAF7ED" stroke="#32824B" stroke-width="2.5"/>
+      <text class="box-title" x="746" y="292" text-anchor="middle">Callee workflow</text>
+      <text class="box-text" x="746" y="322" text-anchor="middle">worker-only target</text>
+      <text class="box-text" x="746" y="350" text-anchor="middle">or feature-plan branch</text>
+    </g>
+    <g>
+      <rect x="344" y="422" width="252" height="96" rx="10" fill="#E7F7F7" stroke="#2D8C8C" stroke-width="2.5"/>
+      <text class="box-title" x="470" y="457" text-anchor="middle">Return boundary</text>
+      <text class="box-text" x="470" y="487" text-anchor="middle">callee result resumes parent</text>
+    </g>
+    <g>
+      <rect x="110" y="520" width="168" height="110" rx="10" fill="#E8F0FE" stroke="#356AC3" stroke-width="2.5"/>
+      <text class="box-title" x="194" y="556" text-anchor="middle">Fanout variant</text>
+      <text class="box-text" x="194" y="586" text-anchor="middle">featureFanoutItems</text>
+      <text class="box-text" x="194" y="612" text-anchor="middle">parallel branch sessions</text>
+    </g>
+    <g>
+      <rect x="612" y="520" width="216" height="110" rx="10" fill="#E7F7F7" stroke="#2D8C8C" stroke-width="2.5"/>
+      <text class="box-title" x="720" y="556" text-anchor="middle">Join step</text>
+      <text class="box-text" x="720" y="586" text-anchor="middle">ordered branch outputs</text>
+      <text class="box-text" x="720" y="612" text-anchor="middle">then continue parent</text>
+    </g>
+    <g>
+      <rect x="150" y="698" width="605" height="142" rx="10" fill="#EEF2F4" stroke="#607180" stroke-width="2.5"/>
+      <text class="box-title" x="452" y="735" text-anchor="middle">Best fit</text>
+      <text class="box-text" x="452" y="765" text-anchor="middle">Reusable specialist workflows, package boundaries, and ownership boundaries</text>
+      <text class="box-text" x="452" y="793" text-anchor="middle">Parallel feature-local planning with disjoint write ownership</text>
+      <text class="box-text" x="452" y="821" text-anchor="middle">Clear callee input/output contracts and explicit resume points</text>
+    </g>
+  </g>
+
+  <g id="loop-flow">
+    <rect class="frame-orange" x="945" y="135" width="785" height="760" rx="14"/>
+    <text class="panel-title" x="1338" y="184" text-anchor="middle">B. Loop flow</text>
+    <text class="panel-subtitle" x="1338" y="212" text-anchor="middle">Control/evidence boundary: repeat, gate, fail closed, recover, manifest</text>
+
+    <path class="line-orange" d="M1154 315 L1243 315"/>
+    <path class="line-orange" d="M1453 315 L1542 315"/>
+    <path class="line-orange" d="M1627 375 C1618 455 1512 466 1451 435"/>
+    <path class="line-orange" d="M1368 435 C1335 468 1335 495 1368 526"/>
+    <path class="line-teal" d="M1243 524 C1140 520 1088 474 1088 425"/>
+    <path class="line-teal" d="M1092 640 L1092 715"/>
+    <path class="line-orange" d="M1545 640 L1545 715"/>
+
+    <g>
+      <rect x="990" y="255" width="164" height="120" rx="10" fill="#FFF4D6" stroke="#C7861C" stroke-width="2.5"/>
+      <text class="box-title" x="1072" y="292" text-anchor="middle">Run loop</text>
+      <text class="box-text" x="1072" y="322" text-anchor="middle">normal run</text>
+      <text class="box-text" x="1072" y="350" text-anchor="middle">resume or rerun</text>
+    </g>
+    <g>
+      <rect x="1243" y="255" width="210" height="120" rx="10" fill="#FDECEF" stroke="#B83F57" stroke-width="2.5"/>
+      <text class="box-title" x="1348" y="292" text-anchor="middle">Work step</text>
+      <text class="box-text" x="1348" y="322" text-anchor="middle">plan, implement, review</text>
+      <text class="box-text" x="1348" y="350" text-anchor="middle">or handoff input</text>
+    </g>
+    <g>
+      <rect x="1542" y="255" width="164" height="120" rx="10" fill="#FCEFE2" stroke="#B86C2E" stroke-width="2.5"/>
+      <text class="box-title" x="1624" y="292" text-anchor="middle">Gate step</text>
+      <text class="box-text" x="1624" y="322" text-anchor="middle">LoopGateResult</text>
+      <text class="box-text" x="1624" y="350" text-anchor="middle">thresholds</text>
+    </g>
+    <g>
+      <rect x="1243" y="435" width="210" height="100" rx="10" fill="#FDECEF" stroke="#B83F57" stroke-width="2.5"/>
+      <text class="box-title" x="1348" y="470" text-anchor="middle">Needs work</text>
+      <text class="box-text" x="1348" y="500" text-anchor="middle">revision, handoff, fix</text>
+    </g>
+    <g>
+      <rect x="990" y="558" width="210" height="102" rx="10" fill="#E7F7F7" stroke="#2D8C8C" stroke-width="2.5"/>
+      <text class="box-title" x="1095" y="594" text-anchor="middle">Recovery lineage</text>
+      <text class="box-text" x="1095" y="624" text-anchor="middle">resume preserves session</text>
+      <text class="box-text" x="1095" y="648" text-anchor="middle">rerun creates child</text>
+    </g>
+    <g>
+      <rect x="1542" y="558" width="164" height="102" rx="10" fill="#EAF7ED" stroke="#32824B" stroke-width="2.5"/>
+      <text class="box-title" x="1624" y="594" text-anchor="middle">Accepted</text>
+      <text class="box-text" x="1624" y="624" text-anchor="middle">root output</text>
+      <text class="box-text" x="1624" y="648" text-anchor="middle">final report</text>
+    </g>
+    <g>
+      <rect x="1243" y="704" width="463" height="136" rx="10" fill="#F2EFFB" stroke="#6F55B5" stroke-width="2.5"/>
+      <text class="box-title" x="1474" y="741" text-anchor="middle">LoopEvidenceManifest</text>
+      <text class="box-text" x="1474" y="771" text-anchor="middle">steps, gates, policy decisions, verification, changed files, residual risks</text>
+      <text class="box-text" x="1474" y="799" text-anchor="middle">required gates can fail closed when output is missing or rejected</text>
+      <text class="box-text" x="1474" y="827" text-anchor="middle">failure evidence is preserved across retry, replay, resume, and rerun</text>
+    </g>
+  </g>
+
+  <g id="combined">
+    <rect class="combine" x="155" y="960" width="1490" height="172" rx="14"/>
+    <text class="panel-title" x="900" y="1005" text-anchor="middle">How they combine in recent-change-quality-loop</text>
+    <text class="box-text" x="900" y="1043" text-anchor="middle">Review recent changes -> exit gate says needs_fix -> handoff calls design-and-implement-review-loop -> resume post-handoff -> re-review until accepted.</text>
+    <text class="box-text" x="900" y="1075" text-anchor="middle">Multiple workflows decide where work runs and who owns it. Loop flow decides when to repeat, fail, recover, and record evidence.</text>
+    <text class="small" x="900" y="1110" text-anchor="middle">Examples: workflow-call-simple, workflow-call-review-target, design-and-implement-review-loop, design-and-implement-review-loop-feature-plan, recent-change-quality-loop, required-loop-gate-failure.</text>
+  </g>
+</svg>

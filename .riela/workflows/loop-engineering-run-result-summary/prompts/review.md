@@ -1,0 +1,1 @@
+Review the run-result loop evidence summary implementation for additive compatibility, evidence correctness, tests, and regressions. Return JSON with `accepted`, `needs_revision`, `findings`, and `verification`.

@@ -1,0 +1,15 @@
+{
+  "id": "implement",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": false,
+  "sessionPolicy": {
+    "mode": "reuse"
+  },
+  "promptTemplateFile": "prompts/implement.md",
+  "variables": {},
+  "output": {
+    "description": "Return the implementation result with changed files, a concise summary of the code changes, verification commands, and any residual risks."
+  }
+}

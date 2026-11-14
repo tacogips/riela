@@ -1,0 +1,62 @@
+import Foundation
+
+public enum RielaCLIMain {
+  public static func run() async {
+    let jsonlRecordWriter: WorkflowJSONLRecordWriting = { line in
+      FileHandle.standardOutput.write(Data(line.utf8))
+    }
+    var runCommand = WorkflowRunCommand(jsonlRecordWriter: jsonlRecordWriter)
+    do {
+      runCommand.specialistMonitorControl = try SpecialistMonitorControl.takeLaunchEnvironment()
+    } catch {
+      FileHandle.standardError.write(Data("invalid specialist monitor launch binding\n".utf8))
+      Foundation.exit(CLIExitCode.failure.rawValue)
+    }
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    let taskSignalState = arguments.starts(with: ["task", "run"]) ? TaskRunSignalState() : nil
+    let app = RielaCLIApplication(
+      runCommand: runCommand,
+      sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter),
+      sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter),
+      sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
+        FileHandle.standardOutput.write(Data(line.utf8))
+      }),
+      loopCommandRunner: LoopCommandRunner(
+        sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter)
+      ),
+      taskCommandRunner: taskSignalState.map(TaskCommandRunner.init(signalState:)) ?? TaskCommandRunner(),
+      sessionContinueCommand: SessionContinueCommand(
+        sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter)
+      )
+    )
+    let runTask = Task {
+      if arguments.first == "worker" {
+        return await DistributedWorkerCommand().run(arguments: arguments) { line in
+          FileHandle.standardOutput.write(Data(line.utf8))
+        }
+      }
+      if ServeHTTPCommand.isLongRunningInvocation(arguments) {
+        return await ServeHTTPCommand().run(arguments: arguments) { line in
+          FileHandle.standardOutput.write(Data(line.utf8))
+        }
+      }
+      return await app.run(arguments)
+    }
+    let signalCancellation = CLISignalCancellation { signal in
+      if let taskSignalState {
+        taskSignalState.request(signal)
+      } else {
+        runTask.cancel()
+      }
+    }
+    let result = await runTask.value
+    signalCancellation.cancel()
+    if !result.stdout.isEmpty {
+      FileHandle.standardOutput.write(Data(result.stdout.utf8))
+    }
+    if !result.stderr.isEmpty {
+      FileHandle.standardError.write(Data((result.stderr + "\n").utf8))
+    }
+    Foundation.exit(result.exitCode.rawValue)
+  }
+}

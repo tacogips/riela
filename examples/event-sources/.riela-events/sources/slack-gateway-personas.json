@@ -1,0 +1,38 @@
+{
+  "id": "slack-gateway-personas",
+  "kind": "slack-gateway",
+  "provider": "slack",
+  "tokenEnv": "RIELA_SLACK_BOT_TOKEN",
+  "botUserIdEnv": "RIELA_SLACK_BOT_USER_ID",
+  "channels": [
+    {
+      "id": "C0123456789",
+      "personas": ["yui", "mika", "rina"]
+    }
+  ],
+  "polling": {
+    "limit": 15
+  },
+  "history": {
+    "maxMessages": 100,
+    "maxBytes": 131072,
+    "maxAgeMs": 2592000000,
+    "scope": "thread-or-channel",
+    "includeBotMessages": false
+  },
+  "filters": {
+    "ignoreBots": true,
+    "ignoreSelf": true
+  },
+  "replyBots": {
+    "yui": {
+      "tokenEnv": "RIELA_SLACK_YUI_BOT_TOKEN"
+    },
+    "mika": {
+      "tokenEnv": "RIELA_SLACK_MIKA_BOT_TOKEN"
+    },
+    "rina": {
+      "tokenEnv": "RIELA_SLACK_RINA_BOT_TOKEN"
+    }
+  }
+}

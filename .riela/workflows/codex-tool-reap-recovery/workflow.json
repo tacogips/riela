@@ -1,0 +1,64 @@
+{
+  "workflowId": "codex-tool-reap-recovery",
+  "description": "Plan, implement, adversarially review, and verify Riela recovery from unreaped terminal Codex tool children.",
+  "defaults": {
+    "maxLoopIterations": 2,
+    "nodeTimeoutMs": 7200000
+  },
+  "entryStepId": "plan",
+  "nodes": [
+    {
+      "id": "plan",
+      "nodeFile": "nodes/node-plan.json"
+    },
+    {
+      "id": "implement",
+      "nodeFile": "nodes/node-implement.json"
+    },
+    {
+      "id": "review-fix",
+      "nodeFile": "nodes/node-review-fix.json"
+    },
+    {
+      "id": "verify",
+      "nodeFile": "nodes/node-verify.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "nodeId": "plan",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "implement"
+        }
+      ]
+    },
+    {
+      "id": "implement",
+      "nodeId": "implement",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review-fix"
+        }
+      ]
+    },
+    {
+      "id": "review-fix",
+      "nodeId": "review-fix",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "verify"
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "nodeId": "verify",
+      "role": "worker"
+    }
+  ]
+}

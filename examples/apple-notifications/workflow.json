@@ -1,0 +1,68 @@
+{
+  "workflowId": "apple-notifications",
+  "description": "Post one Apple Gateway notification, dismiss the notification id returned by the post step, and publish the structured result.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "post-demo-notification",
+  "nodes": [
+    {
+      "id": "post-demo-notification",
+      "addon": {
+        "name": "riela/apple-notification-post",
+        "version": "1",
+        "config": {
+          "title": "Riela demo notification",
+          "body": "This notification will be dismissed by the next workflow node.",
+          "allowFallback": true,
+          "waitSeconds": 0
+        }
+      }
+    },
+    {
+      "id": "dismiss-posted-notification",
+      "addon": {
+        "name": "riela/apple-notifications-dismiss",
+        "version": "1",
+        "inputs": {
+          "ids": [
+            "{{_rielaInput.latest.payload.postedNotificationId}}"
+          ]
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "post-demo-notification",
+      "nodeId": "post-demo-notification",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "dismiss-posted-notification"
+        }
+      ]
+    },
+    {
+      "id": "dismiss-posted-notification",
+      "nodeId": "dismiss-posted-notification",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

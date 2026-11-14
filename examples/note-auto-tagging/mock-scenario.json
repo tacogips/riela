@@ -1,0 +1,22 @@
+{
+  "classify-tags": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "status": "ready",
+      "tags": [
+        {
+          "name": "research",
+          "classId": "topic"
+        },
+        {
+          "name": "auto-tagged",
+          "classId": "workflow"
+        }
+      ]
+    }
+  }
+}

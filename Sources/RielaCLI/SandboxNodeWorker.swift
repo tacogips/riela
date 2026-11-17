@@ -1,6 +1,7 @@
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaObservability
 
 /// Explicit worker capabilities. Protocol v1-v3 encoded these implicitly in the
 /// version number (1 legacy, 2 ephemeral HOME, 3 native schema); v4 states each
@@ -270,8 +271,8 @@ final class SandboxNodeRecordWriter: @unchecked Sendable {
         guard bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes else {
           throw AdapterExecutionError(.invalidOutput, "isolated node output record exceeds the size limit")
         }
-        FileHandle.standardOutput.write(bytes)
-        FileHandle.standardOutput.write(Data([10]))
+        RielaStandardStreams.writeOutput(bytes)
+        RielaStandardStreams.writeOutput(Data([10]))
       } catch {
         firstFailure = .init(.invalidOutput, "isolated node could not encode its output record")
       }

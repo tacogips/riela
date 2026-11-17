@@ -3,6 +3,7 @@ import RielaAdapters
 import RielaAddonSupport
 import RielaAddons
 import RielaCore
+import RielaObservability
 
 struct ContainerAddonRegistration: Equatable, Sendable {
   var packageName: String
@@ -42,7 +43,11 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     let registration = try selectedRegistration(for: input.addon)
     let driver = try selectedRuntimeDriver()
-    let image = try await imageReference(for: registration, driver: driver, deadline: context.deadline)
+    let storage = try storageMaintenance(driver: driver)
+    // Refuse before any build or run when the host is low on space: a full
+    // volume can crash the host or corrupt stores mid-write (#193/#195).
+    try await storage.ensureCapacity(addonName: registration.addonName)
+    let image = try await imageReference(for: registration, driver: driver, deadline: context.deadline, storage: storage)
 
     let artifactRoot = artifactRootURL()
     try FileManager.default.createDirectory(at: artifactRoot, withIntermediateDirectories: true)
@@ -221,10 +226,24 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
     return "riela-addon-\(safeImageToken(registration.packageName))-\(safeImageToken(registration.addonName)):\(suffix)"
   }
 
+  private func storageMaintenance(driver: any ContainerRuntimeDriver) throws -> ContainerStorageMaintenance {
+    let policy: ContainerStoragePolicy
+    do {
+      policy = try ContainerStoragePolicy.resolve(
+        homeDirectory: CLIRuntimeEnvironment.homeDirectory(environment: environment),
+        projectDirectory: workingDirectory.path, environment: environment)
+    } catch {
+      throw AdapterExecutionError(.invalidInput, "\(error)", isRetryable: false, effectOutcome: .notDispatched)
+    }
+    return ContainerStorageMaintenance(driver: driver, policy: policy, workingDirectory: workingDirectory,
+      environment: environment, runner: runner)
+  }
+
   private func imageReference(
     for registration: ContainerAddonRegistration,
     driver: any ContainerRuntimeDriver,
-    deadline: Date?
+    deadline: Date?,
+    storage: ContainerStorageMaintenance
   ) async throws -> String {
     if let image = registration.image?.trimmingCharacters(in: .whitespacesAndNewlines), !image.isEmpty {
       let digest = registration.imageDigest?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -254,6 +273,16 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
       workingDirectory: registration.addonRoot
     )
     let build = try await runner.run(configuration: buildConfiguration, stdin: "", deadline: deadline)
+    if let budget = storage.policy.buildCacheBudgetMiB {
+      // Keep the shared BuildKit cache within the operator's budget after every
+      // Riela-managed build, successful or not. Failures here are diagnostics,
+      // never a reason to fail the build.
+      for outcome in await storage.reclaimBuildCache(keepStorageMiB: budget)
+      where outcome.timedOut || (outcome.exitCode.map { $0 != 0 } ?? false) {
+        RielaStandardStreams.writeError("riela container storage warning: \(outcome.arguments.joined(separator: " ")): " +
+          "\(outcome.timedOut ? "timed out" : outcome.diagnostic ?? "failed")\n")
+      }
+    }
     guard build.terminationStatus == 0 else {
       throw AdapterExecutionError(.providerError, "container add-on '\(registration.addonName)' image build failed: \(build.stderrSummary)")
     }

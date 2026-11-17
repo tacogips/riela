@@ -281,6 +281,20 @@ extension SurfaceCatalog {
     ),
     surfaceRow(
       sessionDefaults,
+      id: "session.monitor",
+      family: "session",
+      kind: .query,
+      cli: "session monitor",
+      cliOptions: ["--workflow", "--max-output-age-seconds", "--scope", "--session-store", "--working-dir", "--event-root",
+                   "--scheduler-max-silence-seconds", "--event-source", "--require-app", "--app-profile",
+                   "--timeout-seconds", "--output"],
+      graphqlState: SurfaceExclusion.localProcess("App-independent session monitoring"),
+      webState: SurfaceExclusion.notAConsoleOperation("App-independent session monitoring"),
+      libraryState: SurfaceExclusion.notALibraryEntryPoint("App-independent session monitoring"),
+      skills: []
+    ),
+    surfaceRow(
+      sessionDefaults,
       id: "session.handover",
       family: "session",
       kind: .mutation,

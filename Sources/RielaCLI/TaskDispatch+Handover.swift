@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaWork
+import RielaObservability
 
 struct TaskDispatchPreparedPlan {
   var reference: WorkflowReference
@@ -181,7 +182,7 @@ extension TaskDispatch {
           )
         } catch {
           let message = "task checkpoint failed: \(error)\n"
-          FileHandle.standardError.write(Data(message.utf8))
+          RielaStandardStreams.writeError(Data(message.utf8))
         }
       }
       let checkpointPolicy = reservation.task.guardPolicy.handover?.checkpoint ?? .stepBoundary

@@ -75,7 +75,7 @@ struct RielaAppControlPorts: RielaAppInstanceControlPorts {
         sources: app.daemonWorkflowSources, workingDirectory: app.appHomeDirectory, appRoot: app.profileStore.appRootURL,
         sessionStoreRoot: app.daemonSessionStoreRoot(profileName: app.daemonProfileName),
         principalId: RielaAppWebRegistryAuthorizer.principalId, environment: snapshot.runtimeEnvironment())
-      return .init(httpResponse: app.webWorkflowRuntime.handler(context: context).launchConfiguredWorkflow(
+      return .init(httpResponse: await app.webWorkflowRuntime.handler(context: context).launchConfiguredWorkflow(
         identity: identity, source: approved.candidate, configuration: approved.preference.configuration,
         variables: input.variables, allowOverlap: input.allowOverlap ?? false))
     } catch let error as RuntimeEnvironmentError {

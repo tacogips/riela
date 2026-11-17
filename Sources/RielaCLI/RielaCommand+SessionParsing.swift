@@ -16,6 +16,8 @@ extension RielaArgumentParser {
     switch family.subcommand {
     case .reconcile:
       return .session(.reconcile(family.remainder))
+    case .monitor:
+      return .session(.monitor(family.remainder))
     case .rerun:
       return try parseSessionRerun(family.remainder)
     case .resume:

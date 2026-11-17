@@ -28,7 +28,49 @@ private struct SessionReconcileResult: Encodable {
   var nestedInvocations: [SessionNestedInvocationVerdict]
 }
 
+/// Host-driven reconciliation of root sessions whose runner process is gone.
+///
+/// A workflow can be left `running` in the store when its runner dies before
+/// it can persist a terminal status (an App crash, or a `SQLITE_FULL` failure
+/// that also prevents writing the failure itself). Liveness is decided by the
+/// per-session execution lock (`flock`), exactly like
+/// `riela session reconcile --apply`, so sessions owned by any live process -
+/// including the calling process - are never touched.
+public enum SessionOrphanReconciliation {
+  public struct Summary: Equatable, Sendable {
+    public var reconciledSessionIds: [String]
+    public var skipped: Int
+  }
+
+  /// Blocking (opens the session store); call off the main thread.
+  /// - Parameter minimumIdle: only sessions whose persisted `updatedAt` is at
+  ///   least this old are considered, so a session that is just starting and
+  ///   has not taken its lock yet is left alone.
+  public static func reconcileOrphanedRoots(
+    sessionStoreRoot: String,
+    minimumIdle: TimeInterval,
+    now: Date = Date()
+  ) throws -> Summary {
+    let runner = SessionReconcileCommandRunner()
+    let activity = try runner.runningParentActivityForHost(root: sessionStoreRoot)
+    let eligible = activity.filter { now.timeIntervalSince($0.value) >= minimumIdle }.keys.sorted()
+    guard !eligible.isEmpty else { return Summary(reconciledSessionIds: [], skipped: 0) }
+    let entries = try runner.reconcileForHost(root: sessionStoreRoot, selectedIds: eligible)
+    return Summary(
+      reconciledSessionIds: entries.filter { $0.verdict == "orphaned" && $0.applied }.map(\.sessionId),
+      skipped: entries.filter { $0.verdict == "skipped" }.count
+    )
+  }
+}
+
 struct SessionReconcileCommandRunner {
+  func runningParentActivityForHost(root: String) throws -> [String: Date] { try runningParentActivity(root: root) }
+
+  fileprivate func reconcileForHost(root: String, selectedIds: [String]) throws -> [SessionReconcileEntry] {
+    precondition(!selectedIds.isEmpty)
+    return try reconcile(root: root, selectedIds: selectedIds, apply: true)
+  }
+
   private static let cancellationReason = "runner process lost; reconciled by riela session reconcile"
 
   func run(_ arguments: [String]) -> CLICommandResult {

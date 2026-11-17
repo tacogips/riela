@@ -300,7 +300,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
 private func logEventServe(_ message: String) {
   let line = "[RielaApp daemon event-serve] \(message)\n"
   if let data = line.data(using: .utf8) {
-    FileHandle.standardError.write(data)
+    RielaStandardStreams.writeError(data)
   }
 }
 

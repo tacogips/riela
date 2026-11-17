@@ -5,7 +5,7 @@ import Foundation
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.3.9"
+let rielaVersion = "0.3.10"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -247,6 +247,7 @@ let package = Package(
         // `agent-gateway` executable.
         .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         "RielaCore",
+        "RielaObservability",
         "RielaVersion"
       ]
     ),

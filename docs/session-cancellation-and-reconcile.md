@@ -36,6 +36,27 @@ executions are cancelled with that reason as well.
 The lock liveness check is supported for session stores on local filesystems
 shared by processes on the same host. Network-filesystem stores are unsupported.
 
+### Automatic reconciliation in RielaApp
+
+A runner can die before it persists a terminal status. Examples are an App
+crash, or a `SQLITE_FULL` (`database or disk is full`) failure that also prevents
+the failure itself from being written. RielaApp reconciles such records in its
+active profile's session store without operator action. Its maintenance pass
+runs at App start, with a 60-second idle guard, and every five minutes after
+that, with a 15-minute idle guard. The pass uses the same lock check as
+`--apply`. Only root sessions whose persisted `updatedAt` is older than the
+guard are candidates. Sessions whose lock is held by any live process, including
+the App's own in-process runs, are never changed. The App logs the reconciled
+session ids on stderr. The pass runs off the main thread with a deadline, so a
+stalled store volume cannot block the App.
+
+`riela instance cancel` reports `session_not_owned` when a stored execution is
+non-terminal but no live runner in the App owns it. The error message names the
+`riela session reconcile --session <id> --apply` command to use when the runner
+process is gone. `riela session monitor` lists such records as
+`store.orphanedSessionIds` (see
+[App-independent monitoring](app-independent-monitoring.md)).
+
 Reconcile also inspects unsettled nested invocations whose parent is terminal.
 The nested pass runs after running-session reconciliation and uses
 `--abandoned-after-hours` (default 24; range 1...8760). A reservation is

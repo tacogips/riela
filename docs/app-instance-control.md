@@ -67,6 +67,14 @@ The `error` field is included only with `--wait`. A failed run or timeout exits 
 
 A run is refused when the instance already has a live execution, whether started manually or by cron, in the App profile's session store. The CLI exits 1 and prints `{"error":"instance_busy","sessionId":"<id|pending>","exitCode":1}` on stdout; `pending` means the session ID has not yet been allocated. Pass `--allow-overlap` to bypass this check. An older App rejects this flag with `invalid_configured_run`. Orphaned sessions from a crashed process never block a run.
 
+The busy check and definition lookup read the profile session store off the
+App's main thread with a 10-second deadline. If the store does not answer, for
+example because its external volume is unmounted, stalled, or waiting for
+removable-volume access, the run is refused with `session_store_unavailable`
+(HTTP 503) and nothing is launched. The App's control queue is not blocked.
+While the earlier probe is still stuck in the kernel, further launches fail fast
+with the same code. They succeed again once the volume responds.
+
 ### Cron overlap with manual runs
 
 Live manual runs count as running for the cron binding's `overlapPolicy`. When the binding is otherwise idle, `skip` records `overlap-skip:<bindingId>:<manualSessionId>`; `queue` waits for the manual run to end and preserves FIFO order; `concurrent` counts manual runs toward `maxConcurrentRuns`; and `cancelRunning` skips rather than canceling a manual run. The check has a typically sub-second race window before session allocation, and instances sharing a workflow ID in one profile share the busy and overlap check. If the session probe fails, the check fails open.

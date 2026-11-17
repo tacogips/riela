@@ -763,7 +763,7 @@ private func traceparentComponents(_ traceparent: String) -> (traceId: String?, 
 }
 
 private func writeTelemetryWarning(_ message: String) {
-  FileHandle.standardError.write(Data("riela telemetry export \(message)\n".utf8))
+  RielaStandardStreams.writeError(Data("riela telemetry export \(message)\n".utf8))
 }
 
 private extension JSONEncoder {

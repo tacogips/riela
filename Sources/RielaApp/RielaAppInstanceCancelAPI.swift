@@ -47,16 +47,25 @@ struct RielaAppCancelPorts: RielaAppInstanceCancelPorts {
     try await app.daemonRuntime.sessionControl(identity: runtimeIdentity(identity), frame: frame)
   }
   func storedSessionState(identity: String, sessionId: String) async -> RielaAppStoredSessionState {
-    guard let instance = app.daemonInstances.first(where: { $0.identity == identity }),
-          let state = try? WorkflowViewerLoader().loadBounded(
-            WorkflowViewerLoadRequest(workflowDirectory: instance.source.workflowDirectory,
-              sessionStoreRoot: app.daemonSessionStoreRoot(profileName: profileName), selectedSessionId: sessionId),
-            maximumSessionCount: 1),
-          state.selectedSessionId == sessionId,
-          let summary = state.sessions.first(where: { $0.sessionId == sessionId }) else { return .absent }
-    switch summary.status {
-    case .completed, .failed, .cancelled: return .terminal
-    case .created, .running, .suspended: return .nonTerminal
+    guard let instance = app.daemonInstances.first(where: { $0.identity == identity }) else { return .absent }
+    let storeRoot = app.daemonSessionStoreRoot(profileName: profileName)
+    let request = WorkflowViewerLoadRequest(workflowDirectory: instance.source.workflowDirectory,
+      sessionStoreRoot: storeRoot, selectedSessionId: sessionId)
+    // Off the main actor and bounded: the store may sit on a stalled volume.
+    let outcome = await BoundedSessionStoreIO.run(key: BoundedSessionStoreIO.key(sessionStoreRoot: storeRoot)) {
+      () throws -> RielaAppStoredSessionState in
+      let state = try WorkflowViewerLoader().loadBounded(request, maximumSessionCount: 1)
+      guard state.selectedSessionId == sessionId,
+            let summary = state.sessions.first(where: { $0.sessionId == sessionId }) else { return .absent }
+      switch summary.status {
+      case .completed, .failed, .cancelled: return .terminal
+      case .created, .running, .suspended: return .nonTerminal
+      }
+    }
+    switch outcome {
+    case let .completed(.success(state)): return state
+    case .completed(.failure): return .absent
+    case .timedOut, .storeBusy: return .nonTerminal
     }
   }
 }

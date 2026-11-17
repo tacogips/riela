@@ -71,6 +71,56 @@ host, so 387 MiB must not be interpreted as its complete host disk allocation.
 Do not install Node.js, vendor agent CLIs, or a Swift compiler merely to run
 the built-in HTTP SDK workers: those workers use the linked Swift SDKs.
 
+## Disk-space budget and reclamation
+
+Container images, the BuildKit builder cache, and sparse VM disks can fill the
+host volume. Deleting files inside a guest does not return the freed
+sparse-image blocks to the host. Riela provides an opt-in policy for the builds
+it manages. It is configured in `.riela/config.json`. Project keys override user
+keys. `0` in an environment override disables that limit:
+
+```json
+{
+  "containerStorage": {
+    "minimumFreeMiB": 4096,
+    "buildCacheBudgetMiB": 2048,
+    "commandTimeoutSeconds": 120
+  }
+}
+```
+
+| Key | Environment override | Effect |
+| --- | --- | --- |
+| `minimumFreeMiB` | `RIELA_CONTAINER_MIN_FREE_MIB` | Before a container add-on builds or runs, check free space on the Apple Container data volume (`~/Library/Application Support/com.apple.container`) and the workspace volume. When either is below the limit, Riela reclaims once if a budget is set. If space is still below the limit, the step fails with `insufficient_disk_space`. The failure is non-retryable and `notDispatched`, so the add-on never started, and nothing is resent blindly. |
+| `buildCacheBudgetMiB` | `RIELA_CONTAINER_BUILD_CACHE_BUDGET_MIB` | Apple Container only. After every Riela-managed image build, prune the BuildKit cache down to this size, then return freed blocks to the host. |
+| `commandTimeoutSeconds` | `RIELA_CONTAINER_COMMAND_TIMEOUT_SECONDS` | Upper bound for each inspection or cleanup command (default 120). Capacity probes are bounded as well, so an unavailable volume produces a diagnostic, not a hang. |
+
+Inspect or reclaim on demand:
+
+```sh
+riela storage container [--output json|text]
+riela storage container --reclaim [--keep-storage-mib 2048]
+```
+
+The report lists free space per volume, `container system df` usage for images,
+containers, and volumes, the builder state, and the outcome of each command.
+The status is `ok`, `low`, or `unknown`. The command exits 3 when the status is
+`low`.
+
+Reclamation runs only the native commands
+`container exec buildkit buildctl prune --all --keep-storage <MiB>` and
+`container clean buildkit`. BuildKit skips cache records that a running build
+uses, so active builds are preserved. Images, user containers, and named volumes
+are never removed. A stopped builder is never started just to be pruned. The
+builder cache is **shared** by every build on the host, not only by Riela's
+builds. A budget therefore also bounds caches that other tools' builds leave
+behind. Remove images explicitly (`container image rm` or `container image
+prune`) if you need that space. Relocating Container's app root to an external
+disk is currently not reliable
+([apple/container#621](https://github.com/apple/container/issues/621)).
+For the reclaim mechanics, see Apple's
+[resource usage guide](https://github.com/apple/container/blob/main/docs/resource-usage.md#reclaim-disk-space).
+
 ## Video media add-ons
 
 Riela has no built-in media downloader. The package container add-on

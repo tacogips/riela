@@ -17,8 +17,12 @@ struct StoreExternalRunProbe: ExternalRunProbing {
   var workflowStoreRoots: [String: String] = [:]
 
   func liveManualSessionIds(workflowId: String) throws -> [String] {
-    try LiveRootSessionProbe.liveRootSessions(workflowId: workflowId, sessionStoreRoot: workflowStoreRoots[workflowId] ?? sessionStoreRoot)
-      .filter(\.isManual).map(\.sessionId)
+    let storeRoot = workflowStoreRoots[workflowId] ?? sessionStoreRoot
+    // Bounded: a blocked open on an unavailable volume must not stall cron dispatch.
+    return try BoundedSessionStoreIO.runBlocking(key: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)) {
+      try LiveRootSessionProbe.liveRootSessions(workflowId: workflowId, sessionStoreRoot: storeRoot)
+        .filter(\.isManual).map(\.sessionId)
+    }
   }
 }
 

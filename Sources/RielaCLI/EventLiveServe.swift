@@ -1200,7 +1200,7 @@ private func makeEventServeRetentionScheduler(
   )
   return RielaRetentionScheduler(runImmediately: false) {
     for warning in AutomaticRetentionHook.runAutomaticPass(request) {
-      FileHandle.standardError.write(Data((warning + "\n").utf8))
+      RielaStandardStreams.writeError(Data((warning + "\n").utf8))
     }
   }
 }

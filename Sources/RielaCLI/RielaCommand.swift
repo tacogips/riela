@@ -115,6 +115,7 @@ public enum PackageHelpScope: String, Codable, Sendable {
 
 public enum SessionCommand: Equatable, Sendable {
   case reconcile([String])
+  case monitor([String])
   case prune([String])
   case rerun(SessionRerunOptions)
   case resume(SessionResumeOptions)
@@ -475,9 +476,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       ))
     case let route as StorageRoute:
       guard let token = route.passthroughArguments.first, StorageClientAction(rawValue: token) != nil else {
-        throw CLIUsageError("storage requires compact")
+        throw CLIUsageError("storage requires compact or container")
       }
-      return .gc(CLICommandOptions(scope: "storage", command: "compact", arguments: route.passthroughArguments, output: .text))
+      return .gc(CLICommandOptions(scope: "storage", command: token, arguments: route.passthroughArguments, output: .text))
     case let route as GraphQLRoute:
       return .scoped(try parseScoped(kind: .graphql, arguments: route.passthroughArguments))
     case let route as GQLRoute:

@@ -44,8 +44,10 @@ final class ConfiguredLaunchCancelTests: XCTestCase {
     let runtime = RielaWebWorkflowRuntime()
     let handler = runtime.handler(context: context)
     let config = WorkflowInstanceConfiguration(workingDirectory: root.path)
-    XCTAssertEqual(handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:]).status, 202)
-    XCTAssertEqual(handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:], allowOverlap: true).status, 202)
+    let launchResponse1 = await handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:])
+    XCTAssertEqual(launchResponse1.status, 202)
+    let launchResponse2 = await handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:], allowOverlap: true)
+    XCTAssertEqual(launchResponse2.status, 202)
     for _ in 0..<400 {
       if runtime.liveLaunchInventory(identity: "one").sessionIds.count == 2 && FileManager.default.fileExists(atPath: root.appendingPathComponent("ready").path) { break }
       try await Task.sleep(for: .milliseconds(25))
@@ -53,7 +55,7 @@ final class ConfiguredLaunchCancelTests: XCTestCase {
     let ids = runtime.liveLaunchInventory(identity: "one").sessionIds
     guard ids.count == 2 else { await runtime.shutdown(); return XCTFail("launches did not start: \(ids)") }
     let oldest = try XCTUnwrap(runtime.launches.values.sorted { $0.createdAt < $1.createdAt }.first)
-    let busy = handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:])
+    let busy = await handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:])
     XCTAssertEqual(busy.status, 409)
     XCTAssertEqual(try JSONDecoder().decode(JSONObject.self, from: busy.body)["error"], .object([
       "code": .string("instance_busy"), "runningSessionId": try XCTUnwrap(oldest.snapshot["sessionId"])
@@ -79,7 +81,8 @@ final class ConfiguredLaunchCancelTests: XCTestCase {
       try await Task.sleep(for: .milliseconds(25))
     }
     XCTAssertEqual(try CLIWorkflowSessionStore(rootDirectory: store.path).loadStrictReadOnly(sessionId: ids[1]).session.status, .cancelled)
-    XCTAssertEqual(handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:]).status, 202)
+    let launchResponse3 = await handler.launchConfiguredWorkflow(identity: "one", source: candidate, configuration: config, variables: [:])
+    XCTAssertEqual(launchResponse3.status, 202)
     await runtime.shutdown()
     XCTAssertTrue(runtime.liveLaunchInventory(identity: "one").sessionIds.isEmpty)
   }
@@ -119,7 +122,7 @@ final class ConfiguredLaunchCancelTests: XCTestCase {
         try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: store.path))
           .save(WorkflowRuntimePersistenceSnapshot(session: session))
       }
-      let response = runtime.handler(context: context).launchConfiguredWorkflow(identity: "one", source: candidate,
+      let response = await runtime.handler(context: context).launchConfiguredWorkflow(identity: "one", source: candidate,
         configuration: WorkflowInstanceConfiguration(workingDirectory: root.path), variables: [:])
       XCTAssertEqual(response.status, expectedStatus, "case \(sessionId)")
       if expectedStatus == 409 {

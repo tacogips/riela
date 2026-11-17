@@ -159,6 +159,8 @@ public enum CLISurfaceEnumerator {
       ParsedTaskListOptions.helpMessage(),
       ParsedTaskRunOptions.helpMessage(),
       ParsedSessionReconcileArguments.helpMessage(),
+      ParsedSessionMonitorArguments.helpMessage(),
+      ParsedContainerStorageArguments.helpMessage(),
       ParsedTaskDecideOptions.helpMessage(),
       ParsedStorageCommandArguments.helpMessage()
     ] {

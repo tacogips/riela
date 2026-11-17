@@ -37,6 +37,8 @@ public final class RielaWebWorkflowRuntime {
   public internal(set) var launches: [String: WebWorkflowLaunch] = [:]
   var launchTasks: [String: Task<Void, Never>] = [:]
   var launchCancelRegistries: [String: LiveSessionCancelRegistry] = [:]
+  /// In-flight configured-launch store preflights per instance identity.
+  var configuredLaunchPreflights: [String: Int] = [:]
 
   func registry(for identity: String) -> LiveSessionCancelRegistry {
     if let registry = launchCancelRegistries[identity] { return registry }

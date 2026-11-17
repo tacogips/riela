@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import RielaGraphQL
 import RielaServer
+import RielaObservability
 
 struct ServeHTTPCommand: Sendable {
   typealias ReadyHandler = @Sendable (String) -> Void
@@ -117,7 +118,7 @@ struct ServeHTTPCommand: Sendable {
     )
     let retentionScheduler = RielaRetentionScheduler(runImmediately: false) {
       for warning in AutomaticRetentionHook.runAutomaticPass(retentionRequest) {
-        FileHandle.standardError.write(Data((warning + "\n").utf8))
+        RielaStandardStreams.writeError(Data((warning + "\n").utf8))
       }
     }
     retentionScheduler.start()

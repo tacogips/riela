@@ -76,6 +76,7 @@ Use `riela instance reload`, `riela instance run`, and `riela instance execution
 <!-- surface-catalog:begin session -->
 ```
 riela session reconcile
+riela session monitor
 riela session handover
 riela session rerun
 riela session resume

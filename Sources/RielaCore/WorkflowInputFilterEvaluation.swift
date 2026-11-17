@@ -1,5 +1,6 @@
 import Foundation
 import RielaJavaScript
+import RielaObservability
 
 public enum WorkflowInputFilterIssueCode: String, Codable, Equatable, Sendable {
   case unsupportedKind = "unsupported-kind"
@@ -52,7 +53,7 @@ public struct StandardErrorWorkflowInputFilterLogger: WorkflowInputFilterLogging
   public func log(_ issue: WorkflowInputFilterIssue) {
     let message = "riela input-filter \(issue.code.rawValue) step=\(issue.stepId) node=\(issue.nodeId) filter=\(issue.filterIndex): \(issue.message)\n"
     if let data = message.data(using: .utf8) {
-      FileHandle.standardError.write(data)
+      RielaStandardStreams.writeError(data)
     }
   }
 }

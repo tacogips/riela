@@ -77,7 +77,7 @@ final class SubcommandHelpTests: XCTestCase {
     var count = 0
     for descriptor in CLISurfaceEnumerator.commands() {
       let path = descriptor.path
-      if path == ["gc"] || path == ["session", "prune"] || path == ["session", "reconcile"]
+      if path == ["gc"] || path == ["session", "prune"] || path == ["session", "reconcile"] || path == ["session", "monitor"]
         || path.first == "cache" || path.first == "environment"
         || (path.first == "gateway" && path.count > 1 && path[1] != "list") { continue }
       count += 1

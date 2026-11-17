@@ -372,6 +372,7 @@ extension SurfaceCatalog {
         cli: "doctor storage"),
       surfaceRow(localToolDefaults, id: "gc.sweep", family: "gc", kind: .process, cli: "gc"),
       surfaceRow(localToolDefaults, id: "storage.compact", family: "storage", kind: .process, cli: "storage compact"),
+      surfaceRow(localToolDefaults, id: "storage.container", family: "storage", kind: .process, cli: "storage container"),
       surfaceRow(localToolDefaults, id: "version.print", family: "version", kind: .query, cli: "version"),
       surfaceRow(
         localToolDefaults,

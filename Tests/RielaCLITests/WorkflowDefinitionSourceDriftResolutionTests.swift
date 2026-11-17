@@ -31,7 +31,7 @@ final class WorkflowDefinitionSourceDriftResolutionTests: XCTestCase {
       appRoot: fixture.root, sessionStoreRoot: fixture.store.path, principalId: "test", environment: ["HOME": fixture.root.path]
     )
     let runtime = RielaWebWorkflowRuntime()
-    let response = runtime.handler(context: context).launchConfiguredWorkflow(identity: "configured", source: candidate,
+    let response = await runtime.handler(context: context).launchConfiguredWorkflow(identity: "configured", source: candidate,
       configuration: WorkflowInstanceConfiguration(workingDirectory: fixture.root.path), variables: [:])
     XCTAssertEqual(response.status, 409)
     XCTAssertTrue(try XCTUnwrap(String(data: response.body, encoding: .utf8)).contains("source_changed"))
@@ -231,7 +231,7 @@ final class WorkflowDefinitionSourceDriftResolutionTests: XCTestCase {
       appRoot: fixture.root, sessionStoreRoot: fixture.store.path, principalId: "test", environment: ["HOME": fixture.root.path]
     )
     let runtime = RielaWebWorkflowRuntime()
-    let response = runtime.handler(context: context).launchConfiguredWorkflow(
+    let response = await runtime.handler(context: context).launchConfiguredWorkflow(
       identity: "configured", source: candidate,
       configuration: WorkflowInstanceConfiguration(workingDirectory: fixture.root.path), variables: [:]
     )

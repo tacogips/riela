@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import RielaObservability
 
 enum VoiceClientAction: String, CaseIterable, Sendable {
   case listen
@@ -105,8 +106,8 @@ struct VoiceCommand {
     return String(generated[range.lowerBound...])
   }
 
-  var lineWriter: LineWriter = { line in FileHandle.standardOutput.write(Data(line.utf8)) }
-  var diagnosticWriter: LineWriter = { line in FileHandle.standardError.write(Data(line.utf8)) }
+  var lineWriter: LineWriter = { line in RielaStandardStreams.writeOutput(Data(line.utf8)) }
+  var diagnosticWriter: LineWriter = { line in RielaStandardStreams.writeError(Data(line.utf8)) }
 
   func run(_ arguments: [String]) async -> CLICommandResult {
     if arguments.isEmpty || arguments.contains("--help") || arguments.contains("-h") {

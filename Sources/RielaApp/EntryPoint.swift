@@ -52,6 +52,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var marketplaceRefreshingRepositoryIds: Set<String> = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   var retentionScheduler: RielaRetentionScheduler?
+  let maintenanceTarget = RielaAppMaintenanceTarget()
   /// Injectable only to make approval races deterministic in App-target tests.
   /// Production always reloads the catalog from its configured home.
   var kaibaCatalogLoader: @Sendable (URL) async throws -> KaibaInstanceCatalog = { homeURL in
@@ -454,6 +455,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     await performDistributedControllerStop()
     await daemonRuntime.evictEnvironment(profile: previousProfileName.rawValue)
     daemonProfileName = profileName
+    maintenanceTarget.sessionStoreRoot = daemonSessionStoreRoot(profileName: profileName)
     await performDistributedControllerStart()
     webRevision += 1
     daemonStore = makeDaemonStore(profileName: profileName)
@@ -810,7 +812,7 @@ extension RielaApp {
   func logDaemon(_ message: String) {
     let line = "[RielaApp daemon] \(message)\n"
     if let data = line.data(using: .utf8) {
-      FileHandle.standardError.write(data)
+      RielaStandardStreams.writeError(data)
     }
   }
 

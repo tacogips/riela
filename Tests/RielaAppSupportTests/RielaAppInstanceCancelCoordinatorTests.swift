@@ -96,6 +96,10 @@ final class RielaAppInstanceCancelCoordinatorTests: XCTestCase {
     await ports.configure(state: .nonTerminal)
     let result = await coordinator.cancel(identity: "i", sessionId: "A", request: request)
     XCTAssertEqual(code(result), .sessionNotOwned)
+    if case let .failure(error) = result {
+      XCTAssertTrue(error.message.contains("riela session reconcile"), error.message)
+      XCTAssertTrue(error.message.contains("--session A --apply"), error.message)
+    }
   }
   func testSoleLiveInventoryAndHistoryBoundary() async {
     let ports = CancelPorts()

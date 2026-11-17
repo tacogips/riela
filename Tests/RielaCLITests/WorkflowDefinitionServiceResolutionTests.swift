@@ -285,7 +285,7 @@ final class WorkflowDefinitionServiceResolutionTests: XCTestCase {
     )
     let runtime = RielaWebWorkflowRuntime()
     let handler = runtime.handler(context: context)
-    let response = handler.launchConfiguredWorkflow(
+    let response = await handler.launchConfiguredWorkflow(
       identity: "configured",
       source: candidate,
       configuration: WorkflowInstanceConfiguration(workingDirectory: fixture.root.path),

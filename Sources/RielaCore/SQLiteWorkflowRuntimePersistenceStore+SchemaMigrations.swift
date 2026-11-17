@@ -1,5 +1,6 @@
 import Foundation
 import RielaSQLite
+import RielaObservability
 
 extension SQLiteWorkflowRuntimePersistenceStore {
   static func invalidatePreparedSchemaCache(databasePath: String) {
@@ -214,7 +215,7 @@ extension SQLiteWorkflowRuntimePersistenceStore {
     for suffix in ["", "-wal", "-shm"] {
       try? FileManager.default.removeItem(atPath: databasePath + suffix)
     }
-    FileHandle.standardError.write(Data(
+    RielaStandardStreams.writeError(Data(
       "warning: discarded incompatible session store without a migration path at \(databasePath)\n".utf8
     ))
     return true

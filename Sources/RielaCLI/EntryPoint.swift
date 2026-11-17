@@ -1,4 +1,5 @@
 import Foundation
+import RielaObservability
 
 public enum RielaCLIMain {
   static func runEndMaintenance(
@@ -27,13 +28,13 @@ public enum RielaCLIMain {
       return
     }
     let jsonlRecordWriter: WorkflowJSONLRecordWriting = { line in
-      FileHandle.standardOutput.write(Data(line.utf8))
+      RielaStandardStreams.writeOutput(Data(line.utf8))
     }
     var runCommand = WorkflowRunCommand(jsonlRecordWriter: jsonlRecordWriter)
     do {
       runCommand.specialistMonitorControl = try SpecialistMonitorControl.takeLaunchEnvironment()
     } catch {
-      FileHandle.standardError.write(Data("invalid specialist monitor launch binding\n".utf8))
+      RielaStandardStreams.writeError(Data("invalid specialist monitor launch binding\n".utf8))
       Foundation.exit(CLIExitCode.failure.rawValue)
     }
     let taskSignalState = arguments.starts(with: ["task", "run"]) ? TaskRunSignalState() : nil
@@ -42,7 +43,7 @@ public enum RielaCLIMain {
       sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter),
       sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter),
       sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
-        FileHandle.standardOutput.write(Data(line.utf8))
+        RielaStandardStreams.writeOutput(Data(line.utf8))
       }),
       loopCommandRunner: LoopCommandRunner(
         sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter)
@@ -55,12 +56,12 @@ public enum RielaCLIMain {
     let runTask = Task {
       if arguments.first == "worker" {
         return await DistributedWorkerCommand().run(arguments: arguments) { line in
-          FileHandle.standardOutput.write(Data(line.utf8))
+          RielaStandardStreams.writeOutput(Data(line.utf8))
         }
       }
       if ServeHTTPCommand.isLongRunningInvocation(arguments) {
         return await ServeHTTPCommand().run(arguments: arguments) { line in
-          FileHandle.standardOutput.write(Data(line.utf8))
+          RielaStandardStreams.writeOutput(Data(line.utf8))
         }
       }
       return await app.run(arguments)
@@ -75,14 +76,14 @@ public enum RielaCLIMain {
     let result = await runTask.value
     signalCancellation.cancel()
     if !result.stdout.isEmpty {
-      FileHandle.standardOutput.write(Data(result.stdout.utf8))
+      RielaStandardStreams.writeOutput(Data(result.stdout.utf8))
     }
     if !result.stderr.isEmpty {
-      FileHandle.standardError.write(Data((result.stderr + "\n").utf8))
+      RielaStandardStreams.writeError(Data((result.stderr + "\n").utf8))
     }
     let completion = runEndMaintenance(result: result, arguments: arguments, cancelled: runTask.isCancelled)
     for line in completion.warnings {
-      FileHandle.standardError.write(Data((line + "\n").utf8))
+      RielaStandardStreams.writeError(Data((line + "\n").utf8))
     }
     Foundation.exit(result.exitCode.rawValue)
   }

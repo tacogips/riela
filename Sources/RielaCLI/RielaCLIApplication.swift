@@ -156,6 +156,9 @@ public struct RielaCLIApplication: Sendable {
         if options.scope == "storage" { return StorageDoctorCommandRunner().run(options.arguments) }
         return await doctorCommand.run(options)
       case let .gc(options):
+        if options.scope == "storage", options.command == "container" {
+          return await ContainerStorageCommandRunner().run(Array(options.arguments.dropFirst()))
+        }
         if options.scope == "storage" { return StorageCompactCommandRunner().run(options.arguments) }
         return garbageCollectionCommand.run(options)
       case let .specialist(command):
@@ -221,6 +224,8 @@ public struct RielaCLIApplication: Sendable {
     switch command {
     case let .reconcile(arguments):
       return SessionReconcileCommandRunner().run(arguments)
+    case let .monitor(arguments):
+      return await SessionMonitorCommandRunner().run(arguments)
     case let .prune(arguments):
       return SessionPruneCommandRunner().run(arguments)
     case let .handover(options):
@@ -359,6 +364,8 @@ Usage:
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
   riela doctor storage [--scope project|user|auto] [--top <n>] [--output text|json]
   riela storage compact [--apply] [--max-batch <n>] [--abandoned-after-hours <h>] [--allow-live-vacuum] [--output text|json]
+  riela storage container [--reclaim] [--keep-storage-mib <n>] [--working-dir <dir>] [--output json|text]
+  riela session monitor --workflow <id> --max-output-age-seconds <n> [--event-root <dir> --scheduler-max-silence-seconds <n>] [--require-app] [--output json|text]
   riela gc [--scope user|project|all] [--dry-run] [--results-max-age-days N] [--results-max-total-bytes SIZE]
            [--messages-max-age-days N] [--messages-max-total-bytes SIZE] [--logs-max-age-days N] [--logs-max-total-bytes SIZE] [--output text|json]
   riela package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]

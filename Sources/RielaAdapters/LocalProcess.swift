@@ -5,6 +5,7 @@ import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
+import RielaObservability
 
 public struct LocalProcessConfiguration: Equatable, Sendable {
   public var executableURL: URL
@@ -477,7 +478,7 @@ final class LocalProcessHandle: @unchecked Sendable {
     cancellationHardBound: TimeInterval = 5,
     cancellationScanInterval: TimeInterval = 0.1,
     survivorReporter: @escaping @Sendable (Int) -> Void = { count in
-      FileHandle.standardError.write(Data("process_tree_survivors \(count)\n".utf8))
+      RielaStandardStreams.writeError(Data("process_tree_survivors \(count)\n".utf8))
     }
   ) {
     self.signalProcess = signalProcess
@@ -817,7 +818,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
   var cancellationHardBound: TimeInterval = 5
   var cancellationScanInterval: TimeInterval = 0.1
   var survivorReporter: @Sendable (Int) -> Void = { count in
-    FileHandle.standardError.write(Data("process_tree_survivors \(count)\n".utf8))
+    RielaStandardStreams.writeError(Data("process_tree_survivors \(count)\n".utf8))
   }
 
   public init() {}

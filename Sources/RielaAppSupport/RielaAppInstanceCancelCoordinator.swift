@@ -27,7 +27,9 @@ public struct RielaAppInstanceCancelCoordinator: Sendable {
     switch await ports.storedSessionState(identity: identity, sessionId: sessionId) {
     case .absent: return failure(.sessionNotFound)
     case .terminal: return failure(.notRunning)
-    case .nonTerminal: return failure(channelError ? .cancelUnavailable : .sessionNotOwned)
+    case .nonTerminal:
+      if channelError { return failure(.cancelUnavailable) }
+      return .failure(.init(code: .sessionNotOwned, message: Self.notOwnedMessage(sessionId: sessionId)))
     }
   }
 
@@ -60,6 +62,14 @@ public struct RielaAppInstanceCancelCoordinator: Sendable {
       let outcome = try await cancelChild(identity, sessionId, request.reason, actor)
       return outcome == .notFound ? failure(.notRunning) : success(identity, profile, sessionId, "eventServe", outcome)
     } catch { return failure(.cancelUnavailable) }
+  }
+
+  /// A stored non-terminal session that no live runner owns is usually a
+  /// stale record whose runner died before persisting a terminal status.
+  static func notOwnedMessage(sessionId: String) -> String {
+    "No live runner in this App owns session \(sessionId). If its runner process is gone, reconcile it with " +
+      "`riela session reconcile --session-store <instance session store> --session \(sessionId) --apply`; " +
+      "RielaApp also reconciles lock-free sessions automatically after 15 minutes without progress."
   }
 
   private func cancelChild(_ identity: String, _ sessionId: String, _ reason: String, _ actor: String) async throws -> WorkflowServeSessionCancelOutcome {

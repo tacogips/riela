@@ -207,6 +207,12 @@ sessions can be left `running`. `riela session reconcile` lists them (dry run
 by default), and `--apply` marks them cancelled. Sessions whose execution lock
 is still held are never changed. See
 [session cancellation and reconciliation](docs/session-cancellation-and-reconcile.md).
+RielaApp also reconciles lock-free orphans in its profile store automatically
+at startup and periodically. To watch a scheduled workflow independently of the
+App, run the bounded, read-only `riela session monitor` check from launchd or
+systemd. It distinguishes `app_unavailable`, `scheduler_unavailable`, `running`,
+`stale_output`, and `check_failed`. See
+[App-independent monitoring](docs/app-independent-monitoring.md).
 
 Installed workflow packages are local workflow sources. After
 `riela package install <name>`, package-provided workflows appear in

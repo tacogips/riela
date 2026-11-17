@@ -3,6 +3,7 @@ import Foundation
 
 enum StorageClientAction: String, CaseIterable, ExpressibleByArgument {
   case compact
+  case container
 }
 
 struct ParsedStorageCommandArguments: ParsableArguments {

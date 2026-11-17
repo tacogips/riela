@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaSQLite
+import RielaObservability
 
 public struct PersistedCLIWorkflowSession: Codable, Equatable, Sendable {
   public var workflowName: String
@@ -840,7 +841,7 @@ public struct CLIWorkflowSessionStore: Sendable {
 
   private static func writeWarningToStandardError(_ message: String) {
     let data = Data("\(message)\n".utf8)
-    FileHandle.standardError.write(data)
+    RielaStandardStreams.writeError(data)
   }
 
   private static func dateString(_ date: Date) -> String {

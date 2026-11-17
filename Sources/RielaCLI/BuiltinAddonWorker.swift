@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import RielaKaibaAddons
 import RielaKaibaSupport
+import RielaObservability
 
 /// The first-party guest entrypoint. It never creates workflow execution IDs
 /// and never persists or edits runtime session records.
@@ -107,10 +108,10 @@ public enum BuiltinAddonWorker {
       guard encoded.count <= BuiltinAddonContainerRequest.maximumRecordBytes else {
         throw AdapterExecutionError(.invalidOutput, "container worker output exceeds the record size limit")
       }
-      FileHandle.standardOutput.write(encoded)
-      FileHandle.standardOutput.write(Data([10]))
+      RielaStandardStreams.writeOutput(encoded)
+      RielaStandardStreams.writeOutput(Data([10]))
     } catch {
-      FileHandle.standardError.write(Data("failed to encode built-in container reply\n".utf8))
+      RielaStandardStreams.writeError(Data("failed to encode built-in container reply\n".utf8))
       Foundation.exit(1)
     }
   }

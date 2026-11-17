@@ -11,6 +11,7 @@ struct CLIHelpRequest: Equatable, Sendable {
       let request = resolve(tokens) else { return nil }
     let path = request.path
     if path == ["gc"] || tokens.starts(with: ["session", "prune"]) || tokens.starts(with: ["session", "reconcile"])
+      || tokens.starts(with: ["session", "monitor"])
       || path.first == "cache" || path.first == "environment" { return nil }
     if tokens.first == "gateway", tokens.count > 1, !tokens[1].hasPrefix("-"), tokens[1] != "list" {
       return nil

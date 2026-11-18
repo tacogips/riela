@@ -1,5 +1,9 @@
 import ArgumentParser
+import CoreFoundation
 import Foundation
+#if os(Linux)
+import Glibc
+#endif
 import RielaAdapters
 import RielaCore
 
@@ -138,11 +142,19 @@ struct ContainerStorageMaintenance: Sendable {
   var environment: [String: String]
   var runner: any LocalProcessRunning = FoundationLocalProcessRunner()
   var capacityProbe: @Sendable (String) throws -> Int64 = { path in
+    #if os(macOS)
     let values = try URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
     guard let available = values.volumeAvailableCapacityForImportantUsage else {
       throw ContainerStoragePolicy.ConfigurationError(description: "available capacity is not reported")
     }
     return available
+    #else
+    var stats = statvfs()
+    guard statvfs(path, &stats) == 0 else {
+      throw ContainerStoragePolicy.ConfigurationError(description: "statvfs failed with errno \(errno)")
+    }
+    return Int64(stats.f_bavail) * Int64(stats.f_frsize)
+    #endif
   }
 
   static let builderContainerId = "buildkit"

@@ -1,12 +1,12 @@
 {
-  "originHash" : "c845ba33acd5b47375a8bda0785531d550b352397dec66279e42c3cec4291323",
+  "originHash" : "af2e9efadd00546f29aba42baedfee516c701013225ac80937a567de6c92fb11",
   "pins" : [
     {
       "identity" : "agent-gateway",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/agent-gateway.git",
       "state" : {
-        "revision" : "c659e9f0305e642d7c6e38582651ea2df16bfa16"
+        "revision" : "8c8c5f1bf19f8ecb21d61ca18e7f108de8e7ceb3"
       }
     },
     {
@@ -14,7 +14,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/anydoc-swift.git",
       "state" : {
-        "revision" : "0aa4756d0ce3f97cc94f1de9efe26879808097c8"
+        "revision" : "44b13d2be4ec3e47b88e90d1124d7b1ff5fb9b53"
       }
     },
     {
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "a57de9d6ea2658dce731067e837b0987ceb1e962"
+        "revision" : "ad958cdde55b5f82f4a5706f75fd0df196400993"
       }
     },
     {
@@ -39,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "784ecf9c9b01c766c64f3874b83ed9e367fc8a44"
+        "revision" : "c4598a32e6bbadde9af3a890e029ed9dce9a25a5"
       }
     },
     {
@@ -47,7 +47,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-analytics-gateway.git",
       "state" : {
-        "revision" : "18e9f09bf31202316e9756e1620c192392e639ba"
+        "revision" : "a7cefa66ca5593018e55eb3c441503578248ecf2"
       }
     },
     {
@@ -55,7 +55,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-documents-gateway.git",
       "state" : {
-        "revision" : "b05c89e9864bc758365afaf62896e1d8c119cd93"
+        "revision" : "54502a90ea30f21e9561f3363fb8c6921ed1eab1"
       }
     },
     {
@@ -63,7 +63,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-gateway-auth.git",
       "state" : {
-        "revision" : "48e0112fb5eb057cf012194cfffaa2581ba29d76"
+        "revision" : "40b310cd6f2abeb2ae8a770643408bd161795417"
       }
     },
     {
@@ -71,7 +71,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-service-gateway.git",
       "state" : {
-        "revision" : "790a6b21def1a11fe50fae57ce503b16d3b002c9"
+        "revision" : "dc799e4718d74742aac4687b673f5a9b4e444d5e"
       }
     },
     {
@@ -79,7 +79,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "41cbf6bf06e6ab18e7b8e72007e96230e0ea8ad5"
+        "revision" : "15c2a5ebdb6169dc5063afe2d51750ac5cd61c10"
       }
     },
     {
@@ -157,7 +157,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/wrike-gateway.git",
       "state" : {
-        "revision" : "9e6044fa1439176aa56fac57062b857378fc2929"
+        "revision" : "3025b612a9aa7d660e80b75d22e702fe4c81e076"
       }
     },
     {
@@ -174,7 +174,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/youtube-gateway.git",
       "state" : {
-        "revision" : "33006f3a7e1082521285e7c8323fa442afc35948"
+        "revision" : "b36bd5d69010e1cf961cfb649a1a229262ba52dc"
       }
     }
   ],

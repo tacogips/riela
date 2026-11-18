@@ -31,7 +31,7 @@ let notionPackageDependencies: [Package.Dependency] = [
   .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "41f64e602c3e242a3f1132f2a297dec47a091afa")
 ]
 let youtubePackageDependencies: [Package.Dependency] = [
-  .package(url: "https://github.com/tacogips/youtube-gateway.git", revision: "33006f3a7e1082521285e7c8323fa442afc35948")
+  .package(url: "https://github.com/tacogips/youtube-gateway.git", revision: "b36bd5d69010e1cf961cfb649a1a229262ba52dc")
 ]
 let youtubeTargetDependencies: [Target.Dependency] = [
   .product(name: "YouTubeGatewayCore", package: "youtube-gateway", condition: .when(platforms: [.macOS]))
@@ -77,11 +77,11 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.27"),
     .package(url: "https://github.com/tacogips/gateway-sdk-kit.git", exact: "0.1.1"),
-    .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
+    .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "40b310cd6f2abeb2ae8a770643408bd161795417"),
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "c659e9f0305e642d7c6e38582651ea2df16bfa16"
+      revision: "8c8c5f1bf19f8ecb21d61ca18e7f108de8e7ceb3"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.3"),
     .package(url: "https://github.com/swift-server/swift-webauthn.git", revision: "030acd1eedaa835958ae3fcc0e491bec03b2abf1"),
@@ -90,35 +90,35 @@ let package = Package(
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "41cbf6bf06e6ab18e7b8e72007e96230e0ea8ad5"
+      revision: "15c2a5ebdb6169dc5063afe2d51750ac5cd61c10"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
-      revision: "790a6b21def1a11fe50fae57ce503b16d3b002c9"
+      revision: "dc799e4718d74742aac4687b673f5a9b4e444d5e"
     ),
     .package(
       url: "https://github.com/tacogips/wrike-gateway.git",
-      revision: "9e6044fa1439176aa56fac57062b857378fc2929"
+      revision: "3025b612a9aa7d660e80b75d22e702fe4c81e076"
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "784ecf9c9b01c766c64f3874b83ed9e367fc8a44" // v0.1.29 + google-service-gateway 0.1.8; process-lifetime transport with corelibs callback forwarding.
+      revision: "c4598a32e6bbadde9af3a890e029ed9dce9a25a5" // v0.1.29 + google-service-gateway 0.1.8; process-lifetime transport with corelibs callback forwarding.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
-      revision: "18e9f09bf31202316e9756e1620c192392e639ba"
+      revision: "a7cefa66ca5593018e55eb3c441503578248ecf2"
     ),
     .package(
       url: "https://github.com/tacogips/apple-gateway.git",
-      revision: "a57de9d6ea2658dce731067e837b0987ceb1e962" // v0.1.19; scoped Notes folder deletion and bounded native operations.
+      revision: "ad958cdde55b5f82f4a5706f75fd0df196400993" // v0.1.19; scoped Notes folder deletion and bounded native operations.
     ),
     .package(
       url: "https://github.com/tacogips/anydoc-swift.git",
-      revision: "0aa4756d0ce3f97cc94f1de9efe26879808097c8"
+      revision: "44b13d2be4ec3e47b88e90d1124d7b1ff5fb9b53"
     ),
     .package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
-      revision: "b05c89e9864bc758365afaf62896e1d8c119cd93"
+      revision: "54502a90ea30f21e9561f3363fb8c6921ed1eab1"
     )
   ] + notionPackageDependencies + youtubePackageDependencies,
   targets: [

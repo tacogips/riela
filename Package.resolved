@@ -30,7 +30,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gateway-sdk-kit.git",
       "state" : {
-        "revision" : "b133fcaab52265dcd508df7e2c3f11a073d20d83",
+        "revision" : "df2cd756dae9d624f8e5efbd4eb9f13ea438ecf4",
         "version" : "0.1.1"
       }
     },
@@ -148,7 +148,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/web-hooky.git",
       "state" : {
-        "revision" : "34a27e3ac6b042d498673a8de9cf42c136ebb8c2",
+        "revision" : "e094bd9b4c495a182a59f3ba0de3c3e2173d09b4",
         "version" : "0.2.0"
       }
     },
@@ -165,7 +165,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/x-gateway.git",
       "state" : {
-        "revision" : "3609db11a39831a5737f5b0ce1a2eb931609db36",
+        "revision" : "0baab90ad3e1c6be3eb6d21d87a6c4558d0423d4",
         "version" : "0.1.27"
       }
     },

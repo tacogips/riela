@@ -126,7 +126,8 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
         promptBlocks: try gatewayPromptBlocks(input),
         vendorSessionId: reusedSessionId,
         deadline: context.deadline,
-        webSearch: webSearch
+        webSearch: webSearch,
+        acpVersion: gatewayACPVersion(environment: turnEnvironment)
       ),
       executorFactory: executorFactory,
       backendEventHandler: context.backendEventHandler
@@ -220,7 +221,8 @@ public struct AgentGatewayClientTurn: Sendable {
         workingDirectory: request.workingDirectory,
         promptBlocks: request.promptBlocks,
         vendorSessionId: nil,
-        deadline: deadline
+        deadline: deadline,
+        acpVersion: gatewayACPVersion(environment: environment)
       ),
       executorFactory: executorFactory,
       backendEventHandler: nil
@@ -237,12 +239,16 @@ struct GatewayTurnRequest: Sendable {
   var vendorSessionId: String?
   var deadline: Date?
   var webSearch: Bool = false
+  /// ACP protocol version to request from the in-process gateway agent.
+  var acpVersion: Int = ACPProtocol.versionV1
 }
 
 /// Hosts `GatewayACPAgent` on an in-memory ACP transport and drives exactly
 /// one prompt turn against it. Streaming `session/update` notifications become
-/// riela backend events; the `session/prompt` response carries the final text,
-/// usage, and resumable vendor session id in `_meta.agentGateway`.
+/// riela backend events. The agent serves ACP protocol versions 1 and 2; the
+/// request picks one. In v1 the `session/prompt` response ends the turn and
+/// carries the final text, usage, and resumable vendor session id in the
+/// gateway's `_meta` extension; in v2 the idle `state_update` does.
 func runGatewayTurn(
   _ request: GatewayTurnRequest,
   executorFactory: AgentGatewayExecutorFactory,
@@ -257,7 +263,7 @@ func runGatewayTurn(
   }
   let executor = GatewayTurnExecutor(base: executorFactory(request.environment), webSearch: request.webSearch)
   let agent = GatewayACPAgent(defaults: defaults, executor: executor)
-  let (client, server) = await ACPClientConnection.inProcess(agent: agent)
+  let (client, server) = await ACPClientConnection.inProcess(v1: agent, v2: agent)
   let collector = GatewayACPUpdateCollector(vendor: vendor.rawValue)
   return try await withGatewayTurnLifetime(cleanup: {
     await executor.finish()
@@ -275,17 +281,26 @@ private func consumeGatewayTurn(
   backendEventHandler: AdapterBackendEventHandler?
 ) async throws -> GatewayACPTurn {
   do {
-    _ = try await client.initialize(
-      ACPInitializeRequest(
-        clientInfo: ACPImplementation(name: "riela", version: String(cString: rielaEmbeddedVersion))
+    let clientInfo = ACPImplementation(name: "riela", version: String(cString: rielaEmbeddedVersion))
+    if request.acpVersion >= ACPProtocol.versionV2 {
+      let negotiated = try await client.negotiate(
+        ACPV2InitializeRequest(info: clientInfo), v1Fallback: ACPInitializeRequest(clientInfo: clientInfo)
       )
-    )
+      if case .v2 = negotiated {
+        return try await consumeGatewayTurnV2(
+          request, client: client, collector: collector, backendEventHandler: backendEventHandler
+        )
+      }
+      // The agent selected v1: continue with the v1 lifecycle below.
+    } else {
+      _ = try await client.initialize(ACPInitializeRequest(clientInfo: clientInfo))
+    }
     let session = try await client.newSession(
       ACPNewSessionRequest(
         cwd: request.workingDirectory ?? FileManager.default.currentDirectoryPath,
         mcpServers: [],
         meta: request.vendorSessionId.map {
-          .object(["agentGateway": .object(["vendorSessionId": .string($0)])])
+          .object([GatewayACPMetaKey.v1: .object(["vendorSessionId": .string($0)])])
         }
       )
     )
@@ -333,7 +348,7 @@ private func consumeGatewayTurn(
 /// Cancels the in-flight ACP turn when the step deadline passes. The gateway
 /// agent forwards the cancellation to the vendor process group, which is what
 /// terminating the `agent-gateway` child used to accomplish.
-private final class GatewayDeadlineWatchdog: @unchecked Sendable {
+final class GatewayDeadlineWatchdog: @unchecked Sendable {
   private let lock = NSLock()
   private var expired = false
   private var task: Task<Void, Never>?
@@ -420,14 +435,18 @@ struct GatewayACPTurn {
 }
 
 /// Turns the ACP `session/update` notifications of one turn into riela backend
-/// events, and the `session/prompt` response into the turn result. Vendor
-/// identity, usage, and the authoritative final text arrive in the response's
-/// `_meta.agentGateway` extension; the accumulated chunk text is the fallback.
-private final class GatewayACPUpdateCollector: @unchecked Sendable {
-  private let lock = NSLock()
+/// events, and the turn's completion signal into the turn result. Vendor
+/// identity, usage, and the authoritative final text arrive in the gateway's
+/// `_meta` extension object; the accumulated chunk text is the fallback.
+final class GatewayACPUpdateCollector: @unchecked Sendable {
+  let lock = NSLock()
   private let vendor: String
   private var sequence = 0
-  private var accumulatedText = ""
+  var accumulatedText = ""
+  /// v2 bookkeeping: agent message text by message id, and the tool calls
+  /// already announced.
+  var messages = ACPV2MessageTextAccumulator()
+  var seenToolCalls: Set<ACPToolCallID> = []
 
   init(vendor: String) {
     self.vendor = vendor
@@ -473,7 +492,7 @@ private final class GatewayACPUpdateCollector: @unchecked Sendable {
     }
   }
 
-  private func chunkEvent(
+  func chunkEvent(
     _ eventType: GatewayBackendEventType,
     channel: AdapterBackendEventChannel,
     text: String?,
@@ -493,25 +512,30 @@ private final class GatewayACPUpdateCollector: @unchecked Sendable {
   }
 
   func turn(response: ACPPromptResponse) -> GatewayACPTurn {
-    lock.withLock {
-      let meta = response.meta?["agentGateway"]
-      let usage = meta?["usage"].map { value in
-        AdapterUsage(
-          inputTokens: value["inputTokens"]?.integerValue,
-          outputTokens: value["outputTokens"]?.integerValue,
-          totalTokens: value["totalTokens"]?.integerValue
-        )
-      }
-      return GatewayACPTurn(
-        stopReason: response.stopReason,
-        // An empty authoritative result falls back to the streamed chunks
-        // rather than reporting no text at all.
-        text: meta?["resultText"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? accumulatedText,
-        model: meta?["model"]?.stringValue,
-        vendorSessionId: meta?["vendorSessionId"]?.stringValue,
-        usage: usage
+    lock.withLock { turn(stopReason: response.stopReason, meta: response.meta) }
+  }
+
+  /// Builds the turn result from the gateway's `_meta` extension object,
+  /// which v1 attaches to the prompt response and v2 to the idle state.
+  /// Call with the lock held.
+  func turn(stopReason: ACPStopReason, meta: ACPJSONValue?) -> GatewayACPTurn {
+    let meta = gatewayACPMeta(meta)
+    let usage = meta?["usage"].map { value in
+      AdapterUsage(
+        inputTokens: value["inputTokens"]?.integerValue,
+        outputTokens: value["outputTokens"]?.integerValue,
+        totalTokens: value["totalTokens"]?.integerValue
       )
     }
+    return GatewayACPTurn(
+      stopReason: stopReason,
+      // An empty authoritative result falls back to the streamed chunks
+      // rather than reporting no text at all.
+      text: meta?["resultText"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? accumulatedText,
+      model: meta?["model"]?.stringValue,
+      vendorSessionId: meta?["vendorSessionId"]?.stringValue,
+      usage: usage
+    )
   }
 }
 

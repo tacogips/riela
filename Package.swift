@@ -81,7 +81,7 @@ let package = Package(
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "8c8c5f1bf19f8ecb21d61ca18e7f108de8e7ceb3"
+      revision: "af94376abcef3f818ae85c50f58c5b8163047024"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.3"),
     .package(url: "https://github.com/swift-server/swift-webauthn.git", revision: "030acd1eedaa835958ae3fcc0e491bec03b2abf1"),

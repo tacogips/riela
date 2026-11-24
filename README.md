@@ -342,6 +342,16 @@ riela's own environment, so concurrent steps with different credentials cannot
 collide. A step deadline cancels the ACP turn, which terminates the vendor
 process group.
 
+The in-process agent serves ACP protocol versions 1 and 2. Riela requests
+version 1 unless `RIELA_AGENT_GATEWAY_ACP_VERSION=2` is set in the
+environment (riela's own or a step's `agentEnvironment`); ACP v2 is in
+Preview upstream, so it is opt-in. Over v2 the `session/prompt` response only
+acknowledges the prompt, and the turn ends with an idle `state_update` that
+carries the stop reason and the same `_meta` extension object under the
+namespaced key `io.github.tacogips/agentGateway`; a vendor failure arrives
+there as the `error` stop reason. Step results, backend events, session
+reuse, deadlines, and cancellation behave the same over either version.
+
 RielaApp also uses agent-gateway's model catalog when the Assistant settings
 select OpenAI API, Claude API, or Cursor API. The live vendor response replaces
 the bundled suggestions for that settings session. Missing credentials,

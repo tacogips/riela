@@ -263,7 +263,12 @@ func runGatewayTurn(
   }
   let executor = GatewayTurnExecutor(base: executorFactory(request.environment), webSearch: request.webSearch)
   let agent = GatewayACPAgent(defaults: defaults, executor: executor)
-  let (client, server) = await ACPClientConnection.inProcess(v1: agent, v2: agent)
+  // `session/request_permission` is the one request every ACP client must
+  // answer. A workflow step has no user to ask, so a request is declined by
+  // policy; the gateway agent itself never sends one.
+  let (client, server) = await ACPClientConnection.inProcess(
+    v1: agent, v2: agent, delegate: GatewayClientPermissionResponder(policy: .cancel)
+  )
   let collector = GatewayACPUpdateCollector(vendor: vendor.rawValue)
   return try await withGatewayTurnLifetime(cleanup: {
     await executor.finish()

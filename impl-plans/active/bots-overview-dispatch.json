@@ -1,0 +1,909 @@
+{
+  "taskId": "bots-overview",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/bots-overview",
+  "baseBranch": "feat/bots-overview",
+  "remote": "origin",
+  "gitPush": false,
+  "originalHead": "7f04f6e642cab2426b8cd0d9ce53005a6378aa3e",
+  "designDocPaths": [
+    "design-docs/specs/design-bots-overview.md",
+    "design-docs/user-qa/qa-bots-overview.md"
+  ],
+  "overviewPlanPath": "impl-plans/active/bots-overview.md",
+  "evidenceRoot": "tmp/bots-overview",
+  "waveGates": "impl-plans/active/bots-overview.md section 4",
+  "finalGate": "impl-plans/active/bots-overview.md section 5",
+  "waves": [
+    {"wave": "W1", "plans": ["bots-01-contracts"]},
+    {"wave": "W2", "plans": ["bots-02-board-projector", "bots-03-activity-core", "bots-04-acp-adapter", "bots-05-model-catalog-core", "bots-06-memory-core", "bots-07-jobs-core", "bots-08-pairing-server", "bots-09-run-linkage"]},
+    {"wave": "W3", "plans": ["bots-10-bot-surfaces", "bots-11-activity-runtime"]},
+    {"wave": "W4", "plans": ["bots-12-activity-surfaces"]},
+    {"wave": "W5", "plans": ["bots-13-model-surfaces", "bots-14-web-bots"]},
+    {"wave": "W6", "plans": ["bots-15-memory-surfaces"]},
+    {"wave": "W7", "plans": ["bots-16-jobs-surfaces"]},
+    {"wave": "W8", "plans": ["bots-17-example-docs", "bots-18-pairing-surfaces"]},
+    {"wave": "W9", "plans": ["bots-19-remote-surfaces"]},
+    {"wave": "W10", "plans": ["bots-20-web-management"]}
+  ],
+  "reviewContext": {
+    "issueReference": "none — no GitHub issue; scope defined by the workflow input of fable-sol-design-and-implement-review-loop-session-1 (design accepted in comm-000004, plans accepted in comm-000008)",
+    "userProblem": "riela has no bot or agent-identity record, so nothing answers what each agent is doing right now. The gateway adapter drops most ACP session updates (plan, usage, config, commands, sub-agents, terminal updates) and declines every permission request unseen; model names are free strings; riela memory is not scoped to an agent; a riela client cannot pair with a riela server and drive its bots.",
+    "requiredOutcomes": [
+      "Slice a: a persisted, runtime-store-owned bot record with runtime-owned linkage to sessions, routines and Work tasks; overview and task board (Needs you, In progress, Waiting, Planned, Closed) on CLI `riela bot`, GraphQL and web, derived from runtime records.",
+      "Slice b: every ACP v1/v2 session update, permission request and stop reason normalised into one typed, backend-neutral, bounded, persisted activity stream with live long-poll and replay; answerable permission requests with option ids passed through; deterministic settlement on every terminal path; non-ACP backends report an explicit activitySource.",
+      "Slice c: runtime-owned provider-instance and model catalog (bundled manifest merged with backend-reported models, custom models, `default` sentinel never sent, passive probes); `riela model`, `riela provider`, GraphQL and web; unknown models warn instead of failing.",
+      "Slice d: server-owned list state (pin, manual order, snooze, settle, Working group, return-to-top, `limited` status, grouping) rendered identically by CLI, GraphQL and web.",
+      "Slice e: per-bot riela memory in the existing RielaMemoryStore (memory id bot-<botId>, no schema change), Markdown read/edit/export, audited change sets with list, diff and undo, prompt injection inside the overflow guard budget, write rules enforced by the runtime.",
+      "Slice f: memory upkeep job (text-only reply applied by the runtime), look-around job that is read-only by sandbox and tool policy, suggestions that need acceptance, feedback captured as memory candidates through the same audited path.",
+      "Slice g: `riela serve` pairing with one-time expiring codes, hashed scoped revocable grants on RielaAPIKeyStore, audit records, `riela remote` client registry under the credential-dir convention, forwarding with origin identity, disconnected state never reported as idle.",
+      "Deterministic tests for normalisation, status derivation, memory scoping and undo, look-around read-only enforcement, pairing expiry, reuse, revocation and scope; parity gates and generated SDL green; mock-scenario example bundle `bot-routine-memory-upkeep` registered."
+    ],
+    "nonGoals": [
+      "A relay or cloud service, a new transport (SSE, WebSocket, GraphQL subscription) or a new auth system.",
+      "Changing how workflows, routines, Work tasks or sessions execute; a bot adds no scheduler and no dispatcher.",
+      "Bot default backend or model overriding a workflow node's own settings.",
+      "Vendoring or patching agent-gateway, or changing Package.swift pins.",
+      "kaiba long-term knowledge; bot memory is riela memory only.",
+      "Scripted activity in mock scenarios; mock runs report activitySource: session.",
+      "Queuing requests for an unreachable server; such a request fails with remote_unreachable."
+    ],
+    "constraints": [
+      "Base on branch tip 7f04f6e6 (includes ACP v2); do not reintroduce pre-ACP-v2 code paths.",
+      "Runtime records are owned by the runtime store, never by workers or adapters; behaviour stays deterministic.",
+      "No backward-compatibility shims for unreleased shapes; never break or bump existing user memory databases; no edit of Packages/RielaMemory.",
+      "No worktree, branch, stash, commit or push by implementers; gitPush is false; per-edit SHA-256 and drift rules in impl-plans/active/bots-overview.md section 2.",
+      "Swift commands run as arch -arm64 /bin/zsh -lc '<command>' in the foreground with full logs under tmp/bots-overview/<planId>.",
+      "Tests never touch ~/.riela or the real credential directory; isolated roots only.",
+      "Scratch files only under tmp/bots-overview; nothing at the repository root or in scripts/.",
+      "Do not change Package.swift, Package.resolved, VERSION or anything under .build.",
+      "English-only, low-text web UI following existing SolidJS conventions; web/package.json and web/bun.lock stay unchanged (bun install --frozen-lockfile).",
+      "Earlier slices must work without later ones; if the run stops early, accepted waves are complete slices and the remaining plans stay active.",
+      "Each wave gate runs the cumulative filter C<n> of impl-plans/active/bots-overview.md section 4; the final gate is section 5."
+    ],
+    "designDecisionsAndRationale": [
+      {"decision": "A bot is a thin record in the session store database (generation 13, additive tables) over existing routines, sessions, Work tasks and riela memory.", "rationale": "Design sections 4 and 5: reuse existing records; add storage only where no existing record can answer the question."},
+      {"decision": "One pure projector produces the board, overview row and ordered list for CLI, GraphQL and web.", "rationale": "Design sections 5.3, 5.4 and 8: all surfaces render the same server-derived output, so they stay identical."},
+      {"decision": "Activity events, the state row and settlement are written in one transaction by a bounded recorder fed from the runner's adapter call site; live and replay use one cursor-paged long-poll read.", "rationale": "Design sections 6.3 to 6.7: deterministic reducer, bounded replay window, no new transport."},
+      {"decision": "Permission requests become runtime-owned pending records with a bounded wait and a deterministic default on timeout; GatewayClientPermissionResponder(policy: .cancel) is removed.", "rationale": "Design section 6.6: native option ids pass through unchanged and every request can be declined."},
+      {"decision": "Rich ACP activity is tested with scripted ACP agents and Swift string fixtures; the required agent-gateway change is recorded as an upstream follow-up.", "rationale": "Design section 15: the pinned in-process agent emits only message and thought chunks; the dependency is not vendored or patched."},
+      {"decision": "Bot memory uses the existing RielaMemoryStore with memory id bot-<botId>; every write goes through one audited writer with a redact closure.", "rationale": "Design section 9: no schema bump for user memory databases; RielaCore cannot import RielaWork."},
+      {"decision": "Look-around is forced read-only by the runner (forceReadOnlySandbox) and a policy check, not only by prompt.", "rationale": "Design section 10.2 and the acceptance criterion on enforcement."},
+      {"decision": "Pairing extends RielaAPIKeyStore with scoped grants; the client command family is named `riela remote`.", "rationale": "Design section 11: reuse API-key machinery; `riela environment` already means workflow instance environment."},
+      {"decision": "The bots GraphQL provider lives in Sources/RielaCLI/Bots; executor and DTOs live in Sources/RielaGraphQL/Bots.", "rationale": "impl-plans/active/bots-overview.md section 3: the provider must start workflow runs."},
+      {"decision": "Twenty plans in ten waves; the surface plans 10, 12, 13, 15, 16, 18 and 19 form a chain.", "rationale": "They edit the same hand-maintained registries and the generated SDL; one owner per wave avoids write clashes. Design section 16's seven slice plans are refined without behaviour change."},
+      {"decision": "No artifactRoots are declared; web/node_modules and web/dist are gitignored build outputs outside every writePath.", "rationale": "Workflow-input constraint: build-tool writes to gitignored outputs are untracked and need no plan authorization (review finding F3)."}
+    ],
+    "intentionalTradeoffs": [
+      "Ten serial waves trade wall-clock time for single ownership of shared registries.",
+      "The cumulative wave-gate filter grows to 93 suites, so later gates take longer.",
+      "Long-poll instead of SSE, WebSocket or subscriptions.",
+      "Event sourcing is applied to the activity log and its state row only; the runner is not re-architected.",
+      "Persona stays an existing personaId reference; no new Markdown file format for persona or skills.",
+      "An opaque pairing code string instead of a URL scheme."
+    ],
+    "supportedEdgeCases": [
+      "Out-of-order tool_call_update, plan replacement and removal, permission request, cancellation.",
+      "Settlement on completion, cancel, provider error and process exit, including orphan reconcile and abandoned nested invocations.",
+      "Retention deletes a session's activity rows and bot link in the same transaction.",
+      "Usage or rate limit stop reported as `limited` with a reset time.",
+      "Paused or busy bot skips upkeep and look-around; missed runs catch up.",
+      "Snooze wakes early on needs-you or failure; auto-settle is blocked by in-progress or pending work.",
+      "Pairing code expiry, reuse, revocation dropping access at once, scope enforcement, refusal of loopback and wildcard addresses.",
+      "Missing origin identity is reported as unverifiable; an unreachable remote is shown as disconnected with last-known state.",
+      "Unknown model yields a model_unknown warning; the `default` sentinel is never sent to a provider.",
+      "bun install failure is recorded as BLOCKED: environment, never as a pass."
+    ],
+    "outOfScopeEdgeCases": [
+      "Rich activity from the pinned in-process agent-gateway agent (upstream follow-up, design section 15).",
+      "Requests queued while a remote is unreachable.",
+      "Avatars and connector conversations as bot children.",
+      "TLS termination; a private-network path is a documented requirement.",
+      "Live audio, kaiba or other backends' long-term knowledge."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-bots-overview.md",
+      "design-docs/user-qa/qa-bots-overview.md",
+      "impl-plans/active/bots-overview.md",
+      "impl-plans/active/bots-01-contracts.md",
+      "impl-plans/active/bots-02-board-projector.md",
+      "impl-plans/active/bots-03-activity-core.md",
+      "impl-plans/active/bots-04-acp-adapter.md",
+      "impl-plans/active/bots-05-model-catalog-core.md",
+      "impl-plans/active/bots-06-memory-core.md",
+      "impl-plans/active/bots-07-jobs-core.md",
+      "impl-plans/active/bots-08-pairing-server.md",
+      "impl-plans/active/bots-09-run-linkage.md",
+      "impl-plans/active/bots-10-bot-surfaces.md",
+      "impl-plans/active/bots-11-activity-runtime.md",
+      "impl-plans/active/bots-12-activity-surfaces.md",
+      "impl-plans/active/bots-13-model-surfaces.md",
+      "impl-plans/active/bots-14-web-bots.md",
+      "impl-plans/active/bots-15-memory-surfaces.md",
+      "impl-plans/active/bots-16-jobs-surfaces.md",
+      "impl-plans/active/bots-17-example-docs.md",
+      "impl-plans/active/bots-18-pairing-surfaces.md",
+      "impl-plans/active/bots-19-remote-surfaces.md",
+      "impl-plans/active/bots-20-web-management.md"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "bots-01-contracts",
+      "planPath": "impl-plans/active/bots-01-contracts.md",
+      "dependsOn": [],
+      "wave": 1,
+      "slice": "a,b contracts",
+      "writePaths": [
+        "Sources/RielaCore/Bots",
+        "Tests/RielaCoreTests/Bots",
+        "Sources/RielaCore/AdapterContracts.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+DynamicWorkflow.swift",
+        "Sources/RielaCore/RoutineStore.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift",
+        "Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift",
+        "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift",
+        "Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift",
+        "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift",
+        "Tests/RielaWorkTests/WorkStoreTests.swift",
+        "impl-plans/progress/bots-01-contracts.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner.swift", "intendedEdit": "Add two stored properties to DeterministicWorkflowRunRequest only (botContext, activityRecorder), default nil. No behaviour change. bots-03 edits the adapter call site of this file in wave 2."},
+        {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "ONE edit: append `+ botFamilyRows` to the aggregate expression at lines 8-15."},
+        {"path": "Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift", "intendedEdit": "Only testCachedSchemaRejectsDatabaseMigratedByNewerBuild (line 65-75): replace the literal 13 with a value derived from SQLiteWorkflowRuntimePersistenceStore.schemaGeneration + 1, both in the `PRAGMA user_version` statement and in the expected 'generation N' message. The test keeps asserting that a newer-build store is rejected."},
+        {"path": "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift", "intendedEdit": "Only the literal generation expectation (line 36: 12 becomes 13)."},
+        {"path": "Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift", "intendedEdit": "Only literal generation-12 expectations, if any."},
+        {"path": "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift", "intendedEdit": "Only literal generation-12 expectations, if any."},
+        {"path": "Tests/RielaWorkTests/WorkStoreTests.swift", "intendedEdit": "Only literal generation-12 expectations, if any."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Session store generation is 13 with the additive bot tables of design section 4.1; `grep -n \"schemaGeneration: Int64 = 13\" Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift` prints one line.",
+        "The shared contracts of impl-plans/active/bots-overview.md section 3 exist with those exact names; `grep -rn \"botFamilyRows\" Sources/RielaCore` prints the definition and the aggregator use.",
+        "`git diff --stat 7f04f6e6 -- Package.swift Package.resolved` prints nothing.",
+        "Build and test commands exit 0; the three new suites and every existing suite owning a generation expectation pass; every line left in generation-literals.log is explained in the progress log.",
+        "Progress log impl-plans/progress/bots-01-contracts.md is written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-01-contracts",
+        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/bots-overview/bots-01-contracts/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotStoreTests|BotStoreMigrationTests|ActivityContractTests|SQLiteRuntimeSchemaMigrationTests|SQLiteRuntimeExecutionRowsTests|WorkflowDefinitionStoreTests|WorkflowDefinitionRetentionTests|SQLiteWorkflowMessageLogTests|RoutineStoreTests|WorkStoreTests|SurfaceCatalogTests\"' > tmp/bots-overview/bots-01-contracts/test.log 2>&1",
+        "grep -rnE \"user_version = 1[2-9]|generation 1[2-9]\" Tests > tmp/bots-overview/bots-01-contracts/generation-literals.log"
+      ]
+    },
+    {
+      "planId": "bots-02-board-projector",
+      "planPath": "impl-plans/active/bots-02-board-projector.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "a,d",
+      "writePaths": [
+        "Sources/RielaCore/BotBoard",
+        "Tests/RielaCoreTests/BotBoard",
+        "impl-plans/progress/bots-02-board-projector.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "One pure projector turns runtime records into the board, overview row and ordered list, and owns the bot_list_state queries (design sections 5.3, 5.4, 8.1 to 8.5).",
+        "`grep -rn \"Date()\" Sources/RielaCore/BotBoard` prints nothing.",
+        "`grep -rn \"import RielaWork\" Sources/RielaCore/BotBoard` prints nothing.",
+        "Verification exits 0 with the three suites at 0 failures; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-02-board-projector",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotBoardProjectorTests|BotListProjectionTests|BotListStateStoreTests\"' > tmp/bots-overview/bots-02-board-projector/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-03-activity-core",
+      "planPath": "impl-plans/active/bots-03-activity-core.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "b",
+      "writePaths": [
+        "Sources/RielaCore/BotActivity",
+        "Tests/RielaCoreTests/BotActivity",
+        "Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift",
+        "impl-plans/progress/bots-03-activity-core.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner.swift", "intendedEdit": "Only the adapter call site near line 862-884 (pass the request to adapterExecutionContext and wrap the call in the settlement helper). Do not touch DeterministicWorkflowRunRequest (plan 01) or prompt code."},
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift", "intendedEdit": "Only the adapterExecutionContext call near line 180 and the adapter call it guards."},
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift", "intendedEdit": "Only the adapterExecutionContext call near line 85 and the adapter call it guards."},
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift", "intendedEdit": "Only the adapterExecutionContext call near line 54 and the adapter call it guards."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Activity updates become a bounded, replayable event log plus a state row written in one transaction; permission records support a bounded wait; the runner feeds and settles the recorder (design sections 6.1, 6.3 to 6.7).",
+        "`grep -rn \"settlingActivity\" Sources/RielaCore` shows the helper and four call sites.",
+        "`grep -rn \"Date()\" Sources/RielaCore/BotActivity/ActivityReducer.swift` prints nothing.",
+        "Verification exits 0: five new suites pass and DeterministicWorkflowRunnerTests is unchanged (no behaviour change without a recorder); progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-03-activity-core",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ActivityReducerTests|ActivityRecorderTests|ActivityPermissionTests|ActivitySettlementRunnerTests|ActivityWaitTests|DeterministicWorkflowRunnerTests\"' > tmp/bots-overview/bots-03-activity-core/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-04-acp-adapter",
+      "planPath": "impl-plans/active/bots-04-acp-adapter.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "b",
+      "writePaths": [
+        "Sources/RielaAdapters",
+        "Tests/RielaAdaptersTests",
+        "impl-plans/progress/bots-04-acp-adapter.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Every ACP v1 and v2 session/update becomes an AdapterActivityUpdate and session/request_permission is handed to the runtime (design sections 6.2, 6.6, 6.8, 7.3, 14), proven with scripted agents.",
+        "`grep -n \"GatewayClientPermissionResponder\" Sources/RielaAdapters/*.swift` prints nothing.",
+        "`grep -n \"default:\" Sources/RielaAdapters/AgentGatewayACPV2Turn.swift` shows no `default: return nil` in `consume`.",
+        "`git status --short .build Package.swift Package.resolved` prints nothing.",
+        "Verification exits 0: new suites pass and existing gateway suites still pass; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-04-acp-adapter",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ActivityNormalizationTests|GatewayScriptedAgentTests|GatewayModelSentinelTests|AgentGatewayACPV2Tests|AgentGatewayNodeAdapterTests|AgentGatewayCancellationTests|BackendWaitSignalClassifierTests|GatewayTurnLifetimeTests\"' > tmp/bots-overview/bots-04-acp-adapter/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-05-model-catalog-core",
+      "planPath": "impl-plans/active/bots-05-model-catalog-core.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "c",
+      "writePaths": [
+        "Sources/RielaCore/ModelCatalog",
+        "Tests/RielaCoreTests/ModelCatalog",
+        "Sources/RielaCore/WorkflowBackendPolicy.swift",
+        "impl-plans/progress/bots-05-model-catalog-core.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/WorkflowBackendPolicy.swift", "intendedEdit": "ONE edit in WorkflowBackendPolicyValidation.diagnostics (line 64-65): the 'is not known for this backend' diagnostic becomes severity warning with message 'model_unknown: is not known for this backend'."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Runtime-owned catalog of provider instances and models: bundled manifest merged with backend reports and custom models; unknown models warn, never fail (design sections 7.1 to 7.4, data and merge only).",
+        "`grep -rn \"URLSession\\|Process()\" Sources/RielaCore/ModelCatalog` prints nothing.",
+        "Verification exits 0: new suites pass and any existing WorkflowBackendPolicyTests still pass; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-05-model-catalog-core",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ModelCatalogTests|ProviderStoreTests|WorkflowBackendPolicyWarningTests|WorkflowBackendPolicyTests\"' > tmp/bots-overview/bots-05-model-catalog-core/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-06-memory-core",
+      "planPath": "impl-plans/active/bots-06-memory-core.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "e",
+      "writePaths": [
+        "Sources/RielaCore/BotMemory",
+        "Tests/RielaCoreTests/BotMemory",
+        "impl-plans/progress/bots-06-memory-core.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Bot memory is riela memory in the existing RielaMemoryStore under memory id bot-<botId>; every write goes through one function enforcing the write rules and producing an audited change set that can be listed, diffed and undone (design sections 9.1 to 9.5, 10.1).",
+        "`git status --short Packages/RielaMemory` prints nothing.",
+        "`grep -rn \"import RielaWork\" Sources/RielaCore/BotMemory` prints nothing.",
+        "Verification exits 0 with three suites at 0 failures; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-06-memory-core",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotMemoryWriterTests|BotMemoryMarkdownTests|BotMemoryUndoTests\"' > tmp/bots-overview/bots-06-memory-core/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-07-jobs-core",
+      "planPath": "impl-plans/active/bots-07-jobs-core.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "f",
+      "writePaths": [
+        "Sources/RielaCore/BotJobs",
+        "Tests/RielaCoreTests/BotJobs",
+        "impl-plans/progress/bots-07-jobs-core.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Deterministic job core: schedule and due check with catch-up, job ledger, suggestion store and states, look-around policy check and output contract (design sections 10.1 to 10.3).",
+        "`grep -rn \"Calendar.current\\|Date()\" Sources/RielaCore/BotJobs/BotJobSchedule+Due.swift` prints nothing.",
+        "Verification exits 0 with four suites at 0 failures; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-07-jobs-core",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotJobDueTests|BotJobLedgerTests|BotSuggestionStoreTests|LookAroundPolicyTests\"' > tmp/bots-overview/bots-07-jobs-core/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-08-pairing-server",
+      "planPath": "impl-plans/active/bots-08-pairing-server.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "g",
+      "writePaths": [
+        "Sources/RielaServer",
+        "Tests/RielaServerTests",
+        "impl-plans/progress/bots-08-pairing-server.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Server-side pairing on the existing API key store: one-time expiring code for an explicit address, redeem issues a scoped revocable client key, address rules, audit records, scope policy (design sections 11.1, 11.2).",
+        "`grep -rn \"print(\\|NSLog\\|FileHandle.standardError\" Sources/RielaServer/RielaPairing*.swift` prints nothing.",
+        "Verification exits 0: new suites pass and existing API key and worker key suites are unchanged; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-08-pairing-server",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"PairingCodeTests|PairingAddressTests|PairingHTTPTests|APIScopePolicyTests|ServerIdentityTests|RielaAPIKeyStoreTests|DistributedWorkerAPIKeyTests\"' > tmp/bots-overview/bots-08-pairing-server/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-09-run-linkage",
+      "planPath": "impl-plans/active/bots-09-run-linkage.md",
+      "dependsOn": ["bots-01-contracts"],
+      "wave": 2,
+      "slice": "a",
+      "writePaths": [
+        "Sources/RielaCLI/BotRuntime",
+        "Tests/RielaCLITests/BotRuntime",
+        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+Remote.swift",
+        "Sources/RielaCLI/WorkflowExecutionProvider.swift",
+        "Sources/RielaCLI/EventLiveServe.swift",
+        "Sources/RielaCLI/EventLiveServe+Cron.swift",
+        "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
+        "Sources/RielaCLI/EventReadOnly.swift",
+        "Sources/RielaCLI/RoutineCommands.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaWorkflowRegistry/RoutineService.swift",
+        "Sources/RielaWorkflowRegistry/RoutineGraphQLProvider.swift",
+        "Sources/RielaGraphQL/RoutineGraphQL.swift",
+        "Sources/RielaGraphQL/GraphQLWorkflowExecutionContracts.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "impl-plans/progress/bots-09-run-linkage.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add `botId: String?` to WorkflowRunOptions (stored property and init parameter, default nil). Nothing else."},
+        {"path": "Sources/RielaCLI/RielaCLIApplication.swift", "intendedEdit": "Only rielaCLIHelpText lines that list `workflow run` and `routine create` options, if those options are listed there: add `--bot <bot-id>`."},
+        {"path": "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift", "intendedEdit": "Add field `botId: String` to the ExecuteWorkflowInput descriptor (line 52) and to the CreateRoutineInput descriptor, and `botId: String` to the Routine object descriptor."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated file: regenerate with scripts/surface-parity/generate-sdl.sh, never hand-edit."},
+        {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "Add \"--bot\" to the cliOptions of the `workflow run` row (line 67 list). plan 01's aggregator line stays untouched."},
+        {"path": "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift", "intendedEdit": "Add \"--bot\" to the options of the routine.create row (line 459-470)."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`--bot` on runs and routines writes runtime-owned session links for local, GraphQL and routine runs; a paused bot gates new runs.",
+        "`grep -n \"botId\" Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift` shows the field in ExecuteWorkflowInput, CreateRoutineInput and Routine.",
+        "Running the SDL script a second time leaves `git diff --stat` for the SDL file unchanged.",
+        "Verification exits 0: existing routine and execution suites and the SDL gates still pass; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-09-run-linkage",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-09-run-linkage/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotRunLinkageTests|BotRoutineLinkageTests|RoutineCommandTests|RoutineGraphQLTests|WorkflowExecutionGraphQLTests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-09-run-linkage/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-10-bot-surfaces",
+      "planPath": "impl-plans/active/bots-10-bot-surfaces.md",
+      "dependsOn": ["bots-02-board-projector", "bots-03-activity-core", "bots-09-run-linkage"],
+      "wave": 3,
+      "slice": "a,d",
+      "writePaths": [
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaGraphQL/Bots",
+        "Tests/RielaCLITests/Bots",
+        "Tests/RielaGraphQLTests/Bots",
+        "Sources/RielaCLI/RielaClientCommandRouter.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ScopedParityCommands.swift",
+        "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/CLISubcommandHelp.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/RielaLibrary.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaApp/RielaAppWebGraphQL.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift",
+        "impl-plans/progress/bots-10-bot-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/RielaClientCommandRouter.swift", "intendedEdit": "Register `BotRoute` (passthrough route named `bot`) next to RoutineRoute (lines 32, 140-141)."},
+        {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add `case bot` to ScopedCommandKind (line 273-282) and the BotRoute branch beside the RoutineRoute branch (line 490)."},
+        {"path": "Sources/RielaCLI/ScopedParityCommands.swift", "intendedEdit": "Add `case .bot` beside `case .routine` (line 111) calling botResult(options:)."},
+        {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Add `case \"bot\"` expansion from BotClientAction.allRawValues and add \"bot\" to expandedRoutes."},
+        {"path": "Sources/RielaCLI/RielaCLIApplication.swift", "intendedEdit": "rielaCLIHelpText only (line 324-): add the `riela bot ...` usage lines."},
+        {"path": "Sources/RielaCLI/CLISubcommandHelp.swift", "intendedEdit": "Only if a family needs a registration entry for `riela bot --help` to print its lines; follow how `routine` is handled."},
+        {"path": "Sources/RielaCLI/ServeWebHost.swift", "intendedEdit": "ServeWebRegistryExecutor only (line 194-): chain BotsGraphQLDocumentExecutor into the composite. No routing change."},
+        {"path": "Sources/RielaCLI/ServeHTTPCommand.swift", "intendedEdit": "serveMachineGraphQLAdapter only (line 165-): chain BotsGraphQLDocumentExecutor into the API-key composite, behind APIKeyGraphQLAuthorization. This is the path paired clients use."},
+        {"path": "Sources/RielaApp/RielaAppWebGraphQL.swift", "intendedEdit": "Chain BotsGraphQLDocumentExecutor into the composite at line 38-75. Nothing else."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."},
+        {"path": "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift", "intendedEdit": "Add BotsGraphQLDocumentExecutor.queryFields / mutationFields to executorFields() (line 44-60)."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela bot` create/list/show/update/pause/resume/remove, overview, board and list state work on CLI and GraphQL on isolated stores; `.build/debug/riela bot --help` (through the arm64 wrapper) lists every verb.",
+        "`grep -c \"BotsGraphQLDocumentExecutor(\" Sources/RielaCLI/ServeWebHost.swift Sources/RielaCLI/ServeHTTPCommand.swift Sources/RielaCLI/RielaLibrary.swift Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift Sources/RielaApp/RielaAppWebGraphQL.swift` prints 1 for each file.",
+        "A second run of the SDL script leaves the SDL file unchanged.",
+        "Verification exits 0 with all nine parity gates green for the new family; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-10-bot-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-10-bot-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotCommandTests|BotsGraphQLTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityLibraryTests|SurfaceParitySkillTests|RoutineCommandTests\"' > tmp/bots-overview/bots-10-bot-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-11-activity-runtime",
+      "planPath": "impl-plans/active/bots-11-activity-runtime.md",
+      "dependsOn": ["bots-03-activity-core", "bots-09-run-linkage"],
+      "wave": 3,
+      "slice": "b",
+      "writePaths": [
+        "Sources/RielaCLI/BotRuntime",
+        "Tests/RielaCLITests/BotActivityRuntime",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/SessionReconcileCommand.swift",
+        "Sources/RielaCLI/SessionAbandonedInvocationReconciler.swift",
+        "Sources/RielaCLI/TerminalRetentionExecutor.swift",
+        "impl-plans/progress/bots-11-activity-runtime.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/WorkflowRunCommand.swift", "intendedEdit": "Set request.activityRecorder where the run request is built (line 212-). Keep plan 09's botContext and link code unchanged."},
+        {"path": "Sources/RielaCLI/SessionCommands.swift", "intendedEdit": "Set activityRecorder (and botContext rebuilt from the session's link) on the resume and rerun requests built at lines 618 and 894."},
+        {"path": "Sources/RielaCLI/SessionReconcileCommand.swift", "intendedEdit": "After a session is marked failed as orphaned in reconcile(sessionId:...) (line 169-), call the process-exit settlement for that session."},
+        {"path": "Sources/RielaCLI/SessionAbandonedInvocationReconciler.swift", "intendedEdit": "After an abandoned invocation closes a child session, call the process-exit settlement for that child session."},
+        {"path": "Sources/RielaCLI/TerminalRetentionExecutor.swift", "intendedEdit": "At the three session delete sites (near lines 382, 587, 758) also delete the session's activity rows and bot link row in the same transaction."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Activity rows are written by real runs, resumes and reruns, settled on process exit by the orphan reconcilers, and removed by retention (design sections 4.1, 6.4, 6.6, 6.7).",
+        "`grep -n \"activityRecorder\" Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCLI/SessionCommands.swift` shows the three request sites.",
+        "`grep -n \"deleteRuntimeRows\" Sources/RielaCLI/TerminalRetentionExecutor.swift` shows three call sites.",
+        "Verification exits 0 with existing reconcile and retention suites unchanged; if a class name differs from its file name, the exact filter is recorded in the progress log; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-11-activity-runtime",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotActivityRuntimeTests|BotRunLinkageTests|SessionReconcileCommandTests|SessionAbandonedInvocationTests|TerminalRetentionTests|TerminalRetentionPolicyTests\"' > tmp/bots-overview/bots-11-activity-runtime/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-12-activity-surfaces",
+      "planPath": "impl-plans/active/bots-12-activity-surfaces.md",
+      "dependsOn": ["bots-10-bot-surfaces", "bots-11-activity-runtime"],
+      "wave": 4,
+      "slice": "b",
+      "writePaths": [
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaGraphQL/Bots",
+        "Tests/RielaCLITests/Bots",
+        "Tests/RielaGraphQLTests/Bots",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "impl-plans/progress/bots-12-activity-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/RielaClientFamilyArguments.swift", "intendedEdit": "Add `activity` and `answer` to BotClientAction."},
+        {"path": "Sources/RielaCLI/RielaCLIApplication.swift", "intendedEdit": "rielaCLIHelpText only: usage lines for `bot activity` and `bot answer`."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela bot activity` (replay and live follow through one cursor-paged long-poll query) and `riela bot answer` work on CLI and GraphQL on isolated stores (design sections 6.5, 6.6, 12).",
+        "`grep -n \"botActivity\\|answerBotRequest\" Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift` shows both fields.",
+        "Verification exits 0 with parity gates green; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-12-activity-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-12-activity-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotActivityCommandTests|BotActivityGraphQLTests|BotCommandTests|BotsGraphQLTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-12-activity-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-13-model-surfaces",
+      "planPath": "impl-plans/active/bots-13-model-surfaces.md",
+      "dependsOn": ["bots-05-model-catalog-core", "bots-12-activity-surfaces"],
+      "wave": 5,
+      "slice": "c",
+      "writePaths": [
+        "Sources/RielaCLI/ModelCatalog",
+        "Sources/RielaGraphQL/Bots",
+        "Sources/RielaCLI/Bots",
+        "Tests/RielaCLITests/ModelCatalog",
+        "Tests/RielaGraphQLTests/Bots",
+        "Sources/RielaCore/BotActivity",
+        "Tests/RielaCoreTests/BotActivity",
+        "Sources/RielaCLI/RielaClientCommandRouter.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ScopedParityCommands.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "impl-plans/progress/bots-13-model-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/BotActivity", "intendedEdit": "SQLiteWorkflowActivityRecorder.swift only: after a configOptions or reportedModel update is recorded, call BotStore.mergeReportedConfig for the instance id equal to the state's backend. No other change in this directory."},
+        {"path": "Sources/RielaCLI/Bots", "intendedEdit": "BotsGraphQLProvider.swift (new provider methods) and BotsService.swift create/update validation only (model_unknown warning, providerInstanceId existence)."},
+        {"path": "Sources/RielaCLI/RielaClientCommandRouter.swift", "intendedEdit": "Register passthrough routes `model` and `provider`."},
+        {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "ScopedCommandKind cases `model`, `provider` and their route branches."},
+        {"path": "Sources/RielaCLI/ScopedParityCommands.swift", "intendedEdit": "Dispatch cases for `.model` and `.provider`."},
+        {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Expansion cases and expandedRoutes entries for `model` and `provider`."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela model` and `riela provider` commands and the GraphQL catalog work; reads do not probe; live backend reports reach the catalog; bot create/update warns with model_unknown (design sections 7.2 to 7.5).",
+        "`grep -rn \"BackendCapabilityProbe\" Sources/RielaCLI/ModelCatalog` shows it only in the refresh path.",
+        "Verification exits 0 with parity gates green; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-13-model-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-13-model-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ModelCatalogCommandTests|ModelCatalogGraphQLTests|ActivityCatalogReportTests|ActivityRecorderTests|BotCommandTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-13-model-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-14-web-bots",
+      "planPath": "impl-plans/active/bots-14-web-bots.md",
+      "dependsOn": ["bots-12-activity-surfaces"],
+      "wave": 5,
+      "slice": "a,b,d",
+      "writePaths": [
+        "web/src/bots",
+        "web/src/routes.ts",
+        "web/src/routes.test.ts",
+        "web/src/profileViewState.ts",
+        "web/src/App.tsx",
+        "web/src/App.test.ts",
+        "impl-plans/progress/bots-14-web-bots.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "web/src/routes.ts", "intendedEdit": "Add `bots` to the nav views and the route `{ view: 'bot-detail'; botId: string }` with hash `#/bots/{botId}`. Existing routes keep resolving."},
+        {"path": "web/src/profileViewState.ts", "intendedEdit": "Add 'bots' to NavigationView, 'bot-detail' to View, and the fallback `bot-detail` -> `bots`."},
+        {"path": "web/src/App.tsx", "intendedEdit": "Add the nav entry `{ id: 'bots', label: 'Bots', icon: <existing icon name> }`, the two <Match> branches, and hash sync for bot-detail. Do not add 'bots' to CLI_SERVE_HIDDEN_VIEWS."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "The web Bots view renders the server-projected ordered bot list, the board per bot, live activity of the selected item and answer buttons for pending requests (design sections 5.3, 5.4, 6.5, 6.6, 8.6, 12).",
+        "`grep -rn \"fetch(\\|/api/v1/\" web/src/bots` prints nothing (GraphQL through the shared client only).",
+        "`git status --short web/package.json web/bun.lock` prints nothing.",
+        "All verification commands exit 0; the progress log records the bun version, install command, exit code, log path and the empty git status result; an install failure is recorded as `BLOCKED: environment` and never as a pass.",
+        "Progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-14-web-bots",
+        "bun --version > tmp/bots-overview/bots-14-web-bots/bun-version.log 2>&1",
+        "(cd web && bun install --frozen-lockfile) > tmp/bots-overview/bots-14-web-bots/install.log 2>&1",
+        "(cd web && bun run typecheck) > tmp/bots-overview/bots-14-web-bots/typecheck.log 2>&1",
+        "(cd web && bun test src/bots src/routes.test.ts src/App.test.ts) > tmp/bots-overview/bots-14-web-bots/test.log 2>&1",
+        "(cd web && bun run lint) > tmp/bots-overview/bots-14-web-bots/lint.log 2>&1",
+        "(cd web && bun run build) > tmp/bots-overview/bots-14-web-bots/build.log 2>&1",
+        "git status --short web/package.json web/bun.lock"
+      ]
+    },
+    {
+      "planId": "bots-15-memory-surfaces",
+      "planPath": "impl-plans/active/bots-15-memory-surfaces.md",
+      "dependsOn": ["bots-06-memory-core", "bots-13-model-surfaces"],
+      "wave": 6,
+      "slice": "e",
+      "writePaths": [
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaCLI/BotRuntime",
+        "Sources/RielaGraphQL/Bots",
+        "Tests/RielaCLITests/Bots",
+        "Tests/RielaCLITests/BotRuntime",
+        "Tests/RielaGraphQLTests/Bots",
+        "Tests/RielaCoreTests/BotMemory",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "impl-plans/progress/bots-15-memory-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner.swift", "intendedEdit": "ONE edit before the guardAgentPrompt call (line 686): when request.botContext?.memoryBlock is non-empty, append it to the composed system prompt. Nothing else."},
+        {"path": "Sources/RielaCLI/BotRuntime", "intendedEdit": "BotRunLinker.prepare fills BotRunContext.memoryBlock; BotActivityRuntime.botContext(forExistingSession:) does the same. New file BotMemoryRuntime.swift for the shared helper."},
+        {"path": "Tests/RielaCoreTests/BotMemory", "intendedEdit": "One new file BotMemoryPromptInjectionTests.swift. Plan 06's files stay unchanged."},
+        {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "In the `bot` expansion, expand the `memory` action into its nested verbs (three-level paths), like `workflow definition`."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela bot memory` and `riela bot feedback` and the GraphQL memory fields make bot memory editable, audited and undoable; feedback uses the same writer; the memory block reaches prompts only for bot-linked runs and is inside the overflow guard's measurement (design sections 9.3 to 9.5, 10.4, 5.4).",
+        "`grep -n \"memoryBlock\" Sources/RielaCore/DeterministicWorkflowRunner.swift` shows the single injection site above the `guardAgentPrompt` call.",
+        "`git status --short Packages/RielaMemory` prints nothing.",
+        "Verification exits 0 with parity gates green; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-15-memory-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-15-memory-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotMemoryCommandTests|BotMemoryInjectionTests|BotMemoryPromptInjectionTests|BotMemoryGraphQLTests|BotMemoryWriterTests|BotCommandTests|DeterministicWorkflowRunnerTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-15-memory-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-16-jobs-surfaces",
+      "planPath": "impl-plans/active/bots-16-jobs-surfaces.md",
+      "dependsOn": ["bots-07-jobs-core", "bots-15-memory-surfaces"],
+      "wave": 7,
+      "slice": "f",
+      "writePaths": [
+        "Sources/RielaCLI/BotJobs",
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaGraphQL/Bots",
+        "Tests/RielaCLITests/BotJobs",
+        "Tests/RielaGraphQLTests/Bots",
+        "Tests/RielaCoreTests/BotJobs",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/EventLiveServe.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "impl-plans/progress/bots-16-jobs-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner.swift", "intendedEdit": "ONE edit where the agent node payload is prepared for the adapter input (near line 686-711): when request.botContext?.forceReadOnlySandbox is true, set the payload's agentSandbox to .readOnly. Keep plan 15's memory block edit."},
+        {"path": "Sources/RielaCLI/WorkflowRunCommand.swift", "intendedEdit": "ONE new optional stored property `var botContextOverride: (@Sendable (BotRunContext) -> BotRunContext)?` (default nil) declared next to `botLinkSource`, and ONE use: where plan 09 assigns `request.botContext` from BotRunLinker.prepare, apply the override to that value first. nil keeps behaviour byte-identical. Plan 09's botContext and link code and plan 11's activityRecorder code stay unchanged."},
+        {"path": "Tests/RielaCoreTests/BotJobs", "intendedEdit": "One new file ForcedReadOnlySandboxRunnerTests.swift. Plan 07's files stay unchanged."},
+        {"path": "Sources/RielaCLI/EventLiveServe.swift", "intendedEdit": "In the serve repeat loop (around line 192-320) call the job scheduler tick once per iteration. No other change."},
+        {"path": "Sources/RielaCLI/ServeHTTPCommand.swift", "intendedEdit": "Start the job scheduler loop after the server is ready and cancel it on shutdown."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Memory upkeep applies model text through the audited writer; look-around cannot write and is enforced outside the prompt; suggestions need acceptance; jobs and suggestions are exposed on CLI and GraphQL and ticked by serve (design sections 10.1 to 10.3, 5.3).",
+        "`grep -n \"botContextOverride\" Sources/RielaCLI/WorkflowRunCommand.swift` shows the declaration and exactly one use.",
+        "`grep -n \"forceReadOnlySandbox\" Sources/RielaCore/DeterministicWorkflowRunner.swift` shows the single override site.",
+        "`grep -rn \"tickIfDue\" Sources/RielaCLI/EventLiveServe.swift Sources/RielaCLI/ServeHTTPCommand.swift` shows one call in each.",
+        "Verification exits 0; BotRunLinkageTests, BotActivityRuntimeTests and BotMemoryInjectionTests still pass (plan 09, 11 and 15 behaviour survived); progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-16-jobs-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-16-jobs-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotJobRunnerTests|LookAroundReadOnlyTests|ForcedReadOnlySandboxRunnerTests|BotJobSchedulerTests|BotJobsGraphQLTests|BotJobDueTests|BotMemoryCommandTests|BotCommandTests|BotRunLinkageTests|BotActivityRuntimeTests|BotMemoryInjectionTests|DeterministicWorkflowRunnerTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-16-jobs-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-17-example-docs",
+      "planPath": "impl-plans/active/bots-17-example-docs.md",
+      "dependsOn": ["bots-16-jobs-surfaces"],
+      "wave": 8,
+      "slice": "cross",
+      "writePaths": [
+        "examples/bot-routine-memory-upkeep",
+        "examples/README.md",
+        "docs/bots.md",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/BotExample",
+        "impl-plans/progress/bots-17-example-docs.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Tests/RielaCLITests/RielaExampleCatalog.swift", "intendedEdit": "Insert \"bot-routine-memory-upkeep\" into rielaExampleWorkflowNames() at its alphabetical position."},
+        {"path": "Tests/RielaCLITests/RielaExampleParityTests.swift", "intendedEdit": "ONE edit: ExampleCatalog.expectedMockScenarioCount (line 14) 53 becomes 54. Also add the workflow id mapping only if expectedWorkflowId(for:) needs an entry for names that differ from ids (it should not)."},
+        {"path": "examples/README.md", "intendedEdit": "One list entry for the new example, in the style of neighbouring entries."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "The mock-scenario example bundle bot-routine-memory-upkeep demonstrates a bot with a routine, the overview and the memory-upkeep loop, is registered, and docs/bots.md documents the commands of plans 09 to 16 (design section 13).",
+        "`ls examples/bot-routine-memory-upkeep` shows workflow.json, mock-scenario.json, upkeep-mock-scenario.json, memory-seed.md, EXPECTED_RESULTS.md, README.md, nodes, prompts.",
+        "`grep -n \"expectedMockScenarioCount = 54\" Tests/RielaCLITests/RielaExampleParityTests.swift` prints one line.",
+        "`git status --short Sources` shows no change made by this plan.",
+        "Verification exits 0 and the mock-run log ends with a completed session; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-17-example-docs tmp/bots-overview/example",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotExampleWalkthroughTests|RielaExampleParityTests/testAllRielaExampleWorkflowsArePortedAndValidateInSwift\"' > tmp/bots-overview/bots-17-example-docs/test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run bot-routine-memory-upkeep --workflow-definition-dir examples --mock-scenario examples/bot-routine-memory-upkeep/mock-scenario.json --session-store tmp/bots-overview/example/sessions --artifact-root tmp/bots-overview/example/artifacts --output json' > tmp/bots-overview/bots-17-example-docs/mock-run.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-18-pairing-surfaces",
+      "planPath": "impl-plans/active/bots-18-pairing-surfaces.md",
+      "dependsOn": ["bots-08-pairing-server", "bots-16-jobs-surfaces"],
+      "wave": 8,
+      "slice": "g",
+      "writePaths": [
+        "Sources/RielaCLI/Pairing",
+        "Tests/RielaCLITests/Pairing",
+        "Sources/RielaGraphQL/Bots",
+        "Tests/RielaGraphQLTests/Bots",
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaCLI/APIKeyGraphQLAuthorization.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ParityCommandSupport.swift",
+        "Sources/RielaCLI/ScopedParityCommands+Serve.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "impl-plans/progress/bots-18-pairing-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/APIKeyGraphQLAuthorization.swift", "intendedEdit": "After a bearer token is accepted: resolve the key record, enforce RielaAPIScopePolicy on the document's root fields, call store.touch, and expose a grant re-check closure for long waits. Requests without a credential keep today's behaviour."},
+        {"path": "Sources/RielaCLI/ServeHTTPCommand.swift", "intendedEdit": "Handle --pairing-address / --pairing-scope / --server-name at start (mint and print once), pass the server identity to the hosts. Keep plan 10's composite edit and plan 16's scheduler edit."},
+        {"path": "Sources/RielaCLI/ServeWebHost.swift", "intendedEdit": "In routedResponse (line 119-), answer POST /api/v1/pairing/redeem BEFORE the passkey, API-key and browserAccess checks. The literal \"/api/v1/pairing/redeem\" must appear in this file. Also pass the server identity to the bots provider origin."},
+        {"path": "Sources/RielaCLI/ParityCommandSupport.swift", "intendedEdit": "ParsedParityOptions: add --pairing-address, --pairing-scope, --server-name, --address, --grant options."},
+        {"path": "Sources/RielaCLI/ScopedParityCommands+Serve.swift", "intendedEdit": "Dispatch `serve pairing mint|list|revoke` to the new pairing commands before the HTTP probe actions."},
+        {"path": "Sources/RielaAppSupport/RielaWebAPIRouteTable.swift", "intendedEdit": "Declare POST /api/v1/pairing/redeem with owner Sources/RielaCLI/ServeWebHost.swift and include it in `all` (not in desktopOnly)."},
+        {"path": "Sources/RielaCLI/Bots", "intendedEdit": "BotsService/BotsGraphQLProvider: origin from the server identity when hosted by `riela serve`; pairing provider methods; wait re-check from the task-local grant check."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela serve` pairing (mint, list, revoke), the redeem route, scope enforcement and server origin work end to end against the real serve routing; revocation and scopes are enforced; the web route gate accepts the new route.",
+        "`grep -n \"/api/v1/pairing/redeem\" Sources/RielaCLI/ServeWebHost.swift Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` shows both.",
+        "In ServeWebHost.routedResponse the redeem branch is above the line that calls browserAccess.rejection.",
+        "The SDL and test commands exit 0 and `grep -rn \"rp1\\.\" tmp/bots-overview/bots-18-pairing-surfaces/test.log` prints nothing (no pairing code in test logs).",
+        "Progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-18-pairing-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-18-pairing-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"PairingServeTests|PairingScopeEnforcementTests|PairingGraphQLTests|PairingCodeTests|BotActivityGraphQLTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParityWebAPITests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-18-pairing-surfaces/test.log 2>&1",
+        "grep -rn \"rp1\\.\" tmp/bots-overview/bots-18-pairing-surfaces/test.log"
+      ]
+    },
+    {
+      "planId": "bots-19-remote-surfaces",
+      "planPath": "impl-plans/active/bots-19-remote-surfaces.md",
+      "dependsOn": ["bots-18-pairing-surfaces"],
+      "wave": 9,
+      "slice": "g",
+      "writePaths": [
+        "Sources/RielaCLI/Remotes",
+        "Tests/RielaCLITests/Remotes",
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaCLI/BotJobs",
+        "Sources/RielaCLI/ModelCatalog",
+        "Sources/RielaGraphQL/Bots",
+        "Tests/RielaGraphQLTests/Bots",
+        "Sources/RielaCLI/RielaClientCommandRouter.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ScopedParityCommands.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/RoutineCommands.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "impl-plans/progress/bots-19-remote-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/Bots", "intendedEdit": "BotsService/BotsGraphQLProvider/command files: replace the `remote_not_configured` stub with forwarding; add --remote / --all-remotes to ParsedBotOptions."},
+        {"path": "Sources/RielaCLI/BotJobs", "intendedEdit": "Job and suggestion commands and provider methods accept the remote selector and forward."},
+        {"path": "Sources/RielaCLI/ModelCatalog", "intendedEdit": "Model and provider commands and provider methods accept the remote selector and forward."},
+        {"path": "Sources/RielaCLI/ParsedWorkflowOptions.swift", "intendedEdit": "Add `--remote <name>` to workflow run options."},
+        {"path": "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift", "intendedEdit": "When --remote is set, resolve it to endpoint and auth token from the registry and fill the existing endpoint/authToken options. --remote together with --endpoint is a usage error."},
+        {"path": "Sources/RielaCLI/RoutineCommands.swift", "intendedEdit": "`routine create --remote <name>` sends the createRoutine mutation to that server instead of writing locally."},
+        {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "Add \"--remote\" to the cliOptions of the `workflow run` row only."},
+        {"path": "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift", "intendedEdit": "Add \"--remote\" to the options of the routine.create row only."},
+        {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`riela remote` client registry under the credential-dir convention, client-side pairing, forwarding of every bot-family operation with origin verification, disconnected state and scope enforcement through a real server composite; `--remote` selectors on runs and routines.",
+        "`grep -rn \"remote_not_configured\" Sources` prints nothing.",
+        "`grep -rn \"\\.config\" Sources/RielaCLI/Remotes` prints nothing.",
+        "Verification exits 0 with parity gates green; progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-19-remote-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/bots-overview/bots-19-remote-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RemoteRegistryTests|RemotePairingClientTests|RemoteForwardingTests|RemotesGraphQLTests|GraphQLSelectionBuilderTests|PairingScopeEnforcementTests|BotCommandTests|BotRunLinkageTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParitySkillTests\"' > tmp/bots-overview/bots-19-remote-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "bots-20-web-management",
+      "planPath": "impl-plans/active/bots-20-web-management.md",
+      "dependsOn": ["bots-14-web-bots", "bots-19-remote-surfaces"],
+      "wave": 10,
+      "slice": "c,e,f,g",
+      "writePaths": [
+        "web/src/bots",
+        "web/src/models",
+        "web/src/routes.ts",
+        "web/src/routes.test.ts",
+        "web/src/profileViewState.ts",
+        "web/src/App.tsx",
+        "web/src/App.test.ts",
+        "impl-plans/progress/bots-20-web-management.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "web/src/routes.ts", "intendedEdit": "Add nav view `models` with hash `#/models`. Existing routes, including plan 14's bot routes, keep resolving."},
+        {"path": "web/src/profileViewState.ts", "intendedEdit": "Add 'models' to NavigationView."},
+        {"path": "web/src/App.tsx", "intendedEdit": "Add the nav entry `{ id: 'models', label: 'Models', ... }` and its <Match> branch."}
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "The web console gains the models view, bot memory editor, suggestion cards, job controls, and the remote switcher with host label, filter and disconnected state (design sections 7.5, 9.3, 10.3, 11.4, 11.5).",
+        "`grep -rn \"localStorage\\|console.log\" web/src/bots web/src/models` prints nothing.",
+        "`git status --short web/package.json web/bun.lock` prints nothing.",
+        "All verification commands exit 0 with the whole web test suite passing; the progress log records the bun version, install command, exit code, log path and the empty git status result; an install failure is recorded as `BLOCKED: environment` and never as a pass.",
+        "Progress log written."
+      ],
+      "verification": [
+        "mkdir -p tmp/bots-overview/bots-20-web-management",
+        "bun --version > tmp/bots-overview/bots-20-web-management/bun-version.log 2>&1",
+        "(cd web && bun install --frozen-lockfile) > tmp/bots-overview/bots-20-web-management/install.log 2>&1",
+        "(cd web && bun run typecheck) > tmp/bots-overview/bots-20-web-management/typecheck.log 2>&1",
+        "(cd web && bun run test) > tmp/bots-overview/bots-20-web-management/test.log 2>&1",
+        "(cd web && bun run lint) > tmp/bots-overview/bots-20-web-management/lint.log 2>&1",
+        "(cd web && bun run build) > tmp/bots-overview/bots-20-web-management/build.log 2>&1",
+        "git status --short web/package.json web/bun.lock"
+      ]
+    }
+  ],
+  "pathContract": "Each plan file's leading JSON block is the source of truth for writePaths, sharedPaths and sharedPathNotes; this manifest copies them unchanged. Plans that are not ordered by dependsOn have disjoint paths (W2 members, 10/11, 13/14, 17/18)."
+}

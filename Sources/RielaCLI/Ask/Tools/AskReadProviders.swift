@@ -8,7 +8,7 @@ struct AskReadProviders: Sendable {
   let sessions: GraphQLRuntimeSnapshotQueryService
   let console: any GraphQLConsoleProviding
   let registry: any WorkflowRegistryGraphQLProviding
-  let authoringRegistry: Result<FileWorkflowRegistryGraphQLProvider, AskError>
+  let authoringRegistry: AskLazy<FileWorkflowRegistryGraphQLProvider>
   let definitions: any WorkflowDefinitionGraphQLProviding
   let routines: any RoutineGraphQLProviding
   let bots: any BotsGraphQLProviding
@@ -35,7 +35,7 @@ struct AskReadProviders: Sendable {
       observabilityService: SessionObservabilityComposition.makeService(store: runtime)
     )
     let registry = FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
-    let authoring = Result { () throws(AskError) -> FileWorkflowRegistryGraphQLProvider in
+    let authoring = AskLazy { () throws(AskError) -> FileWorkflowRegistryGraphQLProvider in
       try FileWorkflowRegistryGraphQLProvider(
         workingDirectory: workingDirectory, webPrincipalId: "ask",
         retainKey: AskRetainKey.load(storeRoot: root), authoringProjection: true

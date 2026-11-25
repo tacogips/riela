@@ -12,7 +12,7 @@ protocol AskMutationSurface: Sendable {
 struct ProviderAskMutationSurface: AskMutationSurface {
   let sessions: any GraphQLSessionControlProviding
   let bots: any BotsGraphQLProviding
-  let registry: Result<any GraphQLDocumentExecuting, AskError>
+  let registry: AskLazy<any GraphQLDocumentExecuting>
   let workingDirectory: String
   let environment: [String: String]
 

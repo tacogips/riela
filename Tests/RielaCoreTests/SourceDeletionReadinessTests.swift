@@ -249,7 +249,7 @@ final class SourceDeletionReadinessTests: XCTestCase {
       .filter { [".json", ".md", ".ts"].contains(URL(fileURLWithPath: $0).pathExtensionWithDot) }
       .sorted()
     let rules: [(String, NSRegularExpression)] = [
-      ("telegram-token-bearing-url", try NSRegularExpression(pattern: #"(?:api\.telegram\.org/(?:file/)?bot|/(?:file/)?bot)(?![$\{<])([A-Za-z0-9:_-]{6,})"#, options: [.caseInsensitive])),
+      ("telegram-token-bearing-url", try NSRegularExpression(pattern: #"(?:api\.telegram\.org/(?:file/)?bot(?![$\{<])([A-Za-z0-9:_-]{6,})|/(?:file/)?bot(\d+:[A-Za-z0-9_-]{3,}))"#, options: [.caseInsensitive])),
       ("matrix-access-token-url", try NSRegularExpression(pattern: #"access_token=(?![$\{<])([^&"'\s)]+)"#, options: [.caseInsensitive])),
       ("authorization-bearer-literal", try NSRegularExpression(pattern: #"authorization["'\s:]+Bearer\s+(?![$\{<])([A-Za-z0-9._:-]{6,})"#, options: [.caseInsensitive])),
       ("exported-secret-literal", try NSRegularExpression(pattern: #"export\s+[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD)[A-Z0-9_]*=(?!<)([^\s]+)"#, options: [.caseInsensitive])),

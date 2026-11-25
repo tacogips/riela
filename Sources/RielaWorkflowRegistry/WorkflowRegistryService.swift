@@ -127,7 +127,10 @@ public struct WorkflowRegistryService: Sendable {
         overwrite: overwrite,
         activationState: activationState
       )
-      let entry = try WorkflowRegistryService(registry: WorkflowMutableRegistry()).mutableEntry(
+      // Read the registered result back through a plain registry: the registration's own lock
+      // sequence (and any hooks observing it) ends with `registry.register`.
+      let readBack = WorkflowRegistryService(registry: WorkflowMutableRegistry())
+      let entry = try readBack.mutableEntry(
         workflowId: registered.workflowId,
         workingDirectory: workingDirectory
       )
@@ -135,7 +138,7 @@ public struct WorkflowRegistryService: Sendable {
         accepted: true,
         overwritten: registered.overwritten,
         workflow: entry,
-        definitionRevision: try WorkflowHistoryCanonicalCoding.sha256(definitionData(for: entry))
+        definitionRevision: try WorkflowHistoryCanonicalCoding.sha256(readBack.definitionData(for: entry))
       )
     }
   }

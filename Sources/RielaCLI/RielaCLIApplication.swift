@@ -404,7 +404,7 @@ Usage:
   Leading-dash values for definition options must use --option=<value>, for example --text=--- yaml.
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela routine create --name <name> --task <task> --workflow <workflow> [--remote <name>] [options]
-  riela workflow run <workflow> [--remote <name>] [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--bot <bot-id>] [--supervisor-mode] [--output jsonl|json|text]
+  riela workflow run <workflow> [--variables <json|@file>] [--remote <name>] [--instance <name>] [--mock-scenario <path>] [--bot <bot-id>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]
   riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--allow-overlap] [--server URL] [--profile P] [--cwd <dir>]

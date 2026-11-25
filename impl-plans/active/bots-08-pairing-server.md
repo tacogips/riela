@@ -247,3 +247,33 @@ Extra test in `APIScopePolicyTests`:
 Verification is unchanged (the same filter). Record the pre-edit and
 post-edit SHA-256 of `ConfigurationGraphQL.swift` in the progress log
 (overview §2).
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 2)
+
+Wave 5 state: the implementation of this plan is on disk and its
+verification passed (23 tests, 0 failures, log
+`tmp/bots-overview/bots-08-pairing-server/test.log`). The plan was still
+blocked as `implementation-materially-unverified` because the scope check
+was reported as one compound command using the shell `test` builtin, which
+the progress gate reads as a test run with zero tests. No scope or contract
+of this plan changes in this round.
+
+On redispatch:
+
+- Do not rewrite the implementation. Read the files listed in
+  `impl-plans/progress/bots-08-pairing-server.md`, confirm they still match
+  the recorded post-edit SHA-256 values, and repair only what a failing
+  check shows.
+- Rerun the Verification command of this plan and report it as the only
+  behavioural test command, with its exit status, test count and failure
+  count.
+- Report each done-criterion check as its own plain command, with the
+  expected output stated in prose:
+  - `git diff --numstat 666108c9 -- Sources/RielaGraphQL/ConfigurationGraphQL.swift`
+    → one line starting `1<TAB>1`.
+  - `git diff --stat 666108c9 -- Tests/RielaServerTests/RielaAPIKeyStoreTests.swift Tests/RielaServerTests/DistributedWorkerAPIKeyTests.swift`
+    → no output.
+  - `grep -rn "print(\|NSLog\|FileHandle.standardError" Sources/RielaServer/RielaPairingAudit.swift Sources/RielaServer/RielaPairingAddress.swift Sources/RielaServer/RielaPairingHTTP.swift`
+    → no output (grep exit status 1 is the expected result; say so).
+- Do not wrap any check in `test`, `[ ... ]` or a subshell that hides
+  individual exit codes.

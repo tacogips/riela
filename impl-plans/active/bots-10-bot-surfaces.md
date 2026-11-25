@@ -252,3 +252,18 @@ nine parity gates are green with the new family.
 - `grep -c "BotsGraphQLDocumentExecutor(" Sources/RielaCLI/ServeWebHost.swift Sources/RielaCLI/ServeHTTPCommand.swift Sources/RielaCLI/RielaLibrary.swift Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift Sources/RielaApp/RielaAppWebGraphQL.swift` prints 1 for each file.
 - A second run of the SDL script leaves the SDL file unchanged.
 - Verification exits 0; progress log written.
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 2)
+
+No scope change for this plan. `bots-09-run-linkage` (a dependency, earlier
+wave) now edits one call in three files this plan also owns:
+`Sources/RielaCLI/RielaLibrary.swift`,
+`Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift` and
+`Sources/RielaApp/RielaAppWebGraphQL.swift`. In each, the
+`FileRoutineGraphQLProvider(...)` call carries a `botExists:` argument.
+
+- Read each file fresh before editing and keep the `botExists:` argument
+  unchanged when chaining `BotsGraphQLDocumentExecutor`.
+- Added done criterion:
+  `grep -c "botExists:" Sources/RielaCLI/RielaLibrary.swift Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift Sources/RielaApp/RielaAppWebGraphQL.swift`
+  still prints a count of at least 1 for each file.

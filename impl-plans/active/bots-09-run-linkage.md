@@ -30,12 +30,22 @@
     "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
     "Sources/RielaCore/SurfaceCatalog+Rows.swift",
     "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift",
+    "Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift",
+    "Sources/RielaCLI/RielaLibrary.swift",
+    "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
+    "Sources/RielaApp/RielaAppWebGraphQL.swift",
     "impl-plans/progress/bots-09-run-linkage.md"
   ],
   "sharedPaths": [],
   "sharedPathNotes": [
     {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add `botId: String?` to WorkflowRunOptions (stored property and init parameter, default nil). Nothing else."},
-    {"path": "Sources/RielaCLI/WorkflowCommands.swift", "intendedEdit": "Only WorkflowRemoteRunRequest (line 256: one optional `botId` property and one last init parameter, default nil) and remoteRunInputObject (line 464: drop `private`, emit `botId` when set). Nothing else in the file."},
+    {"path": "Sources/RielaCLI/WorkflowCommands.swift", "intendedEdit": "Only WorkflowRemoteRunRequest (line 256: one optional `botId` property and one last init parameter, default nil), remoteRunInputObject (line 464: drop `private`, emit `botId` when set) and the GraphQL-errors branch of executeGraphQL (line 451-453: call the new module-internal function remoteRunGraphQLErrorMessage). Nothing else in the file."},
+    {"path": "Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift", "intendedEdit": "In the executeWorkflow case only: add \"botId\" to the `allowed` set (line 17-20) and one nonempty-string check for it, written like the instanceIdentity check."},
+    {"path": "Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift", "intendedEdit": "Only the catch at line 124-126 of the root loop: add one `catch let rejection as GraphQLWorkflowExecutionRejection` clause before the generic catch. Nothing else."},
+    {"path": "Sources/RielaCLI/RielaLibrary.swift", "intendedEdit": "Line 143-146 only: pass `botExists:` to FileRoutineGraphQLProvider. Nothing else."},
+    {"path": "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift", "intendedEdit": "Line 51-54 only: pass `botExists:` to FileRoutineGraphQLProvider. Nothing else."},
+    {"path": "Sources/RielaApp/RielaAppWebGraphQL.swift", "intendedEdit": "Line 68 only: pass `botExists:` to FileRoutineGraphQLProvider. Nothing else."},
     {"path": "Sources/RielaCLI/RielaCLIApplication.swift", "intendedEdit": "Only rielaCLIHelpText lines that list `workflow run` and `routine create` options, if those options are listed there: add `--bot <bot-id>`."},
     {"path": "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift", "intendedEdit": "Add field `botId: String` to the ExecuteWorkflowInput descriptor (line 52) and to the CreateRoutineInput descriptor, and `botId: String` to the Routine object descriptor."},
     {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated file: regenerate with scripts/surface-parity/generate-sdl.sh, never hand-edit."},
@@ -264,3 +274,143 @@ Extra tests in `BotRunLinkageTests`:
 Verification is unchanged (the same filter). Record the pre-edit and
 post-edit SHA-256 of `WorkflowCommands.swift` in the progress log
 (overview §2).
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 2)
+
+This is the last amendment round. It resolves the three blockers of wave 5.
+Where it differs from round 1, this section wins. No behaviour of design
+§5.1–§5.2 changes.
+
+This plan now also owns five more exact files:
+`Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift`,
+`Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift`,
+`Sources/RielaCLI/RielaLibrary.swift`,
+`Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift`,
+`Sources/RielaApp/RielaAppWebGraphQL.swift`.
+The last three are edited again by `bots-10-bot-surfaces` in the next wave
+(it depends on this plan, so the edits are serial).
+
+### Blocker 1: `executeWorkflow` validation rejects `botId`
+
+`GraphQLWorkflowExecutionValidation.swift:17`:
+
+- Add `"botId"` to the `allowed` set.
+- When `botId` is present and not null it must be a string that is nonempty
+  after trimming; otherwise `executionInvalid("botId must be nonempty")`.
+  Imitate the `instanceIdentity` check at line 30-35.
+- Nothing else in the file changes; the `workflowExecution` case is untouched.
+
+### Blocker 2: `bot_not_found` and `bot_paused` are lost on the GraphQL path
+
+Contract, in four parts:
+
+1. `GraphQLWorkflowExecutionContracts.swift` (already owned): add
+   `public struct GraphQLWorkflowExecutionRejection: Error, Equatable, Sendable { public var code: String; public var message: String; public init(code:message:) }`.
+2. `WorkflowExecutionGraphQL.swift`, root loop catch (line 124-126): add
+   before the generic catch one clause that returns
+   `workflowExecutionError(code: rejection.code, message: rejection.message, completedData: data)`.
+   Every other error keeps `WORKFLOW_EXECUTION_FAILED` and the fixed message
+   `workflow execution failed`. Do not put any other error's text in a
+   response.
+3. `WorkflowExecutionProvider.executeWorkflow` (already owned): when
+   `input.botId` is set, call `BotRunLinker.prepare` **before**
+   `command.run`, with the session store root the run will use (resolve it
+   with one helper in `Sources/RielaCLI/BotRuntime` that both this provider
+   and `WorkflowRunCommand` call, so the two cannot differ). Map its failure
+   to a rejection and throw it:
+   - bot missing → `code: "BOT_NOT_FOUND"`, `message: "bot_not_found: <id>"`
+   - bot paused → `code: "BOT_PAUSED"`, `message: "bot_paused: <id>"`
+
+   No session is created in either case. `WorkflowRunCommand` still runs its
+   own `prepare` (round 1); if the bot changes between the two checks the
+   run fails as a generic `WORKFLOW_EXECUTION_FAILED`, which is acceptable.
+   To map without string matching, `BotRunLinker.prepare` throws a small
+   typed error (`enum BotRunLinkError: Error { case notFound(String), paused(String) }`
+   in `BotRuntime`); `WorkflowRunCommand` turns it into the `CLIUsageError`
+   text of the original plan.
+4. `WorkflowCommands.swift`: add a module-internal free function
+   `func remoteRunGraphQLErrorMessage(_ errors: [JSONValue]) -> String`.
+   When the first error is an object whose `extensions.code` is
+   `BOT_NOT_FOUND` or `BOT_PAUSED` and whose `message` is a nonempty string,
+   it returns that message; in every other case it returns exactly
+   `remote run returned GraphQL errors` (today's text). The branch at line
+   451-453 throws `CLIUsageError(remoteRunGraphQLErrorMessage(errors))`.
+   This relaxes the round 1 rule "do not touch the HTTP transport" for this
+   one branch only; request building, headers, auth and status handling stay
+   untouched.
+
+### Blocker 3: GraphQL routine creation does not check that the bot exists
+
+Design §5.2 line 240 requires the bot to exist. Contract:
+
+- `FileRoutineGraphQLProvider` (`RoutineGraphQLProvider.swift`, already
+  owned): add `public var botExists: (@Sendable (String) -> Bool)?` and a
+  last init parameter `botExists: (@Sendable (String) -> Bool)? = nil`; pass
+  it to `RoutineService` in the private `service` property. With nil the
+  provider behaves as today (`Tests/RielaCLITests/RoutineCommandTests.swift:471`
+  compiles unchanged).
+- `Sources/RielaCLI/BotRuntime`: add
+  `public static func botExists(sessionStoreRoot: String) -> @Sendable (String) -> Bool`
+  on `BotRunLinker` (true when `BotStore.load` returns a record; a read
+  error counts as false). It must be `public` because `RielaApp` calls it.
+- The three production construction sites pass the closure, each built from
+  the session store root that the same composite already uses:
+  - `RielaLibrary.swift:143`: root =
+    `CLIWorkflowSessionStore.resolveRootDirectory(sessionStore: sessionStore, scope: scope, workingDirectory: workingDirectory)`
+    (the values given to `RielaSessionControlProvider` a few lines above).
+  - `ScopedParityCommands+GraphQLDocument.swift:51`: the same call with
+    `parsed.sessionStore`, `parsed.scope`.
+  - `RielaAppWebGraphQL.swift:68`: the local `sessionStoreRoot` (line 37).
+    If its type is optional or relative, resolve it the way the
+    `RielaSessionControlProvider` call at line 60-63 resolves it.
+- In each of the three files, change only the `FileRoutineGraphQLProvider(...)`
+  call. Do not chain a Bots executor (plan 10) and do not reorder the
+  composite.
+
+### Extra tests (all in `Tests/RielaCLITests/BotRuntime/`)
+
+`BotRunLinkageTests`:
+- document `mutation { executeWorkflow(input: {workflowName: "w", botId: ""}) { status } }`
+  through `WorkflowExecutionGraphQLDocumentExecutor` with a locally trusted
+  request → error code `INVALID_EXECUTION_INPUT`; with `botId: 5` → the same.
+- the executor with a stub provider that throws
+  `GraphQLWorkflowExecutionRejection(code: "BOT_PAUSED", message: "bot_paused: b1")`
+  → response error has `extensions.code == "BOT_PAUSED"` and that message; a
+  stub that throws any other error → `WORKFLOW_EXECUTION_FAILED` with
+  message `workflow execution failed`.
+- real `WorkflowExecutionProvider` with an isolated session store:
+  `botId: "missing"` → rejection `BOT_NOT_FOUND`, no session row; paused
+  bot → `BOT_PAUSED`, no session row.
+- `remoteRunGraphQLErrorMessage`: one error with code `BOT_NOT_FOUND` and
+  message `bot_not_found: b1` → `bot_not_found: b1`; code
+  `WORKFLOW_EXECUTION_FAILED` → `remote run returned GraphQL errors`; empty
+  array, a non-object element, or a missing message → the same default text.
+
+`BotRoutineLinkageTests`:
+- `FileRoutineGraphQLProvider` with `botExists: { $0 == "b1" }`:
+  `createRoutine` with `botId: "b1"` → payload carries `botId`; with
+  `botId: "missing"` → error containing `bot_not_found`; without `botId` →
+  created, closure not consulted.
+- `riela graphql document` (the command of
+  `ScopedParityCommands+GraphQLDocument.swift`) with an isolated
+  `--session-store`, working directory, `eventRoot` and `routineStoreRoot`:
+  `createRoutine` with `botId: "missing"` → output contains `bot_not_found`
+  and no routine is stored; after creating bot `b1` in that store → success.
+
+### Done criteria added
+
+- `grep -c "botExists:" Sources/RielaCLI/RielaLibrary.swift Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift Sources/RielaApp/RielaAppWebGraphQL.swift`
+  prints a count of at least 1 for each of the three files.
+- `grep -n '"botId"' Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift`
+  prints at least one line.
+- `arch -arm64 /bin/zsh -lc 'swift build' > tmp/bots-overview/bots-09-run-linkage/build.log 2>&1`
+  exits 0 (needed because `RielaApp` is not built by the test filter).
+
+### Reporting rule
+
+Report `swift test` as the only behavioural test command. Report every
+scope, grep and diff check as its own plain command (`git diff --numstat`,
+`grep -n`, `grep -c`) with the expected output stated in prose. Do not wrap
+checks in the shell `test` builtin or `[ ... ]`: the progress gate reads a
+command that starts with `test` as a test run with zero tests and blocks the
+plan.

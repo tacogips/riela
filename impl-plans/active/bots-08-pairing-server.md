@@ -9,9 +9,13 @@
   "writePaths": [
     "Sources/RielaServer",
     "Tests/RielaServerTests",
+    "Sources/RielaGraphQL/ConfigurationGraphQL.swift",
     "impl-plans/progress/bots-08-pairing-server.md"
   ],
-  "sharedPaths": []
+  "sharedPaths": [],
+  "sharedPathNotes": [
+    {"path": "Sources/RielaGraphQL/ConfigurationGraphQL.swift", "intendedEdit": "Line 299 only: change `static let mutationFields` of RielaConfigGraphQLDocumentExecutor to `public static let mutationFields`. No other line of the file changes."}
+  ]
 }
 ```
 
@@ -208,4 +212,38 @@ are unchanged.
 ## Done criteria
 
 - `grep -rn "print(\|NSLog\|FileHandle.standardError" Sources/RielaServer/RielaPairing*.swift` prints nothing.
+- `git diff --stat 666108c9 -- Sources/RielaGraphQL/ConfigurationGraphQL.swift` shows `1 insertion(+), 1 deletion(-)`.
 - Verification exits 0; progress log written.
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (waves 2 to 4): `RielaAPIScopePolicy.adminMutationFields` must read
+`RielaConfigGraphQLDocumentExecutor.mutationFields`, which is module-internal
+at `Sources/RielaGraphQL/ConfigurationGraphQL.swift:299`. `RielaServer`
+already depends on `RielaGraphQL` (`Package.swift:212`), so only the access
+level is missing.
+
+Decision: this plan now owns exactly one extra file,
+`Sources/RielaGraphQL/ConfigurationGraphQL.swift`. No other plan lists it.
+
+Additive contract:
+
+- The only permitted edit is `static let mutationFields` →
+  `public static let mutationFields` on line 299. Do not change the set's
+  contents, `queryFields`, or any other declaration in the file.
+- `RielaAPIScopePolicy.swift` adds `import RielaGraphQL` and builds
+  `adminMutationFields` as the eight literal names of this plan united with
+  `RielaConfigGraphQLDocumentExecutor.mutationFields`. Never copy the ten
+  configuration names by hand.
+- Do not make any other executor's field set public and do not add a wrapper
+  type in `RielaGraphQL`.
+
+Extra test in `APIScopePolicyTests`:
+
+- operate + every member of `RielaConfigGraphQLDocumentExecutor.mutationFields`
+  (loop over the set) → violation for each; the set is not empty.
+- operate + `updateHTTPServerConfiguration` → violation `Mutation.updateHTTPServerConfiguration`.
+
+Verification is unchanged (the same filter). Record the pre-edit and
+post-edit SHA-256 of `ConfigurationGraphQL.swift` in the progress log
+(overview §2).

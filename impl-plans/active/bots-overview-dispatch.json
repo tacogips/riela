@@ -72,7 +72,8 @@
       {"decision": "Pairing extends RielaAPIKeyStore with scoped grants; the client command family is named `riela remote`.", "rationale": "Design section 11: reuse API-key machinery; `riela environment` already means workflow instance environment."},
       {"decision": "The bots GraphQL provider lives in Sources/RielaCLI/Bots; executor and DTOs live in Sources/RielaGraphQL/Bots.", "rationale": "impl-plans/active/bots-overview.md section 3: the provider must start workflow runs."},
       {"decision": "Twenty plans in ten waves; the surface plans 10, 12, 13, 15, 16, 18 and 19 form a chain.", "rationale": "They edit the same hand-maintained registries and the generated SDL; one owner per wave avoids write clashes. Design section 16's seven slice plans are refined without behaviour change."},
-      {"decision": "No artifactRoots are declared; web/node_modules and web/dist are gitignored build outputs outside every writePath.", "rationale": "Workflow-input constraint: build-tool writes to gitignored outputs are untracked and need no plan authorization (review finding F3)."}
+      {"decision": "No artifactRoots are declared; web/node_modules and web/dist are gitignored build outputs outside every writePath.", "rationale": "Workflow-input constraint: build-tool writes to gitignored outputs are untracked and need no plan authorization (review finding F3)."},
+      {"decision": "Amendment 2026-11-25 round 1: bots-08-pairing-server gains write scope for Sources/RielaGraphQL/ConfigurationGraphQL.swift (one-word `public` visibility change on RielaConfigGraphQLDocumentExecutor.mutationFields, line 299); bots-09-run-linkage gains write scope for Sources/RielaCLI/WorkflowCommands.swift (additive optional `botId` on WorkflowRemoteRunRequest and in remoteRunInputObject). Plans bots-01 to bots-07 move to acceptedDependencies; plan IDs, dependsOn and waves are unchanged.", "rationale": "Blocked plans: bots-08-pairing-server and bots-09-run-linkage (reason blocked-wave-scope-or-contract). Resolved gaps: RielaServer could not read the module-internal canonical configuration mutation set needed by the pairing scope policy (design section 11.2); the --endpoint remote run request and its private encoder live in a file outside the dispatched scope, so botId could not reach the server-owned linkage (design section 5.2). Each fix is one exact file owned by one plan, with no redesign and no same-wave write clash; accepted by step5-impl-plan-review in comm-000077."}
     ],
     "intentionalTradeoffs": [
       "Ten serial waves trade wall-clock time for single ownership of shared registries.",
@@ -127,217 +128,16 @@
       "impl-plans/active/bots-20-web-management.md"
     ]
   },
+  "acceptedDependencies": [
+    {"planId": "bots-01-contracts", "planPath": "impl-plans/active/bots-01-contracts.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 1, slice a,b contracts: session store generation 13 with the additive bot tables, the shared contracts of impl-plans/active/bots-overview.md section 3, botFamilyRows in the SurfaceCatalog. Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."},
+    {"planId": "bots-02-board-projector", "planPath": "impl-plans/active/bots-02-board-projector.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 2, slice a,d: the pure projector for board, overview row and ordered list, and the bot_list_state queries (Sources/RielaCore/BotBoard). Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."},
+    {"planId": "bots-03-activity-core", "planPath": "impl-plans/active/bots-03-activity-core.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 2, slice b: bounded replayable activity event log with state row, permission records with bounded wait, runner feed and settlement (Sources/RielaCore/BotActivity and the runner adapter call sites). Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."},
+    {"planId": "bots-04-acp-adapter", "planPath": "impl-plans/active/bots-04-acp-adapter.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 2, slice b: ACP v1 and v2 session updates normalised to AdapterActivityUpdate and permission requests handed to the runtime (Sources/RielaAdapters). Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."},
+    {"planId": "bots-05-model-catalog-core", "planPath": "impl-plans/active/bots-05-model-catalog-core.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 2, slice c: runtime-owned provider-instance and model catalog data and merge, model_unknown warning (Sources/RielaCore/ModelCatalog, WorkflowBackendPolicy.swift). Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."},
+    {"planId": "bots-06-memory-core", "planPath": "impl-plans/active/bots-06-memory-core.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 2, slice e: bot memory in the existing RielaMemoryStore under memory id bot-<botId> with one audited writer, change sets, diff and undo (Sources/RielaCore/BotMemory). Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."},
+    {"planId": "bots-07-jobs-core", "planPath": "impl-plans/active/bots-07-jobs-core.md", "commit": "666108c9f32fe3f926d5c1448ab8f2063c4f714a", "provides": "Wave 2, slice f: deterministic job schedule and due check with catch-up, job ledger, suggestion store, look-around policy check and output contract (Sources/RielaCore/BotJobs). Plan committed at the listed checkpoint; implementation accepted by runtime dispatch and present uncommitted in the working tree."}
+  ],
   "plans": [
-    {
-      "planId": "bots-01-contracts",
-      "planPath": "impl-plans/active/bots-01-contracts.md",
-      "dependsOn": [],
-      "wave": 1,
-      "slice": "a,b contracts",
-      "writePaths": [
-        "Sources/RielaCore/Bots",
-        "Tests/RielaCoreTests/Bots",
-        "Sources/RielaCore/AdapterContracts.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+DynamicWorkflow.swift",
-        "Sources/RielaCore/RoutineStore.swift",
-        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
-        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift",
-        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
-        "Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift",
-        "Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift",
-        "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift",
-        "Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift",
-        "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift",
-        "Tests/RielaWorkTests/WorkStoreTests.swift",
-        "impl-plans/progress/bots-01-contracts.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {"path": "Sources/RielaCore/DeterministicWorkflowRunner.swift", "intendedEdit": "Add two stored properties to DeterministicWorkflowRunRequest only (botContext, activityRecorder), default nil. No behaviour change. bots-03 edits the adapter call site of this file in wave 2."},
-        {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "ONE edit: append `+ botFamilyRows` to the aggregate expression at lines 8-15."},
-        {"path": "Tests/RielaCoreTests/SQLiteRuntimeExecutionRowsTests.swift", "intendedEdit": "Only testCachedSchemaRejectsDatabaseMigratedByNewerBuild (line 65-75): replace the literal 13 with a value derived from SQLiteWorkflowRuntimePersistenceStore.schemaGeneration + 1, both in the `PRAGMA user_version` statement and in the expected 'generation N' message. The test keeps asserting that a newer-build store is rejected."},
-        {"path": "Tests/RielaCoreTests/WorkflowDefinitionStoreTests.swift", "intendedEdit": "Only the literal generation expectation (line 36: 12 becomes 13)."},
-        {"path": "Tests/RielaCoreTests/WorkflowDefinitionRetentionTests.swift", "intendedEdit": "Only literal generation-12 expectations, if any."},
-        {"path": "Tests/RielaCoreTests/SQLiteWorkflowMessageLogTests.swift", "intendedEdit": "Only literal generation-12 expectations, if any."},
-        {"path": "Tests/RielaWorkTests/WorkStoreTests.swift", "intendedEdit": "Only literal generation-12 expectations, if any."}
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Session store generation is 13 with the additive bot tables of design section 4.1; `grep -n \"schemaGeneration: Int64 = 13\" Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SchemaMigrations.swift` prints one line.",
-        "The shared contracts of impl-plans/active/bots-overview.md section 3 exist with those exact names; `grep -rn \"botFamilyRows\" Sources/RielaCore` prints the definition and the aggregator use.",
-        "`git diff --stat 7f04f6e6 -- Package.swift Package.resolved` prints nothing.",
-        "Build and test commands exit 0; the three new suites and every existing suite owning a generation expectation pass; every line left in generation-literals.log is explained in the progress log.",
-        "Progress log impl-plans/progress/bots-01-contracts.md is written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-01-contracts",
-        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/bots-overview/bots-01-contracts/build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotStoreTests|BotStoreMigrationTests|ActivityContractTests|SQLiteRuntimeSchemaMigrationTests|SQLiteRuntimeExecutionRowsTests|WorkflowDefinitionStoreTests|WorkflowDefinitionRetentionTests|SQLiteWorkflowMessageLogTests|RoutineStoreTests|WorkStoreTests|SurfaceCatalogTests\"' > tmp/bots-overview/bots-01-contracts/test.log 2>&1",
-        "grep -rnE \"user_version = 1[2-9]|generation 1[2-9]\" Tests > tmp/bots-overview/bots-01-contracts/generation-literals.log"
-      ]
-    },
-    {
-      "planId": "bots-02-board-projector",
-      "planPath": "impl-plans/active/bots-02-board-projector.md",
-      "dependsOn": ["bots-01-contracts"],
-      "wave": 2,
-      "slice": "a,d",
-      "writePaths": [
-        "Sources/RielaCore/BotBoard",
-        "Tests/RielaCoreTests/BotBoard",
-        "impl-plans/progress/bots-02-board-projector.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "One pure projector turns runtime records into the board, overview row and ordered list, and owns the bot_list_state queries (design sections 5.3, 5.4, 8.1 to 8.5).",
-        "`grep -rn \"Date()\" Sources/RielaCore/BotBoard` prints nothing.",
-        "`grep -rn \"import RielaWork\" Sources/RielaCore/BotBoard` prints nothing.",
-        "Verification exits 0 with the three suites at 0 failures; progress log written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-02-board-projector",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotBoardProjectorTests|BotListProjectionTests|BotListStateStoreTests\"' > tmp/bots-overview/bots-02-board-projector/test.log 2>&1"
-      ]
-    },
-    {
-      "planId": "bots-03-activity-core",
-      "planPath": "impl-plans/active/bots-03-activity-core.md",
-      "dependsOn": ["bots-01-contracts"],
-      "wave": 2,
-      "slice": "b",
-      "writePaths": [
-        "Sources/RielaCore/BotActivity",
-        "Tests/RielaCoreTests/BotActivity",
-        "Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift",
-        "impl-plans/progress/bots-03-activity-core.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {"path": "Sources/RielaCore/DeterministicWorkflowRunner.swift", "intendedEdit": "Only the adapter call site near line 862-884 (pass the request to adapterExecutionContext and wrap the call in the settlement helper). Do not touch DeterministicWorkflowRunRequest (plan 01) or prompt code."},
-        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+StepSupervisor.swift", "intendedEdit": "Only the adapterExecutionContext call near line 180 and the adapter call it guards."},
-        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+Addons.swift", "intendedEdit": "Only the adapterExecutionContext call near line 85 and the adapter call it guards."},
-        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift", "intendedEdit": "Only the adapterExecutionContext call near line 54 and the adapter call it guards."}
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Activity updates become a bounded, replayable event log plus a state row written in one transaction; permission records support a bounded wait; the runner feeds and settles the recorder (design sections 6.1, 6.3 to 6.7).",
-        "`grep -rn \"settlingActivity\" Sources/RielaCore` shows the helper and four call sites.",
-        "`grep -rn \"Date()\" Sources/RielaCore/BotActivity/ActivityReducer.swift` prints nothing.",
-        "Verification exits 0: five new suites pass and DeterministicWorkflowRunnerTests is unchanged (no behaviour change without a recorder); progress log written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-03-activity-core",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ActivityReducerTests|ActivityRecorderTests|ActivityPermissionTests|ActivitySettlementRunnerTests|ActivityWaitTests|DeterministicWorkflowRunnerTests\"' > tmp/bots-overview/bots-03-activity-core/test.log 2>&1"
-      ]
-    },
-    {
-      "planId": "bots-04-acp-adapter",
-      "planPath": "impl-plans/active/bots-04-acp-adapter.md",
-      "dependsOn": ["bots-01-contracts"],
-      "wave": 2,
-      "slice": "b",
-      "writePaths": [
-        "Sources/RielaAdapters",
-        "Tests/RielaAdaptersTests",
-        "impl-plans/progress/bots-04-acp-adapter.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Every ACP v1 and v2 session/update becomes an AdapterActivityUpdate and session/request_permission is handed to the runtime (design sections 6.2, 6.6, 6.8, 7.3, 14), proven with scripted agents.",
-        "`grep -n \"GatewayClientPermissionResponder\" Sources/RielaAdapters/*.swift` prints nothing.",
-        "`grep -n \"default:\" Sources/RielaAdapters/AgentGatewayACPV2Turn.swift` shows no `default: return nil` in `consume`.",
-        "`git status --short .build Package.swift Package.resolved` prints nothing.",
-        "Verification exits 0: new suites pass and existing gateway suites still pass; progress log written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-04-acp-adapter",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ActivityNormalizationTests|GatewayScriptedAgentTests|GatewayModelSentinelTests|AgentGatewayACPV2Tests|AgentGatewayNodeAdapterTests|AgentGatewayCancellationTests|BackendWaitSignalClassifierTests|GatewayTurnLifetimeTests\"' > tmp/bots-overview/bots-04-acp-adapter/test.log 2>&1"
-      ]
-    },
-    {
-      "planId": "bots-05-model-catalog-core",
-      "planPath": "impl-plans/active/bots-05-model-catalog-core.md",
-      "dependsOn": ["bots-01-contracts"],
-      "wave": 2,
-      "slice": "c",
-      "writePaths": [
-        "Sources/RielaCore/ModelCatalog",
-        "Tests/RielaCoreTests/ModelCatalog",
-        "Sources/RielaCore/WorkflowBackendPolicy.swift",
-        "impl-plans/progress/bots-05-model-catalog-core.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {"path": "Sources/RielaCore/WorkflowBackendPolicy.swift", "intendedEdit": "ONE edit in WorkflowBackendPolicyValidation.diagnostics (line 64-65): the 'is not known for this backend' diagnostic becomes severity warning with message 'model_unknown: is not known for this backend'."}
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Runtime-owned catalog of provider instances and models: bundled manifest merged with backend reports and custom models; unknown models warn, never fail (design sections 7.1 to 7.4, data and merge only).",
-        "`grep -rn \"URLSession\\|Process()\" Sources/RielaCore/ModelCatalog` prints nothing.",
-        "Verification exits 0: new suites pass and any existing WorkflowBackendPolicyTests still pass; progress log written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-05-model-catalog-core",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ModelCatalogTests|ProviderStoreTests|WorkflowBackendPolicyWarningTests|WorkflowBackendPolicyTests\"' > tmp/bots-overview/bots-05-model-catalog-core/test.log 2>&1"
-      ]
-    },
-    {
-      "planId": "bots-06-memory-core",
-      "planPath": "impl-plans/active/bots-06-memory-core.md",
-      "dependsOn": ["bots-01-contracts"],
-      "wave": 2,
-      "slice": "e",
-      "writePaths": [
-        "Sources/RielaCore/BotMemory",
-        "Tests/RielaCoreTests/BotMemory",
-        "impl-plans/progress/bots-06-memory-core.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Bot memory is riela memory in the existing RielaMemoryStore under memory id bot-<botId>; every write goes through one function enforcing the write rules and producing an audited change set that can be listed, diffed and undone (design sections 9.1 to 9.5, 10.1).",
-        "`git status --short Packages/RielaMemory` prints nothing.",
-        "`grep -rn \"import RielaWork\" Sources/RielaCore/BotMemory` prints nothing.",
-        "Verification exits 0 with three suites at 0 failures; progress log written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-06-memory-core",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotMemoryWriterTests|BotMemoryMarkdownTests|BotMemoryUndoTests\"' > tmp/bots-overview/bots-06-memory-core/test.log 2>&1"
-      ]
-    },
-    {
-      "planId": "bots-07-jobs-core",
-      "planPath": "impl-plans/active/bots-07-jobs-core.md",
-      "dependsOn": ["bots-01-contracts"],
-      "wave": 2,
-      "slice": "f",
-      "writePaths": [
-        "Sources/RielaCore/BotJobs",
-        "Tests/RielaCoreTests/BotJobs",
-        "impl-plans/progress/bots-07-jobs-core.md"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Deterministic job core: schedule and due check with catch-up, job ledger, suggestion store and states, look-around policy check and output contract (design sections 10.1 to 10.3).",
-        "`grep -rn \"Calendar.current\\|Date()\" Sources/RielaCore/BotJobs/BotJobSchedule+Due.swift` prints nothing.",
-        "Verification exits 0 with four suites at 0 failures; progress log written."
-      ],
-      "verification": [
-        "mkdir -p tmp/bots-overview/bots-07-jobs-core",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BotJobDueTests|BotJobLedgerTests|BotSuggestionStoreTests|LookAroundPolicyTests\"' > tmp/bots-overview/bots-07-jobs-core/test.log 2>&1"
-      ]
-    },
     {
       "planId": "bots-08-pairing-server",
       "planPath": "impl-plans/active/bots-08-pairing-server.md",
@@ -347,9 +147,13 @@
       "writePaths": [
         "Sources/RielaServer",
         "Tests/RielaServerTests",
+        "Sources/RielaGraphQL/ConfigurationGraphQL.swift",
         "impl-plans/progress/bots-08-pairing-server.md"
       ],
       "sharedPaths": [],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaGraphQL/ConfigurationGraphQL.swift", "intendedEdit": "Line 299 only: change `static let mutationFields` of RielaConfigGraphQLDocumentExecutor to `public static let mutationFields`. No other line of the file changes."}
+      ],
       "artifactRoots": [],
       "acceptanceCriteria": [
         "Server-side pairing on the existing API key store: one-time expiring code for an explicit address, redeem issues a scoped revocable client key, address rules, audit records, scope policy (design sections 11.1, 11.2).",
@@ -375,6 +179,7 @@
         "Sources/RielaCLI/RielaCommand.swift",
         "Sources/RielaCLI/WorkflowRunCommand.swift",
         "Sources/RielaCLI/WorkflowRunCommand+Remote.swift",
+        "Sources/RielaCLI/WorkflowCommands.swift",
         "Sources/RielaCLI/WorkflowExecutionProvider.swift",
         "Sources/RielaCLI/EventLiveServe.swift",
         "Sources/RielaCLI/EventLiveServe+Cron.swift",
@@ -395,6 +200,7 @@
       "sharedPaths": [],
       "sharedPathNotes": [
         {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add `botId: String?` to WorkflowRunOptions (stored property and init parameter, default nil). Nothing else."},
+        {"path": "Sources/RielaCLI/WorkflowCommands.swift", "intendedEdit": "Only WorkflowRemoteRunRequest (line 256: one optional `botId` property and one last init parameter, default nil) and remoteRunInputObject (line 464: drop `private`, emit `botId` when set). Nothing else in the file."},
         {"path": "Sources/RielaCLI/RielaCLIApplication.swift", "intendedEdit": "Only rielaCLIHelpText lines that list `workflow run` and `routine create` options, if those options are listed there: add `--bot <bot-id>`."},
         {"path": "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift", "intendedEdit": "Add field `botId: String` to the ExecuteWorkflowInput descriptor (line 52) and to the CreateRoutineInput descriptor, and `botId: String` to the Routine object descriptor."},
         {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated file: regenerate with scripts/surface-parity/generate-sdl.sh, never hand-edit."},

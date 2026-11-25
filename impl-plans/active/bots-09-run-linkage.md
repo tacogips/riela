@@ -14,6 +14,7 @@
     "Sources/RielaCLI/RielaCommand.swift",
     "Sources/RielaCLI/WorkflowRunCommand.swift",
     "Sources/RielaCLI/WorkflowRunCommand+Remote.swift",
+    "Sources/RielaCLI/WorkflowCommands.swift",
     "Sources/RielaCLI/WorkflowExecutionProvider.swift",
     "Sources/RielaCLI/EventLiveServe.swift",
     "Sources/RielaCLI/EventLiveServe+Cron.swift",
@@ -34,6 +35,7 @@
   "sharedPaths": [],
   "sharedPathNotes": [
     {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add `botId: String?` to WorkflowRunOptions (stored property and init parameter, default nil). Nothing else."},
+    {"path": "Sources/RielaCLI/WorkflowCommands.swift", "intendedEdit": "Only WorkflowRemoteRunRequest (line 256: one optional `botId` property and one last init parameter, default nil) and remoteRunInputObject (line 464: drop `private`, emit `botId` when set). Nothing else in the file."},
     {"path": "Sources/RielaCLI/RielaCLIApplication.swift", "intendedEdit": "Only rielaCLIHelpText lines that list `workflow run` and `routine create` options, if those options are listed there: add `--bot <bot-id>`."},
     {"path": "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift", "intendedEdit": "Add field `botId: String` to the ExecuteWorkflowInput descriptor (line 52) and to the CreateRoutineInput descriptor, and `botId: String` to the Routine object descriptor."},
     {"path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift", "intendedEdit": "Generated file: regenerate with scripts/surface-parity/generate-sdl.sh, never hand-edit."},
@@ -112,7 +114,8 @@ Current code:
 
 `WorkflowRunCommand+Remote.swift`: when `options.botId` is set, include
 `botId` in the `executeWorkflow` input sent to the server. No local link is
-written; the server's runtime writes it.
+written; the server's runtime writes it. The exact contract, including the
+edit in `WorkflowCommands.swift`, is in the Amendment section at the end.
 
 ### GraphQL execution
 
@@ -212,4 +215,52 @@ runs; existing routine and execution suites and the SDL gates still pass.
 
 - `grep -n "botId" Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift` shows the field in `ExecuteWorkflowInput`, `CreateRoutineInput` and `Routine`.
 - Running the SDL script a second time leaves `git diff --stat` for the SDL file unchanged.
+- `grep -n "botId" Sources/RielaCLI/WorkflowCommands.swift` shows the property, the init parameter and the encoder line.
 - Verification exits 0; progress log written.
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1)
+
+Blocker (waves 2 to 4): the `--endpoint` path builds its `executeWorkflow`
+input from `WorkflowRemoteRunRequest` (`Sources/RielaCLI/WorkflowCommands.swift:256`)
+and the private encoder `remoteRunInputObject` (`:464`). Both need `botId`,
+and the file was outside this plan's write scope.
+
+Decision: this plan now owns exactly one extra file,
+`Sources/RielaCLI/WorkflowCommands.swift`. No other plan in
+`impl-plans/active/bots-overview-dispatch.json` lists it.
+
+Additive contract (this replaces the one-sentence "Remote runs" section):
+
+- `WorkflowRemoteRunRequest`: add `public var botId: String?` as the last
+  stored property and `botId: String? = nil` as the last init parameter. The
+  type is `Codable` with synthesised coding, so a missing key decodes as nil.
+  Existing call sites (`Tests/RielaCLITests/ServeHTTPCommandTests.swift:170`,
+  `:203`) must compile unchanged.
+- `remoteRunInputObject`: change `private func` to `func` (module-internal,
+  for the test below) and add `input["botId"] = .string(botId)` only when
+  `request.botId` is non-nil. When it is nil the object is byte-for-byte what
+  it is today.
+- `WorkflowRunCommand+Remote.swift:23`: pass `botId: nonEmptyString(options.botId)`.
+- Remote runs call neither `BotRunLinker.prepare` nor `link`: the client
+  writes no link and does not check the bot. The server's
+  `WorkflowExecutionProvider.executeWorkflow` copies `botId` to
+  `options.botId`, and the server's `WorkflowRunCommand` validates, gates and
+  links. `bot_not_found` and `bot_paused` reach the client as the server's
+  GraphQL error.
+- Do not touch `WorkflowGraphQLRunTransporting`, the HTTP transport, auth
+  token handling, or any other symbol in `WorkflowCommands.swift`.
+
+Extra tests in `BotRunLinkageTests`:
+
+- `workflow run <name> --endpoint http://127.0.0.1:1/graphql --bot b1` with
+  the recording transport of `Tests/RielaCLITests/WorkflowCommandTestSupport.swift`
+  → recorded request has `botId == "b1"`; the local session store has no
+  `bot_session_links` row and no bot lookup error even though `b1` does not
+  exist locally.
+- the same command without `--bot` → recorded `botId == nil`.
+- `remoteRunInputObject(WorkflowRemoteRunRequest(workflowName: "w", botId: "b1"))`
+  → `["botId"] == .string("b1")`; without `botId` → no `botId` key.
+
+Verification is unchanged (the same filter). Record the pre-edit and
+post-edit SHA-256 of `WorkflowCommands.swift` in the progress log
+(overview §2).

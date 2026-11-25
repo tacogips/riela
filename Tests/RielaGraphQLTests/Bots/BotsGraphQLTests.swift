@@ -9,8 +9,8 @@ final class BotsGraphQLTests: XCTestCase {
     let executor = BotsGraphQLDocumentExecutor(provider: provider)
     let operations = [
       ("{ result: bots(filter: {groupBy: \"workspace\"}) { groups } }", JSONValue.object(["groups": .array([])])),
-      ("{ result: bot(botId: \"alpha\", remote: \"local\") { bot { botId } memory } }",
-        .object(["bot": .object(["botId": .string("alpha")]), "memory": .null])),
+      ("{ result: bot(botId: \"alpha\", remote: \"local\") { bot { botId } memory { instructionCount } } }",
+        .object(["bot": .object(["botId": .string("alpha")]), "memory": .object(["instructionCount": .integer(0)])])),
       ("mutation { result: createBot(input: {name: \"Alpha\"}) { bot { name } } }", .object(["bot": .object(["name": .string("Alpha")])])),
       ("mutation { result: updateBot(input: {botId: \"alpha\", name: \"New\"}) { bot { name } } }", .object(["bot": .object(["name": .string("New")])])),
       ("mutation { result: setBotPaused(input: {botId: \"alpha\", paused: true}) { bot { paused } } }", .object(["bot": .object(["paused": .bool(true)])])),
@@ -62,6 +62,7 @@ actor RecordingBotsProvider: BotsGraphQLProviding {
 
   func recordCatalogCall(_ call: String) { calls.append(call) }
   private let activityError: BotStoreError?
+  private let origin = BotOrigin.local(serverId: nil, serverName: nil, at: Date(timeIntervalSince1970: 0))
 
   init(activityError: BotStoreError? = nil) {
     self.activityError = activityError
@@ -83,7 +84,10 @@ actor RecordingBotsProvider: BotsGraphQLProviding {
     let instant = Date(timeIntervalSince1970: 0)
     let origin = BotOrigin.local(serverId: nil, serverName: nil, at: instant)
     let input = BotBoardInput(bot: bot, now: instant, origin: origin, redact: { $0 })
-    return BotDetailPayload(bot: bot, board: GraphQLBotBoard(BotBoardProjector.board(input)), routines: [], origin: origin)
+    return BotDetailPayload(
+      bot: bot, board: GraphQLBotBoard(BotBoardProjector.board(input)), routines: [], origin: origin,
+      suggestions: [try jobSuggestion(.accepted)], jobs: [.init(job: .upkeep, schedule: .nightly, lastRun: try jobTestRun())]
+    )
   }
 
   func botActivity(sessionId: String, afterSequence: Int, limit: Int, waitMs: Int, remote: String?) async throws -> BotActivityPage {
@@ -106,31 +110,33 @@ actor RecordingBotsProvider: BotsGraphQLProviding {
 
   func createBot(input: CreateBotInput) async throws -> BotMutationPayload {
     calls.append("create:\(input.name ?? "")")
-    return BotMutationPayload(bot: record(name: input.name ?? ""))
+    return BotMutationPayload(bot: record(name: input.name ?? ""), origin: origin)
   }
 
   func updateBot(input: UpdateBotInput) async throws -> BotMutationPayload {
     calls.append("update:\(input.botId ?? ""):\(input.name ?? "")")
-    return BotMutationPayload(bot: record(name: input.name ?? ""))
+    return BotMutationPayload(bot: record(name: input.name ?? ""), origin: origin)
   }
 
   func setBotPaused(input: SetBotPausedInput) async throws -> BotMutationPayload {
     calls.append("pause:\(input.botId):\(input.paused)")
-    return BotMutationPayload(bot: record(paused: input.paused))
+    return BotMutationPayload(bot: record(paused: input.paused), origin: origin)
   }
 
   func removeBot(input: RemoveBotInput) async throws -> BotMutationPayload {
     calls.append("remove:\(input.botId)")
-    return BotMutationPayload(bot: record(id: input.botId))
+    return BotMutationPayload(bot: record(id: input.botId), origin: origin)
   }
 
   func setBotListState(input: SetBotListStateInput) async throws -> BotMutationPayload {
     calls.append("state:\(input.botId):\(input.manualOrder ?? -1)")
-    return BotMutationPayload(bot: record(id: input.botId))
+    return BotMutationPayload(bot: record(id: input.botId), origin: origin)
   }
 
   func answerBotRequest(input: AnswerBotRequestInput) async throws -> BotRequestPayload {
     calls.append("answer:\(input.requestId):\(input.optionId ?? ""):\(input.decline == true):\(input.remote ?? "")")
-    return BotRequestPayload(requestId: input.requestId, status: .answered, outcomeOptionId: input.optionId, resolvedBy: .user)
+    return BotRequestPayload(
+      requestId: input.requestId, status: .answered, outcomeOptionId: input.optionId, resolvedBy: .user, origin: origin
+    )
   }
 }

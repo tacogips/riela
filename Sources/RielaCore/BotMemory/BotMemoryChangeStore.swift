@@ -9,8 +9,8 @@ extension BotStore {
     }
   }
 
-  public func memoryChanges(botId: String, limit: Int) throws -> [BotMemoryChangeSet] {
-    try read { try Self.memoryChanges(botId: botId, limit: limit, in: $0) } ?? []
+  func memoryChanges(botId: String, limit: Int, memoryRootKey: String) throws -> [BotMemoryChangeSet] {
+    try read { try Self.memoryChanges(botId: botId, limit: limit, memoryRootKey: memoryRootKey, in: $0) } ?? []
   }
 
   public func memoryChange(changeId: String) throws -> BotMemoryChangeSet? {
@@ -24,33 +24,47 @@ extension BotStore {
     }
   }
 
-  static func insertMemoryChange(_ change: BotMemoryChangeSet, in database: SQLiteDatabase) throws {
+  static func insertMemoryChange(
+    _ change: BotMemoryChangeSet, memoryRootKey: String? = nil, in database: SQLiteDatabase
+  ) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     guard let json = String(data: try encoder.encode(change), encoding: .utf8) else {
       throw BotStoreError(code: "memory_change_invalid", message: "Memory change could not be encoded as UTF-8")
     }
     try database.execute(
-      "INSERT INTO bot_memory_changes (change_id, bot_id, record_json, created_at) VALUES (?, ?, jsonb(?), ?)",
-      bindings: [.text(change.changeId), .text(change.botId), .text(json), .text(change.createdAt)]
+      """
+      INSERT INTO bot_memory_changes (change_id, bot_id, record_json, created_at)
+      VALUES (?, ?, jsonb_set(jsonb(?), '$.memoryRootKey', ?), ?)
+      """,
+      bindings: [.text(change.changeId), .text(change.botId), .text(json), .optionalText(memoryRootKey), .text(change.createdAt)]
     )
   }
 
-  static func memoryChanges(botId: String, limit: Int, in database: SQLiteDatabase) throws -> [BotMemoryChangeSet] {
+  static func memoryChanges(
+    botId: String, limit: Int, memoryRootKey: String, in database: SQLiteDatabase
+  ) throws -> [BotMemoryChangeSet] {
     guard limit > 0 else { return [] }
     return try database.query(
       """
       SELECT json(record_json) AS record_json FROM bot_memory_changes
-      WHERE bot_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
+      WHERE bot_id = ? AND json_extract(record_json, '$.memoryRootKey') = ?
+      ORDER BY created_at DESC, rowid DESC LIMIT ?
       """,
-      bindings: [.text(botId), .int(Int64(limit))]
+      bindings: [.text(botId), .text(memoryRootKey), .int(Int64(limit))]
     ).map(decodeMemoryChange)
   }
 
-  static func memoryChange(changeId: String, in database: SQLiteDatabase) throws -> BotMemoryChangeSet? {
-    try database.query(
-      "SELECT json(record_json) AS record_json FROM bot_memory_changes WHERE change_id = ?",
-      bindings: [.text(changeId)]
+  static func memoryChange(
+    changeId: String, memoryRootKey: String? = nil, in database: SQLiteDatabase
+  ) throws -> BotMemoryChangeSet? {
+    let key = SQLiteValue.optionalText(memoryRootKey)
+    return try database.query(
+      """
+      SELECT json(record_json) AS record_json FROM bot_memory_changes
+      WHERE change_id = ? AND (? IS NULL OR json_extract(record_json, '$.memoryRootKey') = ?)
+      """,
+      bindings: [.text(changeId), key, key]
     ).first.map(decodeMemoryChange)
   }
 

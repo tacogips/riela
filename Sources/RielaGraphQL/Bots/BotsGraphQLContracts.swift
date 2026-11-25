@@ -46,10 +46,12 @@ public struct GraphQLBotRoutine: Codable, Equatable, Sendable {
 public struct BotListPayload: Codable, Equatable, Sendable {
   public let bots: [GraphQLBotOverviewRow]
   public let groups: [GraphQLBotWorkspaceGroup]
+  public let origin: BotOrigin?
 
-  public init(bots: [GraphQLBotOverviewRow], groups: [GraphQLBotWorkspaceGroup]) {
+  public init(bots: [GraphQLBotOverviewRow], groups: [GraphQLBotWorkspaceGroup], origin: BotOrigin? = nil) {
     self.bots = bots
     self.groups = groups
+    self.origin = origin
   }
 }
 
@@ -59,36 +61,21 @@ public struct BotDetailPayload: Codable, Equatable, Sendable {
   public let routines: [GraphQLBotRoutine]
   public let origin: GraphQLBotOrigin
 
-  public var suggestions: [JSONValue] { [] }
-  public var memory: JSONValue { .null }
+  public let suggestions: [BotSuggestion]
+  public let jobs: [BotJobSummary]
+  public let memory: BotMemorySummary
 
-  public init(bot: GraphQLBot, board: GraphQLBotBoard, routines: [GraphQLBotRoutine], origin: GraphQLBotOrigin) {
+  public init(
+    bot: GraphQLBot, board: GraphQLBotBoard, routines: [GraphQLBotRoutine], origin: GraphQLBotOrigin,
+    memory: BotMemorySummary = .init(), suggestions: [BotSuggestion] = [], jobs: [BotJobSummary] = []
+  ) {
     self.bot = bot
     self.board = board
     self.routines = routines
     self.origin = origin
-  }
-
-  private enum CodingKeys: String, CodingKey { case bot, board, routines, origin, suggestions, memory }
-
-  public init(from decoder: Decoder) throws {
-    let values = try decoder.container(keyedBy: CodingKeys.self)
-    self.init(
-      bot: try values.decode(GraphQLBot.self, forKey: .bot),
-      board: try values.decode(GraphQLBotBoard.self, forKey: .board),
-      routines: try values.decode([GraphQLBotRoutine].self, forKey: .routines),
-      origin: try values.decode(GraphQLBotOrigin.self, forKey: .origin)
-    )
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var values = encoder.container(keyedBy: CodingKeys.self)
-    try values.encode(bot, forKey: .bot)
-    try values.encode(board, forKey: .board)
-    try values.encode(routines, forKey: .routines)
-    try values.encode(origin, forKey: .origin)
-    try values.encode(suggestions, forKey: .suggestions)
-    try values.encode(memory, forKey: .memory)
+    self.suggestions = suggestions
+    self.jobs = jobs
+    self.memory = memory
   }
 }
 
@@ -96,9 +83,12 @@ public struct BotMutationPayload: Codable, Equatable, Sendable {
   public let bot: GraphQLBot
   public let warnings: [String]
 
-  public init(bot: GraphQLBot, warnings: [String] = []) {
+  public let origin: BotOrigin
+
+  public init(bot: GraphQLBot, warnings: [String] = [], origin: BotOrigin) {
     self.bot = bot
     self.warnings = warnings
+    self.origin = origin
   }
 }
 
@@ -138,11 +128,22 @@ public struct SetBotPausedInput: Codable, Equatable, Sendable {
   public let botId: String
   public let paused: Bool
   public let remote: String?
+
+  package init(botId: String, paused: Bool, remote: String?) {
+    self.botId = botId
+    self.paused = paused
+    self.remote = remote
+  }
 }
 
 public struct RemoveBotInput: Codable, Equatable, Sendable {
   public let botId: String
   public let remote: String?
+
+  package init(botId: String, remote: String?) {
+    self.botId = botId
+    self.remote = remote
+  }
 }
 
 public struct SetBotListStateInput: Codable, Equatable, Sendable {

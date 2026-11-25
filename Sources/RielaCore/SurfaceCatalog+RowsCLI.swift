@@ -464,7 +464,7 @@ extension SurfaceCatalog {
         family: "routine",
         kind: .mutation,
         cli: "routine create",
-        cliOptions: ["--bot"],
+        cliOptions: ["--bot", "--remote"],
         graphql: graphQLMutation("createRoutine"),
         desktop: .implemented
       ),
@@ -542,11 +542,31 @@ extension SurfaceCatalog {
     )
     return [
       surfaceRow(defaults, id: "serve.host", family: "serve", kind: .stream, cli: "serve",
-                 cliOptions: ["--host", "--port", "--web-root", "--session-store", "--working-dir"]),
+                 cliOptions: ["--host", "--port", "--web-root", "--session-store", "--working-dir",
+                              "--pairing-address", "--pairing-scope", "--server-name"]),
       surfaceRow(defaults, id: "serve.status", family: "serve", kind: .query, cli: "serve status"),
       surfaceRow(defaults, id: "serve.health", family: "serve", kind: .query, cli: "serve health"),
       surfaceRow(defaults, id: "serve.overview", family: "serve", kind: .query, cli: "serve overview"),
       surfaceRow(defaults, id: "serve.graphql", family: "serve", kind: .process, cli: "serve graphql")
+    ] + pairingAdminRows
+  }
+
+  private static var pairingAdminRows: [SurfaceOperation] {
+    let defaults = SurfaceRowDefaults(
+      cli: SurfaceExclusion.localProcess("pairing administration"),
+      graphql: SurfaceExclusion.localProcess("pairing administration"),
+      webAPI: SurfaceExclusion.notAConsoleOperation("pairing administration"),
+      library: SurfaceExclusion.notALibraryEntryPoint("pairing administration"),
+      design: "design-docs/specs/design-bots-overview.md#112-mint-redeem-grants-revoke"
+    )
+    return [
+      surfaceRow(defaults, id: "serve.pairing.mint", family: "serve.pairing", kind: .mutation,
+                 cli: "serve pairing mint", cliOptions: ["--address", "--pairing-scope"],
+                 graphql: graphQLMutation("mintPairingCode")),
+      surfaceRow(defaults, id: "serve.pairing.list", family: "serve.pairing", kind: .query,
+                 cli: "serve pairing list", cliOptions: ["--output"], graphql: graphQLQuery("pairingGrants")),
+      surfaceRow(defaults, id: "serve.pairing.revoke", family: "serve.pairing", kind: .mutation,
+                 cli: "serve pairing revoke", cliOptions: ["--grant", "--output"], graphql: graphQLMutation("revokePairingGrant"))
     ]
   }
 

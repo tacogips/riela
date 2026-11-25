@@ -2,6 +2,16 @@ import Foundation
 import RielaCore
 
 public protocol BotsGraphQLProviding: Sendable {
+  func remotes() async throws -> RemoteListPayload
+  func addRemote(input: AddRemoteInput) async throws -> RemoteListPayload
+  func removeRemote(input: RemoveRemoteInput) async throws -> RemoteListPayload
+  func useRemote(input: UseRemoteInput) async throws -> RemoteListPayload
+  func botMemoryHistory(botId: String, limit: Int, remote: String?) async throws -> BotMemoryHistoryPayload
+  func botMemoryDiff(botId: String, changeId: String, remote: String?) async throws -> BotMemoryDiffPayload
+  func botJobHistory(botId: String, job: BotJobKind?, limit: Int, remote: String?) async throws -> BotJobHistoryPayload
+  func pairingGrants() async throws -> PairingGrantListPayload
+  func mintPairingCode(input: MintPairingCodeInput) async throws -> PairingCodePayload
+  func revokePairingGrant(input: RevokePairingGrantInput) async throws -> PairingGrantListPayload
   func modelCatalog(providerInstanceId: String?, remote: String?) async throws -> ModelCatalogPayload
   func providers(remote: String?) async throws -> ProviderListPayload
   func provider(instanceId: String, remote: String?) async throws -> ProviderPayload
@@ -10,6 +20,13 @@ public protocol BotsGraphQLProviding: Sendable {
   func removeProviderInstance(input: RemoveProviderInstanceInput) async throws -> ProviderListPayload
   func bots(filter: BotFilter?) async throws -> BotListPayload
   func bot(botId: String, remote: String?) async throws -> BotDetailPayload
+  func botMemory(botId: String, remote: String?) async throws -> BotMemoryPayload
+  func botSuggestions(botId: String, status: BotSuggestion.Status?, remote: String?) async throws -> BotSuggestionListPayload
+  func decideBotSuggestion(input: DecideBotSuggestionInput) async throws -> BotSuggestionPayload
+  func runBotJob(input: RunBotJobInput) async throws -> BotJobPayload
+  func updateBotMemory(input: UpdateBotMemoryInput) async throws -> BotMemoryChangePayload
+  func undoBotMemoryChange(input: UndoBotMemoryChangeInput) async throws -> BotMemoryChangePayload
+  func captureBotFeedback(input: CaptureBotFeedbackInput) async throws -> BotMemoryChangePayload
   func botActivity(sessionId: String, afterSequence: Int, limit: Int, waitMs: Int, remote: String?) async throws -> BotActivityPage
   func createBot(input: CreateBotInput) async throws -> BotMutationPayload
   func updateBot(input: UpdateBotInput) async throws -> BotMutationPayload
@@ -20,10 +37,15 @@ public protocol BotsGraphQLProviding: Sendable {
 }
 
 public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
-  public static let queryFields: Set<String> = ["bots", "bot", "botActivity", "modelCatalog", "providers", "provider"]
+  public static let queryFields: Set<String> = [
+    "bots", "bot", "botActivity", "botMemory", "botSuggestions", "modelCatalog", "providers", "provider", "pairingGrants", "remotes",
+    "botMemoryHistory", "botMemoryDiff", "botJobHistory"
+  ]
   public static let mutationFields: Set<String> = [
     "createBot", "updateBot", "setBotPaused", "removeBot", "setBotListState", "answerBotRequest",
-    "refreshProviders", "saveProviderInstance", "removeProviderInstance"
+    "refreshProviders", "saveProviderInstance", "removeProviderInstance",
+    "updateBotMemory", "undoBotMemoryChange", "captureBotFeedback", "decideBotSuggestion", "runBotJob",
+    "mintPairingCode", "revokePairingGrant", "addRemote", "removeRemote", "useRemote"
   ]
 
   public let provider: any BotsGraphQLProviding
@@ -87,6 +109,13 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   private func execute(_ root: ParsedGraphQLRootField) async throws -> JSONValue {
     let value: JSONValue
     switch try decode(root) {
+    case let .memoryHistory(id, limit, remote):
+      value = try await BotSurfaceJSON.value(provider.botMemoryHistory(botId: id, limit: limit, remote: remote))
+    case let .memoryDiff(id, changeId, remote):
+      value = try await BotSurfaceJSON.value(provider.botMemoryDiff(botId: id, changeId: changeId, remote: remote))
+    case let .jobHistory(id, job, limit, remote):
+      value = try await BotSurfaceJSON.value(provider.botJobHistory(botId: id, job: job, limit: limit, remote: remote))
+    case let .registry(operation): value = try await executeRegistry(operation)
     case let .modelCatalog(id, remote):
       value = try await BotSurfaceJSON.value(provider.modelCatalog(providerInstanceId: id, remote: remote))
     case let .providers(remote): value = try await BotSurfaceJSON.value(provider.providers(remote: remote))
@@ -96,6 +125,14 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case let .removeProviderInstance(input): value = try await BotSurfaceJSON.value(provider.removeProviderInstance(input: input))
     case let .list(filter): value = try await BotSurfaceJSON.value(provider.bots(filter: filter))
     case let .detail(id, remote): value = try await BotSurfaceJSON.value(provider.bot(botId: id, remote: remote))
+    case let .memory(id, remote): value = try await BotSurfaceJSON.value(provider.botMemory(botId: id, remote: remote))
+    case let .suggestions(id, status, remote):
+      value = try await BotSurfaceJSON.value(provider.botSuggestions(botId: id, status: status, remote: remote))
+    case let .decideSuggestion(input): value = try await BotSurfaceJSON.value(provider.decideBotSuggestion(input: input))
+    case let .runJob(input): value = try await BotSurfaceJSON.value(provider.runBotJob(input: input))
+    case let .updateMemory(input): value = try await BotSurfaceJSON.value(provider.updateBotMemory(input: input))
+    case let .undoMemory(input): value = try await BotSurfaceJSON.value(provider.undoBotMemoryChange(input: input))
+    case let .captureFeedback(input): value = try await BotSurfaceJSON.value(provider.captureBotFeedback(input: input))
     case let .activity(sessionId, afterSequence, limit, waitMs, remote):
       value = try await BotSurfaceJSON.value(provider.botActivity(
         sessionId: sessionId, afterSequence: afterSequence, limit: limit, waitMs: waitMs, remote: remote
@@ -111,6 +148,10 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 
   private enum Operation {
+    case memoryHistory(String, Int, String?)
+    case memoryDiff(String, String, String?)
+    case jobHistory(String, BotJobKind?, Int, String?)
+    case registry(RegistryOperation)
     case modelCatalog(String?, String?)
     case providers(String?)
     case provider(String, String?)
@@ -119,6 +160,13 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case removeProviderInstance(RemoveProviderInstanceInput)
     case list(BotFilter?)
     case detail(String, String?)
+    case memory(String, String?)
+    case suggestions(String, BotSuggestion.Status?, String?)
+    case decideSuggestion(DecideBotSuggestionInput)
+    case runJob(RunBotJobInput)
+    case updateMemory(UpdateBotMemoryInput)
+    case undoMemory(UndoBotMemoryChangeInput)
+    case captureFeedback(CaptureBotFeedbackInput)
     case activity(sessionId: String, afterSequence: Int, limit: Int, waitMs: Int, remote: String?)
     case create(CreateBotInput)
     case update(UpdateBotInput)
@@ -139,7 +187,22 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       guard let value = root.arguments[key], value != .null else { return nil }
       return try input(type, at: key)
     }
+    if let operation = try decodeRegistry(root, invalid: invalid) { return .registry(operation) }
     switch root.fieldName {
+    case "botMemoryHistory":
+      return .memoryHistory(
+        try input(String.self, at: "botId"), try optionalInput(Int.self, at: "limit") ?? 50,
+        try optionalInput(String.self, at: "remote")
+      )
+    case "botMemoryDiff":
+      return .memoryDiff(
+        try input(String.self, at: "botId"), try input(String.self, at: "changeId"), try optionalInput(String.self, at: "remote")
+      )
+    case "botJobHistory":
+      return .jobHistory(
+        try input(String.self, at: "botId"), try optionalInput(BotJobKind.self, at: "job"),
+        try optionalInput(Int.self, at: "limit") ?? 50, try optionalInput(String.self, at: "remote")
+      )
     case "modelCatalog":
       return .modelCatalog(try optionalInput(String.self, at: "providerInstanceId"), try optionalInput(String.self, at: "remote"))
     case "providers": return .providers(try optionalInput(String.self, at: "remote"))
@@ -153,6 +216,18 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case "bot":
       let remote = root.arguments["remote"]
       return .detail(try input(String.self, at: "botId"), remote == nil || remote == .null ? nil : try input(String.self, at: "remote"))
+    case "botMemory":
+      return .memory(try input(String.self, at: "botId"), try optionalInput(String.self, at: "remote"))
+    case "botSuggestions":
+      return .suggestions(
+        try input(String.self, at: "botId"), try optionalInput(BotSuggestion.Status.self, at: "status"),
+        try optionalInput(String.self, at: "remote")
+      )
+    case "decideBotSuggestion": return .decideSuggestion(try input(DecideBotSuggestionInput.self))
+    case "runBotJob": return .runJob(try input(RunBotJobInput.self))
+    case "updateBotMemory": return .updateMemory(try input(UpdateBotMemoryInput.self))
+    case "undoBotMemoryChange": return .undoMemory(try input(UndoBotMemoryChangeInput.self))
+    case "captureBotFeedback": return .captureFeedback(try input(CaptureBotFeedbackInput.self))
     case "botActivity":
       let limit = try optionalInput(Int.self, at: "limit") ?? BotActivityPage.defaultLimit
       let waitMs = try optionalInput(Int.self, at: "waitMs") ?? 0
@@ -177,6 +252,50 @@ public struct BotsGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case "answerBotRequest": return .answer(try input(AnswerBotRequestInput.self))
     default: throw invalid
     }
+  }
+
+  private enum RegistryOperation {
+    case pairingGrants
+    case mintPairingCode(MintPairingCodeInput)
+    case revokePairingGrant(RevokePairingGrantInput)
+    case remotes
+    case addRemote(AddRemoteInput)
+    case removeRemote(RemoveRemoteInput)
+    case useRemote(UseRemoteInput)
+  }
+
+  private func decodeRegistry(
+    _ root: ParsedGraphQLRootField, invalid: BotStoreError
+  ) throws -> RegistryOperation? {
+    func input<Value: Decodable>(_ type: Value.Type) throws -> Value {
+      guard let input = root.arguments["input"],
+            let result = try? JSONDecoder().decode(type, from: JSONEncoder().encode(input)) else { throw invalid }
+      return result
+    }
+    switch root.fieldName {
+    case "pairingGrants": return .pairingGrants
+    case "mintPairingCode": return .mintPairingCode(try input(MintPairingCodeInput.self))
+    case "revokePairingGrant": return .revokePairingGrant(try input(RevokePairingGrantInput.self))
+    case "remotes": return .remotes
+    case "addRemote": return .addRemote(try input(AddRemoteInput.self))
+    case "removeRemote": return .removeRemote(try input(RemoveRemoteInput.self))
+    case "useRemote": return .useRemote(try input(UseRemoteInput.self))
+    default: return nil
+    }
+  }
+
+  private func executeRegistry(_ operation: RegistryOperation) async throws -> JSONValue {
+    let value: JSONValue
+    switch operation {
+    case .pairingGrants: value = try await BotSurfaceJSON.value(provider.pairingGrants())
+    case let .mintPairingCode(input): value = try await BotSurfaceJSON.value(provider.mintPairingCode(input: input))
+    case let .revokePairingGrant(input): value = try await BotSurfaceJSON.value(provider.revokePairingGrant(input: input))
+    case .remotes: value = try await BotSurfaceJSON.value(provider.remotes())
+    case let .addRemote(input): value = try await BotSurfaceJSON.value(provider.addRemote(input: input))
+    case let .removeRemote(input): value = try await BotSurfaceJSON.value(provider.removeRemote(input: input))
+    case let .useRemote(input): value = try await BotSurfaceJSON.value(provider.useRemote(input: input))
+    }
+    return value
   }
 
   private func failure(_ error: BotStoreError, completed: JSONObject = [:]) -> GraphQLDocumentExecutionResponse {

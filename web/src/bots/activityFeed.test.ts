@@ -11,7 +11,7 @@ function page(sequences: number[], overrides: Partial<BotActivityPage> = {}): Bo
   return {
     events: sequences.map((seq) => ({ seq, kind: 'message', at: '2026-11-25T00:00:00Z', payload: { text: 'Working' } })),
     state, lastSequence: sequences.at(-1) ?? 0, truncated: false, sessionStatus: 'running',
-    activitySource: 'acp', ...overrides,
+    activitySource: 'acp', origin: { remote: 'local', verified: true, connection: 'connected', observedAt: '2026-11-25T00:00:00Z' }, ...overrides,
   }
 }
 

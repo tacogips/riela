@@ -8,7 +8,7 @@ function terminalPage(size = 0): BotActivityPage {
     events: Array.from({ length: size }, (_, index) => ({
       seq: index + 1, at: '2026-11-25T00:00:00Z', kind: 'message', payload: {},
     })),
-    state: null, lastSequence: size, truncated: false, sessionStatus: 'completed', activitySource: 'acp',
+    state: null, lastSequence: size, truncated: false, sessionStatus: 'completed', activitySource: 'acp', origin: { remote: 'local', verified: true, connection: 'connected', observedAt: '2026-11-25T00:00:00Z' },
   }
 }
 

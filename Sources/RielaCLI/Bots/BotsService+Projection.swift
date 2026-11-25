@@ -30,19 +30,19 @@ extension BotsService {
         status: routine.status.rawValue, nextRunAt: routine.status == .active ? nextBotRoutineTick(routine, after: at) : nil
       )
     }
-    let rules = HandoverRedactionRules(boundValues: environment.keys.sorted().reduce(into: [:]) { secrets, key in
-      let parts = key.uppercased().split(separator: "_")
-      if parts.contains(where: { ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"].contains($0) }),
-        let value = environment[key], secrets[value] == nil {
-        secrets[value] = key
-      }
-    })
+    let rules = BotMemoryRuntime.redactionRules(environment: environment)
     let input = BotBoardInput(
       bot: bot, sessions: sessionData.inputs, tasks: ownedTasks,
       routines: routineRows.map {
         BotBoardRoutineInput(
           routineId: $0.routineId, name: $0.name, workflowName: $0.workflowName,
           nextFireAt: $0.nextRunAt, active: $0.status == RoutineStatus.active.rawValue
+        )
+      },
+      suggestions: try store.suggestions(botId: bot.botId, status: .accepted).map {
+        BotBoardSuggestionInput(
+          suggestionId: $0.suggestionId, title: rules.redactText($0.title), status: $0.status.rawValue,
+          acceptedAt: $0.acceptedAt.flatMap(botDate), startedSessionId: $0.startedSessionId
         )
       },
       listStates: try store.listState(botId: bot.botId), now: at, origin: origin(at),

@@ -1,6 +1,7 @@
 import Foundation
 import RielaAddons
 import RielaMemory
+import RielaServer
 
 extension RielaArgumentParser {
   func parseWorkflowDefinitionCommand(_ arguments: [String]) throws -> WorkflowDefinitionCommandOptions {
@@ -185,7 +186,7 @@ extension RielaArgumentParser {
   }
 
   func parseRun(target: String, tokens: [String]) throws -> WorkflowRunOptions {
-    let parsed = try ParsedWorkflowOptions(tokens, allowRunOptions: true)
+    let parsed = try ParsedWorkflowOptions(tokens, allowRunOptions: true, allowRemote: true)
     if !parsed.fromRegistry { try rejectUnsafeScopedRunTarget(target, parsed: parsed) }
     let resolution = WorkflowResolutionOptions(
       workflowName: target,
@@ -193,6 +194,7 @@ extension RielaArgumentParser {
       workflowDefinitionDir: parsed.workflowDefinitionDir,
       workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     )
+    let remote = try workflowRemoteCredentials(parsed)
     var options = WorkflowRunOptions(
       target: target,
       resolution: resolution,
@@ -215,17 +217,33 @@ extension RielaArgumentParser {
       sessionStore: parsed.sessionStore,
       workingDirectory: resolution.workingDirectory,
       explicitWorkingDirectory: parsed.workingDirectory != nil,
-      endpoint: parsed.endpoint,
-      authToken: parsed.authToken,
+      endpoint: remote?.endpoint ?? parsed.endpoint,
+      authToken: remote?.token ?? parsed.authToken,
       authTokenEnv: parsed.authTokenEnv,
       fromRegistry: parsed.fromRegistry,
       supervisorMode: parsed.supervisorMode,
       resumeSessionId: parsed.resumeSessionId,
       botId: parsed.bot
     )
+    options.pairedRemote = remote != nil
     options.runtimeEnvironmentFile = parsed.runtimeEnvironmentFile
     options.entryStepId = parsed.entryStepId
     return options
+  }
+
+  private func workflowRemoteCredentials(
+    _ parsed: ParsedWorkflowOptions
+  ) throws -> (endpoint: String, token: String)? {
+    guard parsed.endpoint == nil, parsed.authToken == nil, parsed.authTokenEnv == nil else { return nil }
+    let registry = RemoteRegistry(environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
+    let name = try parsed.remote ?? registry.list().active
+    guard name != "local" else { return nil }
+    guard name != "*" else {
+      throw CLIUsageError("remote_selector_invalid: workflow run requires one remote")
+    }
+    let credentials = try registry.credentials(name: name)
+    let endpoint = try RielaPairingAddress.validate(credentials.record.address).appendingPathComponent("graphql")
+    return (endpoint.absoluteString, credentials.token)
   }
 
   private func rejectRemoteResolutionOptions(_ parsed: ParsedWorkflowOptions, subcommand: String) throws {

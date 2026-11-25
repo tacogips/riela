@@ -67,6 +67,11 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Flag(name: .customLong("note-api")) var noteAPIEnabled = false
   @Option var host: String?
   @Option var port: Int?
+  @Option var pairingAddress: String?
+  @Option var pairingScope: String?
+  @Option var serverName: String?
+  @Option var address: String?
+  @Option var grant: String?
   @Option var noteRoot: String?
   @Option var webRoot: String?
   @Option(name: [.customLong("query"), .customLong("document")]) var graphQLQuery: String?

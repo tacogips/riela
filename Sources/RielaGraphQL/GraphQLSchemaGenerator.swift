@@ -48,7 +48,7 @@ public enum GraphQLSchemaGenerator {
   /// Object and input types of the control-plane contract. The DTO-sync test
   /// pins every `GraphQL*DTO` struct to its descriptor here, so a DTO field
   /// added without a schema field fails the build gate.
-  public static let types: [TypeDescriptor] = routineTypes + botTypes + modelCatalogTypes + [
+  public static let types: [TypeDescriptor] = routineTypes + botTypes + modelCatalogTypes + pairingTypes + remoteTypes + [
     .init(kind: .input, name: "ExecuteWorkflowInput", fields: [
       .init(name: "workflowName", type: "String!"),
       .init(name: "runtimeVariables", type: "JSONObject"),
@@ -616,7 +616,7 @@ public enum GraphQLSchemaGenerator {
   /// Root field signatures keyed by `SurfaceGraphQLBinding.qualifiedField`.
   /// The catalog decides which fields the schema publishes and in what order;
   /// this table supplies each one's arguments and return type.
-  public static let rootFields: [String: FieldDescriptor] = [
+  public static let rootFields = botMemoryRootFields.merging([
     "Query.modelCatalog": .init(
       name: "modelCatalog", arguments: "providerInstanceId: String, remote: String", type: "ModelCatalogPayload!"
     ),
@@ -630,7 +630,6 @@ public enum GraphQLSchemaGenerator {
       name: "removeProviderInstance", arguments: "input: RemoveProviderInstanceInput!", type: "ProviderListPayload!"
     ),
     "Query.bots": .init(name: "bots", arguments: "filter: BotFilter", type: "BotListPayload!"),
-    "Query.bot": .init(name: "bot", arguments: "botId: String!, remote: String", type: "BotDetailPayload!"),
     "Query.botActivity": .init(
       name: "botActivity",
       arguments: "sessionId: String!, afterSequence: Int = 0, limit: Int = 200, waitMs: Int = 0, remote: String",
@@ -716,7 +715,9 @@ public enum GraphQLSchemaGenerator {
     "Query.workflowSession": .init(name: "workflowSession", arguments: "workflowId: String!, sessionId: String!", type: "WorkflowSession"),
     "Query.workflowSessions": .init(name: "workflowSessions", arguments: "workflowName: String, status: String, limit: Int", type: "[WorkflowSessionSummary!]!"),
     "Query.workflows": .init(name: "workflows", arguments: "filter: WorkflowFilter", type: "WorkflowListPayload!")
-  ]
+  ]) { _, current in current }.merging(botJobsRootFields) { _, current in current }
+    .merging(pairingRootFields) { _, current in current }
+    .merging(remoteRootFields) { _, current in current }
 
   static let routineTypes: [TypeDescriptor] = [
     .init(kind: .object, name: "Routine", fields: [
@@ -793,7 +794,9 @@ public enum GraphQLSchemaGenerator {
 
   /// The schema text with the hand-written blocks supplied by the caller, so
   /// the regeneration entry point can substitute Swift interpolation markers.
-  static func renderTemplate(handWrittenBlocks: [String]) -> String {
+  static func renderTemplate(
+    handWrittenBlocks: [String], renderType: (TypeDescriptor) -> String = renderType
+  ) -> String {
     var out: [String] = scalars.map { "scalar \($0)" }
     for type in types {
       out.append(renderType(type))
@@ -821,29 +824,4 @@ public enum GraphQLSchemaGenerator {
     )
   }
 
-  /// The complete text of the checked-in `GraphQLContractProjector+Schema.swift`.
-  /// The hand-written blocks are emitted as Swift interpolations so the checked-in
-  /// literal and `render()` keep reading one source for them.
-  static func swiftSourceTemplate() -> String {
-    let body = renderTemplate(handWrittenBlocks: handWrittenSchemaBlockNames.map { "\\(\($0))" })
-    let indented = body
-      .split(separator: "\n", omittingEmptySubsequences: false)
-      .map { "  " + $0 }
-      .joined(separator: "\n")
-    return """
-    // GENERATED FILE - do not edit by hand.
-    //
-    // Rendered by `GraphQLSchemaGenerator.render()` from the control-plane
-    // contract descriptors in `GraphQLSchemaGenerator.swift` plus the GraphQL
-    // bindings in `SurfaceCatalog`. Regenerate with
-    // `scripts/surface-parity/generate-sdl.sh`; `SurfaceParityGraphQLTests`
-    // fails if this file and the generator disagree by a single byte.
-    extension GraphQLContractProjector {
-      public static let schemaContract = \"\"\"
-    \(indented)
-      \"\"\"
-    }
-
-    """
-  }
 }

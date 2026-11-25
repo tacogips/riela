@@ -159,8 +159,12 @@ public enum RielaWebAPIRouteTable {
     .init(method: "POST", path: "/api/v1/auth/logout", owner: passkeys)
   ]
 
+  public static let pairing: [RielaWebAPIRoute] = [
+    .init(method: "POST", path: "/api/v1/pairing/redeem", owner: "Sources/RielaCLI/ServeWebHost.swift")
+  ]
+
   public static let all: [RielaWebAPIRoute] =
-    sharedProjection + instanceWrites + instanceEnvironment + desktopOnly + workflowEditor + passkeyAuth
+    sharedProjection + instanceWrites + instanceEnvironment + desktopOnly + workflowEditor + passkeyAuth + pairing
 
   /// The desktop host serves the instance writes from its own file.
   public static let desktopInstanceWriteOwner = desktopInstances

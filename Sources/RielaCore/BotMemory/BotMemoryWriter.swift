@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import RielaSQLite
 
@@ -17,6 +18,11 @@ public struct BotMemoryWriter: Sendable {
     self.redact = redact
     self.limits = limits
     self.now = now
+  }
+
+  var memoryRootKey: String {
+    let path = URL(fileURLWithPath: memoryRoot, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath().path
+    return SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 
   public static func memoryId(botId: String) -> String { "bot-" + botId }
@@ -96,7 +102,7 @@ public struct BotMemoryWriter: Sendable {
         redacted: batch.redacted, downgraded: batch.downgraded, ignoredInstructionChanges: batch.ignoredInstructionChanges
       )
       if audit {
-        try BotStore.insertMemoryChange(change, in: database)
+        try BotStore.insertMemoryChange(change, memoryRootKey: memoryRootKey, in: database)
       }
       return change
     }

@@ -70,7 +70,8 @@ extension GraphQLSchemaGenerator {
       .init(name: "requestId", type: "String!"),
       .init(name: "status", type: "String!"),
       .init(name: "outcomeOptionId", type: "String"),
-      .init(name: "resolvedBy", type: "String")
+      .init(name: "resolvedBy", type: "String"),
+      .init(name: "origin", type: "BotOrigin!")
     ])
   ]
 }

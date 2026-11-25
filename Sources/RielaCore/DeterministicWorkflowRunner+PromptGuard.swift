@@ -27,6 +27,13 @@ extension DeterministicWorkflowRunner {
     payload.promptMaxBytes ?? workflow.defaults.agentPromptMaxBytes ?? agentPromptDefaultMaxBytes
   }
 
+  func appendingBotMemory(to prompts: ComposedAdapterPrompts, botContext: BotRunContext?) -> ComposedAdapterPrompts {
+    guard let memoryBlock = botContext?.memoryBlock, !memoryBlock.isEmpty else { return prompts }
+    var prompts = prompts
+    prompts.systemPromptText = [prompts.systemPromptText, memoryBlock].compactMap { $0 }.joined(separator: "\n\n")
+    return prompts
+  }
+
   func guardAgentPrompt(
     workflow: WorkflowDefinition,
     step: WorkflowStepRef,
@@ -108,13 +115,14 @@ extension DeterministicWorkflowRunner {
           requestVariables: compactedRequestVariables,
           resolvedInputPayload: compactedResolvedInputPayload
         )
-        currentPrompts = try composedPromptsWithFinalizationEvidence(
+        let recomposed = try composedPromptsWithFinalizationEvidence(
           workflow: workflow,
           step: step,
           payload: payload,
           variables: variables,
           session: session
         )
+        currentPrompts = appendingBotMemory(to: recomposed, botContext: request.botContext)
       } catch let error as AdapterExecutionError {
         rejection = error
         break

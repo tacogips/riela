@@ -58,9 +58,15 @@ private func requestedSessionContinueScope(
 
 public struct ScopedParityCommandRunner: Sendable {
   var liveEventServer: any EventLiveServing
+  var remoteTransport = RemoteHTTP.production
 
   public init() {
     self.liveEventServer = DefaultEventLiveServer()
+  }
+
+  init(remoteTransport: @escaping RemoteHTTP.Transport) {
+    self.init()
+    self.remoteTransport = remoteTransport
   }
 
   init(liveEventServer: any EventLiveServing) {
@@ -75,7 +81,7 @@ public struct ScopedParityCommandRunner: Sendable {
         parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
       } else if command.kind == .events, options.command == "schedules" {
         parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
-      } else if [.routine, .bot, .model, .provider].contains(command.kind) {
+      } else if [.routine, .bot, .model, .provider, .remote].contains(command.kind) {
         // Each family parses its own options.
         parityArguments = []
       } else {
@@ -109,13 +115,29 @@ public struct ScopedParityCommandRunner: Sendable {
         let result = try await eventResult(options: options, parsed: parsed)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
       case .bot:
-        return botResult(options: options)
+        return await botResult(options: options)
       case .model, .provider:
-        return await ModelCatalogCommands().run(kind: command.kind, options: options)
+        return await ModelCatalogCommands(remoteTransport: remoteTransport).run(kind: command.kind, options: options)
+      case .remote:
+        do {
+          return try await remoteResult(options)
+        } catch {
+          var context = options
+          context.target = nil
+          context.command = options.command.flatMap(RemoteClientAction.init(rawValue:))?.rawValue
+          let message = (error as? CLIUsageError)?.message ?? String(describing: error)
+          return failure(message, output: options.output, options: context)
+        }
       case .routine:
-        let result = try routineResult(options: options)
+        let result = try await routineResult(options: options, transport: remoteTransport)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
       case .serve:
+        if options.command == "pairing" {
+          return try pairingResult(
+            options: options, parsed: parsed,
+            homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+          )
+        }
         let response = try await serverResponse(options: options, parsed: parsed)
         let result = ScopedParityCommandResult(
           scope: command.kind.rawValue,

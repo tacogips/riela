@@ -8,7 +8,9 @@ enum BotActivityRuntime {
     SQLiteWorkflowActivityRecorder(sessionStoreRoot: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
   }
 
-  static func botContext(forExistingSession sessionId: String, sessionStoreRoot: String) -> BotRunContext? {
+  static func botContext(
+    forExistingSession sessionId: String, sessionStoreRoot: String, workingDirectory: String, environment: [String: String]
+  ) -> BotRunContext? {
     let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
     let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
     let store = BotStore(sessionStoreRoot: runtimeRoot)
@@ -18,7 +20,13 @@ enum BotActivityRuntime {
           let bot = try? store.load(botId: link.botId) else {
       return nil
     }
-    return BotRunContext(botId: bot.botId, permissionWaitMs: bot.permissionWaitMs)
+    return BotRunContext(
+      botId: bot.botId, permissionWaitMs: link.source == "job" ? 0 : bot.permissionWaitMs,
+      memoryBlock: BotMemoryRuntime.promptBlock(
+        botId: bot.botId, sessionStoreRoot: sessionStoreRoot, workingDirectory: workingDirectory, environment: environment
+      ),
+      forceReadOnlySandbox: link.source == "job"
+    )
   }
 
   static func rerunEventHandler(

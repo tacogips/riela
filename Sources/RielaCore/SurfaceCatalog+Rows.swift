@@ -13,7 +13,7 @@ public extension SurfaceCatalog {
       + configurationRows
       + webPlatformRows
       + workRuntimeRows
-      + botFamilyRows
+      + botFamilyRows + remoteRows
 }
 
 private let workflowDefaults = SurfaceRowDefaults(
@@ -68,7 +68,7 @@ extension SurfaceCatalog {
         "--save-instance", "--mock-scenario", "--output", "--max-steps", "--max-concurrency",
         "--max-loop-iterations", "--disable-default-loop-guard", "--default-timeout-ms",
         "--timeout-ms", "--artifact-root", "--session-store", "--working-dir", "--endpoint",
-        "--auth-token", "--auth-token-env", "--from-registry", "--scope", "--bot"
+        "--auth-token", "--auth-token-env", "--from-registry", "--scope", "--bot", "--remote"
       ],
       graphql: graphQLMutation("executeWorkflow"),
       library: libraryEntryPoint("executeWorkflow"),

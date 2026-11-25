@@ -1,4 +1,4 @@
-export type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'bots' | 'settings'
+export type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'bots' | 'models' | 'settings'
 export type View = NavigationView | 'workflow-detail' | 'run-detail' | 'ops-run' | 'bot-detail'
 
 export interface ProfileViewTransition {

@@ -39,6 +39,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
   var workingDirectory: String?
   @Option var endpoint: String?
+  @Option var remote: String?
   @Option var authToken: String?
   @Option var authTokenEnv: String?
   @Flag var fromRegistry = false
@@ -58,6 +59,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--session-store",
     "--resume-session-id",
     "--entry-step",
+    "--remote",
     "--auth-token",
     "--auth-token-env",
     "--max-steps",
@@ -74,7 +76,9 @@ struct ParsedWorkflowOptions: ParsableArguments {
 
   init() {}
 
-  init(_ tokens: [String], allowRunOptions: Bool = false, allowTableOutput: Bool = false) throws {
+  init(
+    _ tokens: [String], allowRunOptions: Bool = false, allowTableOutput: Bool = false, allowRemote: Bool = false
+  ) throws {
     if !allowRunOptions, let token = tokens.first(where: Self.isRunOption) {
       let name = token.split(separator: "=", maxSplits: 1).first.map(String.init) ?? token
       throw CLIUsageError("\(name) is supported only by workflow run")
@@ -86,6 +90,9 @@ struct ParsedWorkflowOptions: ParsableArguments {
       throw CLIUsageError(argumentParserUsageMessage(Self.message(for: error)))
     }
 
+    if remote != nil && !allowRemote {
+      throw CLIUsageError("--remote is supported only by workflow run")
+    }
     try validateParsedOptions(tokens: tokens, allowTableOutput: allowTableOutput)
   }
 
@@ -124,6 +131,9 @@ struct ParsedWorkflowOptions: ParsableArguments {
     try requirePositive(timeoutMs, option: "--timeout-ms")
     try requireNonNegative(agentSilenceWarningMs, option: "--agent-silence-warning-ms")
     try requirePositive(agentSilenceMonitorIntervalMs, option: "--agent-silence-monitor-interval-ms")
+    if remote != nil && (endpoint != nil || authToken != nil || authTokenEnv != nil) {
+      throw CLIUsageError("--remote cannot be combined with --endpoint, --auth-token, or --auth-token-env")
+    }
     if variables != nil && variablesFile != nil {
       throw CLIUsageError("--variables and --variables-file are mutually exclusive")
     }

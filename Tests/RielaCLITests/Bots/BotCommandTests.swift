@@ -75,7 +75,7 @@ final class BotCommandTests: XCTestCase {
     XCTAssertEqual(closed.workflowId, workflowName)
     XCTAssertEqual(closed.activitySource, "session")
     XCTAssertNotNil(closed.lastResult)
-    XCTAssertEqual(detail.memory, .null)
+    XCTAssertEqual(detail.memory, BotMemorySummary())
     let listing: BotListPayload = try await fixture.json(["list"])
     XCTAssertNotNil(listing.bots.first?.lastActivityAt)
     try await fixture.assertSuccess(["settle", "release-bot", "--item", "session:\(closed.itemId)"])
@@ -194,7 +194,11 @@ final class BotCommandTests: XCTestCase {
         ])
       ]))
       let remote = await library.executeGraphQLDocument(#"{ bots(filter: {remote: "other"}) { groups } }"#)
-      XCTAssertTrue(String(describing: remote.body["errors"]).contains("remote_not_configured"))
+      guard case let .array(errors)? = remote.body["errors"], case let .object(issue)? = errors.first,
+            case let .object(extensions)? = issue["extensions"] else {
+        return XCTFail("Expected a typed error for an unknown remote")
+      }
+      XCTAssertEqual(extensions["code"], .string("remote_not_found"))
       let removed = await library.executeGraphQLDocument("""
         mutation { removeBot(input: {botId: "server-bot"}) { bot { botId } } }
         """)
@@ -203,10 +207,67 @@ final class BotCommandTests: XCTestCase {
     }
   }
 
-  private func fixture() throws -> BotCommandFixture {
+  func testJobListFiltersLedgerAndShowsNewestFirst() async throws {
+    let fixture = try fixture(plan: "bots-16-jobs-surfaces")
+    try await fixture.assertSuccess(["create", "--name", "Release Bot"])
+    let now = Date(timeIntervalSince1970: 1_790_000_000)
+    try fixture.store.recordSkippedJobRuns(
+      botId: "release-bot", job: .upkeep, periodKeys: ["2026-11-20", "2026-11-21"],
+      reason: "no_activity", at: now
+    )
+    try fixture.store.recordSkippedJobRuns(
+      botId: "release-bot", job: .lookAround, periodKeys: ["2026-11-22"],
+      reason: "no_activity", at: now.addingTimeInterval(60)
+    )
+
+    let recent: [BotJobRun] = try await fixture.json(["job", "list", "release-bot", "--limit", "2"])
+    XCTAssertEqual(recent.map(\.periodKey), ["2026-11-22", "2026-11-21"])
+    let upkeep: [BotJobRun] = try await fixture.json(["job", "list", "release-bot", "--job", "upkeep"])
+    XCTAssertEqual(upkeep.map(\.periodKey), ["2026-11-21", "2026-11-20"])
+    let invalid = await fixture.run(["job", "list", "release-bot", "--limit", "0"])
+    XCTAssertEqual(invalid.exitCode, .usage)
+    XCTAssertTrue(invalid.stderr.contains("--limit must be positive"), invalid.stderr)
+
+    let help = await RielaCLIApplication().run(["bot", "job", "--help"], environment: fixture.environment)
+    XCTAssertEqual(help.exitCode, .success)
+    XCTAssertTrue(help.stdout.contains("riela bot job run"), help.stdout)
+    XCTAssertTrue(help.stdout.contains("riela bot job list"), help.stdout)
+  }
+
+  func testSuggestionDecisionsAreRecordedAndAcceptedSuggestionIsPlanned() async throws {
+    let fixture = try fixture(plan: "bots-16-jobs-surfaces")
+    try await fixture.assertSuccess(["create", "--name", "Release Bot"])
+    let drafts = [BotSuggestionDraft(title: "Review releases"), BotSuggestionDraft(title: "Review obsolete work")]
+    let suggestions = try fixture.store.insertSuggestions(
+      botId: "release-bot", drafts: drafts, sourceSessionId: nil, at: Date(timeIntervalSince1970: 1_790_000_000)
+    )
+    let first = try XCTUnwrap(suggestions.first)
+    let second = try XCTUnwrap(suggestions.last)
+    let opened: [BotSuggestion] = try await fixture.json(["suggestion", "list", "release-bot", "--status", "open"])
+    XCTAssertEqual(Set(opened.map(\.suggestionId)), Set(suggestions.map(\.suggestionId)))
+
+    let noAction = await fixture.run(["suggestion", "accept", first.suggestionId, "--run"])
+    XCTAssertEqual(noAction.exitCode, .failure)
+    XCTAssertTrue(noAction.stderr.contains("suggestion_no_action"), noAction.stderr)
+    let detail: BotDetailPayload = try await fixture.json(["show", "release-bot"])
+    XCTAssertEqual(detail.board.planned.map(\.itemId), [first.suggestionId])
+    XCTAssertEqual(detail.suggestions.first { $0.suggestionId == first.suggestionId }?.acceptedBy, "cli")
+
+    let again = await fixture.run(["suggestion", "accept", first.suggestionId])
+    XCTAssertEqual(again.exitCode, .failure)
+    XCTAssertTrue(again.stderr.contains("suggestion_already_decided"), again.stderr)
+    let dismissed: BotSuggestion = try await fixture.json(["suggestion", "dismiss", second.suggestionId, "--reason", "later"])
+    XCTAssertEqual(dismissed.status, .dismissed)
+    XCTAssertEqual(dismissed.dismissedBy, "cli")
+    XCTAssertEqual(dismissed.dismissReason, "later")
+    let remaining: [BotSuggestion] = try await fixture.json(["suggestion", "list", "release-bot", "--status", "open"])
+    XCTAssertTrue(remaining.isEmpty)
+  }
+
+  private func fixture(plan: String = "bots-10-bot-surfaces") throws -> BotCommandFixture {
     let repository = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let root = repository.appendingPathComponent("tmp/bots-overview/bots-10-bot-surfaces/test-\(UUID().uuidString)")
+    let root = repository.appendingPathComponent("tmp/bots-overview/\(plan)/test-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     addTeardownBlock { try FileManager.default.removeItem(at: root) }
     return BotCommandFixture(root: root, repository: repository)

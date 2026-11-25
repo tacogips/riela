@@ -264,7 +264,22 @@ extension SurfaceCatalog {
     )
   ]
 
-  static let webPlatformRows: [SurfaceOperation] = authRows + editorRows + workerSettingsRows
+  static let webPlatformRows: [SurfaceOperation] = authRows + editorRows + workerSettingsRows + [pairingRedeemRow]
+
+  private static var pairingRedeemRow: SurfaceOperation {
+    let design = "design-docs/specs/design-bots-overview.md#12-control-surfaces"
+    let defaults = SurfaceRowDefaults(
+      cli: .excluded(reason: "Reached through riela remote add", design: design),
+      graphql: .excluded(reason: "Must work before any credential exists", design: design),
+      webAPI: SurfaceExclusion.notAConsoleOperation("the pairing handshake"),
+      library: SurfaceExclusion.notALibraryEntryPoint("the pairing handshake"),
+      design: design
+    )
+    return surfaceRow(
+      defaults, id: "pairing.redeem", family: "pairing", kind: .mutation,
+      web: webRoute("POST", "/api/v1/pairing/redeem")
+    )
+  }
 
   private static var authRows: [SurfaceOperation] {
     [

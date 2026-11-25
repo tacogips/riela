@@ -1,0 +1,20 @@
+{
+  "id": "triage",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "modelFreeze": false,
+  "description": "Summarize the routine task for this tick.",
+  "promptTemplateFile": "prompts/triage.md",
+  "variables": {},
+  "output": {
+    "description": "Return a short triage summary and conditionMet set to false.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "summary": {"type": "string"},
+        "conditionMet": {"type": "boolean"}
+      },
+      "required": ["summary", "conditionMet"]
+    }
+  }
+}

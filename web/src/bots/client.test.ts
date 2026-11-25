@@ -21,13 +21,14 @@ test('lists bots with a single authenticated GraphQL POST and preserves projecte
       bot: { botId, name: botId, paused: false },
       counts: { needsYou: 1, working: 0, waiting: 0, planned: 0 },
       inProgress: [], listState: { pinned: false }, section: 'active',
-      origin: { remote: 'local' },
+      workspaceGroup: 'team',
+      origin: { remote: 'local', connection: 'connected', verified: true, observedAt: '2026-11-25T00:00:00Z' },
     })),
     groups: [{ key: 'team', needsYou: true, botIds: ['z', 'a'] }],
   }
   const { client, requests } = withResponse({ data: { bots: payload } })
   const signal = new AbortController().signal
-  expect(await client.listBots('workspace', signal)).toEqual(payload)
+  expect(await client.listBots('workspace', 'local', signal)).toEqual(payload)
   expect(requests).toHaveLength(1)
   const request = requests[0]!
   expect(request.input).toBe('/graphql')
@@ -35,7 +36,7 @@ test('lists bots with a single authenticated GraphQL POST and preserves projecte
     method: 'POST', credentials: 'same-origin', signal,
     headers: { 'Content-Type': 'application/json', 'X-Riela-Profile': 'project', Authorization: 'Bearer test-token' },
   })
-  expect(request.body).toMatchObject({ operationName: 'WebBots', variables: { filter: { groupBy: 'workspace' } } })
+  expect(request.body).toMatchObject({ operationName: 'WebBots', variables: { filter: { groupBy: 'workspace', remote: 'local' } } })
 })
 
 test('maps server GraphQL error codes to APIError', async () => {
@@ -47,11 +48,11 @@ test('maps server GraphQL error codes to APIError', async () => {
 
 test('passes activity cursor and long-poll timeout through variables', async () => {
   const payload: BotActivityPage = {
-    events: [], lastSequence: 17, truncated: false, sessionStatus: 'running', activitySource: 'acp',
+    events: [], lastSequence: 17, truncated: false, sessionStatus: 'running', activitySource: 'acp', origin: { remote: 'local', verified: true, connection: 'connected', observedAt: '2026-11-25T00:00:00Z' },
   }
   const { client, requests } = withResponse({ data: { botActivity: payload } })
   expect(await client.getActivity({ sessionId: 'session/1', afterSequence: 17, waitMs: 25_000 })).toEqual(payload)
-  expect(requests[0]?.body.variables).toEqual({ sessionId: 'session/1', afterSequence: 17, limit: 200, waitMs: 25_000 })
+  expect(requests[0]?.body.variables).toEqual({ sessionId: 'session/1', afterSequence: 17, limit: 200, waitMs: 25_000, remote: 'local' })
 })
 
 test('sends native option IDs unchanged and sends decline without an option', async () => {
@@ -59,7 +60,7 @@ test('sends native option IDs unchanged and sends decline without an option', as
   await client.answerRequest({ requestId: 'request', optionId: 'allow/once:1' })
   await client.answerRequest({ requestId: 'request', decline: true })
   expect(requests.map(({ body }) => body.variables)).toEqual([
-    { input: { requestId: 'request', optionId: 'allow/once:1' } },
-    { input: { requestId: 'request', decline: true } },
+    { input: { requestId: 'request', optionId: 'allow/once:1', remote: 'local' } },
+    { input: { requestId: 'request', decline: true, remote: 'local' } },
   ])
 })

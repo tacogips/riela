@@ -45,7 +45,10 @@ final class BotActivityRuntimeTests: XCTestCase {
       bot.permissionWaitMs = waitMs
     }
     XCTAssertEqual(
-      BotActivityRuntime.botContext(forExistingSession: session.sessionId, sessionStoreRoot: fixture.sessionRoot.path),
+      BotActivityRuntime.botContext(
+        forExistingSession: session.sessionId, sessionStoreRoot: fixture.sessionRoot.path,
+        workingDirectory: fixture.sessionRoot.path, environment: [:]
+      ),
       BotRunContext(botId: fixture.botID, permissionWaitMs: waitMs)
     )
 

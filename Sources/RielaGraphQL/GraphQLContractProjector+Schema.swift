@@ -119,10 +119,7 @@ extension GraphQLContractProjector {
     listState: BotListState!
     origin: BotOrigin!
   }
-  type BotActivityPlan {
-    planId: String!
-    entries: [BotActivityPlanEntry!]!
-  }
+  type BotActivityPlan {\n  planId: String!\n  entries: [BotActivityPlanEntry!]!\n}
   type BotActivityPlanEntry {
     content: String!
     status: String!
@@ -179,23 +176,23 @@ extension GraphQLContractProjector {
   type BotListPayload {
     bots: [BotOverviewRow!]!
     groups: [BotWorkspaceGroup!]!
+    origin: BotOrigin
   }
   type BotDetailPayload {
     bot: Bot!
     board: BotBoard!
     routines: [BotRoutine!]!
     origin: BotOrigin!
-    suggestions: [JSON!]!
-    memory: JSON
+    suggestions: [BotSuggestion!]!
+    jobs: [BotJobSummary!]!
+    memory: BotMemorySummary!
   }
   type BotMutationPayload {
     bot: Bot!
     warnings: [String!]!
+    origin: BotOrigin!
   }
-  input BotFilter {
-    groupBy: String
-    remote: String
-  }
+  input BotFilter {\n  groupBy: String\n  remote: String\n}
   input CreateBotInput {
     id: String
     name: String!
@@ -229,10 +226,7 @@ extension GraphQLContractProjector {
     paused: Boolean!
     remote: String
   }
-  input RemoveBotInput {
-    botId: String!
-    remote: String
-  }
+  input RemoveBotInput {\n  botId: String!\n  remote: String\n}
   input SetBotListStateInput {
     botId: String!
     itemKind: String
@@ -260,10 +254,7 @@ extension GraphQLContractProjector {
     locations: [BotActivityLocation!]
     updatedAt: String!
   }
-  type BotActivityLocation {
-    path: String!
-    line: Int
-  }
+  type BotActivityLocation {\n  path: String!\n  line: Int\n}
   type BotActivitySubagent {
     subSessionId: String!
     title: String
@@ -315,6 +306,139 @@ extension GraphQLContractProjector {
     status: String!
     outcomeOptionId: String
     resolvedBy: String
+    origin: BotOrigin!
+  }
+  type BotMemorySummary {
+    instructionCount: Int!
+    noteCount: Int!
+    lastChangedAt: String
+  }
+  type BotMemoryPayload {
+    botId: String!
+    markdown: String!
+    instructionCount: Int!
+    noteCount: Int!
+    changes: [BotMemoryChange!]!
+    origin: BotOrigin!
+  }
+  type BotMemoryHistoryPayload {\n  changes: [BotMemoryChange!]!\n  origin: BotOrigin!\n}
+  type BotMemoryDiffPayload {\n  diffs: [BotMemoryEntryDiff!]!\n  origin: BotOrigin!\n}
+  type BotMemoryEntryDiff {\n  entry: BotMemoryChangeEntry!\n  changes: [BotMemoryDiffField!]!\n}
+  type BotMemoryDiffField {
+    path: String!
+    op: String!
+    beforeJSON: String
+    afterJSON: String
+    encoding: String
+    beforeSHA256: String
+    afterSHA256: String
+    beforeByteCount: Int
+    afterByteCount: Int
+    prefixByteCount: Int
+    suffixByteCount: Int
+  }
+  type BotMemoryChangePayload {\n  change: BotMemoryChange!\n  origin: BotOrigin!\n}
+  type BotMemoryChange {
+    changeId: String!
+    botId: String!
+    actor: String!
+    reason: String!
+    evidenceRefs: [String!]!
+    createdAt: String!
+    entries: [BotMemoryChangeEntry!]!
+    redacted: Boolean!
+    downgraded: Boolean!
+    ignoredInstructionChanges: Int!
+  }
+  type BotMemoryChangeEntry {
+    recordId: Int!
+    op: String!
+    fromVersion: Int
+    toVersion: Int!
+  }
+  input UpdateBotMemoryInput {
+    botId: String!
+    markdown: String!
+    reason: String
+    remote: String
+  }
+  input UndoBotMemoryChangeInput {
+    botId: String!
+    changeId: String
+    remote: String
+  }
+  input CaptureBotFeedbackInput {
+    botId: String!
+    sessionId: String
+    taskId: String
+    text: String
+    topic: String
+    fromFindings: Boolean
+    remote: String
+  }
+  type BotSuggestion {
+    suggestionId: String!
+    botId: String!
+    title: String!
+    detail: String
+    action: BotSuggestionAction
+    status: String!
+    createdAt: String!
+    sourceSessionId: String
+    acceptedAt: String
+    acceptedBy: String
+    dismissedAt: String
+    dismissedBy: String
+    dismissReason: String
+    startedSessionId: String
+    origin: BotOrigin
+  }
+  type BotSuggestionAction {\n  workflowName: String!\n  input: JSON!\n}
+  type BotSuggestionListPayload {
+    botId: String!
+    suggestions: [BotSuggestion!]!
+    origin: BotOrigin!
+  }
+  type BotSuggestionPayload {\n  suggestion: BotSuggestion!\n  origin: BotOrigin!\n}
+  type BotJobSummary {
+    job: String!
+    schedule: String!
+    lastRun: BotJobRun
+  }
+  type BotJobHistoryPayload {\n  runs: [BotJobRun!]!\n  origin: BotOrigin!\n}
+  type BotJobRun {
+    botId: String!
+    job: String!
+    periodKey: String!
+    status: String!
+    sessionId: String
+    detail: String
+    startedAt: String!
+    finishedAt: String
+  }
+  type BotJobPayload {
+    botId: String!
+    job: String!
+    periodKey: String
+    status: String!
+    sessionId: String
+    detail: String
+    origin: BotOrigin!
+    changeSet: BotMemoryChange
+    suggestions: [BotSuggestion!]
+  }
+  input DecideBotSuggestionInput {
+    suggestionId: String!
+    decision: String!
+    run: Boolean
+    reason: String
+    remote: String
+  }
+  input RunBotJobInput {
+    botId: String!
+    job: String!
+    force: Boolean
+    remote: String
   }
   type CatalogModel {
     id: String!
@@ -324,6 +448,7 @@ extension GraphQLContractProjector {
     serviceTiers: [String!]!
     modes: [String!]!
     observedAt: String
+    origin: BotOrigin
   }
   type ProviderInstance {
     instanceId: String!
@@ -339,15 +464,9 @@ extension GraphQLContractProjector {
     models: [CatalogModel!]!
     origin: BotOrigin!
   }
-  type ModelCatalogPayload {
-    providers: [ProviderInstance!]!
-  }
-  type ProviderListPayload {
-    providers: [ProviderInstance!]!
-  }
-  type ProviderPayload {
-    provider: ProviderInstance!
-  }
+  type ModelCatalogPayload {\n  providers: [ProviderInstance!]!\n}
+  type ProviderListPayload {\n  providers: [ProviderInstance!]!\n}
+  type ProviderPayload {\n  provider: ProviderInstance!\n}
   input SaveProviderInstanceInput {
     instanceId: String!
     driver: String
@@ -359,14 +478,41 @@ extension GraphQLContractProjector {
     customModels: [String!]
     remote: String
   }
-  input RefreshProvidersInput {
-    instanceId: String
-    remote: String
+  input RefreshProvidersInput {\n  instanceId: String\n  remote: String\n}
+  input RemoveProviderInstanceInput {\n  instanceId: String!\n  remote: String\n}
+  type PairingGrant {
+    grantId: String!
+    clientName: String!
+    scope: String!
+    createdAt: String!
+    lastUsedAt: String
+    revokedAt: String
   }
-  input RemoveProviderInstanceInput {
-    instanceId: String!
-    remote: String
+  type PairingGrantListPayload {\n  grants: [PairingGrant!]!\n}
+  type PairingCodePayload {
+    code: String!
+    expiresAt: String!
+    address: String!
+    scope: String!
   }
+  input MintPairingCodeInput {\n  address: String!\n  scope: String\n}
+  input RevokePairingGrantInput {\n  grantId: String!\n}
+  type RemoteSummary {
+    name: String!
+    address: String!
+    serverName: String!
+    scope: String!
+    lastSeenAt: String
+    connection: String!
+  }
+  type RemoteListPayload {\n  active: String!\n  remotes: [RemoteSummary!]!\n}
+  input AddRemoteInput {
+    name: String!
+    code: String!
+    clientName: String
+  }
+  input RemoveRemoteInput {\n  name: String!\n}
+  input UseRemoteInput {\n  name: String!\n}
   input ExecuteWorkflowInput {
     workflowName: String!
     runtimeVariables: JSONObject
@@ -385,22 +531,15 @@ extension GraphQLContractProjector {
     status: String!
     exitCode: Int!
   }
-  type WorkflowExecutionSummary {
-    session: WorkflowExecutionSessionSummary!
-    nodeExecutions: [WorkflowExecutionNodeSummary!]!
-  }
+  type WorkflowExecutionSummary {\n  session: WorkflowExecutionSessionSummary!\n  nodeExecutions: [WorkflowExecutionNodeSummary!]!\n}
   type WorkflowExecutionSessionSummary {
     sessionId: String!
     workflowName: String!
     workflowId: String!
     transitions: [WorkflowExecutionTransitionSummary!]!
   }
-  type WorkflowExecutionTransitionSummary {
-    when: String
-  }
-  type WorkflowExecutionNodeSummary {
-    nodeExecId: String!
-  }
+  type WorkflowExecutionTransitionSummary {\n  when: String\n}
+  type WorkflowExecutionNodeSummary {\n  nodeExecId: String!\n}
   type ControlPlaneResult {
     accepted: Boolean!
     status: String!
@@ -411,10 +550,7 @@ extension GraphQLContractProjector {
     targetId: String
     reason: String
   }
-  type ManagerSessionView {
-    session: JSON!
-    messages: JSON!
-  }
+  type ManagerSessionView {\n  session: JSON!\n  messages: JSON!\n}
   type SendManagerMessagePayload {
     accepted: Boolean!
     managerMessageId: String!
@@ -578,10 +714,7 @@ extension GraphQLContractProjector {
     lastBackendEventAgeMs: Int
     activeBackend: String
   }
-  type SessionRollupNode {
-    digest: SessionProgressDigest!
-    children: [SessionRollupNode!]!
-  }
+  type SessionRollupNode {\n  digest: SessionProgressDigest!\n  children: [SessionRollupNode!]!\n}
   type SessionBackendActivityEvidence {
     kind: String!
     detail: String!
@@ -605,10 +738,7 @@ extension GraphQLContractProjector {
     rollupTruncated: Boolean
     rollupSnapshotLimit: Int
   }
-  type SessionObservabilityPayload {
-    result: ControlPlaneResult!
-    view: SessionObservabilityView
-  }
+  type SessionObservabilityPayload {\n  result: ControlPlaneResult!\n  view: SessionObservabilityView\n}
   type WorkflowInstance {
     identity: String!
     workflowId: String!
@@ -616,18 +746,9 @@ extension GraphQLContractProjector {
     displayName: String
     configuration: JSONObject!
   }
-  type WorkflowInstanceQueryPayload {
-    result: ControlPlaneResult!
-    value: WorkflowInstance
-  }
-  type WorkflowInstancesQueryPayload {
-    result: ControlPlaneResult!
-    value: [WorkflowInstance!]
-  }
-  type WorkflowInstanceMutationPayload {
-    result: ControlPlaneResult!
-    instance: WorkflowInstance
-  }
+  type WorkflowInstanceQueryPayload {\n  result: ControlPlaneResult!\n  value: WorkflowInstance\n}
+  type WorkflowInstancesQueryPayload {\n  result: ControlPlaneResult!\n  value: [WorkflowInstance!]\n}
+  type WorkflowInstanceMutationPayload {\n  result: ControlPlaneResult!\n  instance: WorkflowInstance\n}
   type StepExecution {
     executionId: String!
     stepId: String!
@@ -661,14 +782,8 @@ extension GraphQLContractProjector {
     provider: String!
     payload: JSONObject!
   }
-  type LogEntry {
-    level: String!
-    message: String!
-  }
-  type LLMSessionMessage {
-    role: String!
-    content: String!
-  }
+  type LogEntry {\n  level: String!\n  message: String!\n}
+  type LLMSessionMessage {\n  role: String!\n  content: String!\n}
   input ContinueSessionInput {
     workflowId: String!
     sessionId: String!
@@ -729,10 +844,7 @@ extension GraphQLContractProjector {
     required: Boolean
     blockingFindingCount: Int!
   }
-  type LoopGateFailureCount {
-    gateId: String!
-    count: Int!
-  }
+  type LoopGateFailureCount {\n  gateId: String!\n  count: Int!\n}
   type LoopGateChange {
     gateId: String!
     baseDecision: String
@@ -833,10 +945,7 @@ extension GraphQLContractProjector {
     source: String!
     present: Boolean!
   }
-  type ConsoleInstanceEventSource {
-    id: String!
-    kind: String!
-  }
+  type ConsoleInstanceEventSource {\n  id: String!\n  kind: String!\n}
   type ConsoleInstance {
     id: String!
     sourceId: String!
@@ -953,6 +1062,7 @@ extension GraphQLContractProjector {
     workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!
     routines(filter: RoutineFilter): RoutineListPayload!
     routine(routineId: String!, routineStoreRoot: String): RoutineQueryPayload!
+    pairingGrants: PairingGrantListPayload!
     managerSession(managerSessionId: String): ManagerSessionView
     taskHandover(taskId: String!, handoverId: String): TaskHandoverPayload!
     tasksAwaitingHandover(traits: [String!]): TasksAwaitingHandoverPayload!
@@ -963,9 +1073,15 @@ extension GraphQLContractProjector {
     bots(filter: BotFilter): BotListPayload!
     bot(botId: String!, remote: String): BotDetailPayload!
     botActivity(sessionId: String!, afterSequence: Int = 0, limit: Int = 200, waitMs: Int = 0, remote: String): BotActivityPage!
+    botMemory(botId: String!, remote: String): BotMemoryPayload!
+    botMemoryHistory(botId: String!, limit: Int, remote: String): BotMemoryHistoryPayload!
+    botMemoryDiff(botId: String!, changeId: String!, remote: String): BotMemoryDiffPayload!
+    botJobHistory(botId: String!, job: String, limit: Int, remote: String): BotJobHistoryPayload!
+    botSuggestions(botId: String!, status: String, remote: String): BotSuggestionListPayload!
     modelCatalog(providerInstanceId: String, remote: String): ModelCatalogPayload!
     providers(remote: String): ProviderListPayload!
     provider(instanceId: String!, remote: String): ProviderPayload!
+    remotes: RemoteListPayload!
   }
   type Mutation {
     executeWorkflow(input: ExecuteWorkflowInput!): ExecuteWorkflowPayload!
@@ -994,6 +1110,8 @@ extension GraphQLContractProjector {
     setRoutineStatus(input: SetRoutineStatusInput!): RoutineMutationPayload!
     setRoutineOverlapPolicy(input: SetRoutineOverlapPolicyInput!): RoutineMutationPayload!
     deleteRoutine(input: DeleteRoutineInput!): RoutineMutationPayload!
+    mintPairingCode(input: MintPairingCodeInput!): PairingCodePayload!
+    revokePairingGrant(input: RevokePairingGrantInput!): PairingGrantListPayload!
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
     retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
@@ -1016,11 +1134,19 @@ extension GraphQLContractProjector {
     updateBot(input: UpdateBotInput!): BotMutationPayload!
     setBotPaused(input: SetBotPausedInput!): BotMutationPayload!
     removeBot(input: RemoveBotInput!): BotMutationPayload!
+    updateBotMemory(input: UpdateBotMemoryInput!): BotMemoryChangePayload!
+    undoBotMemoryChange(input: UndoBotMemoryChangeInput!): BotMemoryChangePayload!
+    captureBotFeedback(input: CaptureBotFeedbackInput!): BotMemoryChangePayload!
+    runBotJob(input: RunBotJobInput!): BotJobPayload!
+    decideBotSuggestion(input: DecideBotSuggestionInput!): BotSuggestionPayload!
     answerBotRequest(input: AnswerBotRequestInput!): BotRequestPayload!
     setBotListState(input: SetBotListStateInput!): BotMutationPayload!
     refreshProviders(input: RefreshProvidersInput!): ProviderListPayload!
     saveProviderInstance(input: SaveProviderInstanceInput!): ProviderPayload!
     removeProviderInstance(input: RemoveProviderInstanceInput!): ProviderListPayload!
+    addRemote(input: AddRemoteInput!): RemoteListPayload!
+    removeRemote(input: RemoveRemoteInput!): RemoteListPayload!
+    useRemote(input: UseRemoteInput!): RemoteListPayload!
   }
   """
 }

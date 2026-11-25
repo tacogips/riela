@@ -67,3 +67,11 @@ describe('profile-owned view state', () => {
     )).toEqual({ clearSelection: true, view: 'workflows' })
   })
 })
+
+test('exposes Models in primary navigation for both hosts', async () => {
+  const app = await Bun.file(new URL('./App.tsx', import.meta.url)).text()
+  expect(app).toMatch(/\{ id: 'models', label: 'Models', icon: '\w+' \}/)
+  const hiddenViews = app.split('\n').find((line) => line.startsWith('const CLI_SERVE_HIDDEN_VIEWS'))
+  expect(hiddenViews).toBeDefined()
+  expect(hiddenViews).not.toContain("'models'")
+})

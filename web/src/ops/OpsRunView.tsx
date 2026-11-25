@@ -1,6 +1,7 @@
 import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
+import { ActivityPane } from '../bots/BotDetailView'
 import { getOpsOverview } from '../console/client'
 import type {
   RunDetailGate,
@@ -19,13 +20,30 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function OpsRunView(props: {
+interface OpsRunProps {
   profileKey: string
   instanceId: string
   sessionId: string
   workflowId: string
   onBack: () => void
-}) {
+  backLabel?: string
+  remote?: string
+}
+
+export function OpsRunView(props: OpsRunProps) {
+  return <Show when={props.remote} fallback={<LocalOpsRunView {...props} />}>{(remote) =>
+    <section class="bots-page" aria-label="Remote run">
+      <header class="bots-header">
+        <h1>{props.sessionId}</h1>
+        <span class="bots-meta">{remote()}</span>
+        <ActionButton onClick={props.onBack}>{props.backLabel ?? 'Command deck'}</ActionButton>
+      </header>
+      <ActivityPane sessionId={props.sessionId} remote={remote()} title="Run" />
+    </section>
+  }</Show>
+}
+
+function LocalOpsRunView(props: OpsRunProps) {
   const detail = createPollingResource(
     () => `ops:${props.profileKey}:${props.instanceId}:${props.sessionId}`,
     (signal) => api.get<RunDetailResponse>(
@@ -37,7 +55,7 @@ export function OpsRunView(props: {
   )
   const [overview] = createResource(
     () => props.profileKey,
-    () => getOpsOverview(),
+    () => getOpsOverview().catch(() => undefined),
   )
   const definition = createMemo(() => {
     const workflowId = detail.data()?.session.workflowId ?? props.workflowId
@@ -75,7 +93,7 @@ export function OpsRunView(props: {
               {sessionStatus()}
             </span>
           </Show>
-          <ActionButton class="secondary" onClick={props.onBack}>← Command deck</ActionButton>
+          <ActionButton class="secondary" onClick={props.onBack}>← {props.backLabel ?? 'Command deck'}</ActionButton>
           <ActionButton class="secondary" onClick={() => void detail.refresh()}>Refresh</ActionButton>
         </div>
       </header>

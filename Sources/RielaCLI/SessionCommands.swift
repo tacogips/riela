@@ -634,7 +634,8 @@ public struct SessionRerunCommand: Sendable {
       )
       request.activityRecorder = BotActivityRuntime.recorder(sessionStoreRoot: storeRoot)
       if let botContext = BotActivityRuntime.botContext(
-        forExistingSession: persisted.session.sessionId, sessionStoreRoot: storeRoot
+        forExistingSession: persisted.session.sessionId, sessionStoreRoot: storeRoot,
+        workingDirectory: kaibaContext.workingDirectory, environment: kaibaContext.environment
       ) {
         request.botContext = botContext
         request.eventHandler = BotActivityRuntime.rerunEventHandler(
@@ -918,7 +919,8 @@ public struct SessionResumeCommand: Sendable {
       )
       request.activityRecorder = BotActivityRuntime.recorder(sessionStoreRoot: storeRoot)
       request.botContext = BotActivityRuntime.botContext(
-        forExistingSession: persisted.session.sessionId, sessionStoreRoot: storeRoot
+        forExistingSession: persisted.session.sessionId, sessionStoreRoot: storeRoot,
+        workingDirectory: kaibaContext.workingDirectory, environment: kaibaContext.environment
       )
       let resumeRequest = request
       let result: WorkflowRunResult

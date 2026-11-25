@@ -19,13 +19,14 @@ import { WorkflowsView } from './views/WorkflowsView'
 import { OpsRunView } from './ops/OpsRunView'
 import { OpsWorkflowsView } from './ops/OpsWorkflowsView'
 import { BotsView } from './bots/BotsView'
-import { BotDetailView } from './bots/BotDetailView'
+import { ModelsView } from './models/ModelsView.tsx'
 import { parseViewHash, viewHash, type HashRoute } from './routes'
 
 const navigation: Array<{ id: NavigationView; label: string; icon: ActionIconName }> = [
   { id: 'workflows', label: 'Workflows', icon: 'workflow' },
   { id: 'ops', label: 'Command deck', icon: 'dashboard' },
   { id: 'bots', label: 'Bots', icon: 'inspect' },
+  { id: 'models', label: 'Models', icon: 'code' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ]
 
@@ -39,9 +40,9 @@ export function App() {
   const [configurationTab, setConfigurationTab] = createSignal<ConfigurationTab>('settings')
   const [selectedSourceId, setSelectedSourceId] = createSignal('')
   const [selectedInstanceId, setSelectedInstanceId] = createSignal('')
-  const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
+  const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string; remote?: string; fromLogs?: boolean }>()
   const [selectedOpsRun, setSelectedOpsRun] = createSignal<{ instanceId: string; sessionId: string; workflowId: string }>()
-  const [selectedBotId, setSelectedBotId] = createSignal('')
+  const [selectedBot, setSelectedBot] = createSignal<{ botId: string; remote?: string }>()
   const [connectionRevision, setConnectionRevision] = createSignal(0)
   const host = createPollingResource(() => `active-host:${connectionRevision()}`, discoverHost)
   const authenticationRequired = createMemo(() => {
@@ -61,15 +62,15 @@ export function App() {
     if (currentView === 'workflow-detail') return { view: 'workflow-detail', sourceId: selectedSourceId(), configurationId: selectedInstanceId() || undefined, tab: configurationTab() }
     if (currentView === 'run-detail') {
       const run = selectedRun()
-      return run ? { view: 'run-detail', sessionId: run.sessionId, sourceId: selectedSourceId() || undefined, configurationId: selectedInstanceId() || undefined } : undefined
+      return run ? { view: 'run-detail', sessionId: run.sessionId, remote: run.remote, sourceId: selectedSourceId() || undefined, configurationId: selectedInstanceId() || undefined } : undefined
     }
     if (currentView === 'ops-run') {
       const run = selectedOpsRun()
       return run ? { view: 'ops-run', instanceId: run.instanceId, sessionId: run.sessionId } : undefined
     }
     if (currentView === 'bot-detail') {
-      const botId = selectedBotId()
-      return botId ? { view: 'bot-detail', botId } : undefined
+      const bot = selectedBot()
+      return bot ? { view: 'bot-detail', ...bot } : undefined
     }
     return { view: currentView }
   }
@@ -87,11 +88,11 @@ export function App() {
       setSelectedSourceId(route.sourceId ?? '')
       setSelectedInstanceId(route.configurationId ?? '')
       setConfigurationTab('history')
-      setSelectedRun({ sessionId: route.sessionId, workflowId: 'private workflow' })
+      setSelectedRun({ sessionId: route.sessionId, workflowId: 'private workflow', remote: route.remote })
     } else if (route.view === 'ops-run') {
       setSelectedOpsRun({ instanceId: route.instanceId, sessionId: route.sessionId, workflowId: '' })
     }
-    if (route.view === 'bot-detail') setSelectedBotId(route.botId)
+    if (route.view === 'bot-detail') setSelectedBot({ botId: route.botId, remote: route.remote })
     setView(route.view === 'instances' ? 'workflows' : route.view)
   }
   onMount(() => {
@@ -123,7 +124,7 @@ export function App() {
       setSelectedInstanceId('')
       setSelectedRun(undefined)
       setSelectedOpsRun(undefined)
-      setSelectedBotId('')
+      setSelectedBot(undefined)
     }
     if (transition.view !== view()) setView(transition.view)
     previousProfileKey = nextProfileKey
@@ -145,7 +146,10 @@ export function App() {
               || (item.id === 'ops' && view() === 'ops-run')
               || (item.id === 'bots' && view() === 'bot-detail')
             return <ActionButton icon={item.icon} classList={{ active: active() }}
-              aria-current={active() ? 'page' : undefined} onClick={() => setView(item.id)}>
+              aria-current={active() ? 'page' : undefined} onClick={() => {
+                if (item.id === 'bots') setSelectedBot(undefined)
+                setView(item.id)
+              }}>
               {item.label}
             </ActionButton>
           }}</For>
@@ -173,8 +177,18 @@ export function App() {
         <Show when={host.error() && !authenticationRequired()}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(host.error())}</span><ActionButton onClick={() => void host.refresh()}>Try again</ActionButton></div></Show>
         <Show when={host.data() && !authenticationRequired()}>
           <Switch>
-            <Match when={view() === 'logs'}><LogsView profileKey={profileKey()} selectedInstanceId={selectedInstanceId()} onSelectInstance={setSelectedInstanceId} onOpenRun={(execution) => { setSelectedRun({ sessionId: execution.sessionId, workflowId: execution.workflowId }); setView('run-detail') }} /></Match>
-            <Match when={view() === 'run-detail' && selectedRun()}><RunDetailView profileKey={profileKey()} instanceId={selectedInstanceId()} sessionId={selectedRun()!.sessionId} workflowId={selectedRun()!.workflowId} onBack={() => setView(selectedSourceId() ? 'workflow-detail' : 'logs')} /></Match>
+            <Match when={view() === 'logs'}><LogsView profileKey={profileKey()} selectedInstanceId={selectedInstanceId()} onSelectInstance={setSelectedInstanceId} onOpenRun={(execution) => { setSelectedRun({ sessionId: execution.sessionId, workflowId: execution.workflowId, fromLogs: true }); setView('run-detail') }} /></Match>
+            <Match when={view() === 'run-detail' && selectedRun()}>{(run) =>
+              <Show when={!selectedInstanceId() && !run().fromLogs} fallback={
+                <RunDetailView profileKey={profileKey()} instanceId={selectedInstanceId()} sessionId={run().sessionId} workflowId={run().workflowId} onBack={() => setView(selectedSourceId() ? 'workflow-detail' : 'logs')} />
+              }>
+                <Show when={JSON.stringify([profileKey(), run().remote, run().sessionId])} keyed>{(_key) =>
+                  <OpsRunView profileKey={profileKey()} instanceId="" sessionId={run().sessionId}
+                    remote={run().remote} workflowId={run().workflowId} backLabel="All bots"
+                    onBack={() => setView(selectedBot() ? 'bot-detail' : 'bots')} />
+                }</Show>
+              </Show>
+            }</Match>
             <Match when={view() === 'workflows'}>
               <Show when={profileKey()} keyed>{(_workflowsProfileKey) =>
                 <WorkflowsView
@@ -214,15 +228,15 @@ export function App() {
                 onBack={() => setView('ops')}
               />
             </Match>
-            <Match when={view() === 'bots'}>
+            <Match when={view() === 'bots' || view() === 'bot-detail'}>
               <Show when={profileKey()} keyed>{(key) =>
-                <BotsView profileKey={key} onOpenBot={(botId) => { setSelectedBotId(botId); setView('bot-detail') }} />
+                <BotsView profileKey={key} selection={view() === 'bot-detail' ? selectedBot() : undefined}
+                  onOpenBot={(botId, remote) => { setSelectedBot({ botId, remote }); setView('bot-detail') }}
+                  onBack={() => setView('bots')} />
               }</Show>
             </Match>
-            <Match when={view() === 'bot-detail' && selectedBotId()}>
-              <Show when={JSON.stringify([profileKey(), selectedBotId()])} keyed>{(_key) =>
-                <BotDetailView profileKey={profileKey()} botId={selectedBotId()} onBack={() => setView('bots')} />
-              }</Show>
+            <Match when={view() === 'models'}>
+              <Show when={profileKey()} keyed>{(key) => <ModelsView profileKey={key} />}</Show>
             </Match>
             <Match when={view() === 'settings'}>
               <Show when={profileKey()} keyed>{(_settingsProfileKey) =>

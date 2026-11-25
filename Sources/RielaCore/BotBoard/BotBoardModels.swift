@@ -247,10 +247,17 @@ public struct BotOverviewCounts: Codable, Equatable, Sendable {
   public let working: Int
   public let waiting: Int
   public let planned: Int
+
+  public init(needsYou: Int, working: Int, waiting: Int, planned: Int) {
+    self.needsYou = needsYou
+    self.working = working
+    self.waiting = waiting
+    self.planned = planned
+  }
 }
 
 public enum BotListSection: String, Codable, Sendable {
-  case active, working, snoozed, settled
+  case active, working, snoozed, settled, disconnected
 }
 
 public struct BotOverviewRow: Codable, Equatable, Sendable {
@@ -263,6 +270,21 @@ public struct BotOverviewRow: Codable, Equatable, Sendable {
   public let section: BotListSection
   public let workspaceGroup: String
   public let origin: BotOrigin
+
+  public init(
+    bot: BotRecord, counts: BotOverviewCounts, inProgress: [BotBoardItem], lastActivityAt: Date?,
+    lastResult: String?, listState: BotListState, section: BotListSection, workspaceGroup: String, origin: BotOrigin
+  ) {
+    self.bot = bot
+    self.counts = counts
+    self.inProgress = inProgress
+    self.lastActivityAt = lastActivityAt
+    self.lastResult = lastResult
+    self.listState = listState
+    self.section = section
+    self.workspaceGroup = workspaceGroup
+    self.origin = origin
+  }
 }
 
 public enum BotListGrouping: String, Codable, Sendable {

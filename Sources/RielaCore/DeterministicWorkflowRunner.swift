@@ -692,7 +692,7 @@ extension DeterministicWorkflowRunner {
       request: request,
       session: session,
       resolvedInputPayload: resolvedInput.payload,
-      prompts: prompts
+      prompts: appendingBotMemory(to: prompts, botContext: request.botContext)
     )
     let agentEnvironment: [String: String]
     do {
@@ -703,6 +703,9 @@ extension DeterministicWorkflowRunner {
       ) : [:]
     } catch let error as AgentEnvironmentResolutionError {
       throw AdapterExecutionError(.policyBlocked, error.localizedDescription)
+    }
+    if request.botContext?.forceReadOnlySandbox == true {
+      executionPayload.agentSandbox = .readOnly
     }
     let adapterInput = AdapterExecutionInput(
       node: step.placement == nil

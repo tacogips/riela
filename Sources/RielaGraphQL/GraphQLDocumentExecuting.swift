@@ -15,6 +15,22 @@ public struct GraphQLDocumentRequest: Equatable, Sendable {
   var verifiedRegistryPrincipal: WorkflowRegistryVerifiedPrincipal?
   var executionAuthorized: Bool
 
+  public func authorizationRootFields() throws -> [(root: String, field: String)] {
+    let fields: [ParsedGraphQLRootField]
+    if let parsedRootFields {
+      fields = parsedRootFields
+    } else {
+      let operations = try parseGraphQLOperations(
+        in: query, operationName: operationName, variables: variables, parseArguments: true
+      )
+      guard try selectGraphQLOperation(operations, operationName: operationName) != nil else {
+        throw GraphQLDocumentExecutorError.invalidSelection("No matching GraphQL operation")
+      }
+      fields = operations.flatMap(\.rootFields)
+    }
+    return fields.map { ($0.operationType == .mutation ? "Mutation" : "Query", $0.fieldName) }
+  }
+
   public init(
     query: String,
     variables: JSONObject = [:],

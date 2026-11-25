@@ -76,14 +76,14 @@
   gap: 16px;
 }
 
-.bot-board { display: grid; flex: 2 1 44ch; gap: 10px; min-width: 0; }
+.bot-board { display: grid; flex: 2 1 35ch; gap: 10px; min-width: 0; }
 .bot-card, .bot-request, .bots-routines { display: grid; gap: 8px; }
 .bot-card-selected { border-color: var(--accent); }
 .bot-card-actions > summary { margin-bottom: 5px; font-size: .85em; }
 
 .bots-activity {
   display: grid;
-  flex: 1 1 38ch;
+  flex: 1 1 30ch;
   min-width: 0;
   gap: 10px;
   overflow-wrap: anywhere;
@@ -92,6 +92,32 @@
 .bots-events { max-height: 55vh; overflow: auto; }
 .bots-events li { display: grid; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
 
+.bots-master-detail {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.bots-list-pane, .bots-detail-pane, .bots-detail, .bots-remote, .bot-management {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.bots-list-back { display: none; }
+.bots-row-actions { margin-top: 6px; }
+.bot-management h2, .bot-management h3, .bot-management p { margin: 0; }
+.bot-management textarea { width: 100%; resize: vertical; font-family: monospace; }
+.bot-chip { padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.bot-run-link { color: var(--accent); font-weight: 600; }
+.bots-remote summary { cursor: pointer; }
+.bots-remote form { margin: 8px 0; }
+
 @media (max-width: 620px) {
   .bots-page { padding: 14px; }
+  .bots-master-detail { grid-template-columns: minmax(0, 1fr); }
+  .bots-master-detail:not(.bots-detail-open) > .bots-detail-pane,
+  .bots-detail-open > .bots-list-pane { display: none; }
+  .bots-list-back { display: inline-flex; justify-self: start; }
 }

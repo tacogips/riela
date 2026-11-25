@@ -9,7 +9,8 @@ public enum RielaAPIScopePolicy {
   public static func violation(scope: RielaAPIKeyStore.Scope, roots: [(root: String, field: String)]) -> String? {
     guard scope != .admin else { return nil }
     return roots.first { root in
-      root.root == "Mutation" && (scope == .read || adminMutationFields.contains(root.field))
+      (root.root == "Mutation" && (scope == .read || adminMutationFields.contains(root.field)))
+        || (root.root == "Query" && root.field == "pairingGrants")
     }.map { "\($0.root).\($0.field)" }
   }
 }

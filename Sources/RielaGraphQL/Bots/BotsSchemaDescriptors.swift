@@ -125,19 +125,22 @@ extension GraphQLSchemaGenerator {
     ]),
     .init(kind: .object, name: "BotListPayload", fields: [
       .init(name: "bots", type: "[BotOverviewRow!]!"),
-      .init(name: "groups", type: "[BotWorkspaceGroup!]!")
+      .init(name: "groups", type: "[BotWorkspaceGroup!]!"),
+      .init(name: "origin", type: "BotOrigin")
     ]),
     .init(kind: .object, name: "BotDetailPayload", fields: [
       .init(name: "bot", type: "Bot!"),
       .init(name: "board", type: "BotBoard!"),
       .init(name: "routines", type: "[BotRoutine!]!"),
       .init(name: "origin", type: "BotOrigin!"),
-      .init(name: "suggestions", type: "[JSON!]!"),
-      .init(name: "memory", type: "JSON")
+      .init(name: "suggestions", type: "[BotSuggestion!]!"),
+      .init(name: "jobs", type: "[BotJobSummary!]!"),
+      .init(name: "memory", type: "BotMemorySummary!")
     ]),
     .init(kind: .object, name: "BotMutationPayload", fields: [
       .init(name: "bot", type: "Bot!"),
-      .init(name: "warnings", type: "[String!]!")
+      .init(name: "warnings", type: "[String!]!"),
+      .init(name: "origin", type: "BotOrigin!")
     ]),
     .init(kind: .input, name: "BotFilter", fields: [
       .init(name: "groupBy", type: "String"),
@@ -191,5 +194,5 @@ extension GraphQLSchemaGenerator {
       .init(name: "settled", type: "Boolean"),
       .init(name: "remote", type: "String")
     ])
-  ] + botActivityTypes
+  ] + botActivityTypes + botMemoryTypes + botJobsTypes
 }

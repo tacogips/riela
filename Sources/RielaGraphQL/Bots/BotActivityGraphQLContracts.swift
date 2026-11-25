@@ -48,21 +48,23 @@ public struct BotRequestPayload: Codable, Equatable, Sendable {
   public let status: ActivityRequestRecord.Status
   public let outcomeOptionId: String?
   public let resolvedBy: ActivityRequestRecord.Resolution?
+  public let origin: BotOrigin
 
   public init(
     requestId: String, status: ActivityRequestRecord.Status, outcomeOptionId: String?,
-    resolvedBy: ActivityRequestRecord.Resolution?
+    resolvedBy: ActivityRequestRecord.Resolution?, origin: BotOrigin
   ) {
     self.requestId = requestId
     self.status = status
     self.outcomeOptionId = outcomeOptionId
     self.resolvedBy = resolvedBy
+    self.origin = origin
   }
 
-  public init(_ request: ActivityRequestRecord) {
+  public init(_ request: ActivityRequestRecord, origin: BotOrigin) {
     self.init(
       requestId: request.requestId, status: request.status,
-      outcomeOptionId: request.outcomeOptionId, resolvedBy: request.resolvedBy
+      outcomeOptionId: request.outcomeOptionId, resolvedBy: request.resolvedBy, origin: origin
     )
   }
 }

@@ -2,15 +2,22 @@ import RielaCore
 import RielaObservability
 
 extension WorkflowRunCommand {
-  func prepareBotContext(_ botId: String?, linker: BotRunLinker) throws -> BotRunContext? {
-    guard let botId else { return nil }
-    do {
-      return try linker.prepare(botId: botId)
-    } catch BotRunLinkError.notFound where botLinkSource.source == "routine" {
-      RielaStandardStreams.writeError("riela bot link: bot_not_found: \(botId); starting routine without a bot\n")
-      return nil
-    } catch let error as BotRunLinkError {
-      throw CLIUsageError(error.message)
+  func prepareBotContext(
+    _ options: WorkflowRunOptions, linker: BotRunLinker, workingDirectory: String, environment: [String: String]
+  ) throws -> BotRunContext? {
+    if let botId = options.botId {
+      do {
+        return try linker.prepare(botId: botId, workingDirectory: workingDirectory, environment: environment)
+      } catch BotRunLinkError.notFound where botLinkSource.source == "routine" {
+        RielaStandardStreams.writeError("riela bot link: bot_not_found: \(botId); starting routine without a bot\n")
+      } catch let error as BotRunLinkError {
+        throw CLIUsageError(error.message)
+      }
+    }
+    return options.resumeSessionId.flatMap {
+      BotActivityRuntime.botContext(
+        forExistingSession: $0, sessionStoreRoot: linker.sessionStoreRoot, workingDirectory: workingDirectory, environment: environment
+      )
     }
   }
 

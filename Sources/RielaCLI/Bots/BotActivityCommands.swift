@@ -6,7 +6,7 @@ extension RielaCLIApplication {
   func runScopedCommand(_ command: ScopedCommand) async -> CLICommandResult {
     if command.kind == .bot, let action = BotClientAction(rawValue: command.options.command ?? ""),
       action == .activity || action == .answer {
-      return await BotActivityCommands(writer: sessionInspectionCommand.followRecordWriter)
+      return await BotActivityCommands(writer: sessionInspectionCommand.followRecordWriter, transport: scopedCommandRunner.remoteTransport)
         .run(action, options: command.options)
     }
     return await scopedCommandRunner.run(command)
@@ -15,15 +15,18 @@ extension RielaCLIApplication {
 
 private struct BotActivityCommands {
   let writer: (@Sendable (String) -> Void)?
+  let transport: RemoteHTTP.Transport
 
   func run(_ action: BotClientAction, options: CLICommandOptions) async -> CLICommandResult {
     do {
       let parsed = try ParsedBotOptions(options.arguments)
       let service = try parsed.service()
+      let remote = try parsed.location.remotes.client(for: service, transport: transport)
+      try remote?.requireSingle()
       if action == .answer {
-        return try answer(options, parsed: parsed, service: service)
+        return try await answer(options, parsed: parsed, service: service, remote: remote)
       }
-      return try await activity(options, parsed: parsed, service: service)
+      return try await activity(options, parsed: parsed, service: service, remote: remote)
     } catch let issue as CLIUsageError {
       return CLICommandResult(exitCode: .usage, stderr: issue.message)
     } catch {
@@ -31,27 +34,40 @@ private struct BotActivityCommands {
     }
   }
 
-  private func answer(_ options: CLICommandOptions, parsed: ParsedBotOptions, service: BotsService) throws -> CLICommandResult {
+  private func answer(
+    _ options: CLICommandOptions, parsed: ParsedBotOptions, service: BotsService, remote: SelectedBotRemote?
+  ) async throws -> CLICommandResult {
     guard let requestId = options.target, !requestId.isEmpty else {
       throw CLIUsageError("bot answer requires a request id")
     }
     guard options.output == .text || options.output == .json else {
       throw CLIUsageError("bot answer --output must be json or text")
     }
-    let payload = try service.answer(requestId: requestId, optionId: parsed.option, decline: parsed.decline)
-    let output = options.output == .json ? try jsonString(payload) : "\(payload.status.rawValue)\n"
+    let payload: BotRequestPayload
+    if let remote {
+      let input = AnswerBotRequestInput(requestId: requestId, optionId: parsed.option, decline: parsed.decline, remote: remote.selector)
+      payload = try await remote.provider.answerBotRequest(input: input)
+    } else {
+      payload = try service.answer(requestId: requestId, optionId: parsed.option, decline: parsed.decline)
+    }
+    let output = options.output == .json ? try jsonString(payload) : "\(payload.status.rawValue)" + remoteHostText(payload.origin) + "\n"
     return CLICommandResult(exitCode: .success, stdout: output)
   }
 
   private func activity(
-    _ options: CLICommandOptions, parsed: ParsedBotOptions, service: BotsService
+    _ options: CLICommandOptions, parsed: ParsedBotOptions, service: BotsService, remote: SelectedBotRemote?
   ) async throws -> CLICommandResult {
     let sessionId: String
     switch (options.target, parsed.session) {
     case let (nil, id?) where !id.isEmpty:
       sessionId = id
     case let (id?, nil) where !id.isEmpty:
-      sessionId = try service.activitySessionId(botId: id)
+      if let remote {
+        let detail = try await remote.provider.bot(botId: id, remote: remote.selector)
+        sessionId = try botBoardActivitySessionId(in: [detail.board.needsYou, detail.board.inProgress, detail.board.closed], botId: id)
+      } else {
+        sessionId = try service.activitySessionId(botId: id)
+      }
     default:
       throw CLIUsageError("bot activity requires a bot id or --session <id>")
     }
@@ -62,10 +78,14 @@ private struct BotActivityCommands {
     while !Task.isCancelled {
       let page: BotActivityPage
       do {
-        page = try await service.activity(
-          sessionId: sessionId, afterSequence: cursor, limit: limit,
-          waitMs: parsed.follow ? BotActivityPage.maximumWaitMs : 0
-        )
+        let waitMs = parsed.follow ? BotActivityPage.maximumWaitMs : 0
+        if let remote {
+          page = try await remote.provider.botActivity(
+            sessionId: sessionId, afterSequence: cursor, limit: limit, waitMs: waitMs, remote: remote.selector
+          )
+        } else {
+          page = try await service.activity(sessionId: sessionId, afterSequence: cursor, limit: limit, waitMs: waitMs)
+        }
       } catch is CancellationError {
         break
       }
@@ -104,7 +124,7 @@ private struct BotActivityCommands {
       return try page.events.map { try jsonString($0) }.joined()
     case .text, .table:
       var lines: [String] = []
-      if includeSource { lines.append("activitySource: \(page.activitySource)") }
+      if includeSource { lines.append("activitySource: \(page.activitySource)" + remoteHostText(page.origin)) }
       if page.truncated {
         lines.append("(earlier events were trimmed; state follows)")
         if let state = page.state { lines += stateLines(state) }

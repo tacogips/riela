@@ -2,6 +2,8 @@ export interface Bot {
   botId: string
   name: string
   paused: boolean
+  defaultBackend?: string | null
+  defaultModel?: string | null
 }
 
 export interface BotCounts {
@@ -14,6 +16,10 @@ export interface BotCounts {
 export interface BotOrigin {
   remote: string
   serverName?: string | null
+  serverId?: string | null
+  verified: boolean
+  connection: string
+  observedAt: string
 }
 
 export interface BotListState {
@@ -23,7 +29,7 @@ export interface BotListState {
   settledBy?: string | null
 }
 
-export type BotSection = 'active' | 'working' | 'snoozed' | 'settled'
+export type BotSection = 'active' | 'working' | 'snoozed' | 'settled' | 'disconnected'
 export type BotGrouping = 'none' | 'workspace'
 export type BotBoardGroup = 'needsYou' | 'inProgress' | 'waiting' | 'planned' | 'closed'
 
@@ -73,16 +79,20 @@ export interface BotOverviewRow {
   lastResult?: string | null
   listState: BotListState
   section: BotSection
+  workspaceGroup: string
   origin: BotOrigin
 }
 
 export interface BotListPayload {
+  origin?: BotOrigin | null
   bots: BotOverviewRow[]
   groups: { key: string; needsYou: boolean; botIds: string[] }[]
 }
 
 export interface BotDetailPayload {
   bot: Bot
+  origin: BotOrigin
+  jobs: BotJobSummary[]
   board: Record<BotBoardGroup, BotBoardItem[]> & { closedTotal: number }
   routines: { routineId: string; name: string; status: string; nextRunAt?: string | null }[]
 }
@@ -104,6 +114,7 @@ export interface BotActivityState {
 }
 
 export interface BotActivityPage {
+  origin: BotOrigin
   events: BotActivityEvent[]
   state?: BotActivityState | null
   lastSequence: number
@@ -140,3 +151,43 @@ export interface SetBotListStateInput {
 export type AnswerBotRequestInput = { requestId: string } & (
   { optionId: string; decline?: never } | { optionId?: never; decline: true }
 )
+
+export interface BotMemoryChange {
+  changeId: string
+  actor: string
+  reason: string
+  createdAt: string
+}
+
+export interface BotMemory {
+  markdown: string
+  changes: BotMemoryChange[]
+  origin: BotOrigin
+}
+
+export interface BotSuggestion {
+  suggestionId: string
+  title: string
+  detail?: string | null
+  action?: { workflowName: string } | null
+  origin?: BotOrigin | null
+}
+
+export interface BotJobSummary {
+  job: string
+  schedule: string
+  lastRun?: { status: string; startedAt: string; detail?: string | null } | null
+}
+
+export interface RemoteSummary {
+  name: string
+  serverName: string
+  address: string
+  connection: string
+  lastSeenAt?: string | null
+}
+
+export interface RemoteList {
+  active: string
+  remotes: RemoteSummary[]
+}

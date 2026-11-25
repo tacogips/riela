@@ -1,0 +1,10 @@
+{
+  "triage": {
+    "provider": "scenario-mock",
+    "when": {"always": true},
+    "payload": {
+      "summary": "Flagged two reports for the next review.",
+      "conditionMet": false
+    }
+  }
+}

@@ -25,6 +25,12 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
   }
 
   public func executeWorkflow(_ input: GraphQLExecuteWorkflowInput) async throws -> GraphQLExecuteWorkflowPayload {
+    try await executeWorkflow(input, mockScenarioPath: nil)
+  }
+
+  func executeWorkflow(
+    _ input: GraphQLExecuteWorkflowInput, mockScenarioPath: String?
+  ) async throws -> GraphQLExecuteWorkflowPayload {
     var options = WorkflowRunOptions(
       target: input.workflowName,
       resolution: WorkflowResolutionOptions(
@@ -34,6 +40,7 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
       variables: try input.runtimeVariables.map(encodeInlineJSON),
       nodePatch: try input.nodePatch.map(encodeInlineJSON),
       instance: input.instanceIdentity,
+      mockScenarioPath: mockScenarioPath,
       output: .json,
       maxSteps: input.maxSteps,
       maxConcurrency: input.maxConcurrency,
@@ -51,7 +58,7 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
       if let botId = options.botId {
         let root = BotRunLinker.resolveSessionStoreRoot(options: options, scope: .auto)
         do {
-          _ = try BotRunLinker(sessionStoreRoot: root).prepare(botId: botId)
+          _ = try BotRunLinker(sessionStoreRoot: root).requireRunnableBot(botId: botId)
         } catch let error as BotRunLinkError {
           throw GraphQLWorkflowExecutionRejection(code: error.code.uppercased(), message: error.message)
         }

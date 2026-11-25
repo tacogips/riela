@@ -28,6 +28,7 @@ public struct WorkflowRunCommand: Sendable {
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
   var sessionStartedObserver: (@Sendable (String) -> Void)?
+  var botContextOverride: (@Sendable (BotRunContext) -> BotRunContext)?
   var botLinkSource: (source: String, sourceRef: String?) = ("run", nil)
   var operatorCancellationReason: (@Sendable () -> String?)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
@@ -95,9 +96,9 @@ public struct WorkflowRunCommand: Sendable {
       )
       let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       let botLinker = BotRunLinker(sessionStoreRoot: storeRoot)
-      let botContext = try prepareBotContext(options.botId, linker: botLinker) ?? options.resumeSessionId.flatMap {
-        BotActivityRuntime.botContext(forExistingSession: $0, sessionStoreRoot: storeRoot)
-      }
+      let botContext = try prepareBotContext(
+        options, linker: botLinker, workingDirectory: runWorkingDirectory, environment: runEnvironment
+      ).map { options.botId == nil ? $0 : botContextOverride?($0) ?? $0 }
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath, workingDirectory: runWorkingDirectory,
         environment: runEnvironment,

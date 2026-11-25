@@ -326,20 +326,37 @@ Riela CLI
 
 Usage:
   riela --version
-  riela model list [--provider <instance-id>] [options]
-  riela provider list [options]
+  riela remote add --name <name> --code <pairing-code> [--client-name <name>] [--output json|text]
+  riela remote list [--output json|text]
+  riela remote show <name> [--output json|text]
+  riela remote remove <name> [--output json|text]
+  riela remote use <name|local> [--output json|text]
+  riela model list [--provider <instance-id>] [--remote <name> | --all-remotes] [options]
+  riela provider list [--remote <name> | --all-remotes] [options]
   riela provider show <instance-id> [options]
   riela provider refresh [<instance-id>] [options]
   riela provider add --id <id> --driver <driver> [options]
   riela provider update <instance-id> [options]
   riela provider remove <instance-id> [options]
   riela bot create --name <name> [--id <id>] [options]
-  riela bot list [--group-by none|workspace] [options]
+  riela bot list [--group-by none|workspace] [--remote <name> | --all-remotes] [options]
   riela bot show <id> [options]
   riela bot update <id> [options]
   riela bot pause <id> [options]
   riela bot resume <id> [options]
   riela bot remove <id> [options]
+  riela bot memory show <bot-id> [--memory-root <dir>]
+  riela bot memory export <bot-id> [--out <path>] [--force] [--memory-root <dir>]
+  riela bot memory edit <bot-id> --file <path> [--reason <text>] [--memory-root <dir>]
+  riela bot memory history <bot-id> [--limit <count>] [--memory-root <dir>]
+  riela bot memory diff <bot-id> <change-id> [--memory-root <dir>]
+  riela bot memory undo <bot-id> [<change-id>] [--memory-root <dir>]
+  riela bot feedback <bot-id> (--session <id> | --task <id>) [--text <text>] [--topic <topic>] [--from-findings] [--memory-root <dir>]
+  riela bot job run <bot-id> <upkeep|look-around> [--force] [--mock-scenario <path>] [options]
+  riela bot job list <bot-id> [--job upkeep|look-around] [--limit <count>] [options]
+  riela bot suggestion list <bot-id> [--status open|accepted|started|dismissed] [options]
+  riela bot suggestion accept <suggestion-id> [--run] [--mock-scenario <path>] [options]
+  riela bot suggestion dismiss <suggestion-id> [--reason <text>] [options]
   riela bot activity (<bot-id> | --session <id>) [--after <seq>] [--limit <count>] [--follow] [--output json|jsonl|text]
   riela bot answer <request-id> (--option <option-id> | --decline) [options]
   riela bot pin <id> [--item session:<id>|task:<id>] [options]
@@ -378,7 +395,8 @@ Usage:
   riela workflow definition purge-history <workflow> --reason <text> --yes [--dry-run]
   Leading-dash values for definition options must use --option=<value>, for example --text=--- yaml.
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
-  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--bot <bot-id>] [--supervisor-mode] [--output jsonl|json|text]
+  riela routine create --name <name> --task <task> --workflow <workflow> [--remote <name>] [options]
+  riela workflow run <workflow> [--remote <name>] [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--bot <bot-id>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]
   riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--allow-overlap] [--server URL] [--profile P] [--cwd <dir>]
@@ -418,7 +436,11 @@ Usage:
   riela memory retire-history <memory-id> --memory-root <absolute-dir> --record-id <id> --workflow-id <id> --node-id <id> --tag <tag> --expected-head-version <n> --through-version <n-1> [--dry-run]
   riela memory restore-version <memory-id> --record-id <id> --version <n> --expected-head-version <n> [--history-retention <n>] [--memory-root <dir>]
   riela memory undo|redo <memory-id> --record-id <id> --expected-head-version <revision> [--memory-root <dir>]
-  riela serve [--host <host>] [--port <port>]
+  riela serve [--host <host>] [--port <port>] [--server-name <name>]
+    [--pairing-address <url> [--pairing-scope read|operate|admin]]
+  riela serve pairing mint --address <url> [--pairing-scope read|operate|admin]
+  riela serve pairing list [--output json|text]
+  riela serve pairing revoke --grant <id> [--output json|text]
   riela auth invite <user> | users | revoke-user <user> | revoke-key <credential-id>
   riela worker --config <worker.json>
   riela session rerun <session-id> <step-id> [--preserve-history] [--scope project|user|auto] [--output jsonl|json|text]
@@ -600,6 +622,7 @@ func workflowRunHelpText(target: String?) -> String {
   Remote options:
     --endpoint <url>
     --auth-token <token>
+    --remote <name>         Select a paired server (or local).
     --auth-token-env <name>
     --from-registry
 

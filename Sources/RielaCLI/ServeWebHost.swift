@@ -26,6 +26,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
   let environment: [String: String]
   let browserAccess: ServeWebAccess
   let passkeys: RielaPasskeyService?
+  private let pairing: PairingService?
   var observedAppearance = RielaAppAppearanceSettings()
   var observedProfiles: [RielaAppProfileName] = []
   var revision = 1
@@ -41,7 +42,8 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     host: String,
     port: Int,
     fallback: any RielaHTTPRouteHandling,
-    environment: [String: String]
+    environment: [String: String],
+    pairing: PairingService? = nil
   ) {
     self.homeDirectory = homeDirectory
     self.workingDirectory = workingDirectory
@@ -50,6 +52,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     configuredPort = port
     self.fallback = fallback
     self.environment = environment
+    self.pairing = pairing
     browserAccess = ServeWebAccess(host: host, environment: environment)
     if case let .passkey(configuration) = browserAccess {
       passkeys = RielaPasskeyService(configuration: configuration,
@@ -115,6 +118,12 @@ final class ServeWebHost: RielaHTTPRouteHandling {
   }
 
   private func routedResponse(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
+    if request.method == "POST", request.path == "/api/v1/pairing/redeem", let pairing,
+       let response = RielaPairingHTTP.response(
+         for: request, store: pairing.store, identity: pairing.identity, audit: pairing.audit, now: Date()
+       ) {
+      return response
+    }
     if request.path.hasPrefix("/api/v1/auth/"), let passkeys {
       return await passkeys.response(for: request)
     }
@@ -123,7 +132,8 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     }
     if request.path == "/graphql", request.headers["origin"] == nil,
        request.headers["x-riela-csrf"] == nil, request.headers["x-riela-profile"] == nil {
-      if let rejection = RielaAPIKeyHTTPAuthorization.rejection(for: request, store: serverAPIKeyStore(homeDirectory: homeDirectory)) {
+      let store = pairing?.store ?? serverAPIKeyStore(homeDirectory: homeDirectory)
+      if let rejection = RielaAPIKeyHTTPAuthorization.rejection(for: request, store: store) {
         return rejection
       }
       return await fallback.response(for: request)
@@ -159,6 +169,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
         sessionStoreRoot: sessionStoreRoot,
         environment: workflowEnvironment,
         configurationProvider: self,
+        pairing: pairing,
         consoleProvider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() }
       )
       return await CLIRuntimeEnvironment.$overrides.withValue(workflowEnvironment) {
@@ -196,6 +207,7 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
   let sessionStoreRoot: String
   let environment: [String: String]
   let configurationProvider: any RielaConfigurationGraphQLProviding
+  let pairing: PairingService?
   let consoleProvider: any GraphQLConsoleProviding
 
   func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
@@ -235,7 +247,8 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
               provider: consoleProvider,
               next: BotsGraphQLDocumentExecutor(
                 provider: BotsGraphQLProvider(
-                  workingDirectory: workingDirectory, sessionStoreRoot: sessionStoreRoot, environment: environment
+                  workingDirectory: workingDirectory, sessionStoreRoot: sessionStoreRoot, environment: environment,
+                  pairing: pairing
                 ),
                 next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
               )

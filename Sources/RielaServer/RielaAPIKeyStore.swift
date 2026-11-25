@@ -312,7 +312,7 @@ public struct RielaAPIKeyStore: Sendable {
     return state
   }
 
-  static func readRegularFile(_ file: URL) throws -> Data? {
+  package static func readRegularFile(_ file: URL) throws -> Data? {
     let descriptor = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
     if descriptor < 0 {
       guard errno == ENOENT else { throw StoreError.unavailable }
@@ -332,7 +332,7 @@ public struct RielaAPIKeyStore: Sendable {
     return try encoder.encode(state)
   }
 
-  static func persist(_ data: Data, to file: URL) throws {
+  package static func persist(_ data: Data, to file: URL) throws {
     let root = file.deletingLastPathComponent()
     let staging = root.appendingPathComponent(".\(file.lastPathComponent)-\(UUID().uuidString).tmp")
     let descriptor = open(staging.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)

@@ -1,11 +1,11 @@
 export type HashRoute =
-  | { view: 'instances' | 'logs' | 'workflows' | 'ops' | 'bots' | 'settings' }
-  | { view: 'bot-detail'; botId: string }
+  | { view: 'instances' | 'logs' | 'workflows' | 'ops' | 'bots' | 'models' | 'settings' }
+  | { view: 'bot-detail'; botId: string; remote?: string }
   | { view: 'workflow-detail'; sourceId: string; configurationId?: string; tab?: 'settings' | 'history' | 'definition' }
-  | { view: 'run-detail'; sessionId: string; sourceId?: string; configurationId?: string }
+  | { view: 'run-detail'; sessionId: string; remote?: string; sourceId?: string; configurationId?: string }
   | { view: 'ops-run'; instanceId: string; sessionId: string }
 
-const NAV_VIEWS = new Set(['instances', 'logs', 'workflows', 'ops', 'bots', 'settings'] as const)
+const NAV_VIEWS = new Set(['instances', 'logs', 'workflows', 'ops', 'bots', 'models', 'settings'] as const)
 type NavView = typeof NAV_VIEWS extends Set<infer T> ? T : never
 
 /**
@@ -15,7 +15,10 @@ type NavView = typeof NAV_VIEWS extends Set<infer T> ? T : never
  */
 export function parseViewHash(hash: string): HashRoute | undefined {
   if (!hash.startsWith('#/')) return undefined
-  const rawSegments = hash.slice(2).split('/')
+  const [path, search = ''] = hash.slice(2).split('?', 2)
+  const rawSegments = path!.split('/')
+  const remote = new URLSearchParams(search).get('remote')
+  const remoteContext = remote && remote !== '*' && remote !== 'unverified' && remote !== 'local' ? { remote } : {}
   let segments: string[]
   try {
     segments = rawSegments.map((segment) => decodeURIComponent(segment))
@@ -34,13 +37,13 @@ export function parseViewHash(hash: string): HashRoute | undefined {
     return { view: 'workflow-detail', sourceId: segments[1] }
   }
   if (segments.length === 2 && segments[0] === 'runs' && segments[1]) {
-    return { view: 'run-detail', sessionId: segments[1] }
+    return { view: 'run-detail', sessionId: segments[1], ...remoteContext }
   }
   if (segments.length === 4 && segments[0] === 'ops' && segments[1] === 'runs' && segments[3]) {
     return { view: 'ops-run', instanceId: segments[2] ?? '', sessionId: segments[3] }
   }
   if (segments.length === 2 && segments[0] === 'bots' && segments[1]) {
-    return { view: 'bot-detail', botId: segments[1] }
+    return { view: 'bot-detail', botId: segments[1], ...remoteContext }
   }
   if (segments.length === 1 && NAV_VIEWS.has(segments[0] as NavView)) {
     return { view: segments[0] as NavView }
@@ -55,11 +58,15 @@ export function viewHash(route: HashRoute): string {
   }
   if (route.view === 'run-detail') {
     if (route.sourceId && route.configurationId) return `#/workflows/${encodeURIComponent(route.sourceId)}/configurations/${encodeURIComponent(route.configurationId)}/runs/${encodeURIComponent(route.sessionId)}`
-    return `#/runs/${encodeURIComponent(route.sessionId)}`
+    return `#/runs/${encodeURIComponent(route.sessionId)}${remoteQuery(route.remote)}`
   }
   if (route.view === 'ops-run') {
     return `#/ops/runs/${encodeURIComponent(route.instanceId)}/${encodeURIComponent(route.sessionId)}`
   }
-  if (route.view === 'bot-detail') return `#/bots/${encodeURIComponent(route.botId)}`
+  if (route.view === 'bot-detail') return `#/bots/${encodeURIComponent(route.botId)}${remoteQuery(route.remote)}`
   return `#/${route.view}`
+}
+
+function remoteQuery(remote?: string) {
+  return remote ? `?remote=${encodeURIComponent(remote)}` : ''
 }

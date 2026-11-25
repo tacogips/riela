@@ -106,8 +106,8 @@ public enum CLISurfaceEnumerator {
         }
       }
     case "bot":
-      return nested(BotClientAction.allRawValues)
-    case "model", "provider":
+      return botCommands(route)
+    case "model", "provider", "remote":
       return nested(catalogActions(route))
     case "routine":
       return nested(RoutineClientAction.allRawValues)
@@ -115,6 +115,7 @@ public enum CLISurfaceEnumerator {
       // Bare `riela serve` is the long-running host; the named actions are
       // one-shot probes of the same server contract.
       return [CLICommandDescriptor([route])] + nested(ServeClientAction.allRawValues)
+        + ServePairingClientAction.allRawValues.map { CLICommandDescriptor([route, "pairing", $0]) }
     case _ where leafRoutes.contains(route):
       return [CLICommandDescriptor([route])]
     default:
@@ -126,8 +127,25 @@ public enum CLISurfaceEnumerator {
     }
   }
 
+  private static func botCommands(_ route: String) -> [CLICommandDescriptor] {
+    BotClientAction.allCases.flatMap { action in
+      let children: [String]
+      switch action {
+      case .memory: children = BotMemoryClientAction.allRawValues
+      case .job: children = BotJobClientAction.allRawValues
+      case .suggestion: children = BotSuggestionClientAction.allRawValues
+      default: return [CLICommandDescriptor([route, action.rawValue])]
+      }
+      return children.map { CLICommandDescriptor([route, action.rawValue, $0]) }
+    }
+  }
+
   private static func catalogActions(_ route: String) -> [String] {
-    route == "model" ? ModelClientAction.allRawValues : ProviderClientAction.allRawValues
+    switch route {
+    case "model": ModelClientAction.allRawValues
+    case "provider": ProviderClientAction.allRawValues
+    default: RemoteClientAction.allRawValues
+    }
   }
 
   /// Routes that are deliberately a single command with no subcommands.
@@ -144,7 +162,7 @@ public enum CLISurfaceEnumerator {
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = ["environment", "voice",
     "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
-    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "bot", "model", "provider", "serve", "storage", "doctor"
+    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "bot", "model", "provider", "remote", "serve", "storage", "doctor"
   ]
 
   /// Every `--option` token any `riela` parser accepts, rendered from the
@@ -160,7 +178,10 @@ public enum CLISurfaceEnumerator {
       ParsedCacheArguments.helpMessage(),
       ParsedRoutineOptions.helpMessage(),
       ParsedBotOptions.helpMessage(),
+      ParsedBotJobArguments.helpMessage(),
+      ParsedBotSuggestionArguments.helpMessage(),
       ModelCatalogOptions.helpMessage(),
+      ParsedRemoteOptions.helpMessage(),
       ParsedVoiceListenOptions.helpMessage(),
       ParsedWorkflowManifestOptions.helpMessage(),
       ParsedWorkflowRegisterArguments.helpMessage(),

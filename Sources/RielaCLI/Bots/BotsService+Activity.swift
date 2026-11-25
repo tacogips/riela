@@ -41,22 +41,18 @@ extension BotsService {
 
   func activitySessionId(botId: String) throws -> String {
     let board = BotBoardProjector.board(try projection(botId: botId).input)
-    for group in [BotBoardGroup.needsYou, .inProgress, .closed] {
-      let newest = board.groups[group]?.filter { $0.sessionId != nil }.max {
-        let lhs = $0.bumpedAt ?? $0.lastActivityAt ?? .distantPast
-        let rhs = $1.bumpedAt ?? $1.lastActivityAt ?? .distantPast
-        return lhs == rhs ? $0.itemId > $1.itemId : lhs < rhs
-      }
-      if let sessionId = newest?.sessionId { return sessionId }
-    }
-    throw BotStoreError(code: "bot_no_activity", message: "Bot '\(botId)' has no session activity")
+    return try botBoardActivitySessionId(
+      in: [BotBoardGroup.needsYou, .inProgress, .closed].map { board.groups[$0] ?? [] }, botId: botId
+    )
   }
 
   func answer(requestId: String, optionId: String?, decline: Bool) throws -> BotRequestPayload {
     do {
-      return BotRequestPayload(try store.answerActivityRequest(
-        requestId: requestId, optionId: optionId, decline: decline, now: now()
-      ))
+      let at = now()
+      let request = try store.answerActivityRequest(
+        requestId: requestId, optionId: optionId, decline: decline, now: at
+      )
+      return BotRequestPayload(request, origin: origin(at))
     } catch let error as BotStoreError where error.code == "request_not_found" {
       throw BotStoreError(
         code: error.code, message: "not a permission request; answer handover questions with riela task answer"

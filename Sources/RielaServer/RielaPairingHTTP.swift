@@ -1,8 +1,7 @@
 import Foundation
 
 public enum RielaPairingHTTP {
-  // ServeWebHost.swift and the route table will own the full path when bots-18 wires this handler.
-  public static let redeemRoute = (method: "POST", path: "/api/v1" + "/pairing/redeem")
+  public static let redeemRoute = (method: "POST", path: "/api/v1/pairing/redeem")
 
   private struct RedeemRequest: Decodable {
     let secret: String

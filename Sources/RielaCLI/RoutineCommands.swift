@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import RielaCore
+import RielaGraphQL
 import RielaWorkflowRegistry
 
 struct ParsedRoutineOptions: ParsableArguments, Sendable {
@@ -11,6 +12,7 @@ struct ParsedRoutineOptions: ParsableArguments, Sendable {
   @Option var timezone: String?
   @Option var workflow: String?
   @Option var bot: String?
+  @Option var remote: String?
   @Option(name: .customLong("completion-criteria")) var completionCriteria: String?
   @Option(name: .customLong("overlap-policy")) var overlapPolicy: String?
   @Option(name: .customLong("max-queued-runs")) var maxQueuedRuns: Int?
@@ -37,10 +39,37 @@ struct ParsedRoutineOptions: ParsableArguments, Sendable {
   }
 }
 
+private struct RemoteRoutineCreated: Decodable {
+  struct Routine: Decodable {
+    let routineId: String
+    let name: String
+    let status: GraphQLRoutineStatus
+    let schedule: String
+    let workflowName: String
+    let runCount: Int
+    let botId: String?
+
+    var summary: String {
+      "routine=\(routineId) name=\(name) status=\(status.routineStatus.rawValue) "
+        + "schedule=\"\(schedule)\" workflow=\(workflowName) runs=\(runCount)"
+        + (botId.map { " botId=\($0)" } ?? "")
+    }
+  }
+
+  let accepted: Bool
+  let diagnostics: [String]
+  let routine: Routine?
+}
+
 extension ScopedParityCommandRunner {
-  func routineResult(options: CLICommandOptions) throws -> ScopedParityCommandResult {
+  func routineResult(
+    options: CLICommandOptions, transport: @escaping RemoteHTTP.Transport
+  ) async throws -> ScopedParityCommandResult {
     let action = options.command ?? RoutineClientAction.list.rawValue
     let parsed = try ParsedRoutineOptions(options.arguments)
+    if parsed.remote != nil && action != RoutineClientAction.create.rawValue {
+      throw CLIUsageError("--remote is supported only by routine create")
+    }
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     let sessionStoreRoot = CLIWorkflowSessionStore.resolveRootDirectory(
@@ -63,7 +92,7 @@ extension ScopedParityCommandRunner {
         guard let workflow = parsed.workflow, !workflow.isEmpty else {
           throw CLIUsageError("routine create requires --workflow <workflow-name>")
         }
-        let result = try service.create(RoutineCreateRequest(
+        let request = RoutineCreateRequest(
           name: name,
           instruction: parsed.instruction,
           task: task,
@@ -79,7 +108,13 @@ extension ScopedParityCommandRunner {
           maxQueuedRuns: parsed.maxQueuedRuns,
           maxConcurrentRuns: parsed.maxConcurrentRuns,
           botId: parsed.bot
-        ))
+        )
+        if let remote = parsed.remote, remote != "local" {
+          return try await createRemoteRoutine(
+            request, remote: remote, environment: environment, transport: transport
+          )
+        }
+        let result = try service.create(request)
         return routineCommandResult(
           action: action,
           target: result.routine.routineId,
@@ -182,6 +217,48 @@ extension ScopedParityCommandRunner {
     } catch let error as RoutineStoreError {
       throw CLIUsageError(error.message)
     }
+  }
+
+  private func createRemoteRoutine(
+    _ request: RoutineCreateRequest, remote: String, environment: [String: String],
+    transport: @escaping RemoteHTTP.Transport
+  ) async throws -> ScopedParityCommandResult {
+    guard remote != "*" else {
+      throw CLIUsageError("remote_selector_invalid: routine create requires one remote")
+    }
+    guard request.eventRoot == nil, request.routineStoreRoot == nil else {
+      throw CLIUsageError("routine create --remote uses the server's event and routine stores")
+    }
+    if let overlapPolicy = request.overlapPolicy, EventOverlapPolicy(rawValue: overlapPolicy) == nil {
+      throw CLIUsageError("unknown routine overlap policy; expected \(EventOverlapPolicy.allowedValuesText)")
+    }
+    let credentials = try RemoteRegistry(environment: environment).credentials(name: remote)
+    let input = try JSONDecoder().decode(JSONObject.self, from: JSONEncoder().encode(request))
+    let client = RemoteGraphQLClient(record: credentials.record, token: credentials.token, transport: transport)
+    let result = try await client.execute(
+      query: """
+        mutation CreateRoutine($input: CreateRoutineInput!) {
+          createRoutine(input: $input) {
+            accepted diagnostics
+            routine { routineId name status schedule workflowName runCount botId }
+          }
+        }
+        """,
+      variables: ["input": .object(input)],
+      operationName: "CreateRoutine"
+    )
+    guard let response = result["createRoutine"] else {
+      throw CLIUsageError("remote routine create response missing payload")
+    }
+    let payload = try JSONDecoder().decode(RemoteRoutineCreated.self, from: JSONEncoder().encode(response))
+    guard payload.accepted, let routine = payload.routine else {
+      throw CLIUsageError("remote routine create was rejected")
+    }
+    return routineCommandResult(
+      action: RoutineClientAction.create.rawValue,
+      target: routine.routineId,
+      records: [routine.summary] + payload.diagnostics
+    )
   }
 
   private func routineCommandResult(

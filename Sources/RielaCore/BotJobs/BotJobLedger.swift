@@ -1,7 +1,7 @@
 import Foundation
 import RielaSQLite
 
-public struct BotJobRun: Equatable, Sendable {
+public struct BotJobRun: Codable, Equatable, Sendable {
   public enum Status: String, Codable, Sendable {
     case running, succeeded, failed, skipped
   }
@@ -37,7 +37,8 @@ extension BotStore {
   }
 
   public func finishJobRun(
-    botId: String, job: BotJobKind, periodKey: String, status: BotJobRun.Status, detail: String?, at date: Date
+    botId: String, job: BotJobKind, periodKey: String, status: BotJobRun.Status, detail: String?,
+    sessionId: String? = nil, at date: Date
   ) throws {
     guard status != .running else {
       throw BotStoreError(code: "bot_job_status_invalid", message: "Finishing a job requires a terminal status")
@@ -45,11 +46,12 @@ extension BotStore {
     try write { database in
       let changed = try database.executeAndReturnChangedRowCount(
         """
-        UPDATE bot_job_runs SET status = ?, detail = ?, finished_at = ?
+        UPDATE bot_job_runs SET status = ?, detail = ?, finished_at = ?, session_id = COALESCE(?, session_id)
         WHERE bot_id = ? AND job = ? AND period_key = ? AND status = 'running'
         """,
         bindings: [
           .text(status.rawValue), SQLiteValue.optionalText(detail), .text(RoutineStore.timestamp(date)),
+          SQLiteValue.optionalText(sessionId),
           .text(botId), .text(job.rawValue), .text(periodKey)
         ]
       )

@@ -1161,6 +1161,19 @@ store: `riela/x-digest` and `riela/gmail-digest` accept `stateBackend: "kv"`
 on `read-state`/`persist-state` to keep their fetch cursor in the key-value
 store instead of an ad-hoc JSON state file, as the shipped digest examples do.
 
+## Bots
+
+Use `riela bot list` to see what each bot is working on. Bots group related
+runs, routines, Work tasks and riela memory. `riela bot activity` follows a
+bot's live activity and `riela bot answer` answers its permission requests;
+`riela bot memory`, `riela bot job` and `riela bot suggestion` manage its
+memory, upkeep and look-around jobs, and suggestions. `riela model list` and
+`riela provider list` show the model catalog. `riela serve pairing` and
+`riela remote` pair a client with a riela server so its bots appear alongside
+local ones. The web console has matching **Bots** and **Models** views. See
+the [Bots guide](docs/bots.md) and the
+[mock walkthrough](examples/bot-routine-memory-upkeep/EXPECTED_RESULTS.md).
+
 ## Routines (first-class recurring jobs)
 
 A routine is a managed "do NN every YY" job: a task prompt, a six-field cron

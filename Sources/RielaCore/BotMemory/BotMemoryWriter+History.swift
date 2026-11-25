@@ -4,14 +4,13 @@ import RielaMemory
 extension BotMemoryWriter {
   public func history(botId: String, limit: Int = 50) throws -> [BotMemoryChangeSet] {
     try requireBot(botId)
-    return try botStore.memoryChanges(botId: botId, limit: limit)
+    return try botStore.memoryChanges(botId: botId, limit: limit, memoryRootKey: memoryRootKey)
   }
 
   public func diff(botId: String, changeId: String) throws -> [BotMemoryEntryDiff] {
     try requireBot(botId)
-    guard let change = try botStore.memoryChange(changeId: changeId), change.botId == botId else {
-      throw changeNotFound(botId)
-    }
+    let change = try botStore.read { try BotStore.memoryChange(changeId: changeId, memoryRootKey: memoryRootKey, in: $0) } ?? nil
+    guard let change, change.botId == botId else { throw changeNotFound(botId) }
     let memory = storage(botId)
     return try change.entries.map { entry in
       let changes: [VersionedHistoryDiffEntry]
@@ -32,9 +31,9 @@ extension BotMemoryWriter {
     try apply(botId: botId, actor: actor, evidenceRefs: []) { memory, _, database in
       let target: BotMemoryChangeSet?
       if let changeId {
-        target = try BotStore.memoryChange(changeId: changeId, in: database)
+        target = try BotStore.memoryChange(changeId: changeId, memoryRootKey: memoryRootKey, in: database)
       } else {
-        target = try BotStore.memoryChanges(botId: botId, limit: 1, in: database).first
+        target = try BotStore.memoryChanges(botId: botId, limit: 1, memoryRootKey: memoryRootKey, in: database).first
       }
       guard let target, target.botId == botId else { throw changeNotFound(botId) }
       return try prepareUndo(target, memory: memory)

@@ -2,40 +2,60 @@ import { For, Show, createMemo, createSignal } from 'solid-js'
 import { ActionButton } from '../components/ActionButton'
 import { createPollingResource } from '../polling'
 import { BotListActions } from './BotListActions'
-import { countsLabel, formatElapsed, relativeActivity, sectionOrder } from './boardView'
+import { formatElapsed, originAllowsActions, overviewPresentation, relativeActivity, sectionOrder } from './boardView'
 import { botsClient } from './client'
 import type { BotGrouping, BotOverviewRow } from './contracts'
+import { BotDetailView } from './BotDetailView'
+import { BotForm } from './BotForm'
+import { RemoteSwitcher } from './RemoteSwitcher'
+import { createRemoteSelection, managementError, readRemoteTargets, remoteArgument } from './remoteSelection'
 import './bots.css'
+
+const visibleSections = [...sectionOrder, 'disconnected'] as const
 
 const sectionTitles = {
   active: 'Active',
   working: 'Working',
   snoozed: 'Snoozed',
   settled: 'Settled',
+  disconnected: 'Disconnected',
 }
 
-// NodeExecutionBackend in Sources/RielaCore/WorkflowModel.swift.
-const drivers = [
-  ['codex-agent', 'Codex'],
-  ['claude-code-agent', 'Claude Code'],
-  ['cursor-cli-agent', 'Cursor CLI'],
-  ['official/openai-sdk', 'OpenAI SDK'],
-  ['official/anthropic-sdk', 'Anthropic SDK'],
-  ['official/gemini-sdk', 'Gemini SDK'],
-  ['official/cursor-sdk', 'Cursor SDK'],
-] as const
-
-export function BotsView(props: { profileKey: string; onOpenBot: (botId: string) => void }) {
+export function BotsView(props: {
+  profileKey: string
+  selection?: { botId: string; remote?: string }
+  onOpenBot: (botId: string, remote?: string) => void
+  onBack: () => void
+}) {
+  const remote = createRemoteSelection(() => props.profileKey, () => props.selection?.remote)
   const [groupBy, setGroupBy] = createSignal<BotGrouping>('none')
   const [creating, setCreating] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
-  const [actionError, setActionError] = createSignal<unknown>()
+  const [actionError, setActionError] = createSignal<string>()
   const list = createPollingResource(
-    () => JSON.stringify([props.profileKey, groupBy()]),
-    (signal) => botsClient.listBots(groupBy(), signal),
+    () => remote.registry.loading && !remote.snapshot()
+      ? undefined : JSON.stringify([props.profileKey, groupBy(), remote.targets()]),
+    (signal) => readRemoteTargets(remote.targets(), (name) => botsClient.listBots(groupBy(), name, signal)),
   )
-  const rowsById = createMemo(() => new Map(list.data()?.bots.map((row) => [row.bot.botId, row])))
-  const groupsByKey = createMemo(() => new Map(list.data()?.groups.map((group) => [group.key, group])))
+  const rows = createMemo(() => list.data()?.values.flatMap((value) => value.bots) ?? [])
+  const selected = createMemo(() => {
+    const target = props.selection
+    const available = rows().filter((row) => overviewPresentation(row).actionsEnabled)
+    if (!target) return available.find((row) => row.section === 'active')
+    const targetRemote = target.remote ?? (remote.selection() === '*' ? 'local' : remote.selection())
+    return available.find((row) => row.bot.botId === target.botId && row.origin.remote === targetRemote)
+  })
+  const createTarget = () => {
+    const name = remote.selection()
+    if (name === '*') return undefined
+    return list.data()?.values.some(({ origin, bots }) =>
+      origin ? originAllowsActions(origin, name)
+        : name === 'local' || bots.some((row) => originAllowsActions(row.origin, name))) ? name : undefined
+  }
+  const selectedKey = () => {
+    const row = selected()
+    return row ? JSON.stringify([row.origin.remote, row.origin.serverId, row.bot.botId]) : undefined
+  }
 
   const mutate = async (operation: () => Promise<unknown>) => {
     if (busy()) return
@@ -45,83 +65,80 @@ export function BotsView(props: { profileKey: string; onOpenBot: (botId: string)
       await operation()
       await list.refresh()
     } catch (error) {
-      setActionError(error)
+      setActionError(managementError(error))
     } finally {
       setBusy(false)
     }
   }
 
-  const createBot = (form: HTMLFormElement) => {
-    const fields = new FormData(form)
-    const name = String(fields.get('name') ?? '').trim()
-    const defaultBackend = String(fields.get('backend') ?? '') || undefined
-    const defaultModel = String(fields.get('model') ?? '').trim() || undefined
-    if (!name) return
-    void mutate(async () => {
-      await botsClient.createBot({ name, defaultBackend, defaultModel })
-      setCreating(false)
-    })
-  }
-
-  const renderRow = (botId: string) => {
-    const row = () => rowsById().get(botId)
-    return <Show when={row()}>{(botRow) =>
-      <BotRow row={botRow()} busy={busy()} onOpen={() => props.onOpenBot(botId)} mutate={mutate} />
-    }</Show>
-  }
+  const renderRow = (row: BotOverviewRow) =>
+    <BotRow row={row} busy={busy()} selected={selected() === row}
+      onOpen={() => props.onOpenBot(row.bot.botId, row.origin.remote === 'local' ? undefined : row.origin.remote)}
+      target={remoteArgument(remote.selection(), row.origin.remote)}
+      mutate={mutate} />
 
   return <section class="bots-page" aria-label="Bots">
     <header class="bots-header">
       <h1>Bots</h1>
-      <div class="bot-actions">
-        <label>Group by <select value={groupBy()} onChange={(event) => setGroupBy(event.currentTarget.value === 'workspace' ? 'workspace' : 'none')}>
-          <option value="none">None</option>
-          <option value="workspace">Workspace</option>
-        </select></label>
-        <ActionButton aria-expanded={creating()} onClick={() => setCreating(!creating())}>New bot</ActionButton>
-      </div>
+      <RemoteSwitcher remote={remote} onSelect={() => {
+        setCreating(false)
+        props.onBack()
+      }} />
     </header>
-
-    <Show when={creating()}>
-      <form class="panel bots-form" onSubmit={(event) => { event.preventDefault(); createBot(event.currentTarget) }}>
-        <label>Name<input name="name" required /></label>
-        <label>Backend<select name="backend">
-          <option value="">Default</option>
-          <For each={drivers}>{([value, label]) => <option value={value}>{label}</option>}</For>
-        </select></label>
-        <label>Model<input name="model" placeholder="Default" /></label>
-        <ActionButton type="submit" disabled={busy()}>Create bot</ActionButton>
-      </form>
-    </Show>
-
-    <Show when={actionError()}>{(error) => <p role="alert">{String(error())}</p>}</Show>
-    <Show when={list.error()}>{(error) => <p role="alert">{String(error())}</p>}</Show>
-    <Show when={list.loading() && !list.data()}><p role="status">Loading bots…</p></Show>
-    <Show when={list.data()?.bots.length === 0}><p>No bots yet.</p></Show>
-
-    <For each={sectionOrder}>{(section) => {
-      const rows = createMemo(() => list.data()?.bots.filter((row) => row.section === section) ?? [])
-      const ids = createMemo(() => rows().map((row) => row.bot.botId))
-      const sectionIds = createMemo(() => new Set(ids()))
-      const keys = createMemo(() => list.data()?.groups
-        .filter((group) => group.botIds.some((id) => sectionIds().has(id)))
-        .map((group) => group.key) ?? [])
-      return <Show when={rows().length > 0}>
-        <details class="bots-section" open={section === 'active'}>
-          <summary>{sectionTitles[section]} <small>{rows().length}</small></summary>
-          <Show when={groupBy() === 'workspace'} fallback={<ul class="bots-rows"><For each={ids()}>{renderRow}</For></ul>}>
-            <For each={keys()}>{(key) => {
-              const group = () => groupsByKey().get(key)
-              const groupIds = () => group()?.botIds.filter((id) => sectionIds().has(id))
-              return <details class="bots-group" open>
-                <summary>{key === 'ungrouped' ? 'Ungrouped' : key} <Show when={group()?.needsYou}><NeedsYouDot /></Show></summary>
-                <ul class="bots-rows"><For each={groupIds()}>{renderRow}</For></ul>
-              </details>
-            }}</For>
+    <div class="bots-master-detail" classList={{ 'bots-detail-open': !!props.selection }}>
+      <aside class="bots-list-pane" aria-label="Bot list">
+        <div class="bot-actions">
+          <label>Group by <select value={groupBy()} onChange={(event) => setGroupBy(event.currentTarget.value === 'workspace' ? 'workspace' : 'none')}>
+            <option value="none">None</option>
+            <option value="workspace">Workspace</option>
+          </select></label>
+          <Show when={createTarget()}>
+            <ActionButton aria-expanded={creating()} onClick={() => setCreating(!creating())}>New bot</ActionButton>
           </Show>
-        </details>
-      </Show>
-    }}</For>
+        </div>
+        <Show when={creating() && createTarget()} keyed>{(target) =>
+          <BotForm remote={target} busy={busy()} onSubmit={(input) => void mutate(async () => {
+            await botsClient.createBot(input, target)
+            setCreating(false)
+          })} />
+        }</Show>
+        <Show when={actionError()}>{(error) => <p role="alert">{error()}</p>}</Show>
+        <For each={list.data()?.failures}>{(failure) =>
+          <p role="alert">{failure.remote} · {failure.code}</p>
+        }</For>
+        <Show when={list.loading() && !list.data()}><p role="status">Loading bots…</p></Show>
+        <Show when={list.data()?.values.length && !rows().length}><p>No bots yet.</p></Show>
+        <For each={visibleSections}>{(section) => {
+          const sectionRows = createMemo(() => rows().filter((row) => overviewPresentation(row).section === section))
+          const groups = createMemo(() => [...new Set(sectionRows().map((row) => row.workspaceGroup))])
+          return <Show when={sectionRows().length > 0}>
+            <details class="bots-section" open={section === 'active' || section === 'disconnected'}>
+              <summary>{sectionTitles[section]} <small>{sectionRows().length}</small></summary>
+              <Show when={groupBy() === 'workspace' && section !== 'disconnected'}
+                fallback={<ul class="bots-rows"><For each={sectionRows()}>{renderRow}</For></ul>}>
+                <For each={groups()}>{(group) => {
+                  const groupRows = createMemo(() => sectionRows().filter((row) => row.workspaceGroup === group))
+                  return <details class="bots-group" open>
+                    <summary>{group === 'ungrouped' ? 'Ungrouped' : group}
+                      <Show when={groupRows().some((row) => row.counts.needsYou > 0)}><NeedsYouDot /></Show>
+                    </summary>
+                    <ul class="bots-rows"><For each={groupRows()}>{renderRow}</For></ul>
+                  </details>
+                }}</For>
+              </Show>
+            </details>
+          </Show>
+        }}</For>
+      </aside>
+      <div class="bots-detail-pane">
+        <Show when={props.selection}><ActionButton class="bots-list-back" onClick={props.onBack}>All bots</ActionButton></Show>
+        <Show when={selectedKey()} keyed fallback={
+          <Show when={list.data()}><p class="panel">{props.selection ? 'Bot unavailable.' : 'Select a bot.'}</p></Show>
+        }>{(_key) =>
+          <BotDetailView profileKey={props.profileKey} row={selected()!} onChange={() => void list.refresh()} />
+        }</Show>
+      </div>
+    </div>
   </section>
 }
 
@@ -132,39 +149,46 @@ function NeedsYouDot() {
 function BotRow(props: {
   row: BotOverviewRow
   busy: boolean
+  selected: boolean
+  target: string
   onOpen: () => void
   mutate: (operation: () => Promise<unknown>) => Promise<void>
 }) {
   const bot = () => props.row.bot
   const counts = () => props.row.counts
-  return <li class="bots-row">
+  const presentation = () => overviewPresentation(props.row)
+  const origin = () => props.row.origin
+  return <li class="bots-row" classList={{ 'bot-card-selected': props.selected }}>
     <div class="bots-row-top">
       <div>
         <div class="bots-identity">
-          <Show when={counts().needsYou > 0}><NeedsYouDot /></Show>
-          <ActionButton type="button" icon={false} onClick={props.onOpen}>{bot().name}</ActionButton>
-          <Show when={bot().paused}><span class="bots-meta">Paused</span></Show>
-          <Show when={props.row.origin.remote !== 'local'}>
-            <span class="bots-meta">{props.row.origin.serverName ?? props.row.origin.remote}</span>
+          <Show when={presentation().section !== 'disconnected' && counts().needsYou > 0}><NeedsYouDot /></Show>
+          <Show when={presentation().actionsEnabled} fallback={<strong>{bot().name}</strong>}>
+            <ActionButton type="button" icon={false} aria-current={props.selected ? 'true' : undefined}
+              onClick={props.onOpen}>{bot().name}</ActionButton>
           </Show>
+          <Show when={presentation().section !== 'disconnected' && bot().paused}><span class="bots-meta">Paused</span></Show>
+          <Show when={origin().remote !== 'local'}>
+            <span class="bots-meta">{origin().serverName ?? origin().remote}</span>
+          </Show>
+          <Show when={!origin().verified}><span class="bots-meta">Unverified</span></Show>
         </div>
         <div class="bots-meta">
-          <Show when={countsLabel(counts())}>{(label) => <span>{label()}</span>}</Show>
-          <Show when={props.row.lastResult}><span>{props.row.lastResult}</span></Show>
-          <Show when={props.row.lastActivityAt}>{(at) => <time datetime={at()}>{relativeActivity(at())}</time>}</Show>
+          <Show when={presentation().label}>{(label) => <span>{label()}</span>}</Show>
+          <Show when={presentation().section !== 'disconnected' && props.row.lastActivityAt}>{(at) => <time datetime={at()}>{relativeActivity(at())}</time>}</Show>
         </div>
       </div>
-      <div class="bot-actions">
+      <Show when={presentation().actionsEnabled}><div class="bot-actions bots-row-actions">
         <BotListActions state={props.row.listState} snoozed={props.row.section === 'snoozed'}
           canSettle={counts().working + counts().waiting + counts().needsYou === 0} busy={props.busy}
-          onChange={(change) => void props.mutate(() => botsClient.setListState({ botId: bot().botId, ...change }))} />
+          onChange={(change) => void props.mutate(() => botsClient.setListState({ botId: bot().botId, ...change }, props.target))} />
         <ActionButton type="button" disabled={props.busy}
-          onClick={() => void props.mutate(() => botsClient.setPaused(bot().botId, !bot().paused))}>
+          onClick={() => void props.mutate(() => botsClient.setPaused(bot().botId, !bot().paused, props.target))}>
           {bot().paused ? 'Resume' : 'Pause'}
         </ActionButton>
-      </div>
+      </div></Show>
     </div>
-    <Show when={props.row.inProgress.length}>
+    <Show when={presentation().section !== 'disconnected' && props.row.inProgress.length}>
       <ul class="bots-work"><For each={props.row.inProgress}>{(item) =>
         <li><strong>{item.title}</strong> <span class="bots-meta">{[
           item.workflowId !== item.title ? item.workflowId : undefined, item.stepId, item.nodeId, item.backend, item.model,

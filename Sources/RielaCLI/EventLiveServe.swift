@@ -235,8 +235,10 @@ struct DefaultEventLiveServer: EventLiveServing {
       externalProbe: externalRunProbeOverride ?? StoreExternalRunProbe(sessionStoreRoot: storeRoot, workflowStoreRoots: overlap.workflowStoreRoots),
       bindingWorkflowIds: overlap.workflowIds
     )
+    let jobScheduler = maximumEvents == nil ? botJobScheduler(parsed: parsed) : nil
     do {
       repeat {
+      await jobScheduler?.tickIfDue(now: clock.now())
       for (sourceId, record) in await webhookyBuffer.drain() {
         guard let source = webhookySourcesById[sourceId] else {
           continue
@@ -377,14 +379,30 @@ struct DefaultEventLiveServer: EventLiveServing {
 
       try await drainHonoringCancellation(dispatcher, clock: clock)
     } catch {
+      await jobScheduler?.shutdown()
       await Task { await dispatcher.shutdownCancelling() }.value
       throw error
     }
 
+    await jobScheduler?.shutdown()
     await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
     return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
   }
 
+  private func botJobScheduler(parsed: ParsedParityOptions) -> BotJobScheduler {
+    BotJobScheduler { at in
+      guard let environment = try? await currentEnvironment(),
+        (try? EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment)) == false
+      else { return }
+      let directory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+      let root = CLIWorkflowSessionStore.resolveRootDirectory(
+        sessionStore: parsed.sessionStore, scope: parsed.scope, workingDirectory: directory, environment: environment
+      )
+      await BotJobScheduler.evaluate(in: BotsService(
+        workingDirectory: directory, sessionStoreRoot: root, environment: environment, now: { at }
+      ), admissionGate: admissionGate)
+    }
+  }
 }
 
 func drainHonoringCancellation(_ dispatcher: CronOverlapDispatcher, clock: any EventServeClock) async throws {

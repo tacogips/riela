@@ -1,0 +1,9 @@
+{
+  "upkeep": {
+    "provider": "scenario-mock",
+    "when": {"always": true},
+    "payload": {
+      "memoryMarkdown": "## Instructions\n### Triage\n- Summarize findings before proposing next steps. <!-- id:1 -->\n\n## Notes\n### Reports\n- Two reports from the same queue need review. <!-- id:2 -->\n"
+    }
+  }
+}

@@ -42,6 +42,13 @@ public struct BotSuggestion: Codable, Equatable, Sendable {
   public let dismissedBy: String?
   public let dismissReason: String?
   public let startedSessionId: String?
+  public var origin: BotOrigin?
+
+  public func withOrigin(_ origin: BotOrigin) -> Self {
+    var copy = self
+    copy.origin = origin
+    return copy
+  }
 
   public static func parseOutput(_ payload: JSONObject) throws -> [BotSuggestionDraft] {
     guard case let .array(suggestions) = payload["suggestions"] else {

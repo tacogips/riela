@@ -25,22 +25,26 @@ struct BotsService: Sendable {
 
   func overview(groupBy: BotListGrouping) throws -> BotListPayload {
     let bots = try store.list()
-    guard !bots.isEmpty else { return BotListPayload(bots: [], groups: []) }
     let at = now()
+    guard !bots.isEmpty else { return BotListPayload(bots: [], groups: [], origin: origin(at)) }
     let routines = try routineStore.list()
     let workStore = WorkStore(rootDirectory: store.sessionStoreRoot)
     let tasks = try workStore.listTasks()
     let list = try BotBoardProjector.overviewList(bots.map { bot in
       try projection(bot: bot, routines: routines, tasks: tasks, at: at).input
     }, groupBy: groupBy)
-    return BotListPayload(bots: list.rows, groups: list.groups)
+    return BotListPayload(bots: list.rows, groups: list.groups, origin: origin(at))
   }
 
-  func detail(botId: String) throws -> BotDetailPayload {
+  func detail(botId: String, memoryRoot: String? = nil) throws -> BotDetailPayload {
     let result = try projection(botId: botId)
+    let suggestions = try store.suggestions(botId: botId)
+      .filter { $0.status == .open || $0.status == .accepted }.map { $0.withOrigin(result.input.origin) }
     return BotDetailPayload(
       bot: result.input.bot, board: GraphQLBotBoard(BotBoardProjector.board(result.input)),
-      routines: result.routines, origin: result.input.origin
+      routines: result.routines, origin: result.input.origin,
+      memory: try memorySummary(botId: botId, explicitRoot: memoryRoot),
+      suggestions: suggestions, jobs: try jobSummaries(bot: result.input.bot)
     )
   }
 
@@ -54,7 +58,7 @@ struct BotsService: Sendable {
     var record = BotRecord(botId: input.id, name: name, createdAt: stamp, updatedAt: stamp)
     apply(input, to: &record)
     let warnings = try modelWarnings(for: record)
-    return BotMutationPayload(bot: try store.create(record), warnings: warnings)
+    return BotMutationPayload(bot: try store.create(record), warnings: warnings, origin: origin(now()))
   }
 
   func update(_ input: UpdateBotInput) throws -> BotMutationPayload {
@@ -64,7 +68,7 @@ struct BotsService: Sendable {
       apply(input, to: &$0)
       warnings = try modelWarnings(for: $0)
     }
-    return BotMutationPayload(bot: record, warnings: warnings)
+    return BotMutationPayload(bot: record, warnings: warnings, origin: origin(now()))
   }
 
   private func modelWarnings(for record: BotRecord) throws -> [String] {
@@ -165,12 +169,6 @@ struct BotsService: Sendable {
       throw BotStoreError(code: "list_item_busy", message: "Item has open work")
     }
     return BotListStateKey(itemKind: kind, itemId: id)
-  }
-
-  func validate(remote: String?) throws {
-    guard remote == nil || remote == "local" else {
-      throw BotStoreError(code: "remote_not_configured", message: "Remote '\(remote ?? "")' is not configured")
-    }
   }
 }
 

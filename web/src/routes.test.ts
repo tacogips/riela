@@ -9,7 +9,7 @@ describe('hash route parsing', () => {
   })
 
   test('parses navigation views and the command deck', () => {
-    for (const view of ['instances', 'logs', 'workflows', 'ops', 'bots', 'settings'] as const) {
+    for (const view of ['instances', 'logs', 'workflows', 'ops', 'bots', 'models', 'settings'] as const) {
       expect(parseViewHash(`#/${view}`)).toEqual({ view })
     }
   })
@@ -56,4 +56,13 @@ describe('hash route parsing', () => {
       expect(parseViewHash(viewHash(route))).toEqual(route)
     }
   })
+})
+
+test('preserves host identity for paired routes with overlapping ids', () => {
+  const bot = { view: 'bot-detail', botId: 'report/a', remote: 'office' } as const
+  const run = { view: 'run-detail', sessionId: 'run/a', remote: 'office' } as const
+  expect(viewHash(bot)).toBe('#/bots/report%2Fa?remote=office')
+  expect(viewHash(run)).toBe('#/runs/run%2Fa?remote=office')
+  expect(parseViewHash(viewHash(bot))).toEqual(bot)
+  expect(parseViewHash(viewHash(run))).toEqual(run)
 })

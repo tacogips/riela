@@ -3,6 +3,7 @@ import RielaCore
 import RielaGraphQL
 import RielaServer
 import RielaObservability
+import RielaWorkflowRegistry
 
 struct ServeHTTPCommand: Sendable {
   typealias ReadyHandler = @Sendable (String) -> Void
@@ -22,7 +23,14 @@ struct ServeHTTPCommand: Sendable {
     }
     do {
       let parsed = try ParsedParityOptions(command.options.arguments)
+      guard parsed.pairingScope == nil || parsed.pairingAddress != nil else {
+        return CLICommandResult(exitCode: .usage, stderr: "--pairing-scope requires --pairing-address")
+      }
       return try await run(command: command, parsed: parsed, onReady: onReady)
+    } catch let error as RielaAPIKeyStore.StoreError {
+      return CLICommandResult(exitCode: .failure, stderr: error.code)
+    } catch let error as BotStoreError {
+      return CLICommandResult(exitCode: .usage, stderr: error.code)
     } catch let error as CLIUsageError {
       return failure(error.message, output: command.options.output, options: command.options)
     } catch {
@@ -35,6 +43,8 @@ struct ServeHTTPCommand: Sendable {
     parsed: ParsedParityOptions,
     onReady: @escaping ReadyHandler
   ) async throws -> CLICommandResult {
+    if let address = parsed.pairingAddress { _ = try RielaPairingAddress.validate(address) }
+    let pairingScope = try PairingService.scope(parsed.pairingScope)
     let host = parsed.host ?? "127.0.0.1"
     let requestedPort = parsed.port ?? ServeWebSettingsStore(
       homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
@@ -44,7 +54,6 @@ struct ServeHTTPCommand: Sendable {
       host: host,
       port: requestedPort,
     )
-    let listenerHandle = try await inProcessListener(configuration: configuration)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     let environment = try await CLIRuntimeEnvironmentPreparation.prepare(path: parsed.runtimeEnvironmentFile,
       required: [], base: CLIRuntimeEnvironment.mergedProcessEnvironment(), workingDirectory: workingDirectory)
@@ -54,10 +63,12 @@ struct ServeHTTPCommand: Sendable {
       workingDirectory: workingDirectory,
       environment: environment
     )
+    let homeDirectory = URL(
+      fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true
+    )
+    let pairing = try PairingService(store: serverAPIKeyStore(homeDirectory: homeDirectory), serverName: parsed.serverName)
     let adapter = serveMachineGraphQLAdapter(
-      parsed: parsed,
-      environment: environment,
-      workingDirectory: workingDirectory
+      parsed: parsed, environment: environment, workingDirectory: workingDirectory, pairing: pairing
     )
     let distributedHost = try environment[DistributedControllerConfiguration.environmentKey].map {
       try DistributedControllerHost(
@@ -67,13 +78,14 @@ struct ServeHTTPCommand: Sendable {
       )
     }
     let webHost = await ServeWebHost(
-      homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true),
+      homeDirectory: homeDirectory,
       workingDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true),
       sessionStoreRoot: parsed.sessionStore,
       host: host,
       port: requestedPort,
       fallback: adapter,
-      environment: environment
+      environment: environment,
+      pairing: pairing
     )
     let routeHandler: any RielaHTTPRouteHandling
     if let webRoot {
@@ -82,9 +94,17 @@ struct ServeHTTPCommand: Sendable {
       routeHandler = webHost
     }
     let server = RielaLocalHTTPServer(routeHandler: routeHandler)
-    let boundPort = try await server.start(host: host, port: requestedPort)
-    do { try await distributedHost?.start() } catch {
+    let listenerHandle = try await inProcessListener(configuration: configuration)
+    let boundPort: Int
+    let pairingCode: PairingCodePayload?
+    do {
+      boundPort = try await server.start(host: host, port: requestedPort)
+      try await distributedHost?.start()
+      pairingCode = try parsed.pairingAddress.map { try pairing.mint(address: $0, scope: pairingScope) }
+    } catch {
       await server.stop()
+      await distributedHost?.stop()
+      try? await listenerHandle.shutdown()
       throw error
     }
     await webHost.updateBoundPort(boundPort)
@@ -104,6 +124,7 @@ struct ServeHTTPCommand: Sendable {
       result.records.joined(separator: "\n") + "\n"
     }
     onReady(rendered.stdout.hasSuffix("\n") ? rendered.stdout : rendered.stdout + "\n")
+    if let pairingCode { onReady(pairingCode.terminalOutput) }
 
     let retentionRequest = RielaRetentionRequest(
       trigger: .automatic,
@@ -124,11 +145,30 @@ struct ServeHTTPCommand: Sendable {
     retentionScheduler.start()
     defer { retentionScheduler.stop() }
 
+    let jobScheduler = BotJobScheduler { at in
+      await BotJobScheduler.evaluate(in: BotsService(
+        workingDirectory: workingDirectory, sessionStoreRoot: sessionRoot, environment: environment, now: { at }
+      ))
+    }
+    let clock = SystemEventServeClock()
+    let jobTicks = Task {
+      while !Task.isCancelled {
+        await jobScheduler.tickIfDue(now: clock.now())
+        do {
+          try await clock.sleep(for: .seconds(60))
+        } catch {
+          return
+        }
+      }
+    }
     do {
       try await Task.sleep(nanoseconds: .max)
     } catch is CancellationError {
       // SIGINT and SIGTERM cancel the entry-point task.
     }
+    jobTicks.cancel()
+    await jobTicks.value
+    await jobScheduler.shutdown()
     await server.stop()
     await webHost.shutdown()
     await distributedHost?.stop()
@@ -165,7 +205,8 @@ struct ServeHTTPCommand: Sendable {
 func serveMachineGraphQLAdapter(
   parsed: ParsedParityOptions,
   environment: [String: String],
-  workingDirectory: String
+  workingDirectory: String,
+  pairing: PairingService? = nil
 ) -> DeterministicServerHTTPAdapter {
   let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
     sessionStore: parsed.sessionStore,
@@ -179,7 +220,9 @@ func serveMachineGraphQLAdapter(
     environment: environment
   )
   let graphQLExecutor = APIKeyGraphQLAuthorization(
-    store: serverAPIKeyStore(homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true)),
+    store: pairing?.store ?? serverAPIKeyStore(homeDirectory: URL(
+      fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true
+    )),
     next: CompositeGraphQLDocumentExecutor(
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(),
       fallback: WorkflowExecutionGraphQLDocumentExecutor(
@@ -202,7 +245,15 @@ func serveMachineGraphQLAdapter(
             ),
             next: BotsGraphQLDocumentExecutor(
               provider: BotsGraphQLProvider(
-                workingDirectory: workingDirectory, sessionStoreRoot: storeRoot, environment: environment
+                workingDirectory: workingDirectory, sessionStoreRoot: storeRoot, environment: environment,
+                pairing: pairing
+              ),
+              next: RoutineGraphQLDocumentExecutor(
+                provider: FileRoutineGraphQLProvider(
+                  workingDirectory: workingDirectory, environment: environment,
+                  botExists: BotRunLinker.botExists(sessionStoreRoot: storeRoot)
+                ),
+                authorizeMachineCreate: { BotsRequestGrant.current?.isStillValid() == true }
               )
             )
           )

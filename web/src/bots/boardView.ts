@@ -1,4 +1,5 @@
-import type { BotBoardGroup, BotCounts } from './contracts'
+import { viewHash } from '../routes'
+import type { BotBoardGroup, BotBoardItem, BotCounts, BotOrigin, BotOverviewRow } from './contracts'
 
 export const groupTitles = {
   needsYou: 'Needs you',
@@ -44,4 +45,24 @@ const timeFormat = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyl
 
 export function formatBotTime(at: string): string {
   return timeFormat.format(new Date(at))
+}
+
+export function originAllowsActions(origin: BotOrigin, remote = origin.remote): boolean {
+  return origin.verified && origin.connection === 'connected' && origin.remote === remote && remote !== 'unverified'
+}
+
+export function overviewPresentation(row: BotOverviewRow, now = Date.now()) {
+  const disconnected = row.origin.connection === 'disconnected'
+  return {
+    section: disconnected ? 'disconnected' as const : row.section,
+    label: disconnected
+      ? `last seen ${relativeActivity(row.origin.observedAt, now)}`
+      : countsLabel(row.counts) || row.lastResult,
+    actionsEnabled: !disconnected && originAllowsActions(row.origin),
+  }
+}
+
+export function boardRunHash(group: BotBoardGroup, item: Pick<BotBoardItem, 'sessionId'>, remote = 'local') {
+  if (!item.sessionId || group === 'planned' || group === 'closed') return undefined
+  return viewHash({ view: 'run-detail', sessionId: item.sessionId, remote: remote === 'local' ? undefined : remote })
 }

@@ -4,26 +4,39 @@ import { ActionButton } from '../components/ActionButton'
 import { createPollingResource } from '../polling'
 import { createActivityStream } from './activityStream'
 import { activitySummary, type ActivityFeed } from './activityFeed'
-import { boardOrder, formatBotTime, formatElapsed, groupTitles, statusLabel } from './boardView'
+import { boardOrder, boardRunHash, formatBotTime, formatElapsed, groupTitles, originAllowsActions, statusLabel } from './boardView'
 import { BotListActions } from './BotListActions'
 import { botsClient } from './client'
-import type { AnswerBotRequestInput, BotBoardGroup, BotBoardItem, BotPlan, SetBotListStateInput } from './contracts'
+import type { AnswerBotRequestInput, BotBoardGroup, BotBoardItem, BotOverviewRow, BotPlan, SetBotListStateInput } from './contracts'
+import { BotForm } from './BotForm'
+import { BotMemoryPanel } from './BotMemoryPanel'
+import { BotSuggestionsPanel } from './BotSuggestionsPanel'
+import { managementError } from './remoteSelection'
 import './bots.css'
 
 function itemKey(item: BotBoardItem) {
   return JSON.stringify([item.itemKind, item.itemId])
 }
 
-export function BotDetailView(props: { profileKey: string; botId: string; onBack: () => void }) {
+export function BotDetailView(props: { profileKey: string; row: BotOverviewRow; onChange: () => void }) {
+  const botId = props.row.bot.botId
+  const remote = props.row.origin.remote
+  const [editing, setEditing] = createSignal(false)
+  const [memoryRevision, setMemoryRevision] = createSignal(0)
+  const [jobResult, setJobResult] = createSignal<string>()
   const [selectedKey, setSelectedKey] = createSignal<string>()
   const [busy, setBusy] = createSignal(false)
   const [actionError, setActionError] = createSignal<unknown>()
   const detail = createPollingResource(
-    () => JSON.stringify([props.profileKey, props.botId]),
-    (signal) => botsClient.getBot(props.botId, signal),
+    () => JSON.stringify([props.profileKey, remote, botId]),
+    (signal) => botsClient.getBot(botId, remote, signal),
   )
+  const trustedDetail = () => {
+    const value = detail.data()
+    return value && originAllowsActions(value.origin, remote) ? value : undefined
+  }
   const itemsByKey = createMemo(() => new Map(
-    boardOrder.flatMap((group) => detail.data()?.board[group] ?? []).map((item) => [itemKey(item), item]),
+    boardOrder.flatMap((group) => trustedDetail()?.board[group] ?? []).map((item) => [itemKey(item), item]),
   ))
   const selectedItem = () => itemsByKey().get(selectedKey() ?? '')
   const activityKey = () => {
@@ -32,7 +45,7 @@ export function BotDetailView(props: { profileKey: string; botId: string; onBack
   }
 
   const mutate = async (operation: () => Promise<unknown>, answering = false) => {
-    if (busy()) return
+    if (busy() || detail.error() || !trustedDetail()) return false
     setBusy(true)
     setActionError(undefined)
     try {
@@ -43,22 +56,37 @@ export function BotDetailView(props: { profileKey: string; botId: string; onBack
           || !['request_already_resolved', 'request_expired'].includes(error.code ?? '')) throw error
       }
       await detail.refresh()
+      props.onChange()
+      return true
     } catch (error) {
       setActionError(error)
+      return false
     } finally {
       setBusy(false)
     }
   }
 
-  return <section class="bots-page" aria-label="Bot details">
+  const blocked = () => !!detail.error()
+
+  return <section class="bots-detail" aria-label="Bot details">
     <header class="bots-header">
-      <ActionButton onClick={props.onBack}>All bots</ActionButton>
-      <h1>{detail.data()?.bot.name ?? 'Bot'}</h1>
+      <h2>{props.row.bot.name}</h2>
+      <Show when={trustedDetail() && !detail.error()}>
+        <ActionButton aria-expanded={editing()} onClick={() => setEditing(!editing())}>Edit bot</ActionButton>
+      </Show>
     </header>
-    <Show when={actionError()}>{(error) => <p role="alert">{String(error())}</p>}</Show>
-    <Show when={detail.error()}>{(error) => <p role="alert">{String(error())}</p>}</Show>
+    <Show when={editing() && trustedDetail() && !detail.error()}>
+      <BotForm remote={remote} bot={trustedDetail()!.bot} busy={busy()}
+        onSubmit={(input) => void mutate(async () => {
+          await botsClient.updateBot({ botId, ...input }, remote)
+          setEditing(false)
+        })} />
+    </Show>
+    <Show when={actionError()}>{(error) => <p role="alert">{managementError(error())}</p>}</Show>
+    <Show when={detail.error()}>{(error) => <p role="alert">{managementError(error())}</p>}</Show>
     <Show when={detail.loading() && !detail.data()}><p role="status">Loading bot…</p></Show>
-    <Show when={detail.data()}>{(data) =>
+    <Show when={detail.data() && !trustedDetail()}><p role="alert">Bot origin unverified.</p></Show>
+    <Show when={trustedDetail()}>{(data) =>
       <div class="bot-detail-layout">
         <div class="bot-board">
           <For each={boardOrder}>{(group) => {
@@ -70,12 +98,16 @@ export function BotDetailView(props: { profileKey: string; botId: string; onBack
               <ul class="bots-rows">
                 <For each={keys()}>{(key) =>
                   <Show when={itemsByKey().get(key)}>{(item) =>
-                    <BoardCard item={item()} group={group} selected={selectedKey() === key} busy={busy()}
+                    <BoardCard item={item()} group={group} remote={remote} selected={selectedKey() === key} busy={busy() || blocked()}
                       onSelect={() => setSelectedKey(key)}
-                      onAnswer={(input) => void mutate(() => botsClient.answerRequest(input), true)}
+                      onAnswer={(input) => void mutate(() => botsClient.answerRequest(input, remote), true)}
+                      onCorrection={(text) => mutate(async () => {
+                        await botsClient.captureFeedback(botId, item().sessionId!, text, remote)
+                        setMemoryRevision((value) => value + 1)
+                      })}
                       onListChange={(change) => void mutate(() => botsClient.setListState({
-                        botId: props.botId, itemKind: item().itemKind, itemId: item().itemId, ...change,
-                      }))} />
+                        botId, itemKind: item().itemKind, itemId: item().itemId, ...change,
+                      }, remote))} />
                   }</Show>
                 }</For>
               </ul>
@@ -91,9 +123,35 @@ export function BotDetailView(props: { profileKey: string; botId: string; onBack
               }</For></ul>
             </section>
           </Show>
+          <section class="panel bot-management" aria-label="Bot jobs">
+            <h2>Jobs</h2>
+            <ul class="bots-rows"><For each={data().jobs}>{(job) =>
+              <li class="bots-row bots-row-top">
+                <div>
+                  <strong>{job.job === 'upkeep' ? 'Memory upkeep' : 'Look around'}</strong>
+                  <div class="bots-meta">{statusLabel(job.schedule)}
+                    <Show when={job.lastRun}>{(run) =>
+                      <span>{statusLabel(run().status)} · {formatBotTime(run().startedAt)}</span>
+                    }</Show>
+                  </div>
+                </div>
+                <ActionButton type="button" disabled={busy() || blocked()} onClick={() => void mutate(async () => {
+                  setJobResult(undefined)
+                  const result = await botsClient.runJob(botId, job.job, remote)
+                  setJobResult([statusLabel(result.status), result.detail].filter(Boolean).join(' · '))
+                })}>Run now</ActionButton>
+              </li>
+            }</For></ul>
+            <Show when={jobResult()}>{(result) => <p role="status">{result()}</p>}</Show>
+          </section>
+          <BotMemoryPanel botId={botId} remote={remote} revision={memoryRevision()} disabled={blocked()} />
+          <BotSuggestionsPanel botId={botId} remote={remote} disabled={blocked()} onChange={() => {
+            void detail.refresh()
+            props.onChange()
+          }} />
         </div>
         <Show when={activityKey()} keyed>{(_key) =>
-          <ActivityPane sessionId={selectedItem()!.sessionId!} title={selectedItem()!.title}
+          <ActivityPane remote={remote} sessionId={selectedItem()!.sessionId!} title={selectedItem()!.title}
             onClose={() => setSelectedKey(undefined)} />
         }</Show>
       </div>
@@ -104,17 +162,23 @@ export function BotDetailView(props: { profileKey: string; botId: string; onBack
 function BoardCard(props: {
   item: BotBoardItem
   group: BotBoardGroup
+  remote: string
   selected: boolean
   busy: boolean
   onSelect: () => void
   onAnswer: (input: AnswerBotRequestInput) => void
   onListChange: (change: Partial<SetBotListStateInput>) => void
+  onCorrection: (text: string) => Promise<boolean>
 }) {
   const item = () => props.item
+  const [correction, setCorrection] = createSignal('')
+  const runHash = () => boardRunHash(props.group, item(), props.remote)
   return <li class="bots-row bot-card" classList={{ 'bot-card-selected': props.selected }}>
     <div class="bots-row-top">
       <div>
-        <strong>{item().title}</strong>
+        <Show when={runHash()} fallback={<strong>{item().title}</strong>}>{(href) =>
+          <a class="bot-run-link" href={href()}>{item().title}</a>
+        }</Show>
         <div class="bots-meta">{[
           item().stepId, item().nodeId, item().backend, item().model,
           item().elapsedMs == null ? undefined : formatElapsed(item().elapsedMs!),
@@ -156,6 +220,17 @@ function BoardCard(props: {
         <span class="bots-meta">{item().itemKind === 'task' ? 'Task' : 'Session'} {item().itemId}</span>
       </div>
     }</Show>
+    <Show when={props.group === 'closed' && item().sessionId}>
+      <form class="bot-actions" onSubmit={(event) => {
+        event.preventDefault()
+        const text = correction().trim()
+        if (text) void props.onCorrection(text).then((saved) => { if (saved) setCorrection('') })
+      }}>
+        <label>Correction <input value={correction()} disabled={props.busy}
+          onInput={(event) => setCorrection(event.currentTarget.value)} /></label>
+        <ActionButton type="submit" disabled={props.busy || !correction().trim()}>Save correction</ActionButton>
+      </form>
+    </Show>
     <Show when={item().itemKind === 'session' || item().itemKind === 'task'}>
       <details class="bot-card-actions">
         <summary>List actions</summary>
@@ -174,10 +249,12 @@ function PlanEntries(props: { plans: BotPlan[] }) {
   </Show>
 }
 
-function ActivityPane(props: { sessionId: string; title: string; onClose: () => void }) {
+export function ActivityPane(props: { sessionId: string; remote: string; title: string; onClose?: () => void }) {
   const [feed, setFeed] = createSignal<ActivityFeed>()
   const [error, setError] = createSignal<unknown>()
-  onCleanup(createActivityStream(botsClient, props.sessionId, (update) => {
+  const client = { getActivity: (query: Parameters<typeof botsClient.getActivity>[0]) =>
+    botsClient.getActivity({ ...query, remote: props.remote }) }
+  onCleanup(createActivityStream(client, props.sessionId, (update) => {
     setFeed(update.feed)
     setError(update.error)
   }))
@@ -185,7 +262,7 @@ function ActivityPane(props: { sessionId: string; title: string; onClose: () => 
   return <aside class="panel bots-activity" aria-label="Bot activity">
     <header class="bots-header">
       <h2>{props.title} activity</h2>
-      <ActionButton type="button" onClick={props.onClose}>Close</ActionButton>
+      <Show when={props.onClose}><ActionButton type="button" onClick={props.onClose}>Close</ActionButton></Show>
     </header>
     <Show when={error()}>{(requestError) => <p role="alert">{String(requestError())} · Retrying…</p>}</Show>
     <Show when={!feed() && !error()}><p role="status">Loading activity…</p></Show>

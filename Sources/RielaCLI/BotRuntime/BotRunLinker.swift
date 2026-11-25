@@ -37,10 +37,21 @@ public struct BotRunLinker: Sendable {
     BotStore(sessionStoreRoot: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
   }
 
-  func prepare(botId: String) throws -> BotRunContext {
+  @discardableResult
+  func requireRunnableBot(botId: String) throws -> BotRecord {
     guard let bot = try store.load(botId: botId) else { throw BotRunLinkError.notFound(botId) }
     guard !bot.paused else { throw BotRunLinkError.paused(botId) }
-    return BotRunContext(botId: bot.botId, permissionWaitMs: bot.permissionWaitMs)
+    return bot
+  }
+
+  func prepare(botId: String, workingDirectory: String, environment: [String: String]) throws -> BotRunContext {
+    let bot = try requireRunnableBot(botId: botId)
+    return BotRunContext(
+      botId: bot.botId, permissionWaitMs: bot.permissionWaitMs,
+      memoryBlock: BotMemoryRuntime.promptBlock(
+        botId: bot.botId, sessionStoreRoot: sessionStoreRoot, workingDirectory: workingDirectory, environment: environment
+      )
+    )
   }
 
   func link(sessionId: String, botId: String, source: String, sourceRef: String?, at: Date) {

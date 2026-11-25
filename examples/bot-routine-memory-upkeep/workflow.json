@@ -1,0 +1,22 @@
+{
+  "workflowId": "bot-routine-memory-upkeep",
+  "description": "Summarize one triage routine tick.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 300000
+  },
+  "entryStepId": "triage",
+  "nodes": [
+    {
+      "id": "triage",
+      "nodeFile": "nodes/node-triage.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "triage",
+      "nodeId": "triage",
+      "role": "worker"
+    }
+  ]
+}

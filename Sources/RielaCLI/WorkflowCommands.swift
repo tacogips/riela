@@ -268,6 +268,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var authTokenEnv: String?
   public var managerSessionId: String?
   public var botId: String?
+  var pairedRemote: Bool?
 
   public init(
     workflowName: String,
@@ -372,13 +373,21 @@ public protocol WorkflowGraphQLRunTransporting: Sendable {
 }
 
 public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransporting {
-  public init() {}
+  private let pairedTransport: RemoteHTTP.Transport
+
+  public init() { self.init(pairedTransport: RemoteHTTP.production) }
+
+  init(pairedTransport: @escaping RemoteHTTP.Transport) {
+    self.pairedTransport = pairedTransport
+  }
 
   public func executeWorkflow(endpoint: String, request: WorkflowRemoteRunRequest) async throws -> WorkflowRemoteRunResult {
     guard let url = URL(string: endpoint), url.scheme == "http" || url.scheme == "https" else {
       throw CLIUsageError("invalid --endpoint value '\(endpoint)'; expected http or https URL")
     }
-    var urlRequest = URLRequest(url: url)
+    var urlRequest = try request.pairedRemote == true
+      ? RemoteHTTP.post(endpoint: url, path: url.path)
+      : URLRequest(url: url)
     urlRequest.httpMethod = "POST"
     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
     if let authToken = nonEmptyString(request.authToken) {
@@ -405,7 +414,9 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
       """,
       variables: ["input": .object(input)]
     )
-    let executeData = try await executeGraphQL(urlRequest: urlRequest, request: graphQLRequest)
+    let executeData = try await executeGraphQL(
+      urlRequest: urlRequest, request: graphQLRequest, paired: request.pairedRemote == true
+    )
     let execution = try remoteExecutionPayload(from: executeData, field: "executeWorkflow")
     let summaryRequest = GraphQLRequest(
       query: """
@@ -427,7 +438,9 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
       """,
       variables: ["workflowExecutionId": .string(execution.workflowExecutionId)]
     )
-    let summaryData = try await executeGraphQL(urlRequest: urlRequest, request: summaryRequest)
+    let summaryData = try await executeGraphQL(
+      urlRequest: urlRequest, request: summaryRequest, paired: request.pairedRemote == true
+    )
     let summary = try remoteWorkflowRunSummary(from: summaryData)
     return WorkflowRemoteRunResult(
       sessionId: execution.sessionId,
@@ -440,18 +453,43 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
     )
   }
 
-  private func executeGraphQL(urlRequest: URLRequest, request: GraphQLRequest) async throws -> JSONObject {
+  private func executeGraphQL(
+    urlRequest: URLRequest, request: GraphQLRequest, paired: Bool
+  ) async throws -> JSONObject {
     var postRequest = urlRequest
     postRequest.httpBody = try JSONEncoder().encode(request)
-    let (data, response) = try await URLSession.shared.data(for: postRequest)
-    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-      throw CLIUsageError("remote run failed with HTTP \(http.statusCode)")
+    let data: Data
+    if paired {
+      let status: Int
+      do {
+        (data, status) = try await pairedTransport(postRequest)
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        throw CLIUsageError("remote_unreachable")
+      }
+      if status == 401 { throw CLIUsageError("remote_unauthorized") }
+      guard (200..<300).contains(status) else { throw CLIUsageError("remote_unreachable") }
+    } else {
+      let (body, response) = try await URLSession.shared.data(for: postRequest)
+      if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        throw CLIUsageError("remote run failed with HTTP \(http.statusCode)")
+      }
+      data = body
     }
     let envelope = try JSONDecoder().decode(JSONValue.self, from: data)
     guard case let .object(root) = envelope else {
       throw CLIUsageError("remote run returned non-object GraphQL response")
     }
     if case let .array(errors)? = root["errors"], !errors.isEmpty {
+      if paired {
+        guard case let .object(error)? = errors.first, case let .object(extensions)? = error["extensions"],
+              case let .string(code)? = extensions["code"],
+              let safeCode = RemoteHTTP.safeErrorCode(code, authorization: urlRequest.value(forHTTPHeaderField: "Authorization"))
+        else { throw RemoteHTTP.invalidResponse }
+        if safeCode == "UNAUTHENTICATED" { throw CLIUsageError("remote_unauthorized") }
+        throw CLIUsageError(safeCode)
+      }
       throw CLIUsageError(remoteRunGraphQLErrorMessage(errors))
     }
     guard

@@ -151,9 +151,7 @@ enum HookClientVendor: String, CaseIterable, ExpressibleByArgument {
 /// and the owning switches read their literals from these raw values.
 enum BotClientAction: String, CaseIterable {
   case create, list, show, update, pause, resume, remove, pin, unpin, move, snooze, unsnooze, settle, unsettle
-  case activity, answer
-
-  static var allRawValues: [String] { allCases.map(\.rawValue) }
+  case activity, answer, memory, feedback, job, suggestion
 }
 
 enum ModelClientAction: String, CaseIterable {

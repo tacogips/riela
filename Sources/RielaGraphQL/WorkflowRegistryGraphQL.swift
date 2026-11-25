@@ -371,7 +371,7 @@ public struct GraphQLTransportCredential: Equatable, Sendable {
   }
 
   /// Validates credentials without adding them to public request diagnostics.
-  public func validate(using validator: (String) throws -> Bool) rethrows -> Bool {
+  public func validate<Value>(using validator: (String) throws -> Value) rethrows -> Value {
     try validator(value)
   }
 }

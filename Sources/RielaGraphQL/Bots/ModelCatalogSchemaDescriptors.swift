@@ -7,7 +7,8 @@ extension GraphQLSchemaGenerator {
       .init(name: "reasoningEfforts", type: "[String!]!"),
       .init(name: "serviceTiers", type: "[String!]!"),
       .init(name: "modes", type: "[String!]!"),
-      .init(name: "observedAt", type: "String")
+      .init(name: "observedAt", type: "String"),
+      .init(name: "origin", type: "BotOrigin")
     ]),
     .init(kind: .object, name: "ProviderInstance", fields: [
       .init(name: "instanceId", type: "String!"),

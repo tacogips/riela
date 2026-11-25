@@ -290,9 +290,14 @@ public struct RoutineGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   ]
 
   public var provider: (any RoutineGraphQLProviding)?
+  private var authorizeMachineCreate: (@Sendable () -> Bool)?
 
-  public init(provider: (any RoutineGraphQLProviding)? = nil) {
+  public init(
+    provider: (any RoutineGraphQLProviding)? = nil,
+    authorizeMachineCreate: (@Sendable () -> Bool)? = nil
+  ) {
     self.provider = provider
+    self.authorizeMachineCreate = authorizeMachineCreate
   }
 
   static func supports(_ field: String) -> Bool {
@@ -407,6 +412,10 @@ extension RoutineGraphQLDocumentExecutor: GraphQLDocumentDomainPreflighting {
         message: "routine GraphQL is available only from a locally trusted host"
       )
     }
+    if let authorizeMachineCreate,
+       let rejection = machineCreateRejection(rootFields: rootFields, authorize: authorizeMachineCreate) {
+      return rejection
+    }
     for root in rootFields {
       guard Self.supports(root.fieldName) else {
         return routineGraphQLError(code: "INVALID_ROUTINE", message: "unsupported routine root field")
@@ -419,6 +428,24 @@ extension RoutineGraphQLDocumentExecutor: GraphQLDocumentDomainPreflighting {
           code: "INVALID_ROUTINE",
           message: "routine field '\(root.fieldName)' is not valid in this operation"
         )
+      }
+    }
+    return nil
+  }
+
+  private func machineCreateRejection(
+    rootFields: [ParsedGraphQLRootField], authorize: @Sendable () -> Bool
+  ) -> GraphQLDocumentExecutionResponse? {
+    guard authorize() else {
+      return routineGraphQLError(code: "UNAUTHENTICATED", message: "Routine creation requires a valid client credential")
+    }
+    for root in rootFields {
+      guard root.fieldName == "createRoutine" else {
+        return routineGraphQLError(code: "ROUTINE_UNAVAILABLE", message: "Only routine creation is available on this transport")
+      }
+      if case let .object(input)? = root.arguments["input"],
+         input["eventRoot"] != nil || input["routineStoreRoot"] != nil {
+        return routineGraphQLError(code: "INVALID_ROUTINE", message: "Remote routines use server-managed stores")
       }
     }
     return nil

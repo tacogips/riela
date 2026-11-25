@@ -19,8 +19,8 @@ extension WorkflowRunCommand {
     let authTokenEnv = configuredAuthTokenEnv ?? "RIELA_API_KEY"
     let authToken = nonEmptyString(options.authToken)
       ?? nonEmptyString(environment[authTokenEnv])
-    let managerSessionId = nonEmptyString(environment["RIELA_MANAGER_SESSION_ID"])
-    let request = WorkflowRemoteRunRequest(
+    let managerSessionId = options.pairedRemote ? nil : nonEmptyString(environment["RIELA_MANAGER_SESSION_ID"])
+    var request = WorkflowRemoteRunRequest(
       workflowName: options.target,
       instanceIdentity: options.instance,
       runtimeVariables: variables,
@@ -36,6 +36,7 @@ extension WorkflowRunCommand {
       managerSessionId: managerSessionId,
       botId: nonEmptyString(options.botId)
     )
+    request.pairedRemote = options.pairedRemote ? true : nil
     let result = try await graphQLTransport.executeWorkflow(endpoint: endpoint, request: request)
     return CLICommandResult(
       exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure,

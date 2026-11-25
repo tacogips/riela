@@ -156,6 +156,27 @@ a clean build, a union filter of 222 tests with 0 failures including
 The dispatch manifest `active/issue-188-dispatch.json` stays active until the
 dispatch run closes. The final commit and push remain workflow steps.
 
+Bots overview (2026-11-25, branch `feat/bots-overview`; no GitHub issue) is
+implemented and accepted. The parent plan is archived at
+[`completed/bots-overview.md`](completed/bots-overview.md), and its child
+plans `bots-01` … `bots-20` are archived under `completed/bots-*.md`. They add
+a runtime-store-owned bot record with run, routine and Work task linkage, the
+overview and task board, the ACP activity stream with answerable permission
+requests, the model and provider catalog, server-owned list state, per-bot
+riela memory with audited changes, the upkeep and look-around jobs with
+suggestions, server pairing with `riela remote`, and the web Bots and Models
+views. The design is
+[`design-bots-overview`](../design-docs/specs/design-bots-overview.md); user
+docs are in [`docs/bots.md`](../docs/bots.md). Plans 01-14 are committed in
+`73674ceb`; plans 15-20 were accepted on the combined tree. The final gate
+(`tmp/bots-overview/final/`) gave exit 0 for build, tests, SDL, swiftlint,
+the example mock run and the web install, typecheck, test (146 pass), lint
+and build. The Playwright suite (`cd web && bun run test:e2e`) was not run and
+has no spec for the Bots or Models views. The [progress logs](progress/)
+`bots-01` … `bots-20` record focused verification and review. The dispatch
+manifest `active/bots-overview-dispatch.json` stays active until the dispatch
+run closes. The final commit and push remain workflow steps.
+
 Session storage efficiency and default GC (2026-10-30, branch
 `feat/message-log-storage-gc`): the first plan set
 (`completed/session-storage-gc.md`, `completed/session-storage-gc-01..05-*.md`

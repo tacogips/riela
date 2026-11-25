@@ -279,6 +279,7 @@ public enum ScopedCommandKind: String, Codable, CaseIterable, Sendable {
   case bot
   case model
   case provider
+  case remote
   case serve
   case callStep = "call-step"
   case workflowCall = "workflow-call"
@@ -343,6 +344,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var endpoint: String?
   public var authToken: String?
   public var authTokenEnv: String?
+  var pairedRemote = false
   public var fromRegistry: Bool
   public var supervisorMode: Bool
   /// Reserved canonical session identity for durable supervisors.  Ordinary
@@ -518,6 +520,12 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         scope: "bot", command: parsed.command, target: parsed.target,
         arguments: parsed.options, defaultOutput: .text
       )))
+    case let route as RemoteRoute:
+      guard let parsed = try? ParsedScopedCommandArguments.parseCLI(route.passthroughArguments),
+            let options = try? parseGeneric(
+        scope: "remote", command: parsed.command, target: parsed.target, arguments: parsed.options, defaultOutput: .text
+      ) else { throw CLIUsageError("Invalid remote options. See riela remote --help.") }
+      return .scoped(ScopedCommand(kind: .remote, options: options))
     case let route as ModelRoute:
       return try parseCatalogRoute(.model, arguments: route.passthroughArguments)
     case let route as ProviderRoute:

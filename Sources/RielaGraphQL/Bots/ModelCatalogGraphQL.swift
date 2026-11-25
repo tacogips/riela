@@ -9,8 +9,9 @@ public struct GraphQLCatalogModel: Codable, Equatable, Sendable {
   public let serviceTiers: [String]
   public let modes: [String]
   public let observedAt: Date?
+  public let origin: BotOrigin?
 
-  public init(_ model: CatalogModel) {
+  public init(_ model: CatalogModel, origin: BotOrigin? = nil) {
     id = model.id
     label = model.label
     sources = model.sources
@@ -18,10 +19,11 @@ public struct GraphQLCatalogModel: Codable, Equatable, Sendable {
     serviceTiers = model.options.serviceTiers
     modes = model.options.modes
     observedAt = model.observedAt
+    self.origin = origin
   }
 
   private enum CodingKeys: String, CodingKey {
-    case id, label, sources, reasoningEfforts, serviceTiers, modes, observedAt
+    case id, label, sources, reasoningEfforts, serviceTiers, modes, observedAt, origin
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -33,6 +35,7 @@ public struct GraphQLCatalogModel: Codable, Equatable, Sendable {
     try values.encode(serviceTiers, forKey: .serviceTiers)
     try values.encode(modes, forKey: .modes)
     try values.encode(observedAt, forKey: .observedAt)
+    try values.encodeIfPresent(origin, forKey: .origin)
   }
 }
 
@@ -61,7 +64,7 @@ public struct GraphQLProviderInstance: Codable, Equatable, Sendable {
     version = value.report?.version
     failures = value.report?.failures ?? []
     probedAt = value.report?.probedAt
-    models = value.models.map(GraphQLCatalogModel.init)
+    models = value.models.map { GraphQLCatalogModel($0, origin: origin) }
     self.origin = origin
   }
 

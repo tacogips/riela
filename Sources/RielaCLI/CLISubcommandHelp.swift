@@ -22,7 +22,9 @@ struct CLIHelpRequest: Equatable, Sendable {
   static func resolve(_ arguments: [String]) -> CLIHelpRequest? {
     let tokens = Array(arguments.prefix { $0 != "--" })
     guard let first = tokens.first else { return nil }
-    let paths = CLISurfaceEnumerator.commands().map(\.path) + [["sandbox"], ["sandbox", "run"]]
+    let paths = CLISurfaceEnumerator.commands().map(\.path) + [
+      ["sandbox"], ["sandbox", "run"], ["bot", "job"], ["bot", "suggestion"], ["serve", "pairing"]
+    ]
     let path = paths.filter { tokens.starts(with: $0) }.max { $0.count < $1.count }
       ?? ((CLISurfaceEnumerator.routerCommandNames() + ["sandbox", "auth", "worker"]).contains(first) ? [first] : [])
     guard !path.isEmpty else { return nil }

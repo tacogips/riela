@@ -7,9 +7,17 @@ import RielaSQLite
 @testable import RielaMemory
 
 final class StorageDoctorCommandTests: XCTestCase {
+  /// Runs the CLI with its working directory pinned to the isolated project
+  /// unless the test chose one. Without it `doctor storage` defaults to the
+  /// process's current directory, i.e. the checkout running the tests, and
+  /// inspects that checkout's real `.riela` memory and session stores.
   private func runIsolated(_ arguments: [String]) async throws -> CLICommandResult {
     let isolation = try RielaCLIIsolatedEnvironment.make("storage-doctor")
     defer { isolation.remove() }
+    var arguments = arguments
+    if !arguments.contains("--working-dir"), arguments.starts(with: ["doctor", "storage"]) {
+      arguments.insert(contentsOf: ["--working-dir", isolation.project.path], at: 2)
+    }
     return await isolation.run { await RielaCLIApplication().run(arguments) }
   }
 

@@ -18,7 +18,7 @@ final class StorageCompactCommandTests: XCTestCase {
     try database.execute("CREATE TABLE memory_history_heads(key TEXT PRIMARY KEY)")
     try database.execute("INSERT INTO memory_evolution VALUES (1, 1, NULL), (1, 2, '{\"payload\":\"legacy\"}')")
     let before = try Data(contentsOf: URL(fileURLWithPath: path))
-    let result = try await runIsolatedCLI(["storage", "compact", "--memory-root", root.path,
+    let result = try await runIsolatedCLI(["storage", "compact", "--working-dir", root.path, "--memory-root", root.path,
       "--session-store", root.appendingPathComponent("sessions").path, "--output", "json"])
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
@@ -51,7 +51,7 @@ final class StorageCompactCommandTests: XCTestCase {
     let isolation = try RielaCLIIsolatedEnvironment.make("compact", extra: ["RIELA_RETENTION": #"{"results":{"keepForever":true},"messages":{"keepForever":true}}"#])
     defer { isolation.remove() }
     let result = isolation.run {
-      runner.run(["compact", "--apply", "--session-store", root.path, "--output", "json"])
+      runner.run(["compact", "--apply", "--working-dir", root.path, "--session-store", root.path, "--output", "json"])
     }
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
@@ -67,7 +67,7 @@ final class StorageCompactCommandTests: XCTestCase {
     XCTAssertTrue(warning.contains("stop writers"))
     XCTAssertTrue(warning.contains("cross-volume rename"))
     let textResult = isolation.run {
-      runner.run(["compact", "--apply", "--session-store", root.path])
+      runner.run(["compact", "--apply", "--working-dir", root.path, "--session-store", root.path])
     }
     XCTAssertTrue(textResult.stdout.contains("work remaining: true"))
     XCTAssertTrue(textResult.stdout.contains("warnings:"))
@@ -91,7 +91,8 @@ final class StorageCompactCommandTests: XCTestCase {
     let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionRoot.path))
     try runtime.save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(workflowId: "test", sessionId: "test", entryStepId: "start", createdAt: Date(), updatedAt: Date())))
     let result = isolation.run {
-      StorageCompactCommandRunner().run(["compact", "--apply", "--scope", "user", "--results-max-age-days", "1", "--output", "json"])
+      StorageCompactCommandRunner().run(["compact", "--apply", "--working-dir", isolation.project.path, "--scope", "user",
+        "--results-max-age-days", "1", "--output", "json"])
     }
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
@@ -173,7 +174,7 @@ final class StorageCompactCommandTests: XCTestCase {
     let db = try SQLiteDatabase.open(path: CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path))
     try db.execute("CREATE TABLE session_message_retention_tombstones(session_id TEXT PRIMARY KEY,workflow_id TEXT NOT NULL,pruned_at TEXT NOT NULL,message_bytes INTEGER NOT NULL)")
     try db.execute("INSERT INTO session_message_retention_tombstones(session_id,workflow_id,pruned_at,message_bytes) VALUES('retired','workflow','2020-01-01T00:00:00Z',0)")
-    let arguments = ["compact", "--apply", "--session-store", root.path, "--output", "json"]
+    let arguments = ["compact", "--apply", "--working-dir", root.path, "--session-store", root.path, "--output", "json"]
     let first = try runIsolatedCompact(arguments)
     XCTAssertEqual(first.exitCode, .success, first.stderr + first.stdout)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(first.stdout.utf8)) as? [String: Any])
@@ -234,7 +235,8 @@ final class StorageCompactCommandTests: XCTestCase {
     let isolation = try RielaCLIIsolatedEnvironment.make("compact-limit")
     defer { isolation.remove() }
     let result = isolation.run {
-      StorageCompactCommandRunner().run(["compact", "--max-batch", "10001", "--session-store", isolation.project.path])
+      StorageCompactCommandRunner().run(["compact", "--max-batch", "10001", "--working-dir", isolation.project.path,
+        "--session-store", isolation.project.path])
     }
     XCTAssertEqual(result.exitCode, .usage)
   }
@@ -325,7 +327,7 @@ final class StorageCompactCommandTests: XCTestCase {
     defer { try? reader.execute("ROLLBACK") }
 
     let result = StorageCompactCommandRunner(reclaimer: reclaimer)
-      .run(["compact", "--apply", "--session-store", root.path, "--output", "json"])
+      .run(["compact", "--apply", "--working-dir", root.path, "--session-store", root.path, "--output", "json"])
 
     XCTAssertEqual(result.exitCode, .failure)
     let report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
@@ -379,7 +381,7 @@ final class StorageCompactCommandTests: XCTestCase {
     let isolation = try RielaCLIIsolatedEnvironment.make("compact", extra: ["RIELA_RETENTION": #"{"results":{"keepForever":true},"messages":{"keepForever":true}}"#])
     defer { isolation.remove() }
     let result = isolation.run {
-      StorageCompactCommandRunner().run(["compact", "--apply", "--session-store", root.path, "--output", "json"])
+      StorageCompactCommandRunner().run(["compact", "--apply", "--working-dir", root.path, "--session-store", root.path, "--output", "json"])
     }
 
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
@@ -413,7 +415,7 @@ final class StorageCompactCommandTests: XCTestCase {
         bindings: [.int(record.recordId), .int(record.recordId), .text(deltaJSON)])
     }
     let runner = StorageCompactCommandRunner()
-    let arguments = ["compact", "--apply", "--max-batch", "1", "--memory-root", root.path,
+    let arguments = ["compact", "--apply", "--max-batch", "1", "--working-dir", root.path, "--memory-root", root.path,
       "--session-store", root.appendingPathComponent("sessions").path, "--output", "json"]
 
     let firstRun = try run(runner, arguments)
@@ -437,7 +439,7 @@ final class StorageCompactCommandTests: XCTestCase {
     try database.execute("INSERT INTO memory_history_heads(key,revision,head_version,updated_at) VALUES ('999',1,1,'now')")
     try database.execute("INSERT INTO memory_history_versions(key,version,created_at,content_sha256,byte_count,encoding,codec,blob) VALUES ('999',1,'now','orphan',1,'full','none',x'01')")
 
-    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--memory-root", root.path,
+    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--working-dir", root.path, "--memory-root", root.path,
       "--session-store", root.appendingPathComponent("sessions").path, "--output", "json"])
     let store = try XCTUnwrap((report["stores"] as? [[String: Any]])?.first)
     let converted = try XCTUnwrap(store["converted"] as? [String: Any])
@@ -506,7 +508,8 @@ final class StorageCompactCommandTests: XCTestCase {
       bindings: [.text(runtimeSession.sessionId)]).first?["kind"], "store")
     XCTAssertEqual(try database.query("SELECT count(*) AS count FROM definition_version_pins WHERE session_id=?",
       bindings: [.text(runtimeSession.sessionId)]).first?["count"], "0")
-    let arguments = ["compact", "--apply", "--max-batch", "1", "--session-store", sessionRoot, "--output", "json"]
+    let arguments = ["compact", "--apply", "--max-batch", "1", "--working-dir", sessionRoot, "--session-store", sessionRoot,
+      "--output", "json"]
 
     let first = try run(StorageCompactCommandRunner(), arguments)
     XCTAssertEqual(first["workRemaining"] as? Bool, false)
@@ -545,7 +548,16 @@ final class StorageCompactCommandTests: XCTestCase {
     try database.execute("CREATE TABLE retained_fixture(value TEXT)")
     try database.execute("INSERT INTO retained_fixture VALUES ('keep')")
 
-    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--session-store", root.path, "--output", "json"])
+    // Retention runs against the project `.riela` of the working directory,
+    // so give the command a project of its own instead of the checkout's.
+    // It lives under the checkout's ignored tmp/ because retention refuses
+    // roots below a symlink, and the system temporary directory is one.
+    let project = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/storage-compact-default-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: project.appendingPathComponent(".riela"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: project) }
+    let report = try run(StorageCompactCommandRunner(), ["compact", "--apply", "--working-dir", project.path,
+      "--session-store", root.path, "--output", "json"])
 
     let stores = try XCTUnwrap(report["stores"] as? [[String: Any]])
     let prune = try XCTUnwrap(stores.first?["prune"] as? [String: Any])
@@ -591,18 +603,34 @@ final class StorageCompactCommandTests: XCTestCase {
   private func runIsolatedCLI(_ arguments: [String]) async throws -> CLICommandResult {
     let isolation = try RielaCLIIsolatedEnvironment.make("compact-cli")
     defer { isolation.remove() }
+    let arguments = Self.isolated(arguments, workingDirectory: isolation.project.path)
     return await isolation.run { await RielaCLIApplication().run(arguments) }
   }
 
   private func runIsolatedCompact(_ arguments: [String]) throws -> CLICommandResult {
     let isolation = try RielaCLIIsolatedEnvironment.make("compact-direct")
     defer { isolation.remove() }
+    let arguments = Self.isolated(arguments, workingDirectory: isolation.project.path)
     return isolation.run { StorageCompactCommandRunner().run(arguments) }
+  }
+
+  /// Pins the command's working directory to the isolated project unless the
+  /// test chose one. Without it the command defaults to the process's current
+  /// directory, i.e. the checkout running the tests, and would scan and
+  /// compact that checkout's real `.riela` memory and session stores.
+  private static func isolated(_ arguments: [String], workingDirectory: String) -> [String] {
+    guard !arguments.contains("--working-dir"), let command = arguments.firstIndex(of: "compact") else {
+      return arguments
+    }
+    var isolated = arguments
+    isolated.insert(contentsOf: ["--working-dir", workingDirectory], at: command + 1)
+    return isolated
   }
 
   private func run(_ runner: StorageCompactCommandRunner, _ arguments: [String]) throws -> [String: Any] {
     let isolation = try RielaCLIIsolatedEnvironment.make("compact-runner")
     defer { isolation.remove() }
+    let arguments = Self.isolated(arguments, workingDirectory: isolation.project.path)
     let result = isolation.run { runner.run(arguments) }
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])

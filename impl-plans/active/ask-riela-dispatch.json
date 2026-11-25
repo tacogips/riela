@@ -5,7 +5,7 @@
   "baseBranch": "feat/bots-overview",
   "remote": "origin",
   "gitPush": false,
-  "originalHead": "6b3701394ee2410df289729379431eda3ea9f6fc",
+  "originalHead": "7855cf90f60c646056a9457615192267b68a42f3",
   "designDocPaths": [
     "design-docs/specs/design-ask-riela-chat.md",
     "design-docs/user-qa/qa-ask-riela-chat.md"
@@ -15,19 +15,6 @@
   "waveGates": "impl-plans/active/ask-riela.md section 4",
   "finalGate": "impl-plans/active/ask-riela.md section 5",
   "waves": [
-    {
-      "wave": "W3",
-      "plans": [
-        "ask-04-surfaces"
-      ]
-    },
-    {
-      "wave": "W4",
-      "plans": [
-        "ask-05-mcp-transport",
-        "ask-07-web"
-      ]
-    },
     {
       "wave": "W5",
       "plans": [
@@ -132,6 +119,10 @@
       {
         "decision": "Amendment 2026-11-25 round 2: `riela ask --no-follow` is accepted only when the turn runs on a paired remote (the `--remote` value or the registry's active remote). For a local target it is a `CLIUsageError` before any conversation, message or turn is written and before the adapter is called. No local hand-off, detached process or new lifecycle is added; GraphQL behaviour is unchanged. No write path, plan id or wave change. ask-03-turn-engine moves to `acceptedDependencies`.",
         "rationale": "Blocked plan ask-04-surfaces (reason blocked-wave-scope-or-contract, finding ASK-04-LOCAL-NO-FOLLOW-LIFECYCLE, evidence tmp/ask-riela/ask-04-surfaces/lifecycle-contract.log): a local `--no-follow` would return a `running` turn whose owning CLI process exits, later marked `ask_interrupted` by stale-runner recovery; design section 8 already says the CLI one-shot awaits the turn, and a paired server is a persistent owner. Resolved gaps: the ask-04 amendment section names four required tests (local usage error on a new conversation with zero conversations and zero adapter calls, local usage error on an existing conversation left unchanged, `--remote srv --no-follow` returning a `running` turn that completes on the server, and the active-remote case) and carries the three wave 2 host wiring notes (keep `AskHost.requiresVendorAvailability` true in production hosts, route `cancelAsk` to the owning server, do not call `AskRuntime.wait` from a server request); the ask-04 acceptance criteria and impl-plans/active/ask-riela.md section 3.4 record the rule. Design section 13 still lists `--no-follow` without the remote-only limit and is to be corrected at the next design edit (plan review finding S5-L6, low, not blocking); no design revision required (accepted in comm-000344). The amendment budget is exhausted (2 of 2)."
+      },
+      {
+        "decision": "Operator directive: any checkpointAmendment inherited by this rerun (rounds 1/2, previousCheckpointCommit 33344ee6 / e208d257) is stale and this checkpoint runs in full mode at HEAD 7855cf90, which is now the manifest originalHead.",
+        "rationale": "Session 4 ended blocked on ask-06-workflow-authoring by a dependency-admission bookkeeping mismatch (the step 6 fanout item omitted ask-05-mcp-transport from acceptedPlanIds although the implementation gate had accepted it) with the amendment budget exhausted. The operator committed the reviewed implementation of plans 01-05 and 07 as 7855cf90 and recorded ask-04, ask-05 and ask-07 as acceptedDependencies. ask-06-workflow-authoring is the only remaining plan, has no unaccepted dependency and is the single wave. Keep these manifest and plan edits exactly; they are operator-approved and need no further plan review before dispatch. Note for ask-06: ask-07 already removed web/src/workflows/WorkflowAgentChat.tsx, so the workflow editor must reach authoring through the Ask panel with the workflow as context."
       }
     ],
     "intentionalTradeoffs": [
@@ -199,202 +190,31 @@
       "planPath": "impl-plans/active/ask-03-turn-engine.md",
       "commit": "33344ee6b9815f67e6d20d4767f7bd7c5a4a0653",
       "provides": "Wave 2: `AskService`, `AskRuntime`, the `rounds` transport on codex-agent, claude-code-agent, cursor-cli-agent, official/openai-sdk and official/anthropic-sdk, activity mapping, citations, budgets, one settlement per terminal path, `AskAgentPolicy`, `AskScriptedBackend`, the prompt-injection test, and the `official/cursor-sdk` refusal. Plan committed at the listed checkpoint; implementation accepted by the wave 3 integration review of session 4 (W2 gate: build exit 0, 200 tests, 0 failures) and present in the working tree."
-    }
-  ],
-  "plans": [
+    },
     {
       "planId": "ask-04-surfaces",
       "planPath": "impl-plans/active/ask-04-surfaces.md",
-      "dependsOn": [],
-      "wave": 3,
-      "writePaths": [
-        "Sources/RielaCLI/Ask",
-        "Sources/RielaCLI/Bots",
-        "Sources/RielaCLI/Remotes",
-        "Sources/RielaCLI/ModelCatalog",
-        "Sources/RielaCore/Ask",
-        "Sources/RielaGraphQL",
-        "Sources/RielaServer",
-        "Sources/RielaCore/SurfaceCatalog.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
-        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
-        "Sources/RielaCLI/APIKeyGraphQLAuthorization.swift",
-        "Sources/RielaCLI/CLISubcommandHelp.swift",
-        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-        "Sources/RielaCLI/ParityCommandSupport.swift",
-        "Sources/RielaCLI/ParityCommands.swift",
-        "Sources/RielaCLI/RielaArgumentParserHelpers.swift",
-        "Sources/RielaCLI/RielaCLIApplication.swift",
-        "Sources/RielaCLI/RielaClientCommandRouter.swift",
-        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
-        "Sources/RielaCLI/RielaCommand.swift",
-        "Sources/RielaCLI/RielaLibrary.swift",
-        "Sources/RielaCLI/ScopedParityCommands.swift",
-        "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
-        "Sources/RielaCLI/ScopedParityCommands+Serve.swift",
-        "Sources/RielaCLI/ServeHTTPCommand.swift",
-        "Sources/RielaCLI/ServeWebAccess.swift",
-        "Sources/RielaCLI/ServeWebHost.swift",
-        "Sources/RielaCLI/ServeWebHost+Configuration.swift",
-        "Sources/RielaApp/RielaAppWebGraphQL.swift",
-        "Sources/RielaApp/RielaAppWebRouter.swift",
-        "Sources/RielaApp/RielaAppConfigurationGraphQLProvider.swift",
-        "Sources/RielaAppSupport/RielaConsoleGraphQLProvider.swift",
-        "Resources/skills",
-        "scripts/surface-parity",
-        "examples/ask-run-status",
-        "examples/README.md",
-        "Tests/RielaCLITests/Ask",
-        "Tests/RielaCoreTests/Ask",
-        "Tests/RielaGraphQLTests",
-        "Tests/RielaServerTests",
-        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
-        "Tests/RielaCoreTests/RielaTestSurfaceCoverageTests.swift",
-        "Tests/RielaCLITests/CommandParsingTests.swift",
-        "Tests/RielaCLITests/RielaExampleCatalog.swift",
-        "Tests/RielaCLITests/RielaExampleParityTests.swift",
-        "Tests/RielaCLITests/SubcommandHelpTests.swift",
-        "Tests/RielaCLITests/SubcommandHelpApplicationTests.swift",
-        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
-        "Tests/RielaCLITests/SurfaceParityConsoleReadTests.swift",
-        "Tests/RielaCLITests/SurfaceParityLibraryTests.swift",
-        "Tests/RielaCLITests/SurfaceParitySkillTests.swift",
-        "Tests/RielaCLITests/SurfaceParityWebAPITests.swift",
-        "Tests/RielaCLITests/ServeWebHostTests.swift",
-        "Tests/RielaCLITests/ServeHTTPCommandTests.swift",
-        "impl-plans/progress/ask-04-surfaces.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {
-          "path": "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-          "intendedEdit": "Append `+ askRows` where `botFamilyRows + remoteRows` are concatenated (line 16)."
-        },
-        {
-          "path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
-          "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh. Never edit by hand."
-        },
-        {
-          "path": "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
-          "intendedEdit": "Register the ask types, inputs and root fields from the new descriptor file."
-        },
-        {
-          "path": "Sources/RielaCLI/RielaCLIApplication.swift",
-          "intendedEdit": "Help text lines for the `riela ask` commands."
-        },
-        {
-          "path": "Sources/RielaCLI/Bots",
-          "intendedEdit": "Only if a shared helper (origin, waiters, JSON rendering) must become reusable; no behaviour change."
-        },
-        {
-          "path": "Sources/RielaServer",
-          "intendedEdit": "Only if a scope or field list names fields explicitly; the ask mutations must be `operate`, the ask queries `read`."
-        },
-        {
-          "path": "Resources/skills",
-          "intendedEdit": "Only if SurfaceParitySkillTests requires a generated command block for the new family."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Catalog rows, `riela ask` (one-shot, `--conversation`, list, show, cancel, confirm, dismiss, remove), the GraphQL queries and mutations of impl-plans/active/ask-riela.md section 3.3, regenerated SDL, host chaining, remote forwarding with origin and scope, and the `examples/ask-run-status` example with EXPECTED_RESULTS.md; CLI and GraphQL parity gates pass.",
-        "`riela ask --no-follow` is accepted only when the turn runs on a paired remote; when the target is local it is a usage error and no conversation, message or turn is written (amendment 2026-11-25, round 2).",
-        "A second run of scripts/surface-parity/generate-sdl.sh leaves Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift byte-identical (SHA-256 before and after in the progress log).",
-        "`grep -n \"api/v1\" Sources/RielaCLI/Ask -r` prints nothing; `git diff --stat Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` is empty (no new REST route).",
-        "Verification exits 0; progress log impl-plans/progress/ask-04-surfaces.md written."
-      ],
-      "verification": [
-        "mkdir -p tmp/ask-riela/ask-04-surfaces",
-        "scripts/surface-parity/generate-sdl.sh > tmp/ask-riela/ask-04-surfaces/sdl.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/ask-riela/ask-04-surfaces/build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskGraphQLTests|AskCommandTests|AskRemoteTests|AskExampleWalkthroughTests|AskTurnEngineTests|AskActionTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityLibraryTests|SurfaceParitySkillTests|RielaExampleParityTests|SubcommandHelpTests|SubcommandHelpApplicationTests|CommandParsingTests|BotCommandTests|BotsGraphQLTests|RemoteForwardingTests|PairingScopeEnforcementTests|ServeWebHostTests|ServeHTTPCommandTests\"' > tmp/ask-riela/ask-04-surfaces/test.log 2>&1"
-      ]
+      "commit": "7855cf90f60c646056a9457615192267b68a42f3",
+      "provides": "Implemented and adversarially reviewed in fable-sol session 4; committed by the operator in 7855cf90 (build exit 0, focused suites green)."
     },
     {
       "planId": "ask-05-mcp-transport",
       "planPath": "impl-plans/active/ask-05-mcp-transport.md",
-      "dependsOn": [
-        "ask-04-surfaces"
-      ],
-      "wave": 4,
-      "writePaths": [
-        "Sources/RielaAdapters",
-        "Sources/RielaCLI/Ask",
-        "Sources/RielaCore/Ask",
-        "Sources/RielaCore/AdapterContracts.swift",
-        "Sources/RielaCore/AgentToolPolicyPresetArguments.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
-        "Sources/RielaCLI/BotRuntime/BotMemoryRuntime.swift",
-        "Sources/RielaCLI/CLISubcommandHelp.swift",
-        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-        "Sources/RielaCLI/RielaCLIApplication.swift",
-        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
-        "Sources/RielaCLI/RielaCommand.swift",
-        "Sources/RielaCLI/ScopedParityCommands.swift",
-        "Sources/RielaCLI/ServeWebHost.swift",
-        "Sources/RielaCLI/ServeHTTPCommand.swift",
-        "Sources/RielaApp/RielaAppWebGraphQL.swift",
-        "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
-        "Tests/RielaAdaptersTests",
-        "Tests/RielaCLITests/Ask",
-        "Tests/RielaCoreTests/Ask",
-        "Tests/RielaCoreTests/AgentToolPolicyPresetContractTests.swift",
-        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
-        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
-        "Tests/RielaCLITests/SubcommandHelpTests.swift",
-        "Tests/RielaCLITests/CommandParsingTests.swift",
-        "impl-plans/progress/ask-05-mcp-transport.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {
-          "path": "Sources/RielaCLI/BotRuntime/BotMemoryRuntime.swift",
-          "intendedEdit": "Only to expose the secret-name rule of `redactionRules(environment:)` as one reusable function (for example `static func isSecretName(_:) -> Bool`) that `redactionRules` itself calls; no behaviour change."
-        },
-        {
-          "path": "Sources/RielaCore/AdapterContracts.swift",
-          "intendedEdit": "Add `AdapterMCPServer` and `AdapterExecutionInput.mcpServers` (default empty, decoded with a default)."
-        },
-        {
-          "path": "Sources/RielaCore/AgentToolPolicyPresetArguments.swift",
-          "intendedEdit": "Add a `keepClientMCPServers: Bool = false` parameter to `cliArguments` and the codex and claude helpers."
-        },
-        {
-          "path": "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
-          "intendedEdit": "Add the `ask.tool-server` row."
-        },
-        {
-          "path": "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
-          "intendedEdit": "Only to make the existing bundled `riela` lookup (line 235) callable from the RielaApp host; no behaviour change."
-        },
-        {
-          "path": "Sources/RielaCLI/ServeWebHost.swift",
-          "intendedEdit": "Pass the running executable's absolute path into `AskHost`."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "`mcpServers` on the adapter input reaches the gateway request on v1 and v2; `riela ask tool-server` speaks the three MCP methods against a real store with shared budgets, reads the host's registry root and redacts host-only secrets; no secret is in the server entry; the redaction values file is mode 0600, removed on every terminal path and by stale-turn recovery, and its absence fails closed with `redaction_values_unavailable`; the default policy argv is unchanged.",
-        "`git diff Package.swift Package.resolved` is empty.",
-        "`grep -rn \"mcpServers: \\[\\]\" Sources/RielaAdapters` prints nothing.",
-        "Progress log lists the vendor flags that were confirmed and those left for the operator's live check.",
-        "Verification exits 0; progress log impl-plans/progress/ask-05-mcp-transport.md written."
-      ],
-      "verification": [
-        "mkdir -p tmp/ask-riela/ask-05-mcp-transport",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskToolServerTests|AskTransportTests|AskAgentPolicyTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskExampleWalkthroughTests|AgentToolPolicyPresetContractTests|AgentToolPolicyResolutionTests|AgentGatewayNodeAdapterTests|AgentGatewayACPV2Tests|GatewayScriptedAgentTests|SurfaceCatalogTests|SurfaceParityCLITests|SubcommandHelpTests|CommandParsingTests\"' > tmp/ask-riela/ask-05-mcp-transport/test.log 2>&1"
-      ]
+      "commit": "7855cf90f60c646056a9457615192267b68a42f3",
+      "provides": "Implemented and adversarially reviewed in fable-sol session 4; committed by the operator in 7855cf90 (build exit 0, focused suites green)."
     },
+    {
+      "planId": "ask-07-web",
+      "planPath": "impl-plans/active/ask-07-web.md",
+      "commit": "7855cf90f60c646056a9457615192267b68a42f3",
+      "provides": "Implemented and adversarially reviewed in fable-sol session 4; committed by the operator in 7855cf90 (build exit 0, focused suites green)."
+    }
+  ],
+  "plans": [
     {
       "planId": "ask-06-workflow-authoring",
       "planPath": "impl-plans/active/ask-06-workflow-authoring.md",
-      "dependsOn": [
-        "ask-05-mcp-transport"
-      ],
+      "dependsOn": [],
       "wave": 5,
       "writePaths": [
         "Sources/RielaCLI/Ask",
@@ -470,40 +290,6 @@
         "scripts/surface-parity/generate-sdl.sh > tmp/ask-riela/ask-06-workflow-authoring/sdl.log 2>&1",
         "arch -arm64 /bin/zsh -lc 'swift build' > tmp/ask-riela/ask-06-workflow-authoring/build.log 2>&1",
         "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskWorkflowAuthoringTests|AskToolSetTests|AskToolServerTests|AskReadOnlyTests|AskActionTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskGraphQLTests|AskExampleWalkthroughTests|WorkflowEditorDefinitionTests|WorkflowEditorLaunchTests|WorkflowEditorRunEvidenceTests|ServeWebEditorTests|ServeWebHostTests|RielaAppWebAPIRouteTests|SurfaceCatalogTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParityExecutorCoverageTests\"' > tmp/ask-riela/ask-06-workflow-authoring/test.log 2>&1"
-      ]
-    },
-    {
-      "planId": "ask-07-web",
-      "planPath": "impl-plans/active/ask-07-web.md",
-      "dependsOn": [
-        "ask-04-surfaces"
-      ],
-      "wave": 4,
-      "writePaths": [
-        "web/src",
-        "impl-plans/progress/ask-07-web.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {
-          "path": "web/src",
-          "intendedEdit": "New directory web/src/ask. Edits in App.tsx (mount), routes.ts only if a helper is needed, profileViewState.ts (panel state), bots/activityStream.ts (reader parameter), bots/BotDetailView.tsx and views/RunDetailView.tsx (Ask button), workflows/WorkflowGraphEditor.tsx (editor switch), views/SettingsView.tsx (assistant section), stylesheets. Delete workflows/WorkflowAgentChat.tsx."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Ask panel available from every view with context chip, vendor/model picker, streamed answer, record links, proposed-action cards with Confirm/Dismiss, origin display, Bots and run view wiring, the editor switch and the settings assistant section; English only, low text; the app builds without the old editor chat.",
-        "`grep -rn \"WorkflowAgentChat\\|workflow-editor/generations\" web/src` prints nothing.",
-        "`git status --porcelain web/package.json web/bun.lock` prints nothing.",
-        "Verification exits 0; progress log impl-plans/progress/ask-07-web.md written."
-      ],
-      "verification": [
-        "mkdir -p tmp/ask-riela/ask-07-web",
-        "cd web && bun install --frozen-lockfile > ../tmp/ask-riela/ask-07-web/install.log 2>&1",
-        "cd web && bun run typecheck > ../tmp/ask-riela/ask-07-web/typecheck.log 2>&1",
-        "cd web && bun test src > ../tmp/ask-riela/ask-07-web/test.log 2>&1",
-        "cd web && bun run lint > ../tmp/ask-riela/ask-07-web/lint.log 2>&1",
-        "cd web && bun run build > ../tmp/ask-riela/ask-07-web/build.log 2>&1"
       ]
     }
   ],

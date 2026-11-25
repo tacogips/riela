@@ -4,9 +4,7 @@
 {
   "planId": "ask-06-workflow-authoring",
   "planPath": "impl-plans/active/ask-06-workflow-authoring.md",
-  "dependsOn": [
-    "ask-05-mcp-transport"
-  ],
+  "dependsOn": [],
   "wave": 5,
   "writePaths": [
     "Sources/RielaCLI/Ask",

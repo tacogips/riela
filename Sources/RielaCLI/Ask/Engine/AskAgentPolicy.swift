@@ -17,13 +17,22 @@ enum AskAgentPolicy {
       model: resolved.model ?? ModelSentinel.defaultModel,
       effort: resolved.effort.flatMap(NodeReasoningEffort.init(rawValue:)),
       workingDirectory: workingDirectory,
-      agentSandbox: backend.cliAgentBackend == nil ? nil : .readOnly,
+      agentSandbox: sandbox(backend: backend, transport: transport),
       agentToolPolicy: policy,
       apiKeyEnvironment: resolved.apiKeyEnvironment,
       provider: provider,
       providerProxy: proxy
     )
     return (node, backend == .cursorCliAgent)
+  }
+
+  /// Claude Code maps the read-only sandbox to plan mode, which refuses MCP
+  /// tool calls. On the `mcp` transport its built-in tools are already off
+  /// (`--tools ""`), the MCP config is strict, and only the Ask tools are
+  /// allowed, so the turn stays read-only without plan mode.
+  private static func sandbox(backend: NodeExecutionBackend, transport: AskToolTransport) -> AgentSandboxMode? {
+    guard backend.cliAgentBackend != nil else { return nil }
+    return backend == .claudeCodeAgent && transport == .mcp ? nil : .readOnly
   }
 
   private static func toolPolicy(backend: NodeExecutionBackend, transport: AskToolTransport) throws -> AgentToolPolicy? {
@@ -41,6 +50,11 @@ enum AskAgentPolicy {
       throw AdapterExecutionError(.policyBlocked, "Unsupported Ask Riela tool transport")
     }
     if backend == .codexAgent {
+      // `codex exec` never prompts, so an MCP call that needs approval is
+      // refused. Pre-approve the Ask server's tools; they are all read-only.
+      arguments.append(contentsOf: [
+        "-c", #"mcp_servers.\#(AskToolServerHandoff.serverName).default_tools_approval_mode="approve""#
+      ])
       return AgentToolPolicy(mode: .backendArguments, codexArguments: arguments)
     }
     let allowed = AskToolSet.all.map { "mcp__\(AskToolServerHandoff.serverName)__\($0.name)" }.joined(separator: ",")

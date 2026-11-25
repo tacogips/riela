@@ -11,6 +11,7 @@ extension AskCommands {
     var cursor = 0
     var content = ""
     var wroteAnswer = false
+    var midLine = false
     do {
       while true {
         let page = try await provider.askActivity(
@@ -18,8 +19,12 @@ extension AskCommands {
         )
         if output == .text {
           for event in page.events where event.executionId == started.conversation.turn?.turnId {
-            guard let line = line(for: event, context: started.conversation.context) else { continue }
+            guard var line = line(for: event, context: started.conversation.context) else { continue }
             wroteAnswer = wroteAnswer || event.kind == .message
+            // Message events are chunks of one answer: keep them on one line
+            // and break only before a line of another kind.
+            if event.kind != .message, midLine { line = "\n" + line }
+            midLine = !line.hasSuffix("\n")
             if let writer { writer(line) } else { content += line }
           }
         }
@@ -36,6 +41,7 @@ extension AskCommands {
       throw error
     }
     if ownsLocalTurn { await provider.service.waitForTurn(conversationId: id) }
+    if midLine { if let writer { writer("\n") } else { content += "\n" } }
     let snapshot = try await provider.askConversation(conversationId: id, remote: selector)
     return try render(
       snapshot, output: output, content: wroteAnswer ? content : content + answer(in: snapshot),
@@ -102,7 +108,7 @@ extension AskCommands {
     switch event.kind {
     case .message:
       guard case let .string(text)? = event.payload["text"], !text.isEmpty else { return nil }
-      return text.hasSuffix("\n") ? text : text + "\n"
+      return text
     case .toolCall:
       guard case let .string(name)? = event.payload["title"],
             event.payload["status"] == .string("inProgress") else { return nil }

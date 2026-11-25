@@ -51,7 +51,7 @@ export class BotsClient {
           bots {
             bot { ${botFields} }
             counts { needsYou working waiting planned }
-            inProgress { ${workFields} }
+            inProgress { ${workFields} sessionId }
             lastActivityAt lastResult section workspaceGroup
             listState { ${listStateFields} }
             origin { ${originFields} }

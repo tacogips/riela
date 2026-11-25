@@ -598,7 +598,7 @@ The same pure projector orders bots in the list and items in a board group:
 pinned first; then rows with `manualOrder` ascending; then by `bumpedAt`
 descending, falling back to `lastActivityAt`; ties by id. The bot list is
 split into `active`, `working` (bots whose only non-closed items are In
-progress or Waiting, collapsed by default), `snoozed` and `settled`.
+progress or Waiting, open by default so current work is visible), `snoozed` and `settled`.
 
 Return-to-top: when an item finishes, fails or enters Needs you, the projector
 reports it as bumped. `bumpedAt` is not written by reads; it is the time of

@@ -39,6 +39,17 @@ struct AskAgentPolicyTests {
     #expect(policy.preset == nil)
     #expect(policy.claudeArguments.contains("--strict-mcp-config"))
     #expect(!policy.claudeArguments.contains("--mcp-config"))
+    // Plan mode would refuse the Ask MCP tools; built-in tools are off instead.
+    #expect(result.node.agentSandbox == nil)
+    #expect(policy.claudeArguments.starts(with: ["--tools", ""]))
+  }
+
+  @Test func codexMCPPreapprovesTheAskServerTools() throws {
+    let result = try payload(for: .codexCLI, transport: .mcp)
+    let arguments = try #require(result.node.agentToolPolicy?.codexArguments)
+    // `codex exec` refuses an MCP call that would need an approval prompt.
+    #expect(arguments.contains(#"mcp_servers.riela-ask.default_tools_approval_mode="approve""#))
+    #expect(!arguments.contains("mcp_servers={}"))
     #expect(result.node.agentSandbox == .readOnly)
   }
 

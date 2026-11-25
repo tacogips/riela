@@ -41,6 +41,7 @@ export interface BotWorkSummary {
   backend?: string | null
   model?: string | null
   elapsedMs?: number | null
+  sessionId?: string | null
 }
 
 export interface BotPlan {

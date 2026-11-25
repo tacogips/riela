@@ -2,7 +2,7 @@ import { For, Show, createMemo, createSignal } from 'solid-js'
 import { ActionButton } from '../components/ActionButton'
 import { createPollingResource } from '../polling'
 import { BotListActions } from './BotListActions'
-import { formatElapsed, originAllowsActions, overviewPresentation, relativeActivity, sectionOrder } from './boardView'
+import { boardRunHash, formatElapsed, originAllowsActions, overviewPresentation, relativeActivity, sectionOrder } from './boardView'
 import { botsClient } from './client'
 import type { BotGrouping, BotOverviewRow } from './contracts'
 import { BotDetailView } from './BotDetailView'
@@ -113,7 +113,7 @@ export function BotsView(props: {
           const sectionRows = createMemo(() => rows().filter((row) => overviewPresentation(row).section === section))
           const groups = createMemo(() => [...new Set(sectionRows().map((row) => row.workspaceGroup))])
           return <Show when={sectionRows().length > 0}>
-            <details class="bots-section" open={section === 'active' || section === 'disconnected'}>
+            <details class="bots-section" open={section === 'active' || section === 'working' || section === 'disconnected'}>
               <summary>{sectionTitles[section]} <small>{sectionRows().length}</small></summary>
               <Show when={groupBy() === 'workspace' && section !== 'disconnected'}
                 fallback={<ul class="bots-rows"><For each={sectionRows()}>{renderRow}</For></ul>}>
@@ -191,7 +191,9 @@ function BotRow(props: {
     </div>
     <Show when={presentation().section !== 'disconnected' && props.row.inProgress.length}>
       <ul class="bots-work"><For each={props.row.inProgress}>{(item) =>
-        <li><strong>{item.title}</strong> <span class="bots-meta">{[
+        <li><Show when={boardRunHash('inProgress', item, props.target)} fallback={<strong>{item.title}</strong>}>{(href) =>
+          <a class="bot-run-link" href={href()}>{item.title}</a>
+        }</Show> <span class="bots-meta">{[
           item.workflowId !== item.title ? item.workflowId : undefined, item.stepId, item.nodeId, item.backend, item.model,
           item.elapsedMs == null ? undefined : formatElapsed(item.elapsedMs),
         ].filter(Boolean).join(' · ')}</span></li>

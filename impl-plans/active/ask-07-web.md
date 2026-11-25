@@ -240,3 +240,20 @@ without the old editor chat.
 - `grep -rn "WorkflowAgentChat\|workflow-editor/generations" web/src` prints nothing.
 - `git status --porcelain web/package.json web/bun.lock` prints nothing.
 - Verification exits 0; progress log written.
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1)
+
+Ask Riela does not run on `official/cursor-sdk` (see
+`impl-plans/active/ask-03-turn-engine.md`, same amendment): the server
+refuses such a turn with `ask_provider_unsupported`.
+
+- `ask/picker.ts`: the override list leaves out provider instances whose
+  driver is `official/cursor-sdk` or `official/gemini-sdk` (the two drivers
+  the server refuses). The driver ids are two constants in this file.
+- When the default vendor from settings is `cursor-api`, the picker shows the
+  default as it is; a send then shows the server's error row with the code.
+  Do not hide or rewrite the user's setting.
+- Tests (`ask/picker.test.ts`): a catalog with a Cursor API instance and a
+  Gemini instance → neither is offered; the other instances are offered in
+  catalog order.
+- Write paths, wave and dependency are unchanged.

@@ -4,10 +4,7 @@
 {
   "planId": "ask-03-turn-engine",
   "planPath": "impl-plans/active/ask-03-turn-engine.md",
-  "dependsOn": [
-    "ask-01-catalog-and-selection",
-    "ask-02-store-tools"
-  ],
+  "dependsOn": [],
   "wave": 2,
   "writePaths": [
     "Sources/RielaCLI/Ask",
@@ -295,3 +292,57 @@ backend, and the injection case.
 - `grep -rn "permissionRequestHandler" Sources/RielaCLI/Ask` prints nothing.
 - `grep -rn "URLSession\|Process()" Sources/RielaCLI/Ask` prints nothing.
 - Verification exits 0; progress log written.
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1)
+
+Blocker `ASK-03-CURSOR-API` (evidence
+`tmp/ask-riela/ask-03-turn-engine/cursor-gateway.log`): at the pinned
+agent-gateway revision `39796860`, the Cursor API vendor POSTs to `/agents`,
+which launches a cloud agent, sends no read-only policy, and returns the
+creation metadata without waiting for a completion
+(`.build/checkouts/agent-gateway/Sources/AgentGatewayAppCore/GatewayExecution.swift`,
+`executeCursorAPI`). There is no text answer to parse and no way to make the
+run read-only. A pin change is a non-goal.
+
+Decision (the first option of the resume criterion): Ask Riela does not run on
+`official/cursor-sdk`.
+
+- Contract: when the resolved backend is `official/cursor-sdk` and the
+  production adapter would be used, `AskService.send` throws
+  `AskError(code: "ask_provider_unsupported")` before any conversation,
+  message or turn is written and before the adapter is called. This is the
+  same code design §9 uses for `official/gemini-sdk`. The message names the
+  backend. `automatic` that resolves to the Cursor API (only
+  `CURSOR_API_KEY` available) gets the same error; the resolution order is
+  not changed.
+- The scripted backend (`RIELA_ASK_SCRIPTED_BACKEND`) and injected test
+  adapters are not affected: they never reach the gateway.
+- The rejection already in `Sources/RielaCLI/Ask/Engine/AskService.swift`
+  and its regression in
+  `Tests/RielaCLITests/Ask/Engine/AskTurnEngineTests+CursorAPI.swift`
+  implement this contract. Keep them. Do not add a Cursor API code path, a
+  polling loop, a `URLSession` call or a gateway patch.
+- This plan's scope, replacing "every backend" in the text above: the
+  `rounds` transport runs on `codex-agent`, `claude-code-agent`,
+  `cursor-cli-agent`, `official/openai-sdk` and `official/anthropic-sdk`.
+  In `AskAgentPolicyTests`, "the three API backends" becomes the two API
+  backends (OpenAI, Anthropic); `AskAgentPolicy.payload` needs no
+  `official/cursor-sdk` row and any such branch may be removed.
+- Tests required for this amendment (keep or add in the files above):
+  - selection that resolves to `official/cursor-sdk` on a host that requires
+    vendor availability → `ask_provider_unsupported`, zero adapter calls,
+    zero conversations stored.
+  - the same on an existing conversation (per-conversation override to a
+    Cursor API instance) → `ask_provider_unsupported`; the conversation, its
+    messages and its usage counters are unchanged.
+  - settings `automatic` with only `CURSOR_API_KEY` in the environment →
+    `ask_provider_unsupported`.
+- `dependsOn` in the header is now empty: ask-01 and ask-02 are accepted and
+  recorded as `acceptedDependencies` in the manifest. Write paths, wave,
+  verification command and the other done criteria are unchanged.
+- Progress log: replace the `BLOCKED: design §5.3 and §10.1` entry by a
+  `Deviations` entry that cites this amendment; the plan is no longer blocked
+  on it.
+- Design note: design §5.3 (rounds backend list), §9 and §10.1 still name
+  `official/cursor-sdk`. The sentences are corrected at the next design edit
+  (overview §3.4). No other plan may assume the Cursor API works in Ask.

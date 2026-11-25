@@ -16,13 +16,6 @@
   "finalGate": "impl-plans/active/ask-riela.md section 5",
   "waves": [
     {
-      "wave": "W1",
-      "plans": [
-        "ask-01-catalog-and-selection",
-        "ask-02-store-tools"
-      ]
-    },
-    {
       "wave": "W2",
       "plans": [
         "ask-03-turn-engine"
@@ -137,6 +130,10 @@
       {
         "decision": "Full `swift build` runs only in the wave gates and in plans that are alone in their wave (ask-04, ask-06); plans of the shared waves W1 and W4 verify with focused `swift test --filter` runs.",
         "rationale": "Plan review finding S5-F2 (mid, resolved): a full build inside a shared wave fails on a sibling's unfinished code."
+      },
+      {
+        "decision": "Amendment 2026-11-25 round 1: Ask Riela does not run on the `official/cursor-sdk` backend. A turn that resolves to it is refused with `ask_provider_unsupported` before any conversation, message or turn is written and before the adapter is called. No dependency or pin change, no write path, plan id or wave change. ask-01-catalog-and-selection and ask-02-store-tools move to `acceptedDependencies`.",
+        "rationale": "Blocked plan ask-03-turn-engine (reason blocked-wave-scope-or-contract, finding ASK-03-CURSOR-API, evidence tmp/ask-riela/ask-03-turn-engine/cursor-gateway.log): the pinned agent-gateway POSTs to /agents without a read-only policy and returns the creation response without waiting for a completion; a pin change is a non-goal, so exclusion is the only option of the resume criterion. Resolved gaps: ask-03 acceptance criteria name the supported backends and the refusal with three required refusal tests; ask-07 adds the picker rule and one picker test; recorded in impl-plans/active/ask-riela.md section 3.4. Design sections 5.3, 9 and 10.1 still name `official/cursor-sdk` and are to be corrected at the next design edit (plan review finding S5-L4, low, not blocking); no design revision required (accepted in comm-000325)."
       }
     ],
     "intentionalTradeoffs": [
@@ -186,109 +183,25 @@
       "impl-plans/active/ask-07-web.md"
     ]
   },
-  "acceptedDependencies": [],
-  "plans": [
+  "acceptedDependencies": [
     {
       "planId": "ask-01-catalog-and-selection",
       "planPath": "impl-plans/active/ask-01-catalog-and-selection.md",
-      "dependsOn": [],
-      "wave": 1,
-      "writePaths": [
-        "Sources/RielaCore/ModelCatalog",
-        "Sources/RielaAppSupport",
-        "Sources/RielaCLI/ModelCatalog",
-        "Sources/RielaCLI/Bots",
-        "Sources/RielaCLI/Ask/Selection",
-        "Sources/RielaCLI/RielaWebAssistantProvider.swift",
-        "Sources/RielaCLI/ServeWebHost+Configuration.swift",
-        "Sources/RielaApp/RielaAppConfigurationGraphQLProvider.swift",
-        "Sources/RielaGraphQL/ConfigurationGraphQL.swift",
-        "Package.swift",
-        "scripts/lib/riela-web-packaging.sh",
-        "Tests/RielaCoreTests/ModelCatalog",
-        "Tests/RielaAppSupportTests/RielaAppAssistantModelCatalogTests.swift",
-        "Tests/RielaAppSupportTests/RielaWebAssistantConfigurationTests.swift",
-        "Tests/RielaAppSupportTests/DaemonWorkflowNodePatchTests.swift",
-        "Tests/RielaCLITests/Bots",
-        "Tests/RielaCLITests/ModelCatalog",
-        "Tests/RielaCLITests/Ask/Selection",
-        "Tests/RielaGraphQLTests/ConfigurationGraphQLTests.swift",
-        "impl-plans/progress/ask-01-catalog-and-selection.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {
-          "path": "Package.swift",
-          "intendedEdit": "Remove only the line `resources: [.process(\"Resources\")]` of the RielaAppSupport target (and the comma before it). No dependency or pin change."
-        },
-        {
-          "path": "scripts/lib/riela-web-packaging.sh",
-          "intendedEdit": "Read-and-verify only: the resource loop globs `*.bundle` and `*.resources`. Edit only if it fails when no RielaAppSupport bundle exists."
-        },
-        {
-          "path": "Sources/RielaCLI/Bots",
-          "intendedEdit": "BotCommands.swift `renderBotMutation`: line end after the row for text output. No other file in this directory changes."
-        },
-        {
-          "path": "Sources/RielaGraphQL/ConfigurationGraphQL.swift",
-          "intendedEdit": "Only if the `updateAssistantConfiguration` input validation or description names the selectable vendors; the DTO shape does not change."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "ModelManifest lists gpt-6.2-sol, gpt-6.1-terra, gpt-6-astra, claude-fable-5-2, claude-opus-5-5, claude-sonnet-5-5 and claude-haiku-5-5 in addition to the existing entries, and the assistant model catalogs come from the same manifest.",
-        "`automatic` is selectable; `AskModelSelection.resolve` implements the default, override and warning rules of design section 9.",
-        "`riela bot create` text output prints the `model_unknown` warning on its own stderr line; JSON output carries it in `warnings`.",
-        "`grep -rn \"assistant-models\\|RielaAppAssistantModelLoader\\|installedCatalogURL\" Sources Package.swift Tests` prints nothing; Sources/RielaAppSupport/Resources is removed; `git diff Package.swift` shows only the removed `resources:` line.",
-        "Verification exits 0; progress log impl-plans/progress/ask-01-catalog-and-selection.md written."
-      ],
-      "verification": [
-        "mkdir -p tmp/ask-riela/ask-01-catalog-and-selection",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ModelManifestTests|ModelCatalogTests|ProviderStoreTests|RielaAppAssistantModelCatalogTests|RielaWebAssistantConfigurationTests|ConfigurationGraphQLTests|DaemonWorkflowNodePatchTests|AskModelSelectionTests|BotCommandTests|ModelCatalogCommandTests\"' > tmp/ask-riela/ask-01-catalog-and-selection/test.log 2>&1",
-        "bash -n scripts/lib/riela-web-packaging.sh > tmp/ask-riela/ask-01-catalog-and-selection/packaging-syntax.log 2>&1"
-      ]
+      "commit": "a6d3f06222303970da46abd61148e778a86745a6",
+      "provides": "Wave 1: ModelManifest with the current model ids, assistant catalogs computed from the manifest, `automatic` selectable, `AskModelSelection.resolve`, `riela bot create` warning on its own stderr line. Plan committed at the listed checkpoint; implementation accepted by the wave 1 integration review of session 4 (W1 gate: build exit 0, 171 tests, 0 failures) and present in the working tree."
     },
     {
       "planId": "ask-02-store-tools",
       "planPath": "impl-plans/active/ask-02-store-tools.md",
-      "dependsOn": [],
-      "wave": 1,
-      "writePaths": [
-        "Sources/RielaCore/Ask",
-        "Sources/RielaCore/Bots/BotStore.swift",
-        "Sources/RielaCLI/Ask/Tools",
-        "Sources/RielaCLI/Ask/Actions",
-        "Tests/RielaCoreTests/Ask",
-        "Tests/RielaCLITests/Ask/Tools",
-        "Tests/RielaCLITests/Ask/Actions",
-        "impl-plans/progress/ask-02-store-tools.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {
-          "path": "Sources/RielaCore/Bots/BotStore.swift",
-          "intendedEdit": "In `BotStore.write`, call `try AskStoreSchema.prepare(in: database)` right after `BotStoreSchema.prepare(in: database)`. Nothing else."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Additive chat storage with bounds, context resolution, redaction, the read tool set against real fixture stores, budgets, a read-only executor, and proposed actions with confirm-once and audit, as in design sections 4, 5.1, 5.2, 6, 7, 10.2 and 10.3.",
-        "`grep -rn \"stopSession\\|rerunSession\\|setBotPaused\\|answerBotRequest\" Sources/RielaCLI/Ask/Tools` prints nothing.",
-        "`git diff Sources/RielaCore/Bots/BotStore.swift` shows one added line.",
-        "Verification exits 0; progress log impl-plans/progress/ask-02-store-tools.md written."
-      ],
-      "verification": [
-        "mkdir -p tmp/ask-riela/ask-02-store-tools",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskStoreTests|AskToolSetTests|AskToolExecutorTests|AskContextTests|AskReadOnlyTests|AskActionTests|BotStoreTests|BotStoreMigrationTests|ActivityRecorderTests\"' > tmp/ask-riela/ask-02-store-tools/test.log 2>&1"
-      ]
-    },
+      "commit": "a6d3f06222303970da46abd61148e778a86745a6",
+      "provides": "Wave 1: additive ask tables through `AskStoreSchema.prepare`, limits, the read tool set and executor, redaction, context resolution, proposed actions with confirm-once and audit. Plan committed at the listed checkpoint; implementation accepted by the wave 1 integration review of session 4 and present in the working tree."
+    }
+  ],
+  "plans": [
     {
       "planId": "ask-03-turn-engine",
       "planPath": "impl-plans/active/ask-03-turn-engine.md",
-      "dependsOn": [
-        "ask-01-catalog-and-selection",
-        "ask-02-store-tools"
-      ],
+      "dependsOn": [],
       "wave": 2,
       "writePaths": [
         "Sources/RielaCLI/Ask",
@@ -310,7 +223,8 @@
       ],
       "artifactRoots": [],
       "acceptanceCriteria": [
-        "`AskService` runs a turn on the `rounds` transport for every backend with streaming event mapping (scripted backend), citations, budgets, deterministic settlement on every terminal path, the read-only policy per backend and the prompt-injection case, as in design sections 5.3, 6, 8, 9, 10 and 15.",
+        "`AskService` runs a turn on the `rounds` transport for codex-agent, claude-code-agent, cursor-cli-agent, official/openai-sdk and official/anthropic-sdk with streaming event mapping (scripted backend), citations, budgets, deterministic settlement on every terminal path, the read-only policy per backend and the prompt-injection case, as in design sections 5.3, 6, 8, 9, 10 and 15.",
+        "A turn that resolves to `official/cursor-sdk` is refused with `ask_provider_unsupported` before any conversation, message or turn is written and with zero adapter calls (amendment 2026-11-25, round 1).",
         "`grep -rn \"permissionRequestHandler\" Sources/RielaCLI/Ask` prints nothing.",
         "`grep -rn \"URLSession\\|Process()\" Sources/RielaCLI/Ask` prints nothing.",
         "Verification exits 0; progress log impl-plans/progress/ask-03-turn-engine.md written."

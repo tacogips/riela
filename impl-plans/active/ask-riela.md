@@ -153,6 +153,19 @@ representation `BotRecord` uses.
   `<scratchRoot>/redaction`, removed on every terminal path, so tool
   results and redaction are the same in `rounds` and `mcp` (design §5.1,
   §10.2).
+- Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1, finding
+  `ASK-03-CURSOR-API`): Ask Riela does not run on `official/cursor-sdk`. At
+  the pinned gateway the Cursor API launches a cloud agent without a
+  read-only policy and returns creation metadata, not an answer. A turn that
+  resolves to that backend is refused with `ask_provider_unsupported` before
+  any write and before the adapter is called (plan 03); the web picker does
+  not offer such instances (plan 07). The `rounds` transport therefore covers
+  `cursor-cli-agent`, `official/openai-sdk` and `official/anthropic-sdk`,
+  plus codex and claude when `mcp` is not used. Design §5.3, §9 and §10.1
+  still name `official/cursor-sdk`; the sentences are to be corrected at the
+  next design edit. Plans 01 and 02 are accepted (wave 1) and are listed as
+  `acceptedDependencies` in the manifest; plan 03 no longer lists them in
+  `dependsOn`.
 - Design §7.3 names a definition audit reason `ask:<conversationId>/<actionId>`.
   The registry mutation inputs have no reason field; the link is kept on
   the confirmed action row (plan 06). The design sentence is to be

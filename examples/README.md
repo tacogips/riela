@@ -23,6 +23,7 @@ tests may still construct legacy fixtures under explicit non-strict validation.
   the foreach lane in `node-combinations-showcase`)
 - node payload files live under `nodes/` by default
 - grouped lane payloads may live under `workflows/*/nodes/`
+- [Ask Riela about a run](ask-run-status/) demonstrates a status answer with a run citation.
 - [Bot routine and memory upkeep](bot-routine-memory-upkeep/) demonstrates a
   bot overview and an audited memory upkeep run with mock scenarios.
 - `worker-only-single-step/EXPECTED_RESULTS.md` includes a named-instance demo

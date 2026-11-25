@@ -169,6 +169,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
         sessionStoreRoot: sessionStoreRoot,
         environment: workflowEnvironment,
         configurationProvider: self,
+        assistantSettings: state.assistant,
         pairing: pairing,
         consoleProvider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() }
       )
@@ -207,6 +208,7 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
   let sessionStoreRoot: String
   let environment: [String: String]
   let configurationProvider: any RielaConfigurationGraphQLProviding
+  let assistantSettings: RielaAppAssistantSettings
   let pairing: PairingService?
   let consoleProvider: any GraphQLConsoleProviding
 
@@ -250,7 +252,11 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
                   workingDirectory: workingDirectory, sessionStoreRoot: sessionStoreRoot, environment: environment,
                   pairing: pairing
                 ),
-                next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+                next: AskGraphQLHost.executor(
+                  workingDirectory: workingDirectory, sessionStore: sessionStoreRoot, environment: environment,
+                  settings: assistantSettings, console: consoleProvider, pairing: pairing,
+                  next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+                )
               )
             )
           )

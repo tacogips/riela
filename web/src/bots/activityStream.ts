@@ -1,5 +1,14 @@
 import { mergeActivityPage, nextCursor, type ActivityFeed } from './activityFeed'
 import { activityPageLimit, type BotsClient } from './client'
+import type { BotActivityPage } from './contracts'
+
+type ActivityReader = (cursor: number, signal: AbortSignal) => Promise<BotActivityPage>
+
+export const activityWaitMs = 25_000
+
+export function botActivityReader(client: Pick<BotsClient, 'getActivity'>, sessionId: string, remote?: string): ActivityReader {
+  return (afterSequence, signal) => client.getActivity({ sessionId, afterSequence, signal, waitMs: activityWaitMs, remote })
+}
 
 interface ActivityStreamEnvironment {
   hidden: () => boolean
@@ -21,9 +30,8 @@ const browserEnvironment: ActivityStreamEnvironment = {
 const terminalStatuses = new Set(['completed', 'failed', 'cancelled'])
 
 export function createActivityStream(
-  client: Pick<BotsClient, 'getActivity'>,
-  sessionId: string,
-  publish: (state: { feed?: ActivityFeed; error?: unknown }) => void,
+  reader: ActivityReader,
+  publish: (state: { feed?: ActivityFeed; error?: unknown; ended?: boolean }) => void,
   environment: ActivityStreamEnvironment = browserEnvironment,
 ): () => void {
   let feed: ActivityFeed | undefined
@@ -44,14 +52,12 @@ export function createActivityStream(
     const current = new AbortController()
     request = current
     try {
-      const page = await client.getActivity({
-        sessionId, afterSequence: nextCursor(feed), waitMs: 25_000, signal: current.signal,
-      })
+      const page = await reader(nextCursor(feed), current.signal)
       if (current.signal.aborted) return
       feed = mergeActivityPage(feed, page)
-      publish({ feed })
       const settled = terminalStatuses.has(page.sessionStatus) && page.state?.currentExecutionId == null
       ended = (settled || page.sessionStatus === 'unknown') && page.events.length < activityPageLimit
+      publish({ feed, ended })
       if (!ended) schedule(page.events.length ? 0 : 250)
     } catch (error) {
       if (current.signal.aborted) return

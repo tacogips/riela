@@ -23,7 +23,6 @@
 .editor-json { padding: 18px; }
 .editor-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
 .editor-chat { padding: 18px; border-top: 1px solid #294253; background: #10212e; }
-.editor-chat-messages { max-height: 240px; overflow: auto; white-space: pre-wrap; }
 .editor-chat form label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .editor-chat textarea { width: 100%; color: #d7e5ed; background: #07151f; }
 .editor-chat form button { margin-right: 10px; }

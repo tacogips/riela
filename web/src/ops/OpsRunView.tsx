@@ -1,3 +1,4 @@
+import { openAsk } from '../ask/entry'
 import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
@@ -31,16 +32,23 @@ interface OpsRunProps {
 }
 
 export function OpsRunView(props: OpsRunProps) {
-  return <Show when={props.remote} fallback={<LocalOpsRunView {...props} />}>{(remote) =>
+  return <Show when={props.remote !== 'local' && props.remote} fallback={<LocalOpsRunView {...props} />}>{(remote) =>
     <section class="bots-page" aria-label="Remote run">
       <header class="bots-header">
         <h1>{props.sessionId}</h1>
         <span class="bots-meta">{remote()}</span>
+        <RunAskButton sessionId={props.sessionId} remote={remote()} />
         <ActionButton onClick={props.onBack}>{props.backLabel ?? 'Command deck'}</ActionButton>
       </header>
       <ActivityPane sessionId={props.sessionId} remote={remote()} title="Run" />
     </section>
   }</Show>
+}
+
+function RunAskButton(props: { sessionId: string; remote: string }) {
+  return <ActionButton class="secondary" onClick={() => openAsk({
+    context: { kind: 'session', id: props.sessionId }, label: `Run ${props.sessionId}`, remote: props.remote,
+  })}>Ask</ActionButton>
 }
 
 function LocalOpsRunView(props: OpsRunProps) {
@@ -93,6 +101,7 @@ function LocalOpsRunView(props: OpsRunProps) {
               {sessionStatus()}
             </span>
           </Show>
+          <RunAskButton sessionId={props.sessionId} remote="local" />
           <ActionButton class="secondary" onClick={props.onBack}>← {props.backLabel ?? 'Command deck'}</ActionButton>
           <ActionButton class="secondary" onClick={() => void detail.refresh()}>Refresh</ActionButton>
         </div>

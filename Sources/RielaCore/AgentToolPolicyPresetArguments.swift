@@ -44,19 +44,22 @@ public enum AgentToolPolicyPresetArguments {
   public static func cliArguments(
     _ preset: AgentToolPolicyPreset,
     backend: NodeExecutionBackend,
-    sessionReuse: Bool
+    sessionReuse: Bool,
+    keepClientMCPServers: Bool = false
   ) -> [String]? {
     switch backend {
     case .codexAgent:
-      codexArguments(preset, sessionReuse: sessionReuse)
+      codexArguments(preset, sessionReuse: sessionReuse, keepClientMCPServers: keepClientMCPServers)
     case .claudeCodeAgent:
-      claudeArguments(preset)
+      claudeArguments(preset, keepClientMCPServers: keepClientMCPServers)
     case .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
       nil
     }
   }
 
-  private static func codexArguments(_ preset: AgentToolPolicyPreset, sessionReuse: Bool) -> [String] {
+  private static func codexArguments(
+    _ preset: AgentToolPolicyPreset, sessionReuse: Bool, keepClientMCPServers: Bool
+  ) -> [String] {
     var arguments = [
       "--ignore-user-config",
       "--ignore-rules",
@@ -66,11 +69,12 @@ public enum AgentToolPolicyPresetArguments {
       "-c",
       "tools.experimental_request_user_input.enabled=false",
       "-c",
-      "tools.update_plan.enabled=false",
-      "-c",
-      "mcp_servers={}",
-      "--skip-git-repo-check"
+      "tools.update_plan.enabled=false"
     ]
+    if preset != .noTools || !keepClientMCPServers {
+      arguments.append(contentsOf: ["-c", "mcp_servers={}"])
+    }
+    arguments.append("--skip-git-repo-check")
     if !sessionReuse {
       arguments.append("--ephemeral")
     }
@@ -80,15 +84,16 @@ public enum AgentToolPolicyPresetArguments {
     return arguments
   }
 
-  private static func claudeArguments(_ preset: AgentToolPolicyPreset) -> [String] {
+  private static func claudeArguments(_ preset: AgentToolPolicyPreset, keepClientMCPServers: Bool) -> [String] {
     var arguments = ["--tools", preset == .noTools ? "" : "WebSearch"]
     if preset == .webSearch {
       arguments.append(contentsOf: ["--allowedTools", "WebSearch"])
     }
+    arguments.append("--strict-mcp-config")
+    if preset != .noTools || !keepClientMCPServers {
+      arguments.append(contentsOf: ["--mcp-config", #"{"mcpServers":{}}"#])
+    }
     arguments.append(contentsOf: [
-      "--strict-mcp-config",
-      "--mcp-config",
-      #"{"mcpServers":{}}"#,
       "--disable-slash-commands",
       "--setting-sources",
       ""

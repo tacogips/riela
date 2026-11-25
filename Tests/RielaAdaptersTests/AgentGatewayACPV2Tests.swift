@@ -101,6 +101,74 @@ private func v2Input(backend: NodeExecutionBackend = .codexAgent) -> AdapterExec
   #expect(executor.params?.prompt == "prompt")
 }
 
+@Suite struct AgentGatewayACPV2Tests {
+  private static let versions = [ACPProtocol.versionV1, ACPProtocol.versionV2]
+
+  @Test(arguments: versions) func adapterForwardsMCPConfiguration(_ version: Int) async throws {
+    let executor = V2StubExecutor(.reply(deltas: [], thoughts: [], resultText: "answer"))
+    let adapter = AgentGatewayNodeAdapter(environment: [gatewayACPVersionEnvironmentKey: String(version)],
+      executorFactory: { _ in executor })
+    var input = v2Input()
+    _ = try await adapter.execute(input, context: AdapterExecutionContext())
+    let empty = try #require(executor.params)
+    #expect(empty.arguments.allSatisfy { !$0.hasPrefix("mcp_servers.") })
+
+    input.mcpServers = [.init(name: "riela-ask", command: "/opt/bin/riela", arguments: ["ask", "tool-server"],
+      environment: ["HOME": "/fixture/home"])]
+    _ = try await adapter.execute(input, context: AdapterExecutionContext())
+    let configured = try #require(executor.params)
+    #expect(configured.arguments == empty.arguments + [
+      "-c", #"mcp_servers.riela-ask.command="/opt/bin/riela""#,
+      "-c", #"mcp_servers.riela-ask.args=["ask","tool-server"]"#,
+      "-c", #"mcp_servers.riela-ask.env={ "HOME" = "/fixture/home" }"#
+    ])
+  }
+
+  @Test(arguments: versions) func relativeMCPCommandIsRejectedBeforeExecution(_ version: Int) async throws {
+    var input = v2Input()
+    input.mcpServers = [.init(name: "riela-ask", command: "riela", arguments: [], environment: [:])]
+    let adapter = AgentGatewayNodeAdapter(environment: [gatewayACPVersionEnvironmentKey: String(version)],
+      executorFactory: { _ in
+        Issue.record("invalid MCP command reached the gateway factory")
+        return V2StubExecutor(.reply(deltas: [], thoughts: [], resultText: "unexpected"))
+      })
+    await #expect(throws: AdapterExecutionError(.invalidInput, "MCP server command must be an absolute path")) {
+      try await adapter.execute(input, context: AdapterExecutionContext())
+    }
+  }
+
+  @Test(arguments: [NodeExecutionBackend.cursorCliAgent, .officialOpenAISDK])
+  func unsupportedBackendRejectsClientMCPServers(_ backend: NodeExecutionBackend) async throws {
+    var input = v2Input(backend: backend)
+    input.mcpServers = [.init(name: "riela-ask", command: "/opt/bin/riela", arguments: [], environment: [:])]
+    let adapter = AgentGatewayNodeAdapter(executorFactory: { _ in
+      Issue.record("unsupported MCP server reached the gateway factory")
+      return V2StubExecutor(.reply(deltas: [], thoughts: [], resultText: "unexpected"))
+    })
+    do {
+      _ = try await adapter.execute(input, context: AdapterExecutionContext())
+      Issue.record("expected an invalid input error")
+    } catch let error as AdapterExecutionError {
+      #expect(error.code == .invalidInput)
+    }
+  }
+
+  @Test func inputWithoutMCPServersDecodesAndConfiguredServersRoundTrip() throws {
+    var input = v2Input()
+    let encoder = JSONEncoder()
+    let decoder = JSONDecoder()
+    let encoded = try encoder.encode(input)
+    var legacy = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    legacy.removeValue(forKey: "mcpServers")
+    let legacyInput = try decoder.decode(AdapterExecutionInput.self, from: JSONSerialization.data(withJSONObject: legacy))
+    #expect(legacyInput == input)
+    #expect(legacyInput.mcpServers.isEmpty)
+
+    input.mcpServers = [.init(name: "riela-ask", command: "/opt/bin/riela", arguments: ["ask"], environment: ["HOME": "/fixture"])]
+    #expect(try decoder.decode(AdapterExecutionInput.self, from: encoder.encode(input)) == input)
+  }
+}
+
 @Test func gatewayAdapterReusesVendorSessionsOverACPV2() async throws {
   let store = AgentGatewaySessionStore()
   let first = V2StubExecutor(.reply(deltas: ["a"], thoughts: [], resultText: "a"))

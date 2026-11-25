@@ -1,7 +1,15 @@
+import { askActivityReader } from '../ask/client'
 import { expect, test } from 'bun:test'
-import { createActivityStream } from './activityStream'
+import { botActivityReader, createActivityStream as stream } from './activityStream'
 import type { ActivityQuery } from './client'
 import type { BotActivityPage } from './contracts'
+
+function createActivityStream(
+  client: Parameters<typeof botActivityReader>[0], sessionId: string,
+  publish: Parameters<typeof stream>[1], environment: Parameters<typeof stream>[2],
+) {
+  return stream(botActivityReader(client, sessionId), publish, environment)
+}
 
 function terminalPage(size = 0): BotActivityPage {
   return {
@@ -132,5 +140,32 @@ test('pauses while hidden and throttles immediate empty live responses', async (
   clock.setHidden(false)
   await Promise.resolve()
   expect(requests).toHaveLength(2)
+  dispose()
+})
+
+test('Ask drains a full page and waits for terminal state to settle before ending', async () => {
+  const clock = harness()
+  const cursors: number[] = []
+  const ended: (boolean | undefined)[] = []
+  const dispose = stream(askActivityReader({
+    getActivity: async ({ afterSequence }) => {
+      cursors.push(afterSequence)
+      const page = terminalPage(afterSequence ? 0 : 200)
+      const unsettled = cursors.length === 2
+      return { ...page, firstRetainedSequence: 1, lastSequence: 245, turnStatus: 'completed',
+        state: unsettled ? { currentExecutionId: 't1', plans: [], toolCalls: [], pendingRequestIds: [] } : null }
+    },
+  }, 'c1', 'local'), (update) => ended.push(update.ended), clock.environment)
+  for (let page = 0; page < 3; page++) {
+    await Promise.resolve()
+    await Promise.resolve()
+    if (page < 2) {
+      expect(clock.nextDelay()).toBe(page === 0 ? 0 : 250)
+      clock.tick()
+    }
+  }
+  expect(cursors).toEqual([0, 200, 245])
+  expect(ended).toEqual([false, false, true])
+  expect(clock.nextDelay()).toBeUndefined()
   dispose()
 })

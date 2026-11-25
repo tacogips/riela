@@ -58,6 +58,14 @@ enum CLISubcommandHelp {
     if path.first == "worker" { return DistributedWorkerCommand.helpText }
     if path.first == "sandbox" { return SandboxCommand.helpText }
     if path.first == "voice" { return VoiceCommand.helpText }
+    if path == ["ask", AskToolServerArguments.verb] {
+      return """
+        Usage:
+          riela ask tool-server --session-store <dir> --working-dir <dir> --conversation <id> --turn <id>
+            [--scope auto|project|user] [--redaction-values <file>]
+
+        """
+    }
     if path == ["gateway"] || path == ["gateway", "list"] { return GatewayCommand.help }
     return nil
   }

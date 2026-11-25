@@ -1,10 +1,10 @@
+import { closeAskEditor, openAsk, setAskEditor, type AskEditor } from '../ask/entry'
 import { ActionButton } from '../components/ActionButton'
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import { OpsScene } from '../ops/OpsScene'
 import { addStep, connectSteps, graphDocument, graphProblems, isLocalTransition, removeStep, type GraphDocument } from './graph'
 import './editor.css'
 import { readLayout, writeLayout, type GraphLayout } from './layout'
-import { WorkflowAgentChat } from './WorkflowAgentChat'
 import { WorkflowRunInspector } from './WorkflowRunInspector'
 import { WorkflowRunControls } from './WorkflowRunControls'
 import { WorkflowFileNodeSettings } from './WorkflowFileNodeSettings'
@@ -27,10 +27,9 @@ export function WorkflowGraphEditor(props: {
   onClose: () => void
 }) {
   const [doc, setDoc] = createSignal(props.initial)
-  const [generating, setGenerating] = createSignal(false)
   const [launchedSession, setLaunchedSession] = createSignal('')
   const [stepStatuses, setStepStatuses] = createSignal<Record<string, string>>({})
-  const locked = () => props.saving || props.blocked || generating()
+  const locked = () => props.saving || props.blocked
   const [undo, setUndo] = createSignal<GraphDocument[]>([])
   const [redo, setRedo] = createSignal<GraphDocument[]>([])
   createEffect(() => {
@@ -64,6 +63,20 @@ export function WorkflowGraphEditor(props: {
   const change = (next: GraphDocument) => {
     if (locked()) return
     setUndo((items) => [...items.slice(-99), doc()]); setRedo([]); setDoc(next); setError('')
+  }
+  const askBridge: AskEditor = {
+    key: props.layoutStorageKey,
+    workflowId: () => props.target?.workflowId ?? props.initial.workflowId,
+    draft: doc,
+    canApply: () => !locked(),
+    apply: (definition) => { change(graphDocument(definition)); setSelected(''); setAdvanced(false) },
+  }
+  onCleanup(() => closeAskEditor(askBridge))
+  const ask = () => {
+    const id = props.target?.workflowId
+    setAskEditor(askBridge)
+    openAsk({ context: id ? { kind: 'workflow', id } : { kind: 'none' },
+      label: `Workflow ${id ?? doc().workflowId}`, remote: 'local' })
   }
   const attempt = (operation: () => void) => {
     try { operation(); setError('') } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
@@ -101,6 +114,7 @@ export function WorkflowGraphEditor(props: {
     <fieldset disabled={locked()} class="editor-controls">
     <header class="editor-toolbar">
       <strong>Workflow studio</strong>
+      <ActionButton class="secondary" onClick={ask}>Ask</ActionButton>
       <ActionButton class="secondary" onClick={() => { if (undo().length === 0 || window.confirm('Discard unsaved workflow changes?')) props.onClose() }}>Close editor</ActionButton>
       <ActionButton disabled={props.saving} onClick={() => { const next = addStep(doc()); change(next); setSelected(next.steps.at(-1)!.id) }}>Add agent step</ActionButton>
       <ActionButton class="secondary" disabled={!undo().length || props.saving} onClick={() => history(true)}>Undo</ActionButton>
@@ -193,9 +207,6 @@ export function WorkflowGraphEditor(props: {
     </div>
     <Show when={advanced()}><div class="editor-json"><label>Complete workflow definition<textarea rows="16" value={json()} onInput={(event) => setJSON(event.currentTarget.value)} /></label><ActionButton onClick={() => attempt(() => { change(graphDocument(JSON.parse(json()))); setAdvanced(false) })}>Apply JSON to graph</ActionButton></div></Show>
     </fieldset>
-    <WorkflowAgentChat definition={doc()} disabled={props.saving || Boolean(props.blocked)} onActive={setGenerating}
-      onStart={() => { setUndo((items) => [...items.slice(-99), doc()]); setRedo([]) }}
-      onDefinition={setDoc} />
     <WorkflowRunControls target={props.target} disabled={locked() || JSON.stringify(doc()) !== props.savedDefinition}
       onSession={setLaunchedSession} onActivate={props.onActivate} />
     <WorkflowRunInspector workflowId={doc().workflowId} launchedSessionId={launchedSession()} selectedStepId={selected()} onSelectStep={setSelected} onStepStatuses={setStepStatuses} />

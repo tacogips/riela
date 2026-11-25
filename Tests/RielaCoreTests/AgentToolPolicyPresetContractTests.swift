@@ -82,6 +82,26 @@ final class AgentToolPolicyPresetContractTests: XCTestCase {
     })
   }
 
+  func testNonePresetCanKeepClientMCPServers() throws {
+    for backend in [NodeExecutionBackend.codexAgent, .claudeCodeAgent] {
+      let baseline = try XCTUnwrap(AgentToolPolicyPresetArguments.cliArguments(
+        .noTools, backend: backend, sessionReuse: false
+      ))
+      let kept = AgentToolPolicyPresetArguments.cliArguments(
+        .noTools, backend: backend, sessionReuse: false, keepClientMCPServers: true
+      )
+      var expected = baseline
+      let removeAt: Int
+      if backend == .codexAgent {
+        removeAt = try XCTUnwrap(expected.firstIndex(of: "mcp_servers={}")) - 1
+      } else {
+        removeAt = try XCTUnwrap(expected.firstIndex(of: "--mcp-config"))
+      }
+      expected.removeSubrange(removeAt...(removeAt + 1))
+      XCTAssertEqual(kept, expected)
+    }
+  }
+
   func testClaudePresetArguments() throws {
     XCTAssertEqual(AgentToolPolicyPresetArguments.cliArguments(.noTools, backend: .claudeCodeAgent, sessionReuse: false), [
       "--tools", "", "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#,

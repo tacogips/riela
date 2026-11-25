@@ -74,8 +74,14 @@ extension RielaApp {
                   provider: BotsGraphQLProvider(
                     workingDirectory: appHomeDirectory.path, sessionStoreRoot: sessionStoreRoot, environment: environment
                   ),
-                  next: RielaConfigGraphQLDocumentExecutor(
-                    provider: RielaAppConfigurationGraphQLProvider(app: self)
+                  next: AskGraphQLHost.executor(
+                    workingDirectory: appHomeDirectory.path, sessionStore: sessionStoreRoot, environment: environment,
+                    settings: daemonState.assistant,
+                    console: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() },
+                    rielaExecutablePath: RielaAppDaemonProcessEventSourceFactory.bundledRielaExecutablePath(),
+                    next: RielaConfigGraphQLDocumentExecutor(
+                      provider: RielaAppConfigurationGraphQLProvider(app: self)
+                    )
                   )
                 )
               )
@@ -86,9 +92,12 @@ extension RielaApp {
       ),
       registryWorkingDirectory: appHomeDirectory.path
     )
+    let authorized: any GraphQLDocumentExecuting = machineClient
+      ? APIKeyGraphQLAuthorization(store: apiKeyStore, next: executor)
+      : executor
     return await CLIRuntimeEnvironment.$overrides.withValue(environment) {
       await DeterministicServerHTTPAdapter(
-        routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
+        routeHandler: DeterministicServerRouteHandler(graphQLExecutor: authorized),
         context: ServerRequestContext(serviceName: "riela-app")
       ).response(for: request)
     }

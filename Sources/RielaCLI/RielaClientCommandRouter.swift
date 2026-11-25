@@ -31,6 +31,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       EventsRoute.self,
       RoutineRoute.self,
       BotRoute.self,
+      AskRoute.self,
       ModelRoute.self,
       ProviderRoute.self,
       RemoteRoute.self,
@@ -148,6 +149,11 @@ struct RoutineRoute: RielaClientPassthroughRoute {
 
 struct BotRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("bot", abstract: "Manage bots and view their work.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct AskRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("ask", abstract: "Ask about Riela runtime records.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

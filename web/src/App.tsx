@@ -1,3 +1,5 @@
+import { AskPanel } from './ask/AskPanel'
+import { createRemoteSelection } from './bots/remoteSelection'
 import { profileViewTransition, type NavigationView, type View } from './profileViewState'
 export { profileViewTransition } from './profileViewState'
 import { ActionButton } from './components/ActionButton'
@@ -50,6 +52,8 @@ export function App() {
     return (!isDesktop() || !!remoteOrigin) && error instanceof APIError && error.status === 401
   })
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
+  const remote = createRemoteSelection(() => host.data() && !authenticationRequired() ? profileKey() : undefined,
+    () => view() === 'bot-detail' ? selectedBot()?.remote : undefined)
   const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve'
     ? navigation.filter((item) => !CLI_SERVE_HIDDEN_VIEWS.has(item.id))
     : navigation)
@@ -230,7 +234,7 @@ export function App() {
             </Match>
             <Match when={view() === 'bots' || view() === 'bot-detail'}>
               <Show when={profileKey()} keyed>{(key) =>
-                <BotsView profileKey={key} selection={view() === 'bot-detail' ? selectedBot() : undefined}
+                <BotsView profileKey={key} remote={remote} selection={view() === 'bot-detail' ? selectedBot() : undefined}
                   onOpenBot={(botId, remote) => { setSelectedBot({ botId, remote }); setView('bot-detail') }}
                   onBack={() => setView('bots')} />
               }</Show>
@@ -251,6 +255,10 @@ export function App() {
           </Switch>
         </Show>
       </main>
+      <Show when={host.data() && !authenticationRequired() && JSON.stringify([remoteOrigin, profileKey()])} keyed>{(key) =>
+        <AskPanel storageKey={key} route={currentHashRoute()} profileName={host.data()?.bootstrap?.profile ?? ''}
+          selectedRemote={remote.selection()} remoteLoading={remote.registry.loading} remoteName={(name) => remote.snapshot()?.remotes.find((item) => item.name === name)?.serverName ?? undefined} />
+      }</Show>
     </div>
   )
 }

@@ -36,10 +36,23 @@ final class CommandParsingTests: XCTestCase {
       Set([
         "workflow", "package", "node", "rrun", "setup", "gateway", "memory", "cache", "instance", "doctor", "gc",
         "session", "loop", "task", "graphql", "gql", "hook", "events", "routine", "serve", "call-step", "workflow-call", "kaiba", "version",
-        "specialist", "gateway", "cache", "environment", "storage", "voice", "bot",
+        "specialist", "gateway", "cache", "environment", "storage", "voice", "bot", "ask",
         "model", "provider", "remote"
       ])
     )
+  }
+
+  @MainActor
+  func testDispatchesAskToolServerWithoutCapturingEscapedMessage() async throws {
+    let result = await RielaCLIApplication().run(["ask", "tool-server"])
+    XCTAssertEqual(result.exitCode, .usage)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertTrue(result.stderr.contains("--session-store"))
+
+    let escaped = ["--", "tool-server"]
+    let arguments = try AskCommandArguments.parseCLI(escaped)
+    XCTAssertEqual(arguments.words, ["tool-server"])
+    XCTAssertNil(try arguments.action(in: escaped))
   }
 
   func testArgumentParserRejectsUnknownTopLevelCommand() {

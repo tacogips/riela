@@ -66,3 +66,10 @@ test('preserves host identity for paired routes with overlapping ids', () => {
   expect(parseViewHash(viewHash(bot))).toEqual(bot)
   expect(parseViewHash(viewHash(run))).toEqual(run)
 })
+
+test('keeps the explicit local origin on record links', () => {
+  const bot = { view: 'bot-detail', botId: 'b1', remote: 'local' } as const
+  const run = { view: 'run-detail', sessionId: 's1', remote: 'local' } as const
+  expect(parseViewHash(viewHash(bot))).toEqual(bot)
+  expect(parseViewHash(viewHash(run))).toEqual(run)
+})

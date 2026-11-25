@@ -127,7 +127,8 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
         vendorSessionId: reusedSessionId,
         deadline: context.deadline,
         webSearch: webSearch,
-        acpVersion: gatewayACPVersion(environment: turnEnvironment)
+        acpVersion: gatewayACPVersion(environment: turnEnvironment),
+        mcpServers: input.mcpServers
       ),
       executorFactory: executorFactory,
       backendEventHandler: context.backendEventHandler,
@@ -243,6 +244,7 @@ struct GatewayTurnRequest: Sendable {
   var webSearch: Bool = false
   /// ACP protocol version to request from the in-process gateway agent.
   var acpVersion: Int = ACPProtocol.versionV1
+  var mcpServers: [AdapterMCPServer] = []
 }
 
 typealias GatewayACPAgentFactory = @Sendable (GatewayAgentDefaults, any GatewayExecuting) -> any ACPAgent & ACPV2Agent
@@ -263,6 +265,7 @@ func runGatewayTurn(
   guard let vendor = request.defaults.vendor else {
     throw AdapterExecutionError(.invalidInput, "agent-gateway requires an explicit execution backend")
   }
+  try validateGatewayMCPServers(request.mcpServers, vendor: vendor)
   var defaults = request.defaults
   if vendor.isCLI {
     defaults.systemPrompt = [defaults.systemPrompt, gatewayForegroundExecutionInstructions].compactMap { $0 }.joined(separator: "\n\n")
@@ -368,7 +371,9 @@ private func consumeGatewayTurnV1(
   let session = try await client.newSession(
     ACPNewSessionRequest(
       cwd: request.workingDirectory ?? FileManager.default.currentDirectoryPath,
-      mcpServers: [],
+      mcpServers: request.mcpServers.map {
+        ACPMCPServer(name: $0.name, command: $0.command, args: $0.arguments, env: gatewayMCPEnvironment($0))
+      },
       meta: request.vendorSessionId.map {
         .object([GatewayACPMetaKey.v1: .object(["vendorSessionId": .string($0)])])
       }

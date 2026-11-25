@@ -75,3 +75,11 @@ test('exposes Models in primary navigation for both hosts', async () => {
   expect(hiddenViews).toBeDefined()
   expect(hiddenViews).not.toContain("'models'")
 })
+
+test('mounts a single Ask rail outside routed views', async () => {
+  const app = await Bun.file(new URL('./App.tsx', import.meta.url)).text()
+  const panel = await Bun.file(new URL('./ask/AskPanel.tsx', import.meta.url)).text()
+  expect(app.match(/<AskPanel\b/g)).toHaveLength(1)
+  expect(app.indexOf('<AskPanel')).toBeGreaterThan(app.indexOf('</main>'))
+  expect(panel).toMatch(/class="ask-rail"[^\n]+>Ask<\/ActionButton>/)
+})

@@ -230,6 +230,10 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       FileManager.default.isExecutableFile(atPath: environmentPath) {
       return environmentPath
     }
+    return Self.bundledRielaExecutablePath() ?? "/usr/bin/env"
+  }
+
+  public static func bundledRielaExecutablePath() -> String? {
     if let sibling = Bundle.main.executableURL?
       .deletingLastPathComponent()
       .appendingPathComponent("riela")
@@ -237,7 +241,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       FileManager.default.isExecutableFile(atPath: sibling) {
       return sibling
     }
-    return "/usr/bin/env"
+    return nil
   }
 
   private func serializedNodePatch(_ nodePatch: JSONObject) -> String? {

@@ -90,21 +90,18 @@ public enum RielaWebConfigurationSupport {
     homeDirectory.appendingPathComponent(".riela", isDirectory: true)
   }
 
-  public static func assistantConfiguration(_ settings: RielaAppAssistantSettings) async -> GraphQLAssistantConfiguration {
-    let selectedVendor = settings.vendor.settingsSelectableVendor
-    var catalogs: [GraphQLConfigurationModelCatalog] = []
-    for vendor in RielaAppAssistantVendor.selectableVendors {
-      let models: [String]
-      if vendor == selectedVendor, vendor.supportsLiveModelListing {
-        models = (try? await RielaAppAssistantModelLoader().models(for: vendor)) ?? vendor.modelSuggestions
-      } else {
-        models = vendor.modelSuggestions
-      }
-      catalogs.append(GraphQLConfigurationModelCatalog(vendor: vendor.rawValue, models: models))
+  public static func assistantConfiguration(
+    _ settings: RielaAppAssistantSettings, catalogModels: [NodeExecutionBackend: [String]]? = nil
+  ) -> GraphQLAssistantConfiguration {
+    let catalogs = RielaAppAssistantVendor.selectableVendors.map { vendor in
+      GraphQLConfigurationModelCatalog(
+        vendor: vendor.rawValue, models: catalogModels?[vendor.executionBackend] ?? vendor.modelSuggestions
+      )
     }
     return GraphQLAssistantConfiguration(
-      assistance: settings.assistance, vendor: selectedVendor.rawValue,
-      model: settings.selectedModel(for: selectedVendor), modelCatalogs: catalogs
+      assistance: settings.assistance, vendor: settings.vendor.rawValue,
+      model: settings.vendor == .automatic ? "" : settings.selectedModel(for: settings.vendor),
+      modelCatalogs: catalogs
     )
   }
 
@@ -114,14 +111,21 @@ public enum RielaWebConfigurationSupport {
     var settings = original
     if let assistance = input.assistance { settings.assistance = assistance }
     if let rawVendor = input.vendor {
-      guard let vendor = RielaAppAssistantVendor(rawValue: rawVendor), vendor != .automatic else {
+      guard let vendor = RielaAppAssistantVendor(rawValue: rawVendor) else {
         throw RielaConfigurationGraphQLError(
           code: "INVALID_CONFIGURATION", message: "assistant vendor '\(rawVendor)' is not selectable"
         )
       }
       settings.vendor = vendor
     }
-    if let model = input.model { settings.setSelectedModel(model, for: settings.vendor) }
+    if let model = input.model {
+      guard settings.vendor != .automatic else {
+        throw RielaConfigurationGraphQLError(
+          code: "INVALID_CONFIGURATION", message: "assistant model needs a concrete vendor"
+        )
+      }
+      settings.setSelectedModel(model, for: settings.vendor)
+    }
     return settings
   }
 

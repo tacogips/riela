@@ -1,0 +1,13 @@
+{
+  "main-worker": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summary": "The example step completed.",
+      "status": "completed"
+    }
+  }
+}

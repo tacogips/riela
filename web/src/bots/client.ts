@@ -1,25 +1,21 @@
 import { APIError, api } from '../api'
 import type { ConsoleClientEnvironment } from '../console/client'
 import type { ProviderInstance, SaveProviderInput } from '../models/contracts'
+import { graphqlRequest } from '../console/graphqlRequest'
 import { rielaFetch } from '../transport'
 import type {
   AnswerBotRequestInput, Bot, BotActivityPage, BotDetailPayload, BotGrouping,
   BotListPayload, BotMemory, BotOrigin, BotSuggestion, CreateBotInput, RemoteList, SetBotListStateInput, UpdateBotInput,
 } from './contracts'
 
-interface GraphQLResponse<T> {
-  data?: T
-  errors?: { message: string; extensions?: { code?: string } }[]
-}
-
-const originFields = 'remote serverId serverName verified connection observedAt'
+export const originFields = 'remote serverId serverName verified connection observedAt'
 const providerFields = `
   instanceId driver label account builtIn availability authentication version probedAt
   models { id label sources reasoningEfforts serviceTiers modes } origin { ${originFields} }
 `
 const remoteFields = 'active remotes { name address serverName lastSeenAt connection }'
 
-function singleRemote(remote: string) {
+export function singleRemote(remote: string) {
   if (remote === '*' || remote === 'unverified' || !remote) throw new APIError('Choose a remote.', 400, 'remote_required')
   return remote
 }
@@ -250,32 +246,10 @@ export class BotsClient {
     return data[field]!
   }
 
-  private async execute<T>(
+  private execute<T>(
     operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal,
   ): Promise<T> {
-    const response = await this.environment.request('/graphql', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', ...this.environment.appHeaders() },
-      body: JSON.stringify({ operationName, query, variables }),
-      signal,
-    })
-    const body = await response.text()
-    let payload: GraphQLResponse<T> | null
-    try {
-      payload = JSON.parse(body) as GraphQLResponse<T> | null
-    } catch {
-      throw new APIError('The console returned invalid JSON.', response.status, 'invalid_response')
-    }
-    const error = payload?.errors?.[0]
-    if (!response.ok || error || !payload?.data) {
-      throw new APIError(
-        error?.message ?? `Console request failed (${response.status})`,
-        response.status,
-        error?.extensions?.code ?? 'console_request_failed',
-      )
-    }
-    return payload.data
+    return graphqlRequest<T>(this.environment, operationName, query, variables, signal)
   }
 }
 

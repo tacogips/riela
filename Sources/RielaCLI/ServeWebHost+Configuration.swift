@@ -43,7 +43,8 @@ extension ServeWebHost: RielaConfigurationGraphQLProviding {
   func configuration() async throws -> GraphQLRielaConfiguration {
     refreshConfigurationState()
     let current = configurationRevision
-    let assistant = await RielaWebConfigurationSupport.assistantConfiguration(state.assistant)
+    let models = AssistantCatalogModels.builtIn(sessionStoreRoot: sessionStoreRoot, environment: environment)
+    let assistant = RielaWebConfigurationSupport.assistantConfiguration(state.assistant, catalogModels: models)
     try validateRevision(current.revision, profile: current.profile)
     return GraphQLRielaConfiguration(
       profile: profile.rawValue, revision: revision, assistant: assistant,

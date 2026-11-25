@@ -31,6 +31,19 @@ final class ModelCatalogCommandTests: XCTestCase {
     XCTAssertFalse(removed.providers.contains { $0.instanceId == "work/codex" })
   }
 
+  func testAssistantCatalogUsesBuiltInReportsInManifestOrder() throws {
+    let fixture = try fixture()
+    let driver = NodeExecutionBackend.codexAgent
+    let team = ProviderInstance(instanceId: "team/codex", driver: driver, customModels: [.init(id: "private-model")])
+    try fixture.store.saveProviderInstance(team)
+    try fixture.store.mergeReportedConfig(
+      instanceId: driver.rawValue, reportedModel: "reported-model", at: Date(timeIntervalSince1970: 1_700_000_000)
+    )
+
+    let models = try XCTUnwrap(AssistantCatalogModels.builtIn(sessionStoreRoot: fixture.sessions, environment: [:]))
+    XCTAssertEqual(models[driver], ModelManifest.models[driver, default: []].map(\.id) + ["reported-model"])
+  }
+
   func testBuiltInInstancesCannotBeModified() async throws {
     let fixture = try fixture()
     for command in [

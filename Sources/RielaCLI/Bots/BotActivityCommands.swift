@@ -4,6 +4,11 @@ import RielaGraphQL
 
 extension RielaCLIApplication {
   func runScopedCommand(_ command: ScopedCommand) async -> CLICommandResult {
+    if command.kind == .ask {
+      return await AskCommands(
+        writer: sessionInspectionCommand.followRecordWriter, transport: scopedCommandRunner.remoteTransport
+      ).run(command.options)
+    }
     if command.kind == .bot, let action = BotClientAction(rawValue: command.options.command ?? ""),
       action == .activity || action == .answer {
       return await BotActivityCommands(writer: sessionInspectionCommand.followRecordWriter, transport: scopedCommandRunner.remoteTransport)

@@ -13,7 +13,7 @@ public extension SurfaceCatalog {
       + configurationRows
       + webPlatformRows
       + workRuntimeRows
-      + botFamilyRows + remoteRows
+      + botFamilyRows + remoteRows + askRows
 }
 
 private let workflowDefaults = SurfaceRowDefaults(

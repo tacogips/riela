@@ -1,8 +1,9 @@
+import { openAsk } from '../ask/entry'
 import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js'
 import { APIError } from '../api'
 import { ActionButton } from '../components/ActionButton'
 import { createPollingResource } from '../polling'
-import { createActivityStream } from './activityStream'
+import { botActivityReader, createActivityStream } from './activityStream'
 import { activitySummary, type ActivityFeed } from './activityFeed'
 import { boardOrder, boardRunHash, formatBotTime, formatElapsed, groupTitles, originAllowsActions, statusLabel } from './boardView'
 import { BotListActions } from './BotListActions'
@@ -71,6 +72,9 @@ export function BotDetailView(props: { profileKey: string; row: BotOverviewRow; 
   return <section class="bots-detail" aria-label="Bot details">
     <header class="bots-header">
       <h2>{props.row.bot.name}</h2>
+      <ActionButton class="secondary" onClick={() => openAsk({
+        context: { kind: 'bot', id: botId }, label: `Bot ${props.row.bot.name}`, remote,
+      })}>Ask</ActionButton>
       <Show when={trustedDetail() && !detail.error()}>
         <ActionButton aria-expanded={editing()} onClick={() => setEditing(!editing())}>Edit bot</ActionButton>
       </Show>
@@ -252,9 +256,7 @@ function PlanEntries(props: { plans: BotPlan[] }) {
 export function ActivityPane(props: { sessionId: string; remote: string; title: string; onClose?: () => void }) {
   const [feed, setFeed] = createSignal<ActivityFeed>()
   const [error, setError] = createSignal<unknown>()
-  const client = { getActivity: (query: Parameters<typeof botsClient.getActivity>[0]) =>
-    botsClient.getActivity({ ...query, remote: props.remote }) }
-  onCleanup(createActivityStream(client, props.sessionId, (update) => {
+  onCleanup(createActivityStream(botActivityReader(botsClient, props.sessionId, props.remote), (update) => {
     setFeed(update.feed)
     setError(update.error)
   }))

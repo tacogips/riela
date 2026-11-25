@@ -11,11 +11,15 @@ enum BotMemoryRuntime {
     return RielaMemoryStore.defaultRootDirectory(workingDirectory: workingDirectory)
   }
 
+  static func isSecretName(_ name: String) -> Bool {
+    name.uppercased().split(separator: "_").contains {
+      ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"].contains($0)
+    }
+  }
+
   static func redactionRules(environment: [String: String]) -> HandoverRedactionRules {
     HandoverRedactionRules(boundValues: environment.keys.sorted().reduce(into: [:]) { secrets, key in
-      let parts = key.uppercased().split(separator: "_")
-      if parts.contains(where: { ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"].contains($0) }),
-        let value = environment[key], secrets[value] == nil {
+      if isSecretName(key), let value = environment[key], secrets[value] == nil {
         secrets[value] = key
       }
     })

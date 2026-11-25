@@ -8,7 +8,7 @@ import type { BotGrouping, BotOverviewRow } from './contracts'
 import { BotDetailView } from './BotDetailView'
 import { BotForm } from './BotForm'
 import { RemoteSwitcher } from './RemoteSwitcher'
-import { createRemoteSelection, managementError, readRemoteTargets, remoteArgument } from './remoteSelection'
+import { managementError, readRemoteTargets, remoteArgument, type RemoteSelection } from './remoteSelection'
 import './bots.css'
 
 const visibleSections = [...sectionOrder, 'disconnected'] as const
@@ -23,11 +23,12 @@ const sectionTitles = {
 
 export function BotsView(props: {
   profileKey: string
+  remote: RemoteSelection
   selection?: { botId: string; remote?: string }
   onOpenBot: (botId: string, remote?: string) => void
   onBack: () => void
 }) {
-  const remote = createRemoteSelection(() => props.profileKey, () => props.selection?.remote)
+  const remote = props.remote
   const [groupBy, setGroupBy] = createSignal<BotGrouping>('none')
   const [creating, setCreating] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
@@ -73,7 +74,7 @@ export function BotsView(props: {
 
   const renderRow = (row: BotOverviewRow) =>
     <BotRow row={row} busy={busy()} selected={selected() === row}
-      onOpen={() => props.onOpenBot(row.bot.botId, row.origin.remote === 'local' ? undefined : row.origin.remote)}
+      onOpen={() => props.onOpenBot(row.bot.botId, row.origin.remote)}
       target={remoteArgument(remote.selection(), row.origin.remote)}
       mutate={mutate} />
 

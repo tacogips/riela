@@ -86,6 +86,20 @@ public struct AdapterUsage: Codable, Equatable, Sendable {
   }
 }
 
+public struct AdapterMCPServer: Codable, Equatable, Sendable {
+  public var name: String
+  public var command: String
+  public var arguments: [String]
+  public var environment: [String: String]
+
+  public init(name: String, command: String, arguments: [String], environment: [String: String]) {
+    self.name = name
+    self.command = command
+    self.arguments = arguments
+    self.environment = environment
+  }
+}
+
 public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   public var node: AgentNodePayload
   public var promptText: String
@@ -99,6 +113,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   public var agentEnvironment: [String: String]
   public var executionIndex: Int
   public var output: AdapterOutputAttemptContext?
+  public var mcpServers: [AdapterMCPServer]
 
   public init(
     node: AgentNodePayload,
@@ -112,7 +127,8 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
     mergedVariables: JSONObject = [:],
     agentEnvironment: [String: String] = [:],
     executionIndex: Int = 1,
-    output: AdapterOutputAttemptContext? = nil
+    output: AdapterOutputAttemptContext? = nil,
+    mcpServers: [AdapterMCPServer] = []
   ) {
     self.node = node
     self.promptText = promptText
@@ -126,6 +142,24 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
     self.agentEnvironment = agentEnvironment
     self.executionIndex = executionIndex
     self.output = output
+    self.mcpServers = mcpServers
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    node = try container.decode(AgentNodePayload.self, forKey: .node)
+    promptText = try container.decode(String.self, forKey: .promptText)
+    freshPromptText = try container.decodeIfPresent(String.self, forKey: .freshPromptText)
+    resumedPromptText = try container.decodeIfPresent(String.self, forKey: .resumedPromptText)
+    systemPromptText = try container.decodeIfPresent(String.self, forKey: .systemPromptText)
+    sessionPolicy = try container.decodeIfPresent(WorkflowStepSessionPolicy.self, forKey: .sessionPolicy)
+    executionIdentity = try container.decodeIfPresent(AdapterExecutionIdentity.self, forKey: .executionIdentity)
+    arguments = try container.decode(JSONObject.self, forKey: .arguments)
+    mergedVariables = try container.decode(JSONObject.self, forKey: .mergedVariables)
+    agentEnvironment = try container.decode([String: String].self, forKey: .agentEnvironment)
+    executionIndex = try container.decode(Int.self, forKey: .executionIndex)
+    output = try container.decodeIfPresent(AdapterOutputAttemptContext.self, forKey: .output)
+    mcpServers = try container.decodeIfPresent([AdapterMCPServer].self, forKey: .mcpServers) ?? []
   }
 
   public var resolvedFreshPromptText: String {

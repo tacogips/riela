@@ -31,8 +31,9 @@ extension GraphQLSchemaGenerator {
 
   private static func compactSwiftType(_ type: TypeDescriptor) -> String {
     let schema = renderType(type)
-    guard type.fields.count <= 2, schema.utf8.count <= 160 else { return schema }
-    // A Swift newline escape preserves the exact SDL produced by render().
-    return schema.replacingOccurrences(of: "\n", with: "\\n")
+    // Count Swift newline escapes and leave room for the two-space source indent.
+    // The compiled literal still carries the exact SDL produced by render().
+    let compact = schema.replacingOccurrences(of: "\n", with: "\\n")
+    return compact.utf8.count <= 218 ? compact : schema
   }
 }

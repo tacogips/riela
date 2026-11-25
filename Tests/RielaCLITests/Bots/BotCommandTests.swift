@@ -30,6 +30,20 @@ final class BotCommandTests: XCTestCase {
     XCTAssertFalse(resumed.bot.paused)
   }
 
+  func testCreateRendersUnknownModelWarningSeparately() async throws {
+    let fixture = try fixture()
+    let args = ["--backend", "codex-agent", "--model", "unlisted-model"]
+    let result = await fixture.run(["create", "--name", "Text Bot", "--output", "text"] + args)
+    let warning = "model_unknown: \"unlisted-model\" is not in the catalog for codex-agent"
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    XCTAssertEqual(result.stdout, "text-bot  Text Bot\n")
+    XCTAssertEqual(result.stderr, warning + "\n")
+
+    let json: BotMutationPayload = try await fixture.json(["create", "--name", "JSON Bot"] + args)
+    XCTAssertEqual(json.warnings, [warning])
+  }
+
   func testBotListStateCommandsChangeServerOrderAndSections() async throws {
     let fixture = try fixture()
     try await fixture.assertSuccess(["create", "--name", "Alpha"])

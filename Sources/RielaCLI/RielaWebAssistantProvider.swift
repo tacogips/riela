@@ -29,23 +29,10 @@ public enum RielaWebAssistantProvider {
   }
 
   public static func backend(for vendor: RielaAppAssistantVendor) -> NodeExecutionBackend {
-    switch vendor {
-    case .automatic, .codexCLI:
-      .codexAgent
-    case .claudeCodeCLI:
-      .claudeCodeAgent
-    case .cursorCLI:
-      .cursorCliAgent
-    case .openAIAPI:
-      .officialOpenAISDK
-    case .anthropicAPI:
-      .officialAnthropicSDK
-    case .cursorAPI:
-      .officialCursorSDK
-    }
+    vendor.executionBackend
   }
 
-  private static func executablePath(named name: String, environment: [String: String]) -> String? {
+  static func executablePath(named name: String, environment: [String: String]) -> String? {
     let paths = (environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin")
       .split(separator: ":")
       .map(String.init)

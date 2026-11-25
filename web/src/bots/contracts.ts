@@ -98,6 +98,7 @@ export interface BotDetailPayload {
 }
 
 export interface BotActivityEvent {
+  executionId?: string | null
   seq: number
   at: string
   kind: string
@@ -105,6 +106,7 @@ export interface BotActivityEvent {
 }
 
 export interface BotActivityState {
+  usage?: { used?: number; size?: number; input_tokens?: number; output_tokens?: number; total_tokens?: number } | null
   currentExecutionId?: string | null
   currentStepId?: string | null
   plans: BotPlan[]

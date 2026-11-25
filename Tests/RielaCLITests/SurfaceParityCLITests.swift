@@ -91,7 +91,8 @@ final class SurfaceParityCLITests: XCTestCase {
       "task show", "task list", "task run", "task decide",
       "serve", "serve status", "hook codex", "kaiba instance list", "auth invite",
       "worker", "worker status", "call-step", "workflow-call", "rrun", "gql", "version",
-      "workflow definition undo", "workflow definition redo", "doctor", "doctor storage", "storage compact"
+      "workflow definition undo", "workflow definition redo", "doctor", "doctor storage", "storage compact",
+      "ask tool-server"
     ] {
       XCTAssertTrue(commands.contains(expected), "CLI enumeration is missing '\(expected)'")
     }

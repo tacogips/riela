@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import RielaAppSupport
+import RielaCLI
 import RielaCore
 import RielaGraphQL
 
@@ -230,7 +231,11 @@ final class RielaAppConfigurationGraphQLProvider: RielaConfigurationGraphQLProvi
 extension RielaApp {
   func graphQLConfiguration() async throws -> GraphQLRielaConfiguration {
     let current = graphQLConfigurationRevision
-    let assistant = await RielaWebConfigurationSupport.assistantConfiguration(daemonState.assistant)
+    let models = AssistantCatalogModels.builtIn(
+      sessionStoreRoot: daemonSessionStoreRoot(profileName: daemonProfileName),
+      environment: ProcessInfo.processInfo.environment
+    )
+    let assistant = RielaWebConfigurationSupport.assistantConfiguration(daemonState.assistant, catalogModels: models)
     try validateGraphQLConfigurationRevision(current.revision, expectedProfile: current.profile)
     let appearance = appearanceSettingsStore.load()
     let serverSettings = webServerController?.settings ?? RielaAppWebServerSettings()

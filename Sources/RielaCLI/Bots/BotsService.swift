@@ -79,7 +79,11 @@ struct BotsService: Sendable {
       try !ModelCatalog.isKnown(model: model, driver: driver, catalog: catalog.catalog()) else {
       return []
     }
-    return ["model_unknown: \(String(reflecting: model)) is not in the catalog for \(driver.rawValue)"]
+    return [Self.unknownModelWarning(model, driver: driver)]
+  }
+
+  static func unknownModelWarning(_ model: String, driver: NodeExecutionBackend) -> String {
+    "model_unknown: \(String(reflecting: model)) is not in the catalog for \(driver.rawValue)"
   }
 
   private func apply(_ input: BotRecordInput, to record: inout BotRecord) {

@@ -49,6 +49,8 @@ final class SurfaceParityExecutorCoverageTests: XCTestCase {
     add("Mutation", WorkflowRegistryGraphQLDocumentExecutor.mutationFields)
     add("Query", BotsGraphQLDocumentExecutor.queryFields)
     add("Mutation", BotsGraphQLDocumentExecutor.mutationFields)
+    add("Query", AskGraphQLDocumentExecutor.queryFields)
+    add("Mutation", AskGraphQLDocumentExecutor.mutationFields)
     add("Query", RoutineGraphQLDocumentExecutor.queryFields)
     add("Mutation", RoutineGraphQLDocumentExecutor.mutationFields)
     add("Query", RielaConfigGraphQLDocumentExecutor.queryFields)

@@ -1,4 +1,5 @@
 import Foundation
+import RielaCore
 
 public struct RielaAppProfileName: Codable, Equatable, Hashable, Sendable, CustomStringConvertible {
   public static let `default` = RielaAppProfileName(Self.defaultRawValue)
@@ -186,6 +187,23 @@ public enum RielaAppAssistantVendor: String, Codable, CaseIterable, Equatable, H
 
   public var defaultModel: String {
     RielaAppAssistantModelCatalog.shared.defaultModel(for: self)
+  }
+
+  public var executionBackend: NodeExecutionBackend {
+    switch self {
+    case .automatic, .codexCLI:
+      .codexAgent
+    case .claudeCodeCLI:
+      .claudeCodeAgent
+    case .cursorCLI:
+      .cursorCliAgent
+    case .openAIAPI:
+      .officialOpenAISDK
+    case .anthropicAPI:
+      .officialAnthropicSDK
+    case .cursorAPI:
+      .officialCursorSDK
+    }
   }
 
   public var executableName: String? {

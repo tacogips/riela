@@ -277,6 +277,7 @@ public enum ScopedCommandKind: String, Codable, CaseIterable, Sendable {
   case events
   case routine
   case bot
+  case ask
   case model
   case provider
   case remote
@@ -438,7 +439,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       }
       throw CLIUsageError(message)
     }
-    if let familyCommand = try parseCommandFamilyRoute(route) { return familyCommand }
+    if let familyCommand = try parseCommandFamilyRoute(route, arguments: arguments) { return familyCommand }
     switch route {
     case let route as WorkflowRoute:
       return try parseWorkflow(route.passthroughArguments)
@@ -512,8 +513,12 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     }
   }
 
-  private func parseCommandFamilyRoute(_ route: any ParsableCommand) throws -> RielaCommand? {
+  private func parseCommandFamilyRoute(_ route: any ParsableCommand, arguments: [String]) throws -> RielaCommand? {
     switch route {
+    case is AskRoute:
+      return .scoped(ScopedCommand(kind: .ask, options: CLICommandOptions(
+        scope: "ask", arguments: Array(arguments.dropFirst()), output: .text
+      )))
     case let route as BotRoute:
       let parsed = try ParsedScopedCommandArguments.parseCLI(route.passthroughArguments)
       return .scoped(ScopedCommand(kind: .bot, options: try parseGeneric(

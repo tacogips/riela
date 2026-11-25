@@ -48,7 +48,7 @@ public enum GraphQLSchemaGenerator {
   /// Object and input types of the control-plane contract. The DTO-sync test
   /// pins every `GraphQL*DTO` struct to its descriptor here, so a DTO field
   /// added without a schema field fails the build gate.
-  public static let types: [TypeDescriptor] = routineTypes + botTypes + modelCatalogTypes + pairingTypes + remoteTypes + [
+  public static let types: [TypeDescriptor] = routineTypes + botTypes + modelCatalogTypes + pairingTypes + remoteTypes + askTypes + [
     .init(kind: .input, name: "ExecuteWorkflowInput", fields: [
       .init(name: "workflowName", type: "String!"),
       .init(name: "runtimeVariables", type: "JSONObject"),
@@ -718,6 +718,7 @@ public enum GraphQLSchemaGenerator {
   ]) { _, current in current }.merging(botJobsRootFields) { _, current in current }
     .merging(pairingRootFields) { _, current in current }
     .merging(remoteRootFields) { _, current in current }
+    .merging(askRootFields) { _, current in current }
 
   static let routineTypes: [TypeDescriptor] = [
     .init(kind: .object, name: "Routine", fields: [

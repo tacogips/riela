@@ -235,8 +235,7 @@ let package = Package(
         "RielaServer",
         "RielaViewer",
         "RielaObservability"
-      ],
-      resources: [.process("Resources")]
+      ]
     ),
     .target(
       name: "RielaAdapters",

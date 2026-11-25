@@ -37,6 +37,9 @@ func consumeGatewayTurnV2(
   let session = try await client.newSessionV2(
     ACPV2NewSessionRequest(
       cwd: request.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      mcpServers: request.mcpServers.map {
+        .stdio(.init(name: $0.name, command: $0.command, args: $0.arguments, env: gatewayMCPEnvironment($0)))
+      },
       meta: request.vendorSessionId.map {
         .object([GatewayACPMetaKey.v2: .object(["vendorSessionId": .string($0)])])
       }

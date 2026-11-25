@@ -234,7 +234,7 @@ extension ScopedParityCommandRunner {
 func renderBotMutation(_ payload: BotMutationPayload, options: CLICommandOptions) throws -> CLICommandResult {
   let bot = payload.bot
   let text = "\(bot.botId)  \(bot.name)" + (bot.paused ? "  paused" : "") + remoteHostText(payload.origin)
-  var result = try renderBot(payload, options: options, text: text)
+  var result = try renderBot(payload, options: options, text: text + "\n")
   result.stderr = payload.warnings.map { $0 + "\n" }.joined()
   return result
 }

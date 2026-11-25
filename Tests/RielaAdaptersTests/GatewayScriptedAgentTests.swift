@@ -29,6 +29,32 @@ import RielaCore
     #expect(terminals.allSatisfy { $0.channel == .tool && $0.metadata == nil && $0.contentDelta == nil && !$0.isDelta })
   }
 
+  @Test(arguments: versions) func sessionNewCarriesMCPServers(_ version: Int) async throws {
+    let server = AdapterMCPServer(name: "riela-ask", command: "/opt/bin/riela", arguments: ["ask", "tool-server"],
+      environment: ["XDG_DATA_HOME": "/fixture/data", "HOME": "/fixture/home"])
+    let recorder = ScriptedGatewayEvidence()
+    _ = try await Self.run(version, recorder: recorder, script: .updates, mcpServers: [server])
+    let environment = [ACPEnvVariable(name: "HOME", value: "/fixture/home"),
+      ACPEnvVariable(name: "XDG_DATA_HOME", value: "/fixture/data")]
+    if version == ACPProtocol.versionV1 {
+      #expect(await recorder.v1Session?.mcpServers == [
+        ACPMCPServer(name: server.name, command: server.command, args: server.arguments, env: environment)
+      ])
+    } else {
+      #expect(await recorder.v2Session?.mcpServers == [
+        .stdio(.init(name: server.name, command: server.command, args: server.arguments, env: environment))
+      ])
+    }
+
+    let empty = ScriptedGatewayEvidence()
+    _ = try await Self.run(version, recorder: empty, script: .updates)
+    if version == ACPProtocol.versionV1 {
+      #expect(await empty.v1Session?.mcpServers == [])
+    } else {
+      #expect(await empty.v2Session?.mcpServers == [])
+    }
+  }
+
   @Test(arguments: versions) func permissionPassesNativeOptionsAndValidatesSelection(_ version: Int) async throws {
     let recorder = ScriptedGatewayEvidence()
     _ = try await Self.run(version, recorder: recorder, script: .permission) { request in
@@ -121,11 +147,12 @@ import RielaCore
     script: ScriptedGatewayAgent.Script,
     reply: AsyncStream<ACPRequestPermissionResponse.Outcome>.Continuation? = nil,
     deadline: Date? = nil,
+    mcpServers: [AdapterMCPServer] = [],
     handler: AdapterPermissionRequestHandler? = nil
   ) async throws -> GatewayACPTurn {
     try await runGatewayTurn(
       GatewayTurnRequest(defaults: .init(vendor: .codex, model: "fixture"), environment: [:], promptBlocks: [.text("test")],
-        deadline: deadline, acpVersion: version),
+        deadline: deadline, acpVersion: version, mcpServers: mcpServers),
       executorFactory: { _ in ScriptedGatewayExecutor() },
       backendEventHandler: { event in await recorder.record(event) },
       permissionRequestHandler: handler,
@@ -138,10 +165,14 @@ private actor ScriptedGatewayEvidence {
   private(set) var events: [AdapterBackendEvent] = []
   private(set) var requests: [AdapterPermissionRequest] = []
   private(set) var replies: [ACPRequestPermissionResponse.Outcome] = []
+  private(set) var v1Session: ACPNewSessionRequest?
+  private(set) var v2Session: ACPV2NewSessionRequest?
 
   func record(_ event: AdapterBackendEvent) { events.append(event) }
   func record(_ request: AdapterPermissionRequest) { requests.append(request) }
   func record(_ reply: ACPRequestPermissionResponse.Outcome) { replies.append(reply) }
+  func record(_ request: ACPNewSessionRequest) { v1Session = request }
+  func record(_ request: ACPV2NewSessionRequest) { v2Session = request }
 }
 
 private struct ScriptedGatewayAgent: ACPAgent, ACPV2Agent {
@@ -168,13 +199,15 @@ private struct ScriptedGatewayAgent: ACPAgent, ACPV2Agent {
   func newSession(
     _ request: ACPNewSessionRequest, connection: ACPAgentSideConnection
   ) async throws -> ACPNewSessionResponse {
-    ACPNewSessionResponse(sessionId: sessionId)
+    await recorder.record(request)
+    return ACPNewSessionResponse(sessionId: sessionId)
   }
 
   func newSession(
     _ request: ACPV2NewSessionRequest, connection: ACPAgentSideConnection
   ) async throws -> ACPV2NewSessionResponse {
-    ACPV2NewSessionResponse(sessionId: sessionId)
+    await recorder.record(request)
+    return ACPV2NewSessionResponse(sessionId: sessionId)
   }
 
   func prompt(_ request: ACPPromptRequest, connection: ACPAgentSideConnection) async throws -> ACPPromptResponse {

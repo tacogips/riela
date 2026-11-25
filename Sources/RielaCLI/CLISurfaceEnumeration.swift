@@ -111,11 +111,8 @@ public enum CLISurfaceEnumerator {
       return nested(catalogActions(route))
     case "routine":
       return nested(RoutineClientAction.allRawValues)
-    case "serve":
-      // Bare `riela serve` is the long-running host; the named actions are
-      // one-shot probes of the same server contract.
-      return [CLICommandDescriptor([route])] + nested(ServeClientAction.allRawValues)
-        + ServePairingClientAction.allRawValues.map { CLICommandDescriptor([route, "pairing", $0]) }
+    case "ask", "serve":
+      return [CLICommandDescriptor([route])] + commandsBesideBareRoute(route)
     case _ where leafRoutes.contains(route):
       return [CLICommandDescriptor([route])]
     default:
@@ -125,6 +122,15 @@ public enum CLISurfaceEnumerator {
       // invisible to the gate.
       return [CLICommandDescriptor([route])]
     }
+  }
+
+  private static func commandsBesideBareRoute(_ route: String) -> [CLICommandDescriptor] {
+    if route == "ask" {
+      return AskClientAction.allCases.map { CLICommandDescriptor([route, $0.rawValue]) }
+        + [CLICommandDescriptor([route, AskToolServerArguments.verb])]
+    }
+    return ServeClientAction.allRawValues.map { CLICommandDescriptor([route, $0]) }
+      + ServePairingClientAction.allRawValues.map { CLICommandDescriptor([route, "pairing", $0]) }
   }
 
   private static func botCommands(_ route: String) -> [CLICommandDescriptor] {
@@ -162,7 +168,7 @@ public enum CLISurfaceEnumerator {
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = ["environment", "voice",
     "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
-    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "bot", "model", "provider", "remote", "serve", "storage", "doctor"
+    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "bot", "ask", "model", "provider", "remote", "serve", "storage", "doctor"
   ]
 
   /// Every `--option` token any `riela` parser accepts, rendered from the
@@ -178,6 +184,8 @@ public enum CLISurfaceEnumerator {
       ParsedCacheArguments.helpMessage(),
       ParsedRoutineOptions.helpMessage(),
       ParsedBotOptions.helpMessage(),
+      AskCommandArguments.helpMessage(),
+      AskToolServerArguments.helpMessage(),
       ParsedBotJobArguments.helpMessage(),
       ParsedBotSuggestionArguments.helpMessage(),
       ModelCatalogOptions.helpMessage(),

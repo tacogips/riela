@@ -23,12 +23,25 @@ public struct ManifestModel: Codable, Equatable, Sendable {
 }
 
 public enum ModelManifest {
+  private static let claudeModels = basicModels([
+    "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2", "claude-haiku-5-5",
+    "claude-sonnet-5", "claude-opus-4-8", "claude-fable-5", "claude-sonnet-4-6", "claude-haiku-4-5"
+  ])
+
   public static let models: [NodeExecutionBackend: [ManifestModel]] = [
-    .codexAgent: reasoningModels(["gpt-5.6-sol", "gpt-5.5", "gpt-5.4-mini"]),
-    .claudeCodeAgent: basicModels(["claude-sonnet-5", "claude-opus-4-8"]),
-    .cursorCliAgent: basicModels(["auto", "composer-2.5"]),
-    .officialOpenAISDK: reasoningModels(["gpt-5.6", "gpt-5.4-mini"]),
-    .officialAnthropicSDK: basicModels(["claude-sonnet-5", "claude-opus-4-8"]),
+    .codexAgent: reasoningModels([
+      "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.5",
+      "gpt-5.4-mini", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4", "gpt-5.3-codex-spark"
+    ]),
+    .claudeCodeAgent: claudeModels,
+    .cursorCliAgent: basicModels([
+      "auto", "composer-2.5", "gpt-5.6-sol-medium", "gpt-5.6-terra-medium", "gpt-5.6-luna-medium",
+      "claude-opus-4-8-high", "claude-sonnet-5-high"
+    ]),
+    .officialOpenAISDK: reasoningModels([
+      "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-5.6", "gpt-5.4-mini", "gpt-5.5", "gpt-5.4"
+    ]),
+    .officialAnthropicSDK: claudeModels,
     .officialGeminiSDK: basicModels(["gemini-3.5-flash-lite", "gemini-3.5-flash"]),
     .officialCursorSDK: basicModels(["composer-2.5"])
   ]

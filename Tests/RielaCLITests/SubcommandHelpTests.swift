@@ -73,6 +73,16 @@ final class SubcommandHelpTests: XCTestCase {
     XCTAssertEqual(CLISubcommandHelp.result(path: ["gateway", "list"]).stdout, GatewayCommand.help)
   }
 
+  func testAskToolServerDedicatedHelp() throws {
+    let request = try XCTUnwrap(CLIHelpRequest.detect(["ask", "tool-server", "--help"]))
+    XCTAssertEqual(request.path, ["ask", "tool-server"])
+    let result = CLISubcommandHelp.result(for: request)
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stdout.contains("riela ask tool-server --session-store"))
+    XCTAssertTrue(result.stdout.contains("--redaction-values"))
+    XCTAssertFalse(CLISubcommandHelp.result(path: ["ask"]).stdout.contains("tool-server"))
+  }
+
   func testSurfaceAudit() {
     var count = 0
     for descriptor in CLISurfaceEnumerator.commands() {

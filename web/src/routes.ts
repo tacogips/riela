@@ -18,7 +18,7 @@ export function parseViewHash(hash: string): HashRoute | undefined {
   const [path, search = ''] = hash.slice(2).split('?', 2)
   const rawSegments = path!.split('/')
   const remote = new URLSearchParams(search).get('remote')
-  const remoteContext = remote && remote !== '*' && remote !== 'unverified' && remote !== 'local' ? { remote } : {}
+  const remoteContext = remote && remote !== '*' && remote !== 'unverified' ? { remote } : {}
   let segments: string[]
   try {
     segments = rawSegments.map((segment) => decodeURIComponent(segment))

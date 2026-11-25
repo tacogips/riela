@@ -147,13 +147,21 @@ public struct RielaLibrary: Sendable {
               ),
               environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
             ),
-            next: RoutineGraphQLDocumentExecutor(
-              provider: FileRoutineGraphQLProvider(
-                workingDirectory: workingDirectory,
-                environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
-                botExists: BotRunLinker.botExists(sessionStoreRoot: CLIWorkflowSessionStore.resolveRootDirectory(
-                  sessionStore: sessionStore, scope: scope, workingDirectory: workingDirectory
-                ))
+            next: AskGraphQLHost.executor(
+              workingDirectory: workingDirectory, sessionStore: sessionStore, scope: scope,
+              environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
+              sessions: RielaSessionControlProvider(
+                workingDirectory: workingDirectory, sessionStore: sessionStore, scope: scope,
+                workflowDefinitionDir: workflowDefinitionDir
+              ),
+              next: RoutineGraphQLDocumentExecutor(
+                provider: FileRoutineGraphQLProvider(
+                  workingDirectory: workingDirectory,
+                  environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
+                  botExists: BotRunLinker.botExists(sessionStoreRoot: CLIWorkflowSessionStore.resolveRootDirectory(
+                    sessionStore: sessionStore, scope: scope, workingDirectory: workingDirectory
+                  ))
+                )
               )
             )
           )

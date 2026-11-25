@@ -169,7 +169,7 @@ struct RemoteBotsProvider: BotsGraphQLProviding {
   }
 }
 
-private struct RemoteOriginProjection {
+struct RemoteOriginProjection {
   let record: RemoteRecord
   let observedAt: Date
 

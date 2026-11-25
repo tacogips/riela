@@ -32,7 +32,7 @@ export class RielaConfigurationClient {
 
   async updateAssistant(
     current: RielaConfiguration,
-    input: { assistance: string; vendor: string; model: string },
+    input: { assistance: string; vendor: string; model?: string },
   ): Promise<RielaConfiguration> {
     return this.mutate(
       `mutation WebUpdateAssistantConfiguration($input: UpdateAssistantConfigurationInput!) {

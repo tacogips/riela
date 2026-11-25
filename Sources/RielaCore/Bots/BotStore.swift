@@ -57,6 +57,7 @@ public struct BotStore: Sendable {
     let database = try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: sessionStoreRoot) {
       let database = try SQLiteDatabase.open(path: databasePath, options: .writableRuntimeStoreDefault)
       try BotStoreSchema.prepare(in: database)
+      try AskStoreSchema.prepare(in: database)
       return database
     }
     return try database.transaction(body)

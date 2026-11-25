@@ -1,5 +1,7 @@
 import { For, Show } from 'solid-js'
 import type { JSX } from 'solid-js'
+import { parseInlineSegments } from './markdownInline'
+export { parseInlineSegments } from './markdownInline'
 
 // Block-level markdown model mirroring the native RielaNoteMarkdownBodyView:
 // headings, fenced code, lists, quotes, rules, and paragraphs, with a small
@@ -93,48 +95,20 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
   return blocks
 }
 
-type InlineSegment =
-  | { kind: 'text'; text: string }
-  | { kind: 'bold'; text: string }
-  | { kind: 'italic'; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'link'; text: string; href: string }
-
-export function parseInlineSegments(text: string): InlineSegment[] {
-  const segments: InlineSegment[] = []
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\s][^*]*\*)|(_[^_\s][^_]*_)|(\[([^\]]+)\]\(([^)\s]+)\))/g
-  let cursor = 0
-  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
-    if (match.index > cursor) segments.push({ kind: 'text', text: text.slice(cursor, match.index) })
-    const token = match[0] ?? ''
-    if (token.startsWith('`')) {
-      segments.push({ kind: 'code', text: token.slice(1, -1) })
-    } else if (token.startsWith('**') || token.startsWith('__')) {
-      segments.push({ kind: 'bold', text: token.slice(2, -2) })
-    } else if (token.startsWith('[') && match[7] !== undefined && match[8] !== undefined) {
-      segments.push({ kind: 'link', text: match[7], href: match[8] })
-    } else {
-      segments.push({ kind: 'italic', text: token.slice(1, -1) })
-    }
-    cursor = match.index + token.length
-  }
-  if (cursor < text.length) segments.push({ kind: 'text', text: text.slice(cursor) })
-  return segments
-}
-
 function isSafeHref(href: string): boolean {
   return /^(https?:|mailto:|#|\/)/i.test(href)
 }
 
-function InlineText(props: { text: string }): JSX.Element {
+function InlineText(props: { text: string; citations?: ReadonlyMap<string, string> }): JSX.Element {
   return (
-    <For each={parseInlineSegments(props.text)}>{(segment) => {
+    <For each={parseInlineSegments(props.text, props.citations)}>{(segment) => {
       switch (segment.kind) {
         case 'bold': return <strong>{segment.text}</strong>
         case 'italic': return <em>{segment.text}</em>
         case 'code': return <code class="md-inline-code">{segment.text}</code>
+        case 'citation': return <a href={segment.href}>{segment.text}</a>
         case 'link':
-          return isSafeHref(segment.href)
+          return !props.citations && isSafeHref(segment.href)
             ? <a href={segment.href} target="_blank" rel="noopener noreferrer">{segment.text}</a>
             : <span>{segment.text}</span>
         default: return <>{segment.text}</>
@@ -143,7 +117,7 @@ function InlineText(props: { text: string }): JSX.Element {
   )
 }
 
-export function MarkdownBody(props: { markdown: string }): JSX.Element {
+export function MarkdownBody(props: { markdown: string; citations?: ReadonlyMap<string, string> }): JSX.Element {
   return (
     <div class="markdown-body">
       <For each={parseMarkdownBlocks(props.markdown)}>{(block) => {
@@ -151,21 +125,21 @@ export function MarkdownBody(props: { markdown: string }): JSX.Element {
           case 'heading': {
             const level = Math.min(Math.max(block.level, 1), 6)
             return level <= 1
-              ? <h3 class="md-heading"><InlineText text={block.text} /></h3>
-              : <h4 class="md-heading"><InlineText text={block.text} /></h4>
+              ? <h3 class="md-heading"><InlineText citations={props.citations} text={block.text} /></h3>
+              : <h4 class="md-heading"><InlineText citations={props.citations} text={block.text} /></h4>
           }
           case 'code':
             return <pre class="md-code" data-language={block.language ?? undefined}><code>{block.text}</code></pre>
           case 'list':
             return block.ordered
-              ? <ol><For each={block.items}>{(item) => <li><InlineText text={item} /></li>}</For></ol>
-              : <ul><For each={block.items}>{(item) => <li><InlineText text={item} /></li>}</For></ul>
+              ? <ol><For each={block.items}>{(item) => <li><InlineText citations={props.citations} text={item} /></li>}</For></ol>
+              : <ul><For each={block.items}>{(item) => <li><InlineText citations={props.citations} text={item} /></li>}</For></ul>
           case 'quote':
-            return <blockquote class="md-quote"><InlineText text={block.text} /></blockquote>
+            return <blockquote class="md-quote"><InlineText citations={props.citations} text={block.text} /></blockquote>
           case 'rule':
             return <hr />
           default:
-            return <p class="md-paragraph"><Show when={block.text} fallback={null}><InlineText text={block.text} /></Show></p>
+            return <p class="md-paragraph"><Show when={block.text} fallback={null}><InlineText citations={props.citations} text={block.text} /></Show></p>
         }
       }}</For>
     </div>

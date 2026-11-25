@@ -11,6 +11,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "apple-notes-list",
     "apple-notifications",
     "apple-reminders-list",
+    "ask-run-status",
     "bot-routine-memory-upkeep",
     "brain-generated-workflow-loop",
     "builtin-gateway-json",

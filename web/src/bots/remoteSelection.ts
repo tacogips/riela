@@ -18,7 +18,7 @@ export function managementError(error: unknown): string {
   return error instanceof APIError ? error.code : 'request_failed'
 }
 
-export function createRemoteSelection(profileKey: () => string, linkedRemote?: () => string | undefined) {
+export function createRemoteSelection(profileKey: () => string | undefined, linkedRemote?: () => string | undefined) {
   const [registry, { mutate, refetch }] = createResource(profileKey, () => botsClient.getRemotes())
   const [stored, setStored] = createSignal(sessionStorage.getItem(storageKey))
   const snapshot = () => registry.error ? undefined : registry.latest
@@ -26,7 +26,7 @@ export function createRemoteSelection(profileKey: () => string, linkedRemote?: (
     const value = snapshot()
     const current = value ? resolveRemoteSelection(stored(), value) : 'local'
     const linked = linkedRemote?.()
-    return linked && current !== '*' && value?.remotes.some(({ name }) => name === linked) ? linked : current
+    return linked && current !== '*' && (linked === 'local' || value?.remotes.some(({ name }) => name === linked)) ? linked : current
   })
 
   return {

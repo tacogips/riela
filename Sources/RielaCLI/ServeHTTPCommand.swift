@@ -248,12 +248,16 @@ func serveMachineGraphQLAdapter(
                 workingDirectory: workingDirectory, sessionStoreRoot: storeRoot, environment: environment,
                 pairing: pairing
               ),
-              next: RoutineGraphQLDocumentExecutor(
-                provider: FileRoutineGraphQLProvider(
-                  workingDirectory: workingDirectory, environment: environment,
-                  botExists: BotRunLinker.botExists(sessionStoreRoot: storeRoot)
-                ),
-                authorizeMachineCreate: { BotsRequestGrant.current?.isStillValid() == true }
+              next: AskGraphQLHost.executor(
+                workingDirectory: workingDirectory, sessionStore: storeRoot, scope: parsed.scope,
+                environment: environment, pairing: pairing,
+                next: RoutineGraphQLDocumentExecutor(
+                  provider: FileRoutineGraphQLProvider(
+                    workingDirectory: workingDirectory, environment: environment,
+                    botExists: BotRunLinker.botExists(sessionStoreRoot: storeRoot)
+                  ),
+                  authorizeMachineCreate: { BotsRequestGrant.current?.isStillValid() == true }
+                )
               )
             )
           )

@@ -1,0 +1,6 @@
+{
+  "rounds": [
+    "{\"type\":\"tool\",\"id\":\"status\",\"name\":\"session_status\",\"arguments\":{\"sessionId\":\"__SESSION_ID__\"}}",
+    "The run completed. [[session:__SESSION_ID__]]"
+  ]
+}

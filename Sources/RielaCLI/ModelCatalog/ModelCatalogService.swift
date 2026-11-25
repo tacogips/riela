@@ -4,6 +4,8 @@ import RielaCore
 import RielaGraphQL
 
 struct ModelCatalogService: Sendable {
+  static let openRouterBaseURL = "https://openrouter.ai/api/v1"
+
   typealias Probe = @Sendable (ProviderInstance, [String: String], Date) async -> BackendCapability
 
   let store: BotStore
@@ -29,6 +31,13 @@ struct ModelCatalogService: Sendable {
 
   func catalog() throws -> [CatalogInstance] {
     try ModelCatalog.build(instances: store.providerInstances(), reports: store.providerReports())
+  }
+
+  func builtInModelIds() throws -> [NodeExecutionBackend: [String]] {
+    let builtIns = try catalog().filter { $0.instance.builtIn }
+    return Dictionary(uniqueKeysWithValues: builtIns.map { entry in
+      (entry.instance.driver, entry.models.map(\.id).filter { $0 != ModelSentinel.defaultModel })
+    })
   }
 
   func instances() throws -> [GraphQLProviderInstance] {
@@ -87,5 +96,12 @@ struct ModelCatalogService: Sendable {
     let reports = report.map { [instance.instanceId: $0] } ?? [:]
     let catalog = ModelCatalog.build(instances: [instance], reports: reports)
     return GraphQLProviderInstance(catalog[0], origin: origin)
+  }
+}
+
+public enum AssistantCatalogModels {
+  public static func builtIn(sessionStoreRoot: String, environment: [String: String]) -> [NodeExecutionBackend: [String]]? {
+    let store = BotStore(sessionStoreRoot: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
+    return try? ModelCatalogService(store: store, environment: environment).builtInModelIds()
   }
 }

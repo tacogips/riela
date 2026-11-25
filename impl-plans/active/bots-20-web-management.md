@@ -4,23 +4,28 @@
 {
   "planId": "bots-20-web-management",
   "planPath": "impl-plans/active/bots-20-web-management.md",
-  "dependsOn": ["bots-14-web-bots", "bots-19-remote-surfaces"],
-  "wave": 10,
+  "dependsOn": [
+    "bots-19-remote-surfaces"
+  ],
+  "wave": 6,
   "writePaths": [
-    "web/src/bots",
-    "web/src/models",
-    "web/src/routes.ts",
-    "web/src/routes.test.ts",
-    "web/src/profileViewState.ts",
-    "web/src/App.tsx",
-    "web/src/App.test.ts",
+    "web/src",
     "impl-plans/progress/bots-20-web-management.md"
   ],
   "sharedPaths": [],
   "sharedPathNotes": [
-    {"path": "web/src/routes.ts", "intendedEdit": "Add nav view `models` with hash `#/models`. Existing routes, including plan 14's bot routes, keep resolving."},
-    {"path": "web/src/profileViewState.ts", "intendedEdit": "Add 'models' to NavigationView."},
-    {"path": "web/src/App.tsx", "intendedEdit": "Add the nav entry `{ id: 'models', label: 'Models', ... }` and its <Match> branch."}
+    {
+      "path": "web/src/routes.ts",
+      "intendedEdit": "Add nav view `models` with hash `#/models`. Existing routes, including plan 14's bot routes, keep resolving."
+    },
+    {
+      "path": "web/src/profileViewState.ts",
+      "intendedEdit": "Add 'models' to NavigationView."
+    },
+    {
+      "path": "web/src/App.tsx",
+      "intendedEdit": "Add the nav entry `{ id: 'models', label: 'Models', ... }` and its <Match> branch."
+    }
   ]
 }
 ```
@@ -188,3 +193,10 @@ Dependency install and artifacts:
 - `grep -rn "localStorage\|console.log" web/src/bots web/src/models` prints nothing.
 - `git status --short web/package.json web/bun.lock` prints nothing.
 - Verification exits 0; progress log written.
+
+## Operator amendment (after fable-sol session 1)
+
+Plans 01-14 are implemented, integration-accepted and committed in `73674ceb`; treat them as satisfied dependencies. Remaining plans run strictly serially 15 -> 16 -> 17 -> 18 -> 19 -> 20. `dependsOn` lists only the remaining predecessor. writePaths are directory-level: editing any file under them is authorised, including files first created by plans 01-14. Do not stop for write scope inside these directories; a scope stop is only valid for paths outside them (for example Package.swift or Packages/RielaMemory). Earlier `Continuation` or `BLOCKED` notes in impl-plans/progress for this plan are void: start the implementation now.
+
+- OPERATOR AMENDMENT (user request): the Bots UI is a master-detail layout. The bot list is a persistent LEFT pane (rows as built in plan 14: name, counts label or last-result line, last activity, needs-you dot, origin label, sections active/working/snoozed/settled) and the RIGHT pane shows the selected bot (board, live activity, answers, routines, memory, suggestions, jobs). `#/bots` shows the list with the first active bot selected or an empty state; `#/bots/{botId}` selects that bot; below the existing responsive breakpoint the panes collapse to list -> detail. Refactor web/src/bots/BotsView.tsx and BotDetailView.tsx accordingly; pure-logic tests keep passing.
+- OPERATOR AMENDMENT (user request): clicking an in-progress (or needs-you / waiting) board item that has a session id navigates to the existing workflow run screen for that session (route `{ view: 'run-detail', sessionId }` in web/src/routes.ts, rendered by OpsRunView); the activity pane stays reachable from a secondary control. A routes/board test covers the generated hash.

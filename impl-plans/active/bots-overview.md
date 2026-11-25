@@ -243,3 +243,18 @@ unrelated; rerun once before treating it as a failure.
 - Acceptance criteria of the design (§5–§11, §12–§14) are covered by the
   suites listed in the plans.
 - Plans that were not reached stay in `impl-plans/active/` unchanged.
+
+
+## Operator amendment (after fable-sol session 1)
+
+Accepted baseline: plans 01-14 committed in `73674ceb`. Remaining plans 15-20 run serially with the write scope in each plan header; see each plan's operator amendment. Plan 20 additionally delivers the left-pane Bots layout and task -> run-screen navigation requested by the user.
+
+## Amendment 2026-11-25 (tracking-contract, plan-contract-validate)
+
+`plan-contract-validate` reported `contract_valid: false` for plans 15-19: the roots `Sources/RielaCLI` (414 entries), `Sources/RielaCore`, `Tests` (810 entries) and, for plan 17, `examples` (1152 entries) expand past the limit of 512 source snapshot entries per plan.
+
+- Correction: plans 15, 16, 18 and 19 now hold one common Swift scope: whole `Sources/RielaGraphQL`, `Sources/RielaServer`, `Sources/RielaAdapters`, `Tests/RielaGraphQLTests`, `Tests/RielaServerTests`, `scripts/surface-parity`; the bot-feature subdirectories of `Sources/RielaCLI`, `Sources/RielaCore`, `Tests/RielaCLITests`, `Tests/RielaCoreTests`; and 84 named flat files (about 316 entries). Plan 17 holds its example and documentation paths plus the same scope (about 372 entries). Plan 20 (`web/src`, 117 entries) is unchanged.
+- No `artifactRoots`: no plan installs tools, caches or binaries into a tracked path. `.build`, `web/node_modules` and `web/dist` are gitignored and outside every write path.
+- Growth budget: at most 40 new files per plan, so the largest plan stays under 512 after waves W1-W5.
+- Plan IDs, serial order (15 -> 16 -> 17 -> 18 -> 19 -> 20), tasks, tests, wave gates and the final gate are unchanged. Plans 01-14 stay accepted dependencies (commit `73674ceb`).
+- W6-U1-undeclared-redeem-literal stays owned by plan 18; the needed files are in its scope. Until wave W4 the route is served through the split literal in `Sources/RielaServer/RielaPairingHTTP.swift:5`, so `SurfaceParityWebAPITests` is expected green in the W1-W3 gates.

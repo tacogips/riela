@@ -16,12 +16,6 @@
   "finalGate": "impl-plans/active/ask-riela.md section 5",
   "waves": [
     {
-      "wave": "W2",
-      "plans": [
-        "ask-03-turn-engine"
-      ]
-    },
-    {
       "wave": "W3",
       "plans": [
         "ask-04-surfaces"
@@ -134,6 +128,10 @@
       {
         "decision": "Amendment 2026-11-25 round 1: Ask Riela does not run on the `official/cursor-sdk` backend. A turn that resolves to it is refused with `ask_provider_unsupported` before any conversation, message or turn is written and before the adapter is called. No dependency or pin change, no write path, plan id or wave change. ask-01-catalog-and-selection and ask-02-store-tools move to `acceptedDependencies`.",
         "rationale": "Blocked plan ask-03-turn-engine (reason blocked-wave-scope-or-contract, finding ASK-03-CURSOR-API, evidence tmp/ask-riela/ask-03-turn-engine/cursor-gateway.log): the pinned agent-gateway POSTs to /agents without a read-only policy and returns the creation response without waiting for a completion; a pin change is a non-goal, so exclusion is the only option of the resume criterion. Resolved gaps: ask-03 acceptance criteria name the supported backends and the refusal with three required refusal tests; ask-07 adds the picker rule and one picker test; recorded in impl-plans/active/ask-riela.md section 3.4. Design sections 5.3, 9 and 10.1 still name `official/cursor-sdk` and are to be corrected at the next design edit (plan review finding S5-L4, low, not blocking); no design revision required (accepted in comm-000325)."
+      },
+      {
+        "decision": "Amendment 2026-11-25 round 2: `riela ask --no-follow` is accepted only when the turn runs on a paired remote (the `--remote` value or the registry's active remote). For a local target it is a `CLIUsageError` before any conversation, message or turn is written and before the adapter is called. No local hand-off, detached process or new lifecycle is added; GraphQL behaviour is unchanged. No write path, plan id or wave change. ask-03-turn-engine moves to `acceptedDependencies`.",
+        "rationale": "Blocked plan ask-04-surfaces (reason blocked-wave-scope-or-contract, finding ASK-04-LOCAL-NO-FOLLOW-LIFECYCLE, evidence tmp/ask-riela/ask-04-surfaces/lifecycle-contract.log): a local `--no-follow` would return a `running` turn whose owning CLI process exits, later marked `ask_interrupted` by stale-runner recovery; design section 8 already says the CLI one-shot awaits the turn, and a paired server is a persistent owner. Resolved gaps: the ask-04 amendment section names four required tests (local usage error on a new conversation with zero conversations and zero adapter calls, local usage error on an existing conversation left unchanged, `--remote srv --no-follow` returning a `running` turn that completes on the server, and the active-remote case) and carries the three wave 2 host wiring notes (keep `AskHost.requiresVendorAvailability` true in production hosts, route `cancelAsk` to the owning server, do not call `AskRuntime.wait` from a server request); the ask-04 acceptance criteria and impl-plans/active/ask-riela.md section 3.4 record the rule. Design section 13 still lists `--no-follow` without the remote-only limit and is to be corrected at the next design edit (plan review finding S5-L6, low, not blocking); no design revision required (accepted in comm-000344). The amendment budget is exhausted (2 of 2)."
       }
     ],
     "intentionalTradeoffs": [
@@ -195,51 +193,19 @@
       "planPath": "impl-plans/active/ask-02-store-tools.md",
       "commit": "a6d3f06222303970da46abd61148e778a86745a6",
       "provides": "Wave 1: additive ask tables through `AskStoreSchema.prepare`, limits, the read tool set and executor, redaction, context resolution, proposed actions with confirm-once and audit. Plan committed at the listed checkpoint; implementation accepted by the wave 1 integration review of session 4 and present in the working tree."
+    },
+    {
+      "planId": "ask-03-turn-engine",
+      "planPath": "impl-plans/active/ask-03-turn-engine.md",
+      "commit": "33344ee6b9815f67e6d20d4767f7bd7c5a4a0653",
+      "provides": "Wave 2: `AskService`, `AskRuntime`, the `rounds` transport on codex-agent, claude-code-agent, cursor-cli-agent, official/openai-sdk and official/anthropic-sdk, activity mapping, citations, budgets, one settlement per terminal path, `AskAgentPolicy`, `AskScriptedBackend`, the prompt-injection test, and the `official/cursor-sdk` refusal. Plan committed at the listed checkpoint; implementation accepted by the wave 3 integration review of session 4 (W2 gate: build exit 0, 200 tests, 0 failures) and present in the working tree."
     }
   ],
   "plans": [
     {
-      "planId": "ask-03-turn-engine",
-      "planPath": "impl-plans/active/ask-03-turn-engine.md",
-      "dependsOn": [],
-      "wave": 2,
-      "writePaths": [
-        "Sources/RielaCLI/Ask",
-        "Sources/RielaCore/Ask",
-        "Tests/RielaCLITests/Ask",
-        "Tests/RielaCoreTests/Ask",
-        "impl-plans/progress/ask-03-turn-engine.md"
-      ],
-      "sharedPaths": [],
-      "sharedPathNotes": [
-        {
-          "path": "Sources/RielaCLI/Ask",
-          "intendedEdit": "New subdirectory `Engine`. Files of plans 01 and 02 (`Selection`, `Tools`, `Actions`) change only where the engine needs a small addition, for example a conversion from `AskSelection` to `AskModelRequest`."
-        },
-        {
-          "path": "Sources/RielaCore/Ask",
-          "intendedEdit": "New files `AskRoundsProtocol.swift` and `AskCitations.swift`; additive fields on existing models only if the engine needs them."
-        }
-      ],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "`AskService` runs a turn on the `rounds` transport for codex-agent, claude-code-agent, cursor-cli-agent, official/openai-sdk and official/anthropic-sdk with streaming event mapping (scripted backend), citations, budgets, deterministic settlement on every terminal path, the read-only policy per backend and the prompt-injection case, as in design sections 5.3, 6, 8, 9, 10 and 15.",
-        "A turn that resolves to `official/cursor-sdk` is refused with `ask_provider_unsupported` before any conversation, message or turn is written and with zero adapter calls (amendment 2026-11-25, round 1).",
-        "`grep -rn \"permissionRequestHandler\" Sources/RielaCLI/Ask` prints nothing.",
-        "`grep -rn \"URLSession\\|Process()\" Sources/RielaCLI/Ask` prints nothing.",
-        "Verification exits 0; progress log impl-plans/progress/ask-03-turn-engine.md written."
-      ],
-      "verification": [
-        "mkdir -p tmp/ask-riela/ask-03-turn-engine",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskRoundsProtocolTests|AskCitationsTests|AskTurnEngineTests|AskAgentPolicyTests|AskPromptInjectionTests|AskScriptedBackendTests|AskStoreTests|AskToolExecutorTests|AskActionTests|AskModelSelectionTests|BotActivityRuntimeTests|ActivityWaitTests\"' > tmp/ask-riela/ask-03-turn-engine/test.log 2>&1"
-      ]
-    },
-    {
       "planId": "ask-04-surfaces",
       "planPath": "impl-plans/active/ask-04-surfaces.md",
-      "dependsOn": [
-        "ask-03-turn-engine"
-      ],
+      "dependsOn": [],
       "wave": 3,
       "writePaths": [
         "Sources/RielaCLI/Ask",
@@ -336,6 +302,7 @@
       "artifactRoots": [],
       "acceptanceCriteria": [
         "Catalog rows, `riela ask` (one-shot, `--conversation`, list, show, cancel, confirm, dismiss, remove), the GraphQL queries and mutations of impl-plans/active/ask-riela.md section 3.3, regenerated SDL, host chaining, remote forwarding with origin and scope, and the `examples/ask-run-status` example with EXPECTED_RESULTS.md; CLI and GraphQL parity gates pass.",
+        "`riela ask --no-follow` is accepted only when the turn runs on a paired remote; when the target is local it is a usage error and no conversation, message or turn is written (amendment 2026-11-25, round 2).",
         "A second run of scripts/surface-parity/generate-sdl.sh leaves Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift byte-identical (SHA-256 before and after in the progress log).",
         "`grep -n \"api/v1\" Sources/RielaCLI/Ask -r` prints nothing; `git diff --stat Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` is empty (no new REST route).",
         "Verification exits 0; progress log impl-plans/progress/ask-04-surfaces.md written."

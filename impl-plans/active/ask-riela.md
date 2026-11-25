@@ -166,6 +166,16 @@ representation `BotRecord` uses.
   next design edit. Plans 01 and 02 are accepted (wave 1) and are listed as
   `acceptedDependencies` in the manifest; plan 03 no longer lists them in
   `dependsOn`.
+- Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 2, finding
+  `ASK-04-LOCAL-NO-FOLLOW-LIFECYCLE`): `riela ask --no-follow` is
+  server-backed only. A local turn runs in a task owned by the CLI process
+  and ends when the CLI exits, so with a local target `--no-follow` is a
+  usage error raised before any write; with a paired remote the server owns
+  the turn and the option returns after the turn starts (plan 04). No local
+  hand-off or background mode is added. Design §13 lists `--no-follow`
+  without this limit; the sentence is to be corrected at the next design
+  edit. Plan 03 is accepted (wave 2) and is listed in `acceptedDependencies`;
+  plan 04 no longer lists it in `dependsOn`.
 - Design §7.3 names a definition audit reason `ask:<conversationId>/<actionId>`.
   The registry mutation inputs have no reason field; the link is kept on
   the confirmed action row (plan 06). The design sentence is to be

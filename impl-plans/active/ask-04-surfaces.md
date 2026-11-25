@@ -4,9 +4,7 @@
 {
   "planId": "ask-04-surfaces",
   "planPath": "impl-plans/active/ask-04-surfaces.md",
-  "dependsOn": [
-    "ask-03-turn-engine"
-  ],
+  "dependsOn": [],
   "wave": 3,
   "writePaths": [
     "Sources/RielaCLI/Ask",
@@ -241,9 +239,10 @@ store options.
   arrive, one line `· <tool> <first ref or argument>` per tool call, then
   `Records:` (citations), `Proposed:` (one line per action: action id, kind,
   target), then `conversation <id>`. Failure: turn error code and message on
-  stderr, failure exit code. `--no-follow` returns after the turn starts.
-  `--output json` prints the final `AskConversationPayload` once (after the
-  turn unless `--no-follow`).
+  stderr, failure exit code. `--no-follow` returns after the turn starts and
+  is accepted only when the turn runs on a paired remote (see the round 2
+  amendment at the end of this plan). `--output json` prints the final
+  `AskConversationPayload` once (after the turn unless `--no-follow`).
 - Local mode runs the turn in this process (`AskService.send` then
   `waitForTurn`) and reads activity from the store while waiting. With
   `--remote` the documents go to that server through
@@ -350,3 +349,61 @@ answer.
 - `grep -n "api/v1" Sources/RielaCLI/Ask -r` prints nothing.
 - `git diff --stat Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` is empty.
 - Verification exits 0; progress log written.
+
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 2)
+
+Blocker `ASK-04-LOCAL-NO-FOLLOW-LIFECYCLE` (evidence
+`tmp/ask-riela/ask-04-surfaces/lifecycle-contract.log`): in local mode the
+turn runs in a task owned by this CLI process
+(`Sources/RielaCLI/Ask/Engine/AskRuntime.swift:18`). The CLI calls
+`Foundation.exit` when the command returns
+(`Sources/RielaCLI/EntryPoint.swift:88`), which ends that task. A local
+`--no-follow` would return a `running` snapshot for a turn that dies at once
+and is later marked `ask_interrupted` by stale-turn recovery.
+
+Decision (the first option of the resume criterion): `--no-follow` is
+server-backed only. No local hand-off, no detached process, no daemon.
+
+- Contract: after the routing target is resolved (the `--remote` value, else
+  the registry's active remote, the same resolution `RemoteRouting.resolve`
+  gives), `riela ask --no-follow` is accepted only when the target is a
+  remote. The paired server owns the turn and keeps it running after the CLI
+  returns.
+- When the target is local, `--no-follow` is a usage error
+  (`CLIUsageError`), raised before `AskService.send`, with a message that
+  says the option needs a paired remote, for example
+  `ask --no-follow needs --remote <name>; a local turn runs in this process`.
+  Nothing is written: no conversation, no message, no turn.
+- `--no-follow` stays in the `ask.send` row's CLI options and in the help
+  text; the help line says "(with --remote)".
+- Local mode is otherwise unchanged: the CLI sends, waits for the turn
+  (`waitForTurn`), and prints text or the final JSON payload. SIGINT cancels
+  the turn before exit.
+- GraphQL is unchanged: `startAsk` and `sendAskMessage` on a server return
+  after the turn starts, because the server process owns the turn.
+- Do not add a flag, an environment variable or a background mode to keep a
+  local turn alive, and do not make `--no-follow` silently wait.
+- Tests (add to `AskCommandTests` and `AskRemoteTests`):
+  - `ask --no-follow "x"` with a local target → usage error naming
+    `--remote`, non-zero exit, the store has zero conversations, zero adapter
+    calls.
+  - `ask --conversation <id> --no-follow "x"` with a local target → usage
+    error; the conversation's messages and turn are unchanged.
+  - `ask --remote srv --no-follow "x"` → returns with
+    `conversation.turn.status == "running"` (text output prints the
+    conversation id; JSON output prints the payload once); the turn then
+    completes in the server store without the CLI.
+  - active remote set to `srv` and no `--remote` option, `--no-follow` →
+    accepted, same result as with `--remote srv`.
+- `dependsOn` in the header is now empty: ask-03 is accepted and recorded in
+  `acceptedDependencies` in the manifest. Write paths, wave, verification
+  commands and the other done criteria are unchanged.
+- Progress log: replace the `BLOCKED: design` entry by a `Deviations` entry
+  that cites this amendment.
+- Carried from the wave 2 integration review (same plan, host wiring): keep
+  `AskHost.requiresVendorAvailability` at its default `true` in every
+  production host; route `cancelAsk` to the server that owns the turn; do
+  not call `AskRuntime.wait` from a server request, because cancelling the
+  waiting request would cancel the turn.
+- Design note: design §13 lists `--no-follow` without this limit; the
+  sentence is corrected at the next design edit (overview §3.4).

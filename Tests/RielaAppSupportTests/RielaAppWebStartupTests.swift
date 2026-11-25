@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class RielaAppWebStartupTests: XCTestCase {
-  func testExplicitStartupUsesPersistedPortAndNormalControllerShutdown() async throws {
+  func testStartupHonorsExplicitFlagAndPersistedAutostartOnThePersistedPort() async throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
       .appendingPathComponent("tmp/app-web-startup-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -16,13 +16,16 @@ final class RielaAppWebStartupTests: XCTestCase {
     let port = try await probe.startForTesting()
     await probe.stop()
     let store = RielaAppWebServerSettingsStore(appRootURL: root)
-    try store.save(.init(isEnabled: true, port: port))
+    // The persisted `isEnabled` is the desired launch state: disabled
+    // settings start only on the explicit flag, and enabled settings start
+    // on their own (covered at the end of this test).
+    try store.save(.init(isEnabled: false, port: port))
     let app = RielaApp()
     let controller = RielaAppWebServerController(app: app, settingsStore: store,
       assetRoot: root, onStateChange: {})
 
     await controller.startIfRequested(by: .init(arguments: ["--open-desktop"], environment: [:]))
-    XCTAssertEqual(controller.state, .stopped, "saved enabled state must not silently opt into HTTP startup")
+    XCTAssertEqual(controller.state, .stopped, "disabled settings must not start without the explicit flag")
     await controller.startIfRequested(by: .init(arguments: ["--start-web-server"], environment: [:]))
     XCTAssertEqual(controller.state.boundPort, port)
     XCTAssertEqual(controller.endpointURL?.port, port)
@@ -32,6 +35,14 @@ final class RielaAppWebStartupTests: XCTestCase {
     await controller.shutdownForTermination()
     XCTAssertEqual(controller.state, .stopped)
     XCTAssertTrue(store.load().settings.isEnabled, "termination preserves user settings")
+
+    // The next launch honors the preserved autostart intent without the flag.
+    let relaunched = RielaAppWebServerController(app: app, settingsStore: store,
+      assetRoot: root, onStateChange: {})
+    await relaunched.startIfRequested(by: .init(arguments: ["--open-desktop"], environment: [:]))
+    XCTAssertEqual(relaunched.state.boundPort, port, "saved enabled state starts at launch")
+    await relaunched.shutdownForTermination()
+    XCTAssertEqual(relaunched.state, .stopped)
   }
 }
 #endif

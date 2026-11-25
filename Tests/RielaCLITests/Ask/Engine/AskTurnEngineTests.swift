@@ -265,6 +265,22 @@ struct AskTurnEngineTests {
   }
 
   @Test
+  func cancelSettlesALiveTurnOwnedByAnotherProcess() async throws {
+    let fixture = try AskEngineTestFixture()
+    let service = fixture.service(adapter: AskEngineTestAdapter([.text("unused")]))
+    let running = try fixture.store.createAndBeginAskTurn(
+      message: "Asked from the console", context: AskContext(), selection: AskSelection(), contextRef: nil,
+      turn: AskTurn(backend: "codex-agent", providerInstanceId: "codex-agent", toolTransport: .rounds, runnerId: "other-runner"),
+      now: fixture.at
+    )
+
+    let cancelled = try await service.cancel(conversationId: running.conversationId)
+
+    #expect(cancelled.conversation.turn?.status == .cancelled)
+    #expect(try fixture.store.askConversation(id: running.conversationId)?.turn?.status == .cancelled)
+  }
+
+  @Test
   func recoversAnotherRunnersStaleTurnOnce() async throws {
     let fixture = try AskEngineTestFixture()
     let service = fixture.service(adapter: AskEngineTestAdapter([.text("unused")]))

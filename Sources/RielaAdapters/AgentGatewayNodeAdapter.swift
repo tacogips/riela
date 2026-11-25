@@ -401,7 +401,7 @@ private func consumeGatewayTurnV1(
       var responses = gatewayV1PromptResponses(prompt, connection: client.connection).makeAsyncIterator()
       return try await responses.next()
     } onCancel: {
-      watchdog.cancelTurn()
+      watchdog.cancelTurnUntilSettled()
     }
   } catch {
     continuation.finish()
@@ -490,6 +490,7 @@ final class GatewayDeadlineWatchdog: @unchecked Sendable {
   private let lock = NSLock()
   private var expired = false
   private var task: Task<Void, Never>?
+  private var hostCancelTask: Task<Void, Never>?
   private let client: ACPClientConnection
   private let sessionId: ACPSessionID
   private let permissions: GatewayPermissionLifetime
@@ -503,12 +504,7 @@ final class GatewayDeadlineWatchdog: @unchecked Sendable {
       try? await wallClockSleep(until: deadline)
       guard !Task.isCancelled, let self else { return }
       self.lock.withLock { self.expired = true }
-      // A cancel that reaches the agent before the prompt is in flight is
-      // ignored, so repeat it until the turn settles and `cancel()` stops us.
-      while !Task.isCancelled {
-        self.cancelTurn()
-        try? await Task.sleep(for: .milliseconds(200))
-      }
+      await self.repeatCancel()
     }
   }
 
@@ -517,7 +513,26 @@ final class GatewayDeadlineWatchdog: @unchecked Sendable {
   }
 
   func cancel() {
-    lock.withLock { task }?.cancel()
+    let tasks = lock.withLock { [task, hostCancelTask] }
+    for task in tasks { task?.cancel() }
+  }
+
+  /// A cancel that reaches the agent before the prompt is in flight is
+  /// ignored, so repeat it until the turn settles and `cancel()` stops us.
+  private func repeatCancel() async {
+    while !Task.isCancelled {
+      cancelTurn()
+      try? await Task.sleep(for: .milliseconds(200))
+    }
+  }
+
+  /// Host cancellation (the surrounding task was cancelled): same race as the
+  /// deadline, without marking the deadline as expired.
+  func cancelTurnUntilSettled() {
+    lock.withLock {
+      guard hostCancelTask == nil else { return }
+      hostCancelTask = Task { [weak self] in await self?.repeatCancel() }
+    }
   }
 
   /// Propagates surrounding-task cancellation into the ACP turn so the vendor

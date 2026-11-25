@@ -106,7 +106,13 @@ struct AskService: Sendable {
   func cancel(conversationId: String) async throws -> AskConversationSnapshot {
     let current = try currentConversation(id: conversationId)
     guard let turn = current.turn, turn.status == .running else { return try snapshot(current) }
-    try await runtime.cancel(conversationId: conversationId, turnId: turn.turnId)
+    if try await !runtime.cancel(conversationId: conversationId, turnId: turn.turnId) {
+      // Another process owns the turn: settle it in the store. The owner's
+      // heartbeat sees the turn inactive and cancels its own task.
+      _ = try host.store.finishAskTurn(
+        conversationId: conversationId, turnId: turn.turnId, status: .cancelled, activityReason: .cancelled
+      )
+    }
     return try conversation(id: conversationId)
   }
 

@@ -544,7 +544,8 @@ a test asserts its output per backend:
 | Backend | Policy |
 | --- | --- |
 | `codex-agent`, `claude-code-agent`, `rounds` transport | `agentToolPolicy.preset = none`, `agentSandbox = read-only` |
-| `codex-agent`, `claude-code-agent`, `mcp` transport | the `none` preset argv without its empty-MCP-configuration arguments, `agentSandbox = read-only`; for claude also `--allowedTools` limited to the ask server's tools |
+| `codex-agent`, `mcp` transport | the `none` preset argv without its empty-MCP-configuration arguments, `agentSandbox = read-only`, plus `mcp_servers.riela-ask.default_tools_approval_mode="approve"` (`codex exec` refuses an MCP call that needs an approval prompt) |
+| `claude-code-agent`, `mcp` transport | the `none` preset argv (`--tools ""`, strict MCP configuration) without its empty-MCP-configuration arguments, `--allowedTools` limited to the ask server's tools, and no `agentSandbox`: the read-only sandbox maps to plan mode, which refuses MCP calls, so read-only rests on the disabled built-in tools and the read-only tool server |
 | `official/openai-sdk`, `official/anthropic-sdk`, `official/cursor-sdk` | `agentToolPolicy.preset = none` (the request carries no tools) |
 | `cursor-cli-agent` | `agentSandbox = read-only` (the preset is not supported); the turn records `limited policy` and clients show it |
 

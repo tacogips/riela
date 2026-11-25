@@ -98,7 +98,11 @@ extension AskActionProposer {
     conversationId: String, turnId: String, definition: JSONObject, baseWorkflowId: String?, draft: JSONObject?
   ) async throws -> AskAction {
     let workflow = try AskWorkflowActionTarget.validateDefinition(definition, limits: limits)
-    if let draft, AskWorkflowDraft.project(.object(draft), environment: environment) != .object(draft) {
+    // The tool server's environment carries no secrets; the handed-off values do.
+    let projected = draft.map {
+      AskWorkflowDraft.project(.object($0), environment: environment, additionalValues: additionalRedactionValues)
+    }
+    if let draft, projected != .object(draft) {
       throw AskError(code: "workflow_invalid", message: "The editor draft needs retain handles for protected fields")
     }
     var record: JSONObject = [

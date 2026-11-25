@@ -66,7 +66,7 @@ func consumeGatewayTurnV2(
       }
     }
   } onCancel: {
-    watchdog.cancelTurn()
+    watchdog.cancelTurnUntilSettled()
   }
   if Task.isCancelled, !watchdog.deadlineExpired {
     throw CancellationError()

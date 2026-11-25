@@ -32,10 +32,12 @@ actor AskRuntime {
     }
   }
 
-  func cancel(conversationId: String, turnId: String) async throws {
-    guard let turn = running[conversationId], turn.turnId == turnId else { return }
+  /// Returns false when this runtime does not own the turn.
+  func cancel(conversationId: String, turnId: String) async throws -> Bool {
+    guard let turn = running[conversationId], turn.turnId == turnId else { return false }
     turn.task.cancel()
     try await turn.task.value
+    return true
   }
 
   private func ended(conversationId: String, turnId: String) {

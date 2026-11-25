@@ -11,18 +11,20 @@ enum AskWorkflowDraft {
     "toStepId", "toWorkflowId", "resumeStepId", "label", "placement", "workspace", "target", "workerId", "group", "exports"
   ]
 
-  static func project(_ value: JSONValue, environment: [String: String]) -> JSONValue {
+  static func project(
+    _ value: JSONValue, environment: [String: String], additionalValues: [String: String] = [:]
+  ) -> JSONValue {
     switch value {
     case let .object(fields):
       if isRetainHandle(value) { return value }
-      return .object(projectFields(fields, environment: environment))
+      return .object(projectFields(fields, environment: environment, additionalValues: additionalValues))
     case let .array(items):
-      return .array(items.map { project($0, environment: environment) })
+      return .array(items.map { project($0, environment: environment, additionalValues: additionalValues) })
     case let .string(text):
       guard WorkflowWebProjectionPolicy().displayText(text).value != "<redacted>" else {
         return .null
       }
-      let redacted = AskRedaction.text(text, environment: environment)
+      let redacted = AskRedaction.text(text, environment: environment, additionalValues: additionalValues)
       return redacted == text ? value : .null
     default:
       return value
@@ -35,9 +37,12 @@ enum AskWorkflowDraft {
     return handle.range(of: #"^[A-Za-z0-9_-]{43}$"#, options: .regularExpression) != nil
   }
 
-  private static func projectFields(_ fields: JSONObject, environment: [String: String]) -> JSONObject {
+  private static func projectFields(
+    _ fields: JSONObject, environment: [String: String], additionalValues: [String: String]
+  ) -> JSONObject {
     fields.filter { key, value in
-      AskRedaction.text(key, environment: environment) == key && (editorFields.contains(key) || isRetainHandle(value))
-    }.mapValues { project($0, environment: environment) }
+      AskRedaction.text(key, environment: environment, additionalValues: additionalValues) == key
+        && (editorFields.contains(key) || isRetainHandle(value))
+    }.mapValues { project($0, environment: environment, additionalValues: additionalValues) }
   }
 }

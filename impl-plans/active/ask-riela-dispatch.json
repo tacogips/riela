@@ -1,0 +1,630 @@
+{
+  "taskId": "ask-riela",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/bots-overview",
+  "baseBranch": "feat/bots-overview",
+  "remote": "origin",
+  "gitPush": false,
+  "originalHead": "6b3701394ee2410df289729379431eda3ea9f6fc",
+  "designDocPaths": [
+    "design-docs/specs/design-ask-riela-chat.md",
+    "design-docs/user-qa/qa-ask-riela-chat.md"
+  ],
+  "overviewPlanPath": "impl-plans/active/ask-riela.md",
+  "evidenceRoot": "tmp/ask-riela",
+  "waveGates": "impl-plans/active/ask-riela.md section 4",
+  "finalGate": "impl-plans/active/ask-riela.md section 5",
+  "waves": [
+    {
+      "wave": "W1",
+      "plans": [
+        "ask-01-catalog-and-selection",
+        "ask-02-store-tools"
+      ]
+    },
+    {
+      "wave": "W2",
+      "plans": [
+        "ask-03-turn-engine"
+      ]
+    },
+    {
+      "wave": "W3",
+      "plans": [
+        "ask-04-surfaces"
+      ]
+    },
+    {
+      "wave": "W4",
+      "plans": [
+        "ask-05-mcp-transport",
+        "ask-07-web"
+      ]
+    },
+    {
+      "wave": "W5",
+      "plans": [
+        "ask-06-workflow-authoring"
+      ]
+    }
+  ],
+  "reviewContext": {
+    "issueReference": "none (no GitHub issue; scope defined by the workflow input of fable-sol-design-and-implement-review-loop-session-4; design accepted in comm-000297)",
+    "userProblem": "riela has two unrelated assistants (workflow editor chat, RielaApp mini chat) and neither can read runtime records. The user wants to ask riela about itself in natural language and get answers grounded in runtime records, with a configurable vendor and model, in the same chat that creates or edits workflows.",
+    "requiredOutcomes": [
+      "One runtime-owned persisted chat service on CLI (`riela ask`), GraphQL and the web console; no new REST routes.",
+      "A fixed read-only typed tool set implemented once and offered through a stdio MCP server (codex, claude) or a host-run tool loop (other backends); answers cite records and clients link them.",
+      "Mutations only as typed proposed actions confirmed by the user with the user's authority; the action row is the audit record.",
+      "Server-resolved context reference from the current view or CLI options.",
+      "Vendor default from assistant settings, override from the Bots catalog, `automatic` selectable, one bundled model list (ModelManifest).",
+      "Workflow authoring as `propose_workflow` in the same chat; generation endpoints removed without shims.",
+      "Streaming on the Bots activity event model and long-poll; deterministic settlement on every terminal path.",
+      "Paired remote: same typed surface, origin shown, unreachable remote is an error.",
+      "Safety: redaction on every record path, budgets, prompt-injection test.",
+      "Catalog follow-ups in plan 01: current model ids in the manifest; `riela bot create` warning on its own stderr line."
+    ],
+    "nonGoals": [
+      "Pin change, vendoring or patching of agent-gateway.",
+      "New transport or auth system; new REST console routes.",
+      "Replacing the RielaApp native mini chat or migrating its transcript.",
+      "Web search, file access or command execution for the chat model.",
+      "Chat memory across conversations; interactive terminal REPL."
+    ],
+    "constraints": [
+      "Base on 6b370139; reuse the Bots activity stream, catalog, remotes and assistant code.",
+      "Runtime records are owned by the runtime store; behaviour stays deterministic.",
+      "No backward-compatibility shims; storage additive; session store generation stays 13; stored assistant settings keep their shape.",
+      "No worktree, branch, stash, commit or push by implementers; gitPush is false; per-edit SHA-256 and drift rules in impl-plans/active/ask-riela.md section 2.",
+      "Swift commands run as arch -arm64 /bin/zsh -lc '<command>' in the foreground with full logs under tmp/ask-riela/<planId>.",
+      "Tests never touch ~/.riela, the real credential directory or a live vendor.",
+      "Do not change Package.resolved, VERSION, dependency pins, web/package.json or web/bun.lock; Package.swift only loses the RielaAppSupport resources line (plan 01).",
+      "English-only, low-text web UI following existing SolidJS conventions."
+    ],
+    "planPaths": [
+      "impl-plans/active/ask-01-catalog-and-selection.md",
+      "impl-plans/active/ask-02-store-tools.md",
+      "impl-plans/active/ask-03-turn-engine.md",
+      "impl-plans/active/ask-04-surfaces.md",
+      "impl-plans/active/ask-05-mcp-transport.md",
+      "impl-plans/active/ask-06-workflow-authoring.md",
+      "impl-plans/active/ask-07-web.md"
+    ],
+    "designDecisionsAndRationale": [
+      {
+        "decision": "One tool executor with two transports: a stdio MCP server (`riela ask tool-server`) for codex and claude, and a host-run tool loop (`rounds`) for every other backend; `RIELA_ASK_TOOL_TRANSPORT=rounds` forces the host loop.",
+        "rationale": "Design section 5.3 and QA question 1: the pinned agent-gateway passes client stdio MCP servers only to codex and claude and accepts no client tool definitions for API vendors; native tool calling would need a pin change, which is a non-goal."
+      },
+      {
+        "decision": "Chat storage is additive tables in the session store database through an extension of BotStore (`AskStoreSchema.prepare`); session store generation stays 13.",
+        "rationale": "Design section 4: runtime records are owned by the runtime store and existing user databases must not break."
+      },
+      {
+        "decision": "Read-only is enforced by the tool set and the agent tool policy, not by the prompt; mutations exist only as a closed list of typed proposed actions that the user confirms, executed with the caller's authority, with the action row as the audit record.",
+        "rationale": "Design sections 5.2, 7 and 10.1; acceptance criterion on read-only by default."
+      },
+      {
+        "decision": "Streaming reuses the Bots activity event model and long-poll under the activity key `ask:<conversationId>`; every terminal path ends with exactly one settlement that closes open tool calls.",
+        "rationale": "Design sections 8.1 and 8.3: no parallel streaming mechanism; deterministic cancellation."
+      },
+      {
+        "decision": "Vendor default comes from the assistant settings, the per-conversation override from the Bots provider/model catalog, `automatic` stays selectable, and the assistant model catalogs are computed from ModelManifest (the RielaAppSupport resource bundle is removed).",
+        "rationale": "Design section 9: one source of truth for vendor and model, no second configuration store; stored settings keep their shape."
+      },
+      {
+        "decision": "Workflow authoring becomes the `propose_workflow` tool and the `applyWorkflow` action in the same chat; the generation REST routes, stores and catalog rows are removed without shims.",
+        "rationale": "Design section 11 and QA question 5: one entry point; no backward-compatibility for unreleased shapes."
+      },
+      {
+        "decision": "With a remote selected the chat runs on that server through the same typed GraphQL surface; chatting needs `operate` scope, reading conversations needs `read`; the origin is shown.",
+        "rationale": "Design section 12 and QA question 7: a turn uses that server's model credentials and may lead to confirmed actions."
+      },
+      {
+        "decision": "Plan DAG is a chain from plan 03 on (W1: 01 and 02 in parallel, W2: 03, W3: 04, W4: 05 and 07 in parallel, W5: 06); only plans with disjoint write paths share a wave.",
+        "rationale": "impl-plans/active/ask-riela.md section 1: plans 03 to 06 all write Sources/RielaCLI/Ask and the hand-maintained registries; lesson from the previous run on this branch."
+      },
+      {
+        "decision": "Catalog row split: `ask.send` binds CLI `ask` and `Mutation.startAsk`; `ask.reply` and `ask.activity` exclude the CLI surface; confirm, dismiss and audit are built in plan 02 and exposed in plan 04; the scripted backend is built in plan 03.",
+        "rationale": "impl-plans/active/ask-riela.md section 3.4: plan-level refinements of design sections 13 and 16 with no behaviour change."
+      },
+      {
+        "decision": "The MCP tool-server entry receives `--scope`, the host's non-secret HOME, RIELA_WORKFLOW_HOME, RIELA_* and XDG_* variables, and env-bound secret values only through a mode 0600 file under `<scratchRoot>/redaction` passed as `--redaction-values`; missing file fails closed with `redaction_values_unavailable`.",
+        "rationale": "Plan review finding S5-F1 (high, resolved): tool results and redaction must be the same in `rounds` and `mcp` (design sections 5.1 and 10.2). ask-05 gained the write path Sources/RielaCLI/BotRuntime/BotMemoryRuntime.swift to expose the secret-name rule without behaviour change (scope change accepted in comm-000301)."
+      },
+      {
+        "decision": "The definition audit reason `ask:<conversationId>/<actionId>` of design section 7.3 is not written; the link is kept on the confirmed action row.",
+        "rationale": "Plan review finding S5-L1 (low, not blocking): the registry mutation inputs have no reason field; recorded in impl-plans/active/ask-riela.md section 3.4, design sentence to be corrected at the next design edit."
+      },
+      {
+        "decision": "Full `swift build` runs only in the wave gates and in plans that are alone in their wave (ask-04, ask-06); plans of the shared waves W1 and W4 verify with focused `swift test --filter` runs.",
+        "rationale": "Plan review finding S5-F2 (mid, resolved): a full build inside a shared wave fails on a sibling's unfinished code."
+      }
+    ],
+    "intentionalTradeoffs": [
+      "Live `mcp` behaviour on codex and claude is an operator manual check; deterministic tests cover the adapter request, the tool server and the policy argv, and `rounds` is the fallback by one environment variable.",
+      "The redaction values file holds host secret values on disk (mode 0600 under the store scratch root) for the length of an `mcp` turn; a host crash leaves it until stale-turn recovery removes it.",
+      "cursor-cli-agent has no tool-removal preset; it runs with the read-only sandbox in an empty directory and is labelled limited policy.",
+      "The editor graph changes on confirm, not while the model works.",
+      "Between W4 and W5 the web editor has no workflow authoring until ask-06 lands.",
+      "The default model for vendors without a stored choice becomes the first manifest entry (`gpt-6.2-sol`, `claude-sonnet-5-5`); a stored choice is never changed.",
+      "Live model listing for API vendors is dropped from assistant settings; an unlisted model is still usable and reported as `model_unknown`.",
+      "ask-04 is large; a needed file outside its write paths is reported as `BLOCKED: write scope` instead of being edited.",
+      "Chat activity shares the session store database and the pool of 32 long-poll waiters with bot activity.",
+      "The dispatch manifest is hand-maintained; no build or test ran during design and plan review (plans only)."
+    ],
+    "supportedEdgeCases": [
+      "Terminal paths completed, cancelled, deadline (`ask_timeout`), adapter or vendor error and host process death (`ask_interrupted`, heartbeat older than 30 s from another runner) each end with exactly one settlement; a failed turn never produces an assistant message.",
+      "`cancelAsk` on a turn that is not running returns the conversation unchanged; a send while a turn runs fails with `ask_turn_running`.",
+      "Prompt injection through a log line that asks for a mutation: no mutation occurs, at most a proposal.",
+      "Secrets in records and logs are redacted on every record path in both transports; a missing redaction values file fails closed.",
+      "Per-conversation budgets (turns, tool calls, bytes) and bounded history; truncated tool results are marked.",
+      "Proposed actions: confirm once, expiry after 24 hours, target re-validated at confirm, dismiss, invalid target (`action_target_invalid`) with zero mutation calls.",
+      "Context reference (session, bot, workflow, none) resolved server-side; unknown ids are an error.",
+      "Unreachable remote yields a clear error, never a fabricated answer; insufficient pairing scope is rejected.",
+      "Unlisted model produces a `model_unknown` warning on its own stderr line for text output and in `warnings` for JSON output.",
+      "`applyWorkflow` in draft mode saves nothing; store mode validates and honours the expected definition revision.",
+      "Regenerating the SDL twice leaves the generated schema file byte-identical."
+    ],
+    "outOfScopeEdgeCases": [
+      "Pin change, vendoring or patching of agent-gateway; native tool calling for API vendors.",
+      "Replacing the RielaApp native mini chat or migrating its transcript.",
+      "Web search, file access or command execution for the chat model.",
+      "Chat memory across conversations; interactive terminal REPL.",
+      "New REST console routes, a new transport or a new auth system.",
+      "Vendor-side tool-call events hidden by the upstream gap of Bots design section 15 (Ask tool calls are shown because the executor records them itself)."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-ask-riela-chat.md",
+      "design-docs/user-qa/qa-ask-riela-chat.md",
+      "design-docs/specs/design-bots-overview.md",
+      "impl-plans/active/ask-riela.md",
+      "impl-plans/active/ask-01-catalog-and-selection.md",
+      "impl-plans/active/ask-02-store-tools.md",
+      "impl-plans/active/ask-03-turn-engine.md",
+      "impl-plans/active/ask-04-surfaces.md",
+      "impl-plans/active/ask-05-mcp-transport.md",
+      "impl-plans/active/ask-06-workflow-authoring.md",
+      "impl-plans/active/ask-07-web.md"
+    ]
+  },
+  "acceptedDependencies": [],
+  "plans": [
+    {
+      "planId": "ask-01-catalog-and-selection",
+      "planPath": "impl-plans/active/ask-01-catalog-and-selection.md",
+      "dependsOn": [],
+      "wave": 1,
+      "writePaths": [
+        "Sources/RielaCore/ModelCatalog",
+        "Sources/RielaAppSupport",
+        "Sources/RielaCLI/ModelCatalog",
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaCLI/Ask/Selection",
+        "Sources/RielaCLI/RielaWebAssistantProvider.swift",
+        "Sources/RielaCLI/ServeWebHost+Configuration.swift",
+        "Sources/RielaApp/RielaAppConfigurationGraphQLProvider.swift",
+        "Sources/RielaGraphQL/ConfigurationGraphQL.swift",
+        "Package.swift",
+        "scripts/lib/riela-web-packaging.sh",
+        "Tests/RielaCoreTests/ModelCatalog",
+        "Tests/RielaAppSupportTests/RielaAppAssistantModelCatalogTests.swift",
+        "Tests/RielaAppSupportTests/RielaWebAssistantConfigurationTests.swift",
+        "Tests/RielaAppSupportTests/DaemonWorkflowNodePatchTests.swift",
+        "Tests/RielaCLITests/Bots",
+        "Tests/RielaCLITests/ModelCatalog",
+        "Tests/RielaCLITests/Ask/Selection",
+        "Tests/RielaGraphQLTests/ConfigurationGraphQLTests.swift",
+        "impl-plans/progress/ask-01-catalog-and-selection.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Package.swift",
+          "intendedEdit": "Remove only the line `resources: [.process(\"Resources\")]` of the RielaAppSupport target (and the comma before it). No dependency or pin change."
+        },
+        {
+          "path": "scripts/lib/riela-web-packaging.sh",
+          "intendedEdit": "Read-and-verify only: the resource loop globs `*.bundle` and `*.resources`. Edit only if it fails when no RielaAppSupport bundle exists."
+        },
+        {
+          "path": "Sources/RielaCLI/Bots",
+          "intendedEdit": "BotCommands.swift `renderBotMutation`: line end after the row for text output. No other file in this directory changes."
+        },
+        {
+          "path": "Sources/RielaGraphQL/ConfigurationGraphQL.swift",
+          "intendedEdit": "Only if the `updateAssistantConfiguration` input validation or description names the selectable vendors; the DTO shape does not change."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "ModelManifest lists gpt-6.2-sol, gpt-6.1-terra, gpt-6-astra, claude-fable-5-2, claude-opus-5-5, claude-sonnet-5-5 and claude-haiku-5-5 in addition to the existing entries, and the assistant model catalogs come from the same manifest.",
+        "`automatic` is selectable; `AskModelSelection.resolve` implements the default, override and warning rules of design section 9.",
+        "`riela bot create` text output prints the `model_unknown` warning on its own stderr line; JSON output carries it in `warnings`.",
+        "`grep -rn \"assistant-models\\|RielaAppAssistantModelLoader\\|installedCatalogURL\" Sources Package.swift Tests` prints nothing; Sources/RielaAppSupport/Resources is removed; `git diff Package.swift` shows only the removed `resources:` line.",
+        "Verification exits 0; progress log impl-plans/progress/ask-01-catalog-and-selection.md written."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-01-catalog-and-selection",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"ModelManifestTests|ModelCatalogTests|ProviderStoreTests|RielaAppAssistantModelCatalogTests|RielaWebAssistantConfigurationTests|ConfigurationGraphQLTests|DaemonWorkflowNodePatchTests|AskModelSelectionTests|BotCommandTests|ModelCatalogCommandTests\"' > tmp/ask-riela/ask-01-catalog-and-selection/test.log 2>&1",
+        "bash -n scripts/lib/riela-web-packaging.sh > tmp/ask-riela/ask-01-catalog-and-selection/packaging-syntax.log 2>&1"
+      ]
+    },
+    {
+      "planId": "ask-02-store-tools",
+      "planPath": "impl-plans/active/ask-02-store-tools.md",
+      "dependsOn": [],
+      "wave": 1,
+      "writePaths": [
+        "Sources/RielaCore/Ask",
+        "Sources/RielaCore/Bots/BotStore.swift",
+        "Sources/RielaCLI/Ask/Tools",
+        "Sources/RielaCLI/Ask/Actions",
+        "Tests/RielaCoreTests/Ask",
+        "Tests/RielaCLITests/Ask/Tools",
+        "Tests/RielaCLITests/Ask/Actions",
+        "impl-plans/progress/ask-02-store-tools.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCore/Bots/BotStore.swift",
+          "intendedEdit": "In `BotStore.write`, call `try AskStoreSchema.prepare(in: database)` right after `BotStoreSchema.prepare(in: database)`. Nothing else."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Additive chat storage with bounds, context resolution, redaction, the read tool set against real fixture stores, budgets, a read-only executor, and proposed actions with confirm-once and audit, as in design sections 4, 5.1, 5.2, 6, 7, 10.2 and 10.3.",
+        "`grep -rn \"stopSession\\|rerunSession\\|setBotPaused\\|answerBotRequest\" Sources/RielaCLI/Ask/Tools` prints nothing.",
+        "`git diff Sources/RielaCore/Bots/BotStore.swift` shows one added line.",
+        "Verification exits 0; progress log impl-plans/progress/ask-02-store-tools.md written."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-02-store-tools",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskStoreTests|AskToolSetTests|AskToolExecutorTests|AskContextTests|AskReadOnlyTests|AskActionTests|BotStoreTests|BotStoreMigrationTests|ActivityRecorderTests\"' > tmp/ask-riela/ask-02-store-tools/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "ask-03-turn-engine",
+      "planPath": "impl-plans/active/ask-03-turn-engine.md",
+      "dependsOn": [
+        "ask-01-catalog-and-selection",
+        "ask-02-store-tools"
+      ],
+      "wave": 2,
+      "writePaths": [
+        "Sources/RielaCLI/Ask",
+        "Sources/RielaCore/Ask",
+        "Tests/RielaCLITests/Ask",
+        "Tests/RielaCoreTests/Ask",
+        "impl-plans/progress/ask-03-turn-engine.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/Ask",
+          "intendedEdit": "New subdirectory `Engine`. Files of plans 01 and 02 (`Selection`, `Tools`, `Actions`) change only where the engine needs a small addition, for example a conversion from `AskSelection` to `AskModelRequest`."
+        },
+        {
+          "path": "Sources/RielaCore/Ask",
+          "intendedEdit": "New files `AskRoundsProtocol.swift` and `AskCitations.swift`; additive fields on existing models only if the engine needs them."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`AskService` runs a turn on the `rounds` transport for every backend with streaming event mapping (scripted backend), citations, budgets, deterministic settlement on every terminal path, the read-only policy per backend and the prompt-injection case, as in design sections 5.3, 6, 8, 9, 10 and 15.",
+        "`grep -rn \"permissionRequestHandler\" Sources/RielaCLI/Ask` prints nothing.",
+        "`grep -rn \"URLSession\\|Process()\" Sources/RielaCLI/Ask` prints nothing.",
+        "Verification exits 0; progress log impl-plans/progress/ask-03-turn-engine.md written."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-03-turn-engine",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskRoundsProtocolTests|AskCitationsTests|AskTurnEngineTests|AskAgentPolicyTests|AskPromptInjectionTests|AskScriptedBackendTests|AskStoreTests|AskToolExecutorTests|AskActionTests|AskModelSelectionTests|BotActivityRuntimeTests|ActivityWaitTests\"' > tmp/ask-riela/ask-03-turn-engine/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "ask-04-surfaces",
+      "planPath": "impl-plans/active/ask-04-surfaces.md",
+      "dependsOn": [
+        "ask-03-turn-engine"
+      ],
+      "wave": 3,
+      "writePaths": [
+        "Sources/RielaCLI/Ask",
+        "Sources/RielaCLI/Bots",
+        "Sources/RielaCLI/Remotes",
+        "Sources/RielaCLI/ModelCatalog",
+        "Sources/RielaCore/Ask",
+        "Sources/RielaGraphQL",
+        "Sources/RielaServer",
+        "Sources/RielaCore/SurfaceCatalog.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsBots.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+        "Sources/RielaCLI/APIKeyGraphQLAuthorization.swift",
+        "Sources/RielaCLI/CLISubcommandHelp.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/ParityCommandSupport.swift",
+        "Sources/RielaCLI/ParityCommands.swift",
+        "Sources/RielaCLI/RielaArgumentParserHelpers.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/RielaClientCommandRouter.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaLibrary.swift",
+        "Sources/RielaCLI/ScopedParityCommands.swift",
+        "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
+        "Sources/RielaCLI/ScopedParityCommands+Serve.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaCLI/ServeWebAccess.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ServeWebHost+Configuration.swift",
+        "Sources/RielaApp/RielaAppWebGraphQL.swift",
+        "Sources/RielaApp/RielaAppWebRouter.swift",
+        "Sources/RielaApp/RielaAppConfigurationGraphQLProvider.swift",
+        "Sources/RielaAppSupport/RielaConsoleGraphQLProvider.swift",
+        "Resources/skills",
+        "scripts/surface-parity",
+        "examples/ask-run-status",
+        "examples/README.md",
+        "Tests/RielaCLITests/Ask",
+        "Tests/RielaCoreTests/Ask",
+        "Tests/RielaGraphQLTests",
+        "Tests/RielaServerTests",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCoreTests/RielaTestSurfaceCoverageTests.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/SubcommandHelpTests.swift",
+        "Tests/RielaCLITests/SubcommandHelpApplicationTests.swift",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "Tests/RielaCLITests/SurfaceParityConsoleReadTests.swift",
+        "Tests/RielaCLITests/SurfaceParityLibraryTests.swift",
+        "Tests/RielaCLITests/SurfaceParitySkillTests.swift",
+        "Tests/RielaCLITests/SurfaceParityWebAPITests.swift",
+        "Tests/RielaCLITests/ServeWebHostTests.swift",
+        "Tests/RielaCLITests/ServeHTTPCommandTests.swift",
+        "impl-plans/progress/ask-04-surfaces.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+          "intendedEdit": "Append `+ askRows` where `botFamilyRows + remoteRows` are concatenated (line 16)."
+        },
+        {
+          "path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+          "intendedEdit": "Generated: regenerate with scripts/surface-parity/generate-sdl.sh. Never edit by hand."
+        },
+        {
+          "path": "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+          "intendedEdit": "Register the ask types, inputs and root fields from the new descriptor file."
+        },
+        {
+          "path": "Sources/RielaCLI/RielaCLIApplication.swift",
+          "intendedEdit": "Help text lines for the `riela ask` commands."
+        },
+        {
+          "path": "Sources/RielaCLI/Bots",
+          "intendedEdit": "Only if a shared helper (origin, waiters, JSON rendering) must become reusable; no behaviour change."
+        },
+        {
+          "path": "Sources/RielaServer",
+          "intendedEdit": "Only if a scope or field list names fields explicitly; the ask mutations must be `operate`, the ask queries `read`."
+        },
+        {
+          "path": "Resources/skills",
+          "intendedEdit": "Only if SurfaceParitySkillTests requires a generated command block for the new family."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Catalog rows, `riela ask` (one-shot, `--conversation`, list, show, cancel, confirm, dismiss, remove), the GraphQL queries and mutations of impl-plans/active/ask-riela.md section 3.3, regenerated SDL, host chaining, remote forwarding with origin and scope, and the `examples/ask-run-status` example with EXPECTED_RESULTS.md; CLI and GraphQL parity gates pass.",
+        "A second run of scripts/surface-parity/generate-sdl.sh leaves Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift byte-identical (SHA-256 before and after in the progress log).",
+        "`grep -n \"api/v1\" Sources/RielaCLI/Ask -r` prints nothing; `git diff --stat Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` is empty (no new REST route).",
+        "Verification exits 0; progress log impl-plans/progress/ask-04-surfaces.md written."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-04-surfaces",
+        "scripts/surface-parity/generate-sdl.sh > tmp/ask-riela/ask-04-surfaces/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/ask-riela/ask-04-surfaces/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskGraphQLTests|AskCommandTests|AskRemoteTests|AskExampleWalkthroughTests|AskTurnEngineTests|AskActionTests|SurfaceCatalogTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityExecutorCoverageTests|SurfaceParityDTOSchemaTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityLibraryTests|SurfaceParitySkillTests|RielaExampleParityTests|SubcommandHelpTests|SubcommandHelpApplicationTests|CommandParsingTests|BotCommandTests|BotsGraphQLTests|RemoteForwardingTests|PairingScopeEnforcementTests|ServeWebHostTests|ServeHTTPCommandTests\"' > tmp/ask-riela/ask-04-surfaces/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "ask-05-mcp-transport",
+      "planPath": "impl-plans/active/ask-05-mcp-transport.md",
+      "dependsOn": [
+        "ask-04-surfaces"
+      ],
+      "wave": 4,
+      "writePaths": [
+        "Sources/RielaAdapters",
+        "Sources/RielaCLI/Ask",
+        "Sources/RielaCore/Ask",
+        "Sources/RielaCore/AdapterContracts.swift",
+        "Sources/RielaCore/AgentToolPolicyPresetArguments.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
+        "Sources/RielaCLI/BotRuntime/BotMemoryRuntime.swift",
+        "Sources/RielaCLI/CLISubcommandHelp.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ScopedParityCommands.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaApp/RielaAppWebGraphQL.swift",
+        "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
+        "Tests/RielaAdaptersTests",
+        "Tests/RielaCLITests/Ask",
+        "Tests/RielaCoreTests/Ask",
+        "Tests/RielaCoreTests/AgentToolPolicyPresetContractTests.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "Tests/RielaCLITests/SubcommandHelpTests.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "impl-plans/progress/ask-05-mcp-transport.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/BotRuntime/BotMemoryRuntime.swift",
+          "intendedEdit": "Only to expose the secret-name rule of `redactionRules(environment:)` as one reusable function (for example `static func isSecretName(_:) -> Bool`) that `redactionRules` itself calls; no behaviour change."
+        },
+        {
+          "path": "Sources/RielaCore/AdapterContracts.swift",
+          "intendedEdit": "Add `AdapterMCPServer` and `AdapterExecutionInput.mcpServers` (default empty, decoded with a default)."
+        },
+        {
+          "path": "Sources/RielaCore/AgentToolPolicyPresetArguments.swift",
+          "intendedEdit": "Add a `keepClientMCPServers: Bool = false` parameter to `cliArguments` and the codex and claude helpers."
+        },
+        {
+          "path": "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
+          "intendedEdit": "Add the `ask.tool-server` row."
+        },
+        {
+          "path": "Sources/RielaAppSupport/DaemonWorkflowEventServeProcess.swift",
+          "intendedEdit": "Only to make the existing bundled `riela` lookup (line 235) callable from the RielaApp host; no behaviour change."
+        },
+        {
+          "path": "Sources/RielaCLI/ServeWebHost.swift",
+          "intendedEdit": "Pass the running executable's absolute path into `AskHost`."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`mcpServers` on the adapter input reaches the gateway request on v1 and v2; `riela ask tool-server` speaks the three MCP methods against a real store with shared budgets, reads the host's registry root and redacts host-only secrets; no secret is in the server entry; the redaction values file is mode 0600, removed on every terminal path and by stale-turn recovery, and its absence fails closed with `redaction_values_unavailable`; the default policy argv is unchanged.",
+        "`git diff Package.swift Package.resolved` is empty.",
+        "`grep -rn \"mcpServers: \\[\\]\" Sources/RielaAdapters` prints nothing.",
+        "Progress log lists the vendor flags that were confirmed and those left for the operator's live check.",
+        "Verification exits 0; progress log impl-plans/progress/ask-05-mcp-transport.md written."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-05-mcp-transport",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskToolServerTests|AskTransportTests|AskAgentPolicyTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskExampleWalkthroughTests|AgentToolPolicyPresetContractTests|AgentToolPolicyResolutionTests|AgentGatewayNodeAdapterTests|AgentGatewayACPV2Tests|GatewayScriptedAgentTests|SurfaceCatalogTests|SurfaceParityCLITests|SubcommandHelpTests|CommandParsingTests\"' > tmp/ask-riela/ask-05-mcp-transport/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "ask-06-workflow-authoring",
+      "planPath": "impl-plans/active/ask-06-workflow-authoring.md",
+      "dependsOn": [
+        "ask-05-mcp-transport"
+      ],
+      "wave": 5,
+      "writePaths": [
+        "Sources/RielaCLI/Ask",
+        "Sources/RielaCore/Ask",
+        "Sources/RielaAppSupport",
+        "Sources/RielaApp",
+        "Sources/RielaGraphQL/Ask",
+        "Sources/RielaCLI/RielaWebWorkflowRuntime.swift",
+        "Sources/RielaCLI/WebWorkflowLaunch.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+ConfiguredLaunch.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+Definition.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+Generation.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+Launch.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+NodeSettings.swift",
+        "Sources/RielaCLI/WebWorkflowRequestHandler+RunEvidence.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
+        "Sources/RielaCLI/RielaLibrary.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsAsk.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "scripts/surface-parity",
+        "Tests/RielaCLITests/Ask",
+        "Tests/RielaCoreTests/Ask",
+        "Tests/RielaGraphQLTests/Ask",
+        "Tests/RielaAppSupportTests/WorkflowEditorGenerationTests.swift",
+        "Tests/RielaAppSupportTests/WorkflowEditorLiveAgentTests.swift",
+        "Tests/RielaAppSupportTests/WorkflowEditorDefinitionTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppWebAPIRouteTests.swift",
+        "Tests/RielaCLITests/ServeWebEditorTests.swift",
+        "Tests/RielaCLITests/ServeWebHostTests.swift",
+        "Tests/RielaCLITests/SurfaceParityWebAPITests.swift",
+        "Tests/RielaCLITests/SurfaceParityConsoleReadTests.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityGraphQLTests.swift",
+        "impl-plans/progress/ask-06-workflow-authoring.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaAppSupport",
+          "intendedEdit": "Delete WorkflowEditorGeneration.swift and WorkflowEditorAuthoringRounds.swift; remove the three generation entries and the generation prefix from RielaWebAPIRouteTable.swift (lines 126-128, 179). Keep every other workflow-editor file."
+        },
+        {
+          "path": "Sources/RielaApp",
+          "intendedEdit": "Remove the `workflowEditorGenerations` accessor (EntryPoint.swift:76) and any code that only served the generation routes (check RielaAppWebWorkflowChat.swift). The native mini chat (EntryPoint+Assistant.swift) is not changed."
+        },
+        {
+          "path": "Sources/RielaCLI/WebWorkflowRequestHandler+Generation.swift",
+          "intendedEdit": "Delete the file after moving the authoring guidance text into the ask prompt."
+        },
+        {
+          "path": "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+          "intendedEdit": "Remove the rows generation-start, generation-status, generation-cancel (lines 315-317)."
+        },
+        {
+          "path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+          "intendedEdit": "Generated: regenerate only if a descriptor changed."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "`propose_workflow` proposals are validated and applied only on confirm (`applyWorkflow`, draft or store mode); the draft path saves nothing; the old generation endpoints are gone from code, route table and catalog.",
+        "`grep -rn \"workflow-editor/generations\\|WorkflowEditorGenerationStore\\|WorkflowEditorAuthoringRounds\\|workflowEditorGenerations\\|workflowEditorSystemPrompt\\|generation-start\" Sources Tests` prints nothing.",
+        "`grep -rn \"overwrite: true\" Sources/RielaCLI/Ask` prints nothing.",
+        "Verification exits 0; progress log impl-plans/progress/ask-06-workflow-authoring.md written with the design section 7.3 deviation."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-06-workflow-authoring",
+        "scripts/surface-parity/generate-sdl.sh > tmp/ask-riela/ask-06-workflow-authoring/sdl.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift build' > tmp/ask-riela/ask-06-workflow-authoring/build.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskWorkflowAuthoringTests|AskToolSetTests|AskToolServerTests|AskReadOnlyTests|AskActionTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskGraphQLTests|AskExampleWalkthroughTests|WorkflowEditorDefinitionTests|WorkflowEditorLaunchTests|WorkflowEditorRunEvidenceTests|ServeWebEditorTests|ServeWebHostTests|RielaAppWebAPIRouteTests|SurfaceCatalogTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParityExecutorCoverageTests\"' > tmp/ask-riela/ask-06-workflow-authoring/test.log 2>&1"
+      ]
+    },
+    {
+      "planId": "ask-07-web",
+      "planPath": "impl-plans/active/ask-07-web.md",
+      "dependsOn": [
+        "ask-04-surfaces"
+      ],
+      "wave": 4,
+      "writePaths": [
+        "web/src",
+        "impl-plans/progress/ask-07-web.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathNotes": [
+        {
+          "path": "web/src",
+          "intendedEdit": "New directory web/src/ask. Edits in App.tsx (mount), routes.ts only if a helper is needed, profileViewState.ts (panel state), bots/activityStream.ts (reader parameter), bots/BotDetailView.tsx and views/RunDetailView.tsx (Ask button), workflows/WorkflowGraphEditor.tsx (editor switch), views/SettingsView.tsx (assistant section), stylesheets. Delete workflows/WorkflowAgentChat.tsx."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Ask panel available from every view with context chip, vendor/model picker, streamed answer, record links, proposed-action cards with Confirm/Dismiss, origin display, Bots and run view wiring, the editor switch and the settings assistant section; English only, low text; the app builds without the old editor chat.",
+        "`grep -rn \"WorkflowAgentChat\\|workflow-editor/generations\" web/src` prints nothing.",
+        "`git status --porcelain web/package.json web/bun.lock` prints nothing.",
+        "Verification exits 0; progress log impl-plans/progress/ask-07-web.md written."
+      ],
+      "verification": [
+        "mkdir -p tmp/ask-riela/ask-07-web",
+        "cd web && bun install --frozen-lockfile > ../tmp/ask-riela/ask-07-web/install.log 2>&1",
+        "cd web && bun run typecheck > ../tmp/ask-riela/ask-07-web/typecheck.log 2>&1",
+        "cd web && bun test src > ../tmp/ask-riela/ask-07-web/test.log 2>&1",
+        "cd web && bun run lint > ../tmp/ask-riela/ask-07-web/lint.log 2>&1",
+        "cd web && bun run build > ../tmp/ask-riela/ask-07-web/build.log 2>&1"
+      ]
+    }
+  ],
+  "pathContract": "Each plan file's leading JSON block is the source of truth for writePaths, sharedPaths and sharedPathNotes; this manifest copies writePaths and sharedPaths unchanged. Plans of one wave have disjoint write paths (W1: 01 and 02; W4: 05 writes Swift only, 07 writes web/src only). Plans in different waves that share a path are ordered by dependsOn. No plan installs tools into a tracked path, so no artifactRoots are declared; build outputs (.build, web/node_modules, web/dist) are gitignored and are not write paths. Largest source snapshots: ask-06 about 230 entries, ask-04 about 240, ask-07 about 140 (limit 512)."
+}

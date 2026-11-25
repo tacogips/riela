@@ -48,6 +48,14 @@ enum ACPTranscriptFixtures {
     .init(#"{"sessionUpdate":"current_mode_update","currentModeId":"plan"}"#, .mode(modeId: "plan")),
     .init(#"{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"status","description":"See status"}]}"#,
       .commands(names: ["status"])),
+    .init(
+      #"{"sessionUpdate":"usage_update","used":1200,"size":200000,"cost":{"amount":0.25,"currency":"USD"},"_meta":{"agentGateway":{"inputTokens":900,"outputTokens":300}}}"#,
+      .usage([
+        "contextUsed": .integer(1200), "contextSize": .integer(200_000), "inputTokens": .integer(900),
+        "outputTokens": .integer(300), "cost": .object(["amount": .number(0.25), "currency": .string("USD")])
+      ])
+    ),
+    .init(#"{"sessionUpdate":"usage_update","used":1200}"#, .other(updateKind: "usage_update")),
     .init(#"{"sessionUpdate":"foo_update","raw":"ignored"}"#, .other(updateKind: "foo_update"))
   ]
 

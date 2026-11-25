@@ -503,7 +503,12 @@ final class GatewayDeadlineWatchdog: @unchecked Sendable {
       try? await wallClockSleep(until: deadline)
       guard !Task.isCancelled, let self else { return }
       self.lock.withLock { self.expired = true }
-      self.cancelTurn()
+      // A cancel that reaches the agent before the prompt is in flight is
+      // ignored, so repeat it until the turn settles and `cancel()` stops us.
+      while !Task.isCancelled {
+        self.cancelTurn()
+        try? await Task.sleep(for: .milliseconds(200))
+      }
     }
   }
 
@@ -630,6 +635,7 @@ final class GatewayACPUpdateCollector: @unchecked Sendable {
           activity: activity
         )
       case .userMessageChunk, .plan, .other:
+        if case .usage = activity { return activityEvent(discriminator, channel: .usage, activity: activity) }
         return activityEvent(discriminator, channel: activity.isGatewayToolCall ? .tool : .lifecycle, activity: activity)
       }
     }

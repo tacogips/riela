@@ -46,6 +46,24 @@ enum GatewayActivityMapping {
       if case .array(let commands)? = raw["availableCommands"] {
         return .commands(names: commands.compactMap { $0["name"]?.stringValue })
       }
+    case "usage_update":
+      // The v1 library does not model this update; the gateway sends it as raw JSON.
+      if let used = raw["used"]?.integerValue, let size = raw["size"]?.integerValue {
+        var payload: JSONObject = ["contextUsed": .integer(Int64(used)), "contextSize": .integer(Int64(size))]
+        if let tokens = gatewayACPMeta(raw["_meta"]) {
+          for key in ["inputTokens", "outputTokens", "totalTokens"] {
+            payload[key] = tokens[key]?.integerValue.map { .integer(Int64($0)) }
+          }
+        }
+        if let currency = raw["cost"]?["currency"]?.stringValue {
+          switch raw["cost"]?["amount"] {
+          case .number(let value)?: payload["cost"] = cost(value, currency: currency)
+          case .integer(let value)?: payload["cost"] = cost(Double(value), currency: currency)
+          default: break
+          }
+        }
+        return .usage(payload)
+      }
     case "plan":
       // The pinned v1 decoder closes priority and status over their initial values.
       if case .array(let entries)? = raw["entries"] {

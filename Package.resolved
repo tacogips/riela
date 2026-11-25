@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/agent-gateway.git",
       "state" : {
-        "revision" : "39796860607f303da4155d4938ff032473587577"
+        "revision" : "3f70f6f818d16af6509c6d1ac1d13b2ce43e15a3"
       }
     },
     {

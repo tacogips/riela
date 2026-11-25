@@ -312,9 +312,6 @@ extension SurfaceCatalog {
       ("definition", .query, "POST", "/api/v1/workflow-editor/definition"),
       ("launch-start", .mutation, "POST", "/api/v1/workflow-editor/launches"),
       ("launch-status", .query, "GET", "/api/v1/workflow-editor/launches/{launchId}"),
-      ("generation-start", .mutation, "POST", "/api/v1/workflow-editor/generations"),
-      ("generation-status", .query, "GET", "/api/v1/workflow-editor/generations/{generationId}"),
-      ("generation-cancel", .mutation, "DELETE", "/api/v1/workflow-editor/generations/{generationId}"),
       ("run-evidence", .query, "GET", "/api/v1/workflow-editor/runs/{sessionId}"),
       ("run-step-evidence", .query, "GET", "/api/v1/workflow-editor/runs/{sessionId}/steps/{executionId}"),
       ("editable-copy", .mutation, "POST", "/api/v1/workflows/sources/{sourceId}/editable-copy")

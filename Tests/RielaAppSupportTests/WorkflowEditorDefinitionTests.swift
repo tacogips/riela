@@ -69,7 +69,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       let beforeManifest = try history.loadSnapshot(before.snapshotId, expectedIdentity: historyIdentity)
       let beforeFile = try XCTUnwrap(beforeManifest.files.first { $0.relativePath == "workflow.json" })
       let beforeBytes = try history.objectBytes(digest: beforeFile.contentDigest, snapshotId: before.snapshotId)
-      XCTAssertTrue(String(decoding: beforeBytes, as: UTF8.self).contains("build"))
+      XCTAssertTrue(try XCTUnwrap(String(bytes: beforeBytes, encoding: .utf8)).contains("build"))
     }
   }
 
@@ -174,7 +174,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       let registered = try await FileWorkflowRegistryGraphQLProvider(workingDirectory: root.path).registerMutableWorkflow(
         input: GraphQLRegisterMutableWorkflowInput(definition: [:]), resolvedBundleURL: source)
       let identity = try XCTUnwrap(registered.workflow)
-      XCTAssertNil(identity.definitionRevision, "Mutation results are metadata-only")
+      XCTAssertEqual(identity.definitionRevision?.count, 64)
       let target = GraphQLWorkflowTargetInput(workflowId: identity.workflowId, scope: .user, originId: identity.originId)
       let app = RielaApp()
       app.appHomeDirectory = root

@@ -103,7 +103,8 @@ struct AskTurnExecution: Sendable {
       host: host, conversationId: conversationId, turnId: turn.turnId, valuesFile: file
     )
     let prompt = try AskPrompt.user(
-      context: context, history: history, toolResults: [], message: userMessage, limits: host.limits, environment: host.environment
+      context: context, draft: turn.draftDefinition, history: history, toolResults: [], message: userMessage,
+      limits: host.limits, environment: host.environment
     )
     let output = try await adapter.execute(
       AdapterExecutionInput(node: node, promptText: prompt, systemPromptText: AskPrompt.mcpSystem, mcpServers: [server]),
@@ -122,7 +123,7 @@ struct AskTurnExecution: Sendable {
     for roundIndex in 0..<max(0, host.limits.roundsPerTurn) {
       try checkDeadline()
       let prompt = try AskPrompt.user(
-        context: context, history: history, toolResults: toolResults, message: userMessage,
+        context: context, draft: turn.draftDefinition, history: history, toolResults: toolResults, message: userMessage,
         limits: host.limits, environment: host.environment
       )
       let output = try await adapter.execute(

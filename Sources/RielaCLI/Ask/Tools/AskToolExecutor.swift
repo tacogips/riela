@@ -31,7 +31,7 @@ struct AskToolExecutor: Sendable {
     let sessionId = AskActivityKey.sessionId(conversationId)
     var call = AdapterActivityToolCall(
       toolCallId: AskRedaction.text(toolCallId, environment: environment, additionalValues: additionalRedactionValues), title: name,
-      toolKind: name == "propose_action" ? AskToolKind.propose.rawValue : AskToolKind.read.rawValue, status: "inProgress"
+      toolKind: AskToolSet.all.first { $0.name == name }?.kind.rawValue, status: "inProgress"
     )
     await recorder.record(sessionId: sessionId, executionId: turnId, update: .toolCall(call), at: now())
 
@@ -132,6 +132,16 @@ struct AskToolExecutor: Sendable {
         conversationId: conversationId, turnId: turnId, kind: kind, target: target, reason: reason
       )
       return (.object(["actionId": .string(action.actionId)]), [])
+    case "propose_workflow":
+      guard case let .object(definition)? = arguments["definition"] else {
+        throw AskError(code: "tool_arguments_invalid", message: "A complete workflow definition is required")
+      }
+      let draft = try store.askConversation(id: conversationId)?.turn?.draftDefinition
+      let action = try await proposals.proposeWorkflow(
+        conversationId: conversationId, turnId: turnId, definition: definition,
+        baseWorkflowId: arguments.askString("baseWorkflowId"), draft: draft
+      )
+      return (.object(["actionId": .string(action.actionId)]), [])
     default:
       throw AskError(code: "tool_unknown", message: "Unknown Ask tool")
     }
@@ -182,12 +192,22 @@ struct AskToolExecutor: Sendable {
   }
 
   private func failure(for error: Error) -> AskToolResult {
+    if let error = error as? AskWorkflowValidationError {
+      let issues = error.issues.map { issue in
+        JSONValue.object(["path": .string(issue.path), "message": .string(issue.message)])
+      }
+      let redacted = AskRedaction.apply(.array(issues), environment: environment, additionalValues: additionalRedactionValues)
+      let details = try? cap(redacted, refs: [AskRef]())
+      return .init(ok: false, data: details?.data, error: .init(code: "workflow_invalid", message: "Workflow definition is invalid"),
+        truncated: details?.truncated ?? true)
+    }
     if let error = error as? AskError {
       switch error.code {
       case "ask_conversation_not_found":
         return failure("turn_not_running", "Ask turn is no longer running")
       case "not_found", "turn_not_running", "tool_unknown", "tool_arguments_invalid", "budget_exceeded",
-        "action_kind_unknown", "action_target_invalid", "action_limit":
+        "action_kind_unknown", "action_target_invalid", "action_limit", "workflow_too_large", "workflow_not_mutable", "workflow_invalid",
+        "retain_key_invalid":
         return failure(error.code, error.message)
       default:
         break

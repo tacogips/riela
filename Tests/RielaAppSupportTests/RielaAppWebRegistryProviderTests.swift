@@ -46,7 +46,7 @@ final class RielaAppWebRegistryProviderTests: XCTestCase {
       XCTAssertEqual(entry.activationState, "ACTIVE")
       XCTAssertEqual(entry.definitionRevision?.count, 64)
       XCTAssertNil(registered.workflow?.definition)
-      XCTAssertNil(registered.workflow?.definitionRevision)
+      XCTAssertEqual(registered.workflow?.definitionRevision, entry.definitionRevision)
 
       let replacement = try makeBundle(description: "Updated", includeNode: false)
       defer { try? FileManager.default.removeItem(at: replacement) }

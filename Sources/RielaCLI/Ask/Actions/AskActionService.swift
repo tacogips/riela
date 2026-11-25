@@ -18,7 +18,8 @@ struct AskActionService: Sendable {
     do {
       target = try await proposals.revalidate(action, at: now())
     } catch {
-      return try store.completeAskAction(actionId: actionId, result: failure(AskActionProposer.invalidTarget), now: now())
+      let error = action.kind == .applyWorkflow ? error : AskActionProposer.invalidTarget
+      return try store.completeAskAction(actionId: actionId, result: failure(error), now: now())
     }
 
     var result: AskActionResult
@@ -48,6 +49,11 @@ struct AskActionService: Sendable {
       return try await mutations.answerBotRequest(requestId: requestId, optionId: optionId, decline: optionId == nil)
     case let .botPause(botId, paused):
       return try await mutations.setBotPaused(botId: botId, paused: paused)
+    case let .workflow(workflow):
+      if workflow.mode == .draft {
+        return .init(ok: true, summary: "draft", ids: [workflow.workflowId])
+      }
+      return try await mutations.applyWorkflow(workflow)
     }
   }
 

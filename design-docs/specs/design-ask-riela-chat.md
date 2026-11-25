@@ -7,6 +7,21 @@ derived from the `fable-sol-design-and-implement-review-loop` workflow input
 Open defaults that the user may revisit are in
 `design-docs/user-qa/qa-ask-riela-chat.md`; none blocks implementation.
 
+Implemented and accepted on 2026-11-26. Plans:
+`impl-plans/completed/ask-riela.md` and `impl-plans/completed/ask-0*.md`; user
+guide: `docs/ask.md`. Shipped deviations, accepted in plan review and recorded
+in the parent plan section 3.4 (the sections below still carry the original
+wording):
+
+- §5.3, §9, §10.1: Ask does not run on `official/cursor-sdk`; such a turn is
+  refused with `ask_provider_unsupported` before anything is written.
+- §13: `riela ask --no-follow` is accepted only for a paired remote; for a
+  local turn it is a usage error.
+- §7.3: the definition audit reason `ask:<conversationId>/<actionId>` is not
+  written; the link is kept on the confirmed action row.
+- §9: assistant settings list models from `ModelManifest` only; live vendor
+  listing is dropped.
+
 Baselines that this design reuses and does not restate:
 
 - `design-docs/specs/design-bots-overview.md` (activity event model §6,

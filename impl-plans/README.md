@@ -156,6 +156,35 @@ a clean build, a union filter of 222 tests with 0 failures including
 The dispatch manifest `active/issue-188-dispatch.json` stays active until the
 dispatch run closes. The final commit and push remain workflow steps.
 
+Ask Riela (2026-11-26, branch `feat/bots-overview`; no GitHub issue) is
+implemented and accepted. The parent plan is archived at
+[`completed/ask-riela.md`](completed/ask-riela.md), and its child plans
+`ask-01-catalog-and-selection`, `ask-02-store-tools`, `ask-03-turn-engine`,
+`ask-04-surfaces`, `ask-05-mcp-transport`, `ask-06-workflow-authoring` and
+`ask-07-web` are archived under `completed/ask-0*.md`. They add one
+runtime-owned persisted chat on CLI (`riela ask`), GraphQL and the web Ask
+panel, a fixed read-only tool set offered through a stdio MCP server or a
+host-run tool loop, typed proposed actions confirmed by the user, vendor and
+model selection from the assistant settings and the model catalog, workflow
+authoring as `propose_workflow` / `applyWorkflow`, and the same chat against a
+paired remote. The workflow-editor generation routes are removed. The design
+is [`design-ask-riela-chat`](../design-docs/specs/design-ask-riela-chat.md);
+user docs are in [`docs/ask.md`](../docs/ask.md). Plans 01-05 and 07 are
+committed in `7855cf90`; plan 06 was accepted on the combined tree at
+checkpoint `6d981f1e`. Plan 06 evidence
+(`tmp/ask-riela/ask-06-workflow-authoring/repair-*.log`): build complete, the
+amended focused filter with 204 of 205 tests passed (1 skipped, 0 failures),
+SDL byte-identical, swiftlint clean. Shipped deviations from the design:
+`official/cursor-sdk` is excluded (`ask_provider_unsupported`),
+`riela ask --no-follow` is remote-only, and the definition audit reason
+`ask:<conversationId>/<actionId>` is not written (the link is on the confirmed
+action row). Not run: the Playwright suite (`cd web && bun run test:e2e`,
+including the edited `e2e/workflow-studio.spec.ts`) and live `mcp` turns on
+codex and claude (operator manual check). The [progress logs](progress/)
+`ask-01` … `ask-07` record focused verification and review. The dispatch
+manifest `active/ask-riela-dispatch.json` stays active until the dispatch run
+closes. The final commit and push remain workflow steps.
+
 Bots overview (2026-11-25, branch `feat/bots-overview`; no GitHub issue) is
 implemented and accepted. The parent plan is archived at
 [`completed/bots-overview.md`](completed/bots-overview.md), and its child

@@ -283,7 +283,7 @@ does not change the executable workflow or its saved revision.
 Existing inline agent nodes expose prompt/model settings in the inspector.
 Other protected configuration stays opaque, and hidden prompt/model values
 are retained unless explicitly replaced. Save refreshes the canonical revision
-and protected-value handles, preserving the canvas and chat while resetting
+and protected-value handles, preserving the canvas while resetting
 Undo/Redo history. If that refresh fails, use **Reload saved workflow** before
 another save or execution. A save conflict keeps the draft until you explicitly
 confirm reloading.
@@ -312,10 +312,13 @@ workflow data, although process environment credentials are not copied into
 input snapshots. Logs from another workflow remain readable without applying
 their statuses to the current graph.
 
-Agent chat applies generated edits to the canvas as drafts. It uses bounded
-incremental provider rounds so intermediate graphs appear even when a vendor
-buffers its replies, and includes recent chat context for follow-up requests.
-Stop generation and Undo remain available; publishing still requires Save.
+**Ask** opens the [Ask Riela](docs/ask.md) panel with the workflow as context
+and sends the current draft with each message. The assistant proposes a
+complete, validated definition; **Confirm** on the proposal loads it into the
+draft and saves nothing. The graph changes on confirm, not while the model
+works. Undo remains available; publishing still requires Save. The former
+generation chat and its `/api/v1/workflow-editor/generations` routes are
+removed.
 
 See
 [the design](design-docs/specs/design-workflow-graph-studio.md) and
@@ -352,12 +355,10 @@ namespaced key `io.github.tacogips/agentGateway`; a vendor failure arrives
 there as the `error` stop reason. Step results, backend events, session
 reuse, deadlines, and cancellation behave the same over either version.
 
-RielaApp also uses agent-gateway's model catalog when the Assistant settings
-select OpenAI API, Claude API, or Cursor API. The live vendor response replaces
-the bundled suggestions for that settings session. Missing credentials,
-listing failures, empty responses, and CLI-backed vendors fall back to the
-bundled catalog, and an already selected live model remains usable after it is
-saved.
+The Assistant settings list models from the bundled model manifest, the same
+list `riela model list` shows; there is no live vendor listing. A stored model
+choice is never changed, and an unlisted model stays usable and is reported as
+`model_unknown`.
 
 RielaApp is a resident workflow process; its HTTP listener is optional and is
 disabled by default. **Open Console...** opens the Tauri dashboard through native
@@ -1174,6 +1175,19 @@ local ones. The web console has matching **Bots** and **Models** views. See
 the [Bots guide](docs/bots.md) and the
 [mock walkthrough](examples/bot-routine-memory-upkeep/EXPECTED_RESULTS.md).
 
+## Ask Riela
+
+`riela ask "which runs failed today?"` answers questions about this riela
+server from its runtime records and cites the runs, bots and workflows it
+used. `--session`, `--bot` or `--workflow` sets the context, and `--provider`,
+`--model` and `--effort` override the assistant settings for a conversation.
+The chat is read-only: operations (stop or rerun a run, answer or pause a bot,
+apply a workflow) come back as proposed actions that you run with
+`riela ask confirm` or drop with `riela ask dismiss`. The same chat creates
+and edits workflows, works against a paired remote with `--remote`, and is the
+**Ask** panel in the web console. See the [Ask Riela guide](docs/ask.md) and
+the [mock walkthrough](examples/ask-run-status/EXPECTED_RESULTS.md).
+
 ## Routines (first-class recurring jobs)
 
 A routine is a managed "do NN every YY" job: a task prompt, a six-field cron
@@ -1803,8 +1817,8 @@ stale updates. The server port is saved separately in `~/.riela/serve-web.json`;
 restart `riela serve` to apply it. An explicit `--port` overrides the saved value.
 
 Workflow studio uses the same editor runtime in the desktop and browser: copy a
-source bundle, edit definitions and file-backed node settings, generate graph
-changes with the configured assistant, save a revision, activate and run it, and
+source bundle, edit definitions and file-backed node settings, confirm graph
+changes proposed in the Ask Riela panel, save a revision, activate and run it, and
 inspect recorded inputs and outputs. Runs use `--session-store` when supplied,
 otherwise the active profile's session directory. Browser-hosted editor jobs are
 cancelled when the serve process shuts down.

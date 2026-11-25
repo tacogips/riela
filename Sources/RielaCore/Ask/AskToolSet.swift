@@ -75,7 +75,8 @@ public enum AskToolSet {
     .init("definition_history", [.text("workflowName", required: true), .integer("limit", maximum: 50, required: true)]),
     .init("model_catalog", [.text("providerInstanceId")]),
     .init("remote_list"),
-    .init("propose_action", [.text("kind", required: true), .object("target"), .text("reason")], kind: .propose)
+    .init("propose_action", [.text("kind", required: true), .object("target"), .text("reason")], kind: .propose),
+    .init("propose_workflow", [.object("definition"), .text("baseWorkflowId")], kind: .propose)
   ]
 
   public static func validate(name: String, arguments: JSONObject) throws -> JSONObject {

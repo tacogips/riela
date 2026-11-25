@@ -8,6 +8,7 @@ struct AskReadProviders: Sendable {
   let sessions: GraphQLRuntimeSnapshotQueryService
   let console: any GraphQLConsoleProviding
   let registry: any WorkflowRegistryGraphQLProviding
+  let authoringRegistry: Result<FileWorkflowRegistryGraphQLProvider, AskError>
   let definitions: any WorkflowDefinitionGraphQLProviding
   let routines: any RoutineGraphQLProviding
   let bots: any BotsGraphQLProviding
@@ -21,7 +22,7 @@ struct AskReadProviders: Sendable {
 
   static func local(
     workingDirectory: String, sessionStore: String?, scope: WorkflowScope, environment: [String: String],
-    console: (any GraphQLConsoleProviding)? = nil, authoringPrincipalId: String = "ask"
+    console: (any GraphQLConsoleProviding)? = nil
   ) -> AskReadProviders {
     let local = AskLocalReadContext(
       workingDirectory: workingDirectory, sessionStore: sessionStore, scope: scope, environment: environment
@@ -34,12 +35,15 @@ struct AskReadProviders: Sendable {
       observabilityService: SessionObservabilityComposition.makeService(store: runtime)
     )
     let registry = FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
-    let authoring = FileWorkflowRegistryGraphQLProvider(
-      workingDirectory: workingDirectory, webPrincipalId: authoringPrincipalId, authoringProjection: true
-    )
+    let authoring = Result { () throws(AskError) -> FileWorkflowRegistryGraphQLProvider in
+      try FileWorkflowRegistryGraphQLProvider(
+        workingDirectory: workingDirectory, webPrincipalId: "ask",
+        retainKey: AskRetainKey.load(storeRoot: root), authoringProjection: true
+      )
+    }
     let botStore = BotStore(sessionStoreRoot: runtime.rootDirectory)
     return AskReadProviders(
-      sessions: sessions, console: console ?? local.console(), registry: registry,
+      sessions: sessions, console: console ?? local.console(), registry: registry, authoringRegistry: authoring,
       definitions: WorkflowDefinitionGraphQLProvider(
         workingDirectory: workingDirectory, sessionStoreRoot: root, environment: environment
       ),
@@ -52,7 +56,7 @@ struct AskReadProviders: Sendable {
       workflowInspect: { id in
         let entry = try await registry.workflow(target: .init(workflowId: id, scope: local.registryScope))
         if entry.mutable {
-          let projected = try await authoring.workflow(
+          let projected = try await authoring.get().workflow(
             target: .init(workflowId: entry.workflowId, scope: .user, originId: entry.originId)
           )
           return (projected, nil)

@@ -7,19 +7,26 @@ public struct WorkflowRegistryMutationResult: Codable, Equatable, Sendable {
   public var workflow: WorkflowCatalogEntry?
   public var retiredWorkflows: [WorkflowCatalogEntry]
   public var errors: [WorkflowRegistryError]
+  public var definitionRevision: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case accepted, overwritten, workflow, retiredWorkflows, errors
+  }
 
   public init(
     accepted: Bool,
     overwritten: Bool = false,
     workflow: WorkflowCatalogEntry? = nil,
     retiredWorkflows: [WorkflowCatalogEntry] = [],
-    errors: [WorkflowRegistryError] = []
+    errors: [WorkflowRegistryError] = [],
+    definitionRevision: String? = nil
   ) {
     self.accepted = accepted
     self.overwritten = overwritten
     self.workflow = workflow
     self.retiredWorkflows = retiredWorkflows
     self.errors = errors
+    self.definitionRevision = definitionRevision
   }
 }
 
@@ -127,7 +134,8 @@ public struct WorkflowRegistryService: Sendable {
       return WorkflowRegistryMutationResult(
         accepted: true,
         overwritten: registered.overwritten,
-        workflow: entry
+        workflow: entry,
+        definitionRevision: try WorkflowHistoryCanonicalCoding.sha256(definitionData(for: entry))
       )
     }
   }
@@ -135,6 +143,7 @@ public struct WorkflowRegistryService: Sendable {
   public func update(
     target: WorkflowRegistryTarget,
     input: URL,
+    expectedDefinitionRevision: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath
   ) throws -> WorkflowRegistryMutationResult {
     try coordinated(workingDirectory: workingDirectory) {
@@ -144,10 +153,13 @@ public struct WorkflowRegistryService: Sendable {
         workflowIds: [entry.workflowId],
         originIds: [entry.originId]
       ) {
+        try requireDefinitionRevision(expectedDefinitionRevision, entry: entry)
         _ = try registry.update(workflowId: entry.workflowId, input: input)
+        let updated = try mutableEntry(workflowId: entry.workflowId, workingDirectory: workingDirectory)
         return WorkflowRegistryMutationResult(
           accepted: true,
-          workflow: try mutableEntry(workflowId: entry.workflowId, workingDirectory: workingDirectory)
+          workflow: updated,
+          definitionRevision: try WorkflowHistoryCanonicalCoding.sha256(definitionData(for: updated))
         )
       }
     }
@@ -286,7 +298,7 @@ public struct WorkflowRegistryService: Sendable {
             pinned: pinned
           )
         }
-        try registry.withWorkflowMutationAccess(
+        let revision = try registry.withWorkflowMutationAccess(
           workflowId: entry.workflowId,
           expectedDigest: expectedBundleDigest
         ) { workspace, publish in
@@ -304,10 +316,12 @@ public struct WorkflowRegistryService: Sendable {
           }
           try replacement.write(to: workspaceDefinition, options: .atomic)
           try publish(workspace)
+          return WorkflowHistoryCanonicalCoding.sha256(replacement)
         }
         return WorkflowRegistryMutationResult(
           accepted: true,
-          workflow: try mutableEntry(workflowId: entry.workflowId, workingDirectory: workingDirectory)
+          workflow: try mutableEntry(workflowId: entry.workflowId, workingDirectory: workingDirectory),
+          definitionRevision: revision
         )
       }
     }

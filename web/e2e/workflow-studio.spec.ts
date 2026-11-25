@@ -3,9 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 async function installStudio(page: Page, existing?: Record<string, unknown>) {
   let definition: Record<string, unknown> | undefined = existing
   let revision = 0
-  let generationPolls = 0
   const savedDefinitions: unknown[] = []
-  const generationRequests: Array<{ history?: Array<{ role: string; text: string }> }> = []
   const workflow = () => ({ originId: 'user:studio', workflowId: 'studio', name: 'Studio workflow',
     scope: 'USER', provenance: 'MUTABLE', mutable: true, activationState: 'ACTIVE', valid: true,
     definitionRevision: `rev-${revision}`, definition, diagnostics: [] })
@@ -41,25 +39,13 @@ async function installStudio(page: Page, existing?: Record<string, unknown>) {
       capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, state: 'running' } } })
     if (path === '/api/v1/workflow-editor/definition') return route.fulfill({ json: workflow() })
     if (path === '/api/v1/workflows/sources') return route.fulfill({ json: { profile: 'studio', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [] } })
-    if (path === '/api/v1/workflow-editor/generations') {
-      generationRequests.push(route.request().postDataJSON())
-      expect(route.request().headers()['x-riela-profile']).toBe('studio')
-      definition = route.request().postDataJSON().definition
-      return route.fulfill({ json: { id: 'generation-1', profile: 'studio', revision: 0, status: 'running', definition, messages: [] } })
-    }
-    if (path.endsWith('/generations/generation-1')) {
-      generationPolls++
-      const generated = { ...definition, entryStepId: 'research', nodes: [{ id: 'research', addon: { name: 'riela/codex-sdk-worker', version: '1', config: { promptTemplate: 'Research' } } }], steps: [{ id: 'research', nodeId: 'research', role: 'worker', transitions: [] }] }
-      return route.fulfill({ json: { id: 'generation-1', profile: 'studio', revision: 1,
-        status: route.request().method() === 'DELETE' ? 'cancelled' : 'running', definition: generated, messages: ['Added research.'] } })
-    }
     return route.fulfill({ status: 404, json: { error: { message: path } } })
   })
   await page.goto('/')
   // Editing happens directly on the graph: the Workflows list opens the editor.
   if (existing) await page.getByRole('button', { name: 'Edit graph Studio workflow', exact: true }).click()
   else await page.getByRole('button', { name: 'New workflow', exact: true }).click()
-  return { savedDefinitions, generationPolls: () => generationPolls, generationRequests, workflow }
+  return { savedDefinitions, workflow }
 }
 
 test('selects a remote worker, preserves placement on save and can return to local execution', async ({ page }) => {
@@ -116,27 +102,6 @@ test('creates and connects steps, saves, and reopens separate layout', async ({ 
   await page.getByRole('button', { name: 'Close editor', exact: true }).click()
   await page.getByRole('button', { name: 'Edit graph Studio workflow', exact: true }).click()
   await expect(page.locator('[data-canvas-interactive]').first()).toHaveAttribute('transform', transform!)
-})
-
-test('shows agent changes while still running and restores draft with undo after stop', async ({ page }) => {
-  const state = await installStudio(page)
-  await page.getByLabel('Ask the agent', { exact: true }).fill('Add a research step')
-  await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Edit research', exact: true })).toBeVisible()
-  await expect(page.getByText('Agent working · live preview', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Save workflow', exact: true })).toBeDisabled()
-  expect(state.generationPolls()).toBeGreaterThan(0)
-  expect(state.savedDefinitions).toHaveLength(0)
-  await page.getByRole('button', { name: 'Stop generation', exact: true }).click()
-  await page.getByRole('button', { name: 'Undo', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Edit research', exact: true })).toHaveCount(0)
-  await page.getByLabel('Ask the agent', { exact: true }).fill('Use the same research instructions again')
-  await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
-  await expect.poll(() => state.generationRequests.length).toBe(2)
-  expect(state.generationRequests[1]?.history).toEqual([
-    { role: 'user', text: 'Add a research step' }, { role: 'assistant', text: 'Added research.' },
-  ])
-  await page.getByRole('button', { name: 'Stop generation', exact: true }).click()
 })
 
 test('inspects actual input and output per run attempt without leaving the graph', async ({ page }) => {

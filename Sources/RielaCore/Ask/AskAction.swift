@@ -1,5 +1,5 @@
 public enum AskActionKind: String, Codable, Equatable, Sendable {
-  case stopSession, rerunSession, answerBotRequest, setBotPaused
+  case stopSession, rerunSession, answerBotRequest, setBotPaused, applyWorkflow
 }
 
 public enum AskActionStatus: String, Codable, Equatable, Sendable {
@@ -7,7 +7,7 @@ public enum AskActionStatus: String, Codable, Equatable, Sendable {
 }
 
 public enum AskActionDecision: String, Codable, Equatable, Sendable {
-  case confirm, dismiss
+  case confirm, dismiss, replaced
 }
 
 public struct AskAction: Codable, Equatable, Sendable {

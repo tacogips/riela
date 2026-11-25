@@ -211,7 +211,8 @@ extension BotStore {
     let running = AskTurn(
       turnId: "turn-\(record.usage.turns)", startedAt: at, backend: turn.backend,
       providerInstanceId: turn.providerInstanceId, model: turn.model, toolTransport: turn.toolTransport,
-      limitedPolicy: turn.limitedPolicy, runnerId: turn.runnerId, heartbeatAt: at
+      limitedPolicy: turn.limitedPolicy, runnerId: turn.runnerId, heartbeatAt: at,
+      draftDefinition: turn.draftDefinition
     )
     record.turn = running
     record.updatedAt = at
@@ -322,6 +323,7 @@ extension BotStore {
     record.turn?.status = status
     record.turn?.finishedAt = at
     record.turn?.error = error
+    record.turn?.draftDefinition = nil
     record.updatedAt = at
   }
 

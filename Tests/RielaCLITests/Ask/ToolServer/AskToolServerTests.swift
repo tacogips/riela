@@ -34,7 +34,7 @@ final class AskToolServerTests: XCTestCase {
 
     let listing = try object(replies[1]["result"])
     let tools = try array(listing["tools"]).map { try object($0) }
-    XCTAssertEqual(tools.count, 17)
+    XCTAssertEqual(tools.count, 18)
     XCTAssertEqual(tools.compactMap { $0["name"] }, AskToolSet.all.map { .string($0.name) })
     for tool in tools {
       let schema = try object(tool["inputSchema"])

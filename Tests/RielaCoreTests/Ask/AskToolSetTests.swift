@@ -6,7 +6,7 @@ final class AskToolSetTests: XCTestCase {
     let names = [
       "session_list", "session_status", "session_progress", "session_health", "session_logs", "ops_overview",
       "bot_list", "bot_board", "bot_activity", "routine_list", "workflow_list", "workflow_inspect", "workflow_validate",
-      "definition_history", "model_catalog", "remote_list", "propose_action"
+      "definition_history", "model_catalog", "remote_list", "propose_action", "propose_workflow"
     ]
     XCTAssertEqual(AskToolSet.all.map(\.name), names)
     XCTAssertEqual(try AskToolSet.validate(name: "session_list", arguments: [:]), ["limit": .integer(20)])

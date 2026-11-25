@@ -26,7 +26,9 @@ extension AskHost {
         sessions: sessions ?? RielaSessionControlProvider(
           workingDirectory: workingDirectory, sessionStore: root, scope: scope
         ),
-        bots: readers.bots
+        bots: readers.bots,
+        registry: readers.authoringRegistry.map { WorkflowRegistryGraphQLDocumentExecutor(localProvider: $0) },
+        workingDirectory: workingDirectory, environment: environment
       ),
       rielaExecutablePath: rielaExecutablePath, scope: scope
     )

@@ -29,6 +29,9 @@ extension BotStore {
       guard action.status == .proposed, action.decidedAt == nil, action.decision == nil, action.decidedBy == nil, action.result == nil else {
         throw AskError(code: "action_target_invalid", message: "Only an undecided action can be proposed")
       }
+      if action.kind == .applyWorkflow {
+        try Self.replaceAskWorkflowProposals(with: action, in: db)
+      }
       let count = try db.query(
         """
         SELECT COUNT(*) AS count FROM ask_actions
@@ -55,6 +58,9 @@ extension BotStore {
     conversationId: String, actionId: String, decision: AskActionDecision, decidedBy: String, now: Date = Date()
   ) throws -> AskAction {
     try write { db in
+      guard decision != .replaced else {
+        throw AskError(code: "action_target_invalid", message: "Only a new proposal can replace an action")
+      }
       guard var record = try Self.loadAskAction(actionId, in: db), record.conversationId == conversationId else {
         throw Self.askActionNotFound
       }
@@ -88,6 +94,25 @@ extension BotStore {
         try db.execute("DELETE FROM ask_actions WHERE action_id = ?", bindings: [.text(record.actionId)])
       }
       return record
+    }
+  }
+
+  private static func replaceAskWorkflowProposals(with action: AskAction, in db: SQLiteDatabase) throws {
+    let proposals: [AskAction] = try db.query(
+      """
+      SELECT json(record_json) AS record_json FROM ask_actions
+      WHERE conversation_id = ? AND status = ?
+        AND json_extract(record_json, '$.turnId') = ? AND json_extract(record_json, '$.kind') = ?
+      """, bindings: [.text(action.conversationId), .text(AskActionStatus.proposed.rawValue),
+        .text(action.turnId), .text(AskActionKind.applyWorkflow.rawValue)]
+    ).map(Self.decodeAskRecord)
+    for var proposal in proposals {
+      proposal.status = .dismissed
+      proposal.decidedAt = action.createdAt
+      proposal.decision = .replaced
+      guard try Self.updateAskAction(proposal, from: .proposed, at: action.createdAt, in: db) else {
+        throw Self.askActionAlreadyDecided
+      }
     }
   }
 

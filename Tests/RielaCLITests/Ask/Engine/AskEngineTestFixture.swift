@@ -153,6 +153,7 @@ actor AskEngineMutationSpy: AskMutationSurface {
   func rerunSession(sessionId: String, workflowId: String, stepId: String) throws -> AskActionResult { try unexpected() }
   func answerBotRequest(requestId: String, optionId: String?, decline: Bool) throws -> AskActionResult { try unexpected() }
   func setBotPaused(botId: String, paused: Bool) throws -> AskActionResult { try unexpected() }
+  func applyWorkflow(_ target: AskWorkflowActionTarget) throws -> AskActionResult { try unexpected() }
 
   private func unexpected() throws -> AskActionResult {
     calls += 1

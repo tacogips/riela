@@ -33,7 +33,6 @@ public struct RielaWebWorkflowContext: Sendable {
 /// Owns asynchronous editor work for either a desktop or a browser host.
 @MainActor
 public final class RielaWebWorkflowRuntime {
-  public let generations = WorkflowEditorGenerationStore()
   public internal(set) var launches: [String: WebWorkflowLaunch] = [:]
   var launchTasks: [String: Task<Void, Never>] = [:]
   var launchCancelRegistries: [String: LiveSessionCancelRegistry] = [:]
@@ -64,7 +63,6 @@ public final class RielaWebWorkflowRuntime {
   public func shutdown() async {
     let tasks = Array(launchTasks.values)
     for task in tasks { task.cancel() }
-    await generations.cancelAll()
     for task in tasks { await task.value }
     launchTasks.removeAll()
   }
@@ -90,9 +88,6 @@ public struct RielaWebWorkflowRequestHandler {
       }
       if request.path.hasPrefix("/api/v1/workflow-editor/runs/") {
         return webWorkflowEditorRunEvidence(request: request)
-      }
-      if request.path == "/api/v1/workflow-editor/generations" || request.path.hasPrefix("/api/v1/workflow-editor/generations/") {
-        return await webWorkflowEditorGeneration(request: request)
       }
       let parts = request.percentEncodedPath.split(separator: "/").map(String.init)
       if parts.count == 6, parts[0...3] == ["api", "v1", "workflows", "sources"],

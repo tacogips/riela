@@ -32,9 +32,9 @@ struct AskToolFixture {
   }
 
   @MainActor
-  init(test: XCTestCase) async throws {
+  init(test: XCTestCase, evidencePlan: String = "ask-02-store-tools") async throws {
     let repository = (0..<5).reduce(URL(fileURLWithPath: #filePath)) { path, _ in path.deletingLastPathComponent() }
-    let fixtureRoot = repository.appendingPathComponent("tmp/ask-riela/ask-02-store-tools/fixture-\(UUID())")
+    let fixtureRoot = repository.appendingPathComponent("tmp/ask-riela/\(evidencePlan)/fixture-\(UUID())")
     try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
     test.addTeardownBlock { try Self.removeFixture(at: fixtureRoot) }
     root = fixtureRoot
@@ -97,7 +97,8 @@ struct AskToolFixture {
 
   func makeExecutor(
     limits: AskLimits = .standard,
-    surface: (any AskReadSurface)? = nil
+    surface: (any AskReadSurface)? = nil,
+    draft: JSONObject? = nil
   ) async throws -> RunningTurn {
     let surface = surface ?? ProviderAskReadSurface(providers: providers)
     let instant = now
@@ -113,7 +114,9 @@ struct AskToolFixture {
     )
     let started = try store.beginAskTurn(
       conversationId: conversation.conversationId, message: "What happened?",
-      turn: AskTurn(backend: "codex-agent", providerInstanceId: "fixture", toolTransport: .rounds, runnerId: "fixture"),
+      turn: AskTurn(
+        backend: "codex-agent", providerInstanceId: "fixture", toolTransport: .rounds, runnerId: "fixture", draftDefinition: draft
+      ),
       limits: limits, now: now
     )
     let turnId = try XCTUnwrap(started.turn?.turnId)

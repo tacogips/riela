@@ -6,6 +6,7 @@ enum AskActionTarget: Sendable {
   case sessionRerun(sessionId: String, workflowId: String, stepId: String)
   case requestAnswer(requestId: String, optionId: String?)
   case botPause(botId: String, paused: Bool)
+  case workflow(AskWorkflowActionTarget)
 
   var record: JSONObject {
     switch self {
@@ -23,6 +24,8 @@ enum AskActionTarget: Sendable {
       return record
     case let .botPause(botId, paused):
       return ["botId": .string(botId), "paused": .bool(paused)]
+    case let .workflow(target):
+      return target.record
     }
   }
 }
@@ -38,7 +41,7 @@ struct AskActionProposer: Sendable {
   func propose(
     conversationId: String, turnId: String, kind: String, target: JSONObject, reason: String?
   ) async throws -> AskAction {
-    guard let kind = AskActionKind(rawValue: kind) else {
+    guard let kind = AskActionKind(rawValue: kind), kind != .applyWorkflow else {
       throw AskError(code: "action_kind_unknown", message: "Unknown proposed action kind")
     }
     let at = now()
@@ -53,6 +56,11 @@ struct AskActionProposer: Sendable {
   }
 
   func revalidate(_ action: AskAction, at: Date) async throws -> AskActionTarget {
+    if action.kind == .applyWorkflow {
+      let target = try AskWorkflowActionTarget(record: action.target)
+      try target.validate(limits: limits)
+      return .workflow(target)
+    }
     var proposed = action.target
     proposed.removeValue(forKey: "workflowId")
     let validated = try await validate(kind: action.kind, target: proposed, at: at)
@@ -64,6 +72,8 @@ struct AskActionProposer: Sendable {
   private func validate(kind: AskActionKind, target: JSONObject, at: Date) async throws -> AskActionTarget {
     let keys = Set(target.keys)
     switch kind {
+    case .applyWorkflow:
+      throw Self.invalidTarget
     case .stopSession:
       guard keys == ["sessionId"], case let .string(sessionId)? = target["sessionId"] else {
         throw Self.invalidTarget

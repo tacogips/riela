@@ -73,7 +73,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var webServerSetupError: String?
   var webRevision = 1
   let webWorkflowRuntime = RielaWebWorkflowRuntime()
-  var workflowEditorGenerations: WorkflowEditorGenerationStore { webWorkflowRuntime.generations }
   var webWorkflowLaunches: [String: WebWorkflowLaunch] { webWorkflowRuntime.launches }
   var webSessionStoreRootOverride: String?
   private(set) var terminationShutdownStarted = false

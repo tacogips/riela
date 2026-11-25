@@ -67,7 +67,8 @@ struct AskService: Sendable {
     let policy = try AskAgentPolicy.payload(resolved: model, transport: transport, workingDirectory: host.scratchRoot)
     let turn = AskTurn(
       backend: model.backend.rawValue, providerInstanceId: model.providerInstanceId, model: model.model,
-      toolTransport: transport, limitedPolicy: policy.limitedPolicy, runnerId: runtime.runnerId
+      toolTransport: transport, limitedPolicy: policy.limitedPolicy, runnerId: runtime.runnerId,
+      draftDefinition: request.draftDefinition
     )
     try Task.checkCancellation()
     let message = AskRedaction.text(request.message, environment: host.environment)
@@ -116,7 +117,8 @@ struct AskService: Sendable {
   func conversations() throws -> [AskConversation] {
     let initial = try host.store.askConversations()
     let recovered = try initial.map(recover).contains(true)
-    return recovered ? try host.store.askConversations() : initial
+    let current = recovered ? try host.store.askConversations() : initial
+    return current.map { $0.withoutDraft() }
   }
 
   func activity(
@@ -233,7 +235,7 @@ struct AskService: Sendable {
   private func snapshot(_ conversation: AskConversation, warnings: [String] = []) throws -> AskConversationSnapshot {
     let id = conversation.conversationId
     return try AskConversationSnapshot(
-      conversation: conversation, messages: host.store.askMessages(conversationId: id),
+      conversation: conversation.withoutDraft(), messages: host.store.askMessages(conversationId: id),
       actions: host.store.askActions(conversationId: id), limits: host.limits, warnings: warnings
     )
   }

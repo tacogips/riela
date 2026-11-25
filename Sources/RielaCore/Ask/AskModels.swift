@@ -57,6 +57,7 @@ public struct AskTurn: Codable, Equatable, Sendable {
   public var heartbeatAt: String
   public internal(set) var toolCalls: Int = 0
   public internal(set) var toolBytes: Int = 0
+  public internal(set) var draftDefinition: JSONObject?
 
   public init(
     turnId: String = "",
@@ -70,7 +71,8 @@ public struct AskTurn: Codable, Equatable, Sendable {
     limitedPolicy: Bool = false,
     error: AskTurnError? = nil,
     runnerId: String,
-    heartbeatAt: String = ""
+    heartbeatAt: String = "",
+    draftDefinition: JSONObject? = nil
   ) {
     self.turnId = turnId
     self.status = status
@@ -84,6 +86,7 @@ public struct AskTurn: Codable, Equatable, Sendable {
     self.error = error
     self.runnerId = runnerId
     self.heartbeatAt = heartbeatAt
+    self.draftDefinition = draftDefinition
   }
 }
 
@@ -117,6 +120,12 @@ public struct AskUsage: Codable, Equatable, Sendable {
 }
 
 public struct AskConversation: Codable, Equatable, Sendable {
+  public func withoutDraft() -> AskConversation {
+    var record = self
+    record.turn?.draftDefinition = nil
+    return record
+  }
+
   public let conversationId: String
   public let title: String
   public internal(set) var context: AskContext

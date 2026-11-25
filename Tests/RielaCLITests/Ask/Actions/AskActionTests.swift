@@ -349,7 +349,7 @@ private final class AskActionFixture: Sendable {
 
 private actor AskActionMutationSpy: AskMutationSurface {
   enum Call: Equatable {
-    case stop(String, String), rerun(String, String, String), answer(String, String?, Bool), pause(String, Bool)
+    case stop(String, String), rerun(String, String, String), answer(String, String?, Bool), pause(String, Bool), apply(String)
   }
 
   private(set) var calls: [Call] = []
@@ -371,6 +371,10 @@ private actor AskActionMutationSpy: AskMutationSurface {
 
   func setBotPaused(botId: String, paused: Bool) throws -> AskActionResult {
     try record(.pause(botId, paused), id: botId)
+  }
+
+  func applyWorkflow(_ target: AskWorkflowActionTarget) throws -> AskActionResult {
+    try record(.apply(target.workflowId), id: target.workflowId)
   }
 
   private func record(_ call: Call, id: String) throws -> AskActionResult {

@@ -120,6 +120,7 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
     return try projectMutation(WorkflowRegistryService().update(
       target: input.target.registryTarget,
       input: resolvedBundleURL,
+      expectedDefinitionRevision: input.expectedDefinitionRevision,
       workingDirectory: workingDirectory
     ))
   }
@@ -231,12 +232,14 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
     _ result: WorkflowRegistryMutationResult
   ) throws -> GraphQLWorkflowMutationPayload {
     let includeDefinition = webPrincipalId == nil
+    var workflow = try result.workflow.map { try project($0, includeDefinition: includeDefinition) }
+    if let revision = result.definitionRevision {
+      workflow?.definitionRevision = revision
+    }
     return GraphQLWorkflowMutationPayload(
       accepted: result.accepted,
       overwritten: result.overwritten,
-      workflow: try result.workflow.map {
-        try project($0, includeDefinition: includeDefinition)
-      },
+      workflow: workflow,
       retiredWorkflows: try result.retiredWorkflows.map { try project($0, includeDefinition: false) },
       errors: result.errors
     )

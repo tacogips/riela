@@ -19,13 +19,16 @@ final class AskReadOnlyTests: XCTestCase {
 
     let descriptors = AskToolSet.all
     XCTAssertTrue(descriptors.allSatisfy { $0.kind == .read || $0.kind == .propose })
-    XCTAssertEqual(descriptors.filter { $0.kind == .propose }.map(\.name), ["propose_action"])
+    XCTAssertEqual(descriptors.filter { $0.kind == .propose }.map(\.name), ["propose_action", "propose_workflow"])
     let proposal = AskToolCase(name: "propose_action", arguments: [
       "kind": .string(AskActionKind.setBotPaused.rawValue),
       "target": .object(["botId": .string(AskToolFixture.botId), "paused": .bool(true)]),
       "reason": .string("The model proposed a pause")
     ])
-    let probes = fixture.readCases + [proposal]
+    let workflow = AskToolCase(name: "propose_workflow", arguments: [
+      "definition": .object(AskWorkflowAuthoringTests.definition)
+    ])
+    let probes = fixture.readCases + [proposal, workflow]
     XCTAssertEqual(Set(probes.map(\.name)), Set(descriptors.map(\.name)))
     for probe in probes {
       let result = await run.executor.execute(
@@ -38,9 +41,9 @@ final class AskReadOnlyTests: XCTestCase {
     XCTAssertEqual(callsBeforeConfirm, [])
     XCTAssertEqual(try fixture.store.load(botId: AskToolFixture.botId)?.paused, false)
     let proposed = try fixture.store.askActions(conversationId: run.conversationId)
-    XCTAssertEqual(proposed.map(\.status), [.proposed])
+    XCTAssertEqual(proposed.map(\.status), [.proposed, .proposed])
 
-    let actionId = try XCTUnwrap(proposed.first?.actionId)
+    let actionId = try XCTUnwrap(proposed.first { $0.kind == .setBotPaused }?.actionId)
     let confirmed = try await actions.confirm(conversationId: run.conversationId, actionId: actionId, decidedBy: "local")
     let callsAfterConfirm = await spy.calls
     XCTAssertEqual(confirmed.status, .confirmed)
@@ -65,6 +68,10 @@ private actor AskToolMutationSpy: AskMutationSurface {
 
   func setBotPaused(botId: String, paused: Bool) -> AskActionResult {
     record(.setBotPaused)
+  }
+
+  func applyWorkflow(_ target: AskWorkflowActionTarget) -> AskActionResult {
+    record(.applyWorkflow)
   }
 
   private func record(_ kind: AskActionKind) -> AskActionResult {

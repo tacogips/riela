@@ -6,11 +6,15 @@ protocol AskMutationSurface: Sendable {
   func rerunSession(sessionId: String, workflowId: String, stepId: String) async throws -> AskActionResult
   func answerBotRequest(requestId: String, optionId: String?, decline: Bool) async throws -> AskActionResult
   func setBotPaused(botId: String, paused: Bool) async throws -> AskActionResult
+  func applyWorkflow(_ target: AskWorkflowActionTarget) async throws -> AskActionResult
 }
 
 struct ProviderAskMutationSurface: AskMutationSurface {
   let sessions: any GraphQLSessionControlProviding
   let bots: any BotsGraphQLProviding
+  let registry: Result<any GraphQLDocumentExecuting, AskError>
+  let workingDirectory: String
+  let environment: [String: String]
 
   func stopSession(sessionId: String, workflowId: String) async throws -> AskActionResult {
     let payload = try await sessions.stopSession(.init(workflowId: workflowId, sessionId: sessionId))

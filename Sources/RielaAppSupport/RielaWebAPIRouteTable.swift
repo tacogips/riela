@@ -123,9 +123,6 @@ public enum RielaWebAPIRouteTable {
     .init(method: "POST", path: "/api/v1/workflow-editor/definition", owner: editor),
     .init(method: "POST", path: "/api/v1/workflow-editor/launches", owner: editor),
     .init(method: "GET", path: "/api/v1/workflow-editor/launches/{launchId}", owner: editor),
-    .init(method: "POST", path: "/api/v1/workflow-editor/generations", owner: editor),
-    .init(method: "GET", path: "/api/v1/workflow-editor/generations/{generationId}", owner: editor),
-    .init(method: "DELETE", path: "/api/v1/workflow-editor/generations/{generationId}", owner: editor),
     .init(
       method: "GET",
       path: "/api/v1/workflow-editor/runs/{sessionId}",
@@ -175,7 +172,6 @@ public enum RielaWebAPIRouteTable {
     "/api/v1/",
     "/api/v1/auth/",
     "/api/v1/workflow-editor/launches/",
-    "/api/v1/workflow-editor/runs/",
-    "/api/v1/workflow-editor/generations/"
+    "/api/v1/workflow-editor/runs/"
   ]
 }

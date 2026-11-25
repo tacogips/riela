@@ -180,6 +180,20 @@ representation `BotRecord` uses.
   The registry mutation inputs have no reason field; the link is kept on
   the confirmed action row (plan 06). The design sentence is to be
   corrected at the next design edit.
+- Amendment 2026-11-25 (blocked-wave-scope-or-contract, session 5 round 1,
+  finding `ASK-06-REGISTRY-RESULT-REVISION`): plan 06 may edit
+  `Sources/RielaWorkflowRegistry/WorkflowRegistryService.swift` and
+  `Sources/RielaWorkflowRegistry/WorkflowRegistryGraphQLProvider.swift`. The
+  coordinated register and update operations return the written definition
+  revision (`WorkflowRegistryMutationResult.definitionRevision`, not
+  JSON-encoded), mutation payloads expose it through the existing
+  `definitionRevision` field, and the plain update path honours
+  `expectedDefinitionRevision`. Ask store confirm uses the Ask authoring
+  registry provider and takes the revision from the mutation payload. The
+  authoring retain key is a per-store mode 0600 file
+  (`<session store root>/ask-retain-key`). Plan 06 also owns
+  `web/e2e/workflow-studio.spec.ts` (stale generation fixture). Mutation
+  inputs and the SDL do not change.
 
 ## 4. Wave gates (serial reconcile, not per-plan work)
 

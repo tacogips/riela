@@ -43,7 +43,12 @@
     "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
     "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
     "Tests/RielaGraphQLTests/SurfaceParityGraphQLTests.swift",
-    "impl-plans/progress/ask-06-workflow-authoring.md"
+    "impl-plans/progress/ask-06-workflow-authoring.md",
+    "Sources/RielaWorkflowRegistry/WorkflowRegistryService.swift",
+    "Sources/RielaWorkflowRegistry/WorkflowRegistryGraphQLProvider.swift",
+    "Tests/RielaCLITests/WorkflowRegistryMutationRevisionTests.swift",
+    "Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift",
+    "web/e2e/workflow-studio.spec.ts"
   ],
   "sharedPaths": [],
   "sharedPathNotes": [
@@ -66,6 +71,26 @@
     {
       "path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
       "intendedEdit": "Generated: regenerate only if a descriptor changed."
+    },
+    {
+      "path": "Sources/RielaWorkflowRegistry/WorkflowRegistryService.swift",
+      "intendedEdit": "Amendment round 1: add `WorkflowRegistryMutationResult.definitionRevision` (not encoded), set it inside the coordinated register, update and updateBundleDefinition operations, and add the optional `expectedDefinitionRevision` guard to `update`. No other behaviour change."
+    },
+    {
+      "path": "Sources/RielaWorkflowRegistry/WorkflowRegistryGraphQLProvider.swift",
+      "intendedEdit": "Amendment round 1: `projectMutation` copies the result revision into the existing `definitionRevision` output field; the plain update path passes `input.expectedDefinitionRevision` to the service. Inputs, retain-handle logic and projections are unchanged."
+    },
+    {
+      "path": "Tests/RielaCLITests/WorkflowRegistryMutationRevisionTests.swift",
+      "intendedEdit": "New file: service and provider tests for the returned revision and the plain-path revision guard."
+    },
+    {
+      "path": "Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift",
+      "intendedEdit": "Only the assertion at line 49 (`XCTAssertNil(registered.workflow?.definitionRevision)`) changes to expect the 64-character revision equal to the one read afterwards; `definition` stays nil."
+    },
+    {
+      "path": "web/e2e/workflow-studio.spec.ts",
+      "intendedEdit": "Remove the mocks of the retired `/api/v1/workflow-editor/generations` routes, their state (`generationRequests`, `generationPolls`) and the test `shows agent changes while still running and restores draft with undo after stop`. No other test changes."
     }
   ]
 }
@@ -100,9 +125,10 @@ Current code:
 ## Non-goals
 
 - No web change (plan 07 removes `WorkflowAgentChat.tsx` and wires the
-  editor).
+  editor), except the stale browser fixture named in the amendment below.
 - No change to the other `workflow-editor` routes, to the editor's save
-  path, or to the registry mutations and their inputs.
+  path, or to the registry mutation inputs. The registry mutation result
+  changes only as the amendment below states.
 - No patch format; a proposal is always a complete definition.
 - No change to the RielaApp native mini chat.
 
@@ -183,6 +209,192 @@ Delete, with their tests, and fix every reference until the build is green:
   `Tests/RielaCLITests/ServeWebEditorTests.swift`,
   `RielaAppWebAPIRouteTests.swift` and the parity tests' expected lists.
 
+## Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1)
+
+Source: `checkpointAmendment` of wave 1 in session 5 (previous checkpoint
+`efb07056`), blocker `ASK-06-REGISTRY-RESULT-REVISION`, evidence
+`tmp/ask-riela/ask-06-workflow-authoring/scope-and-checkpoint.log`.
+Decision: the two registry paths are authorized, with the additive contract
+below. No redesign, no new plan, no plan id or wave change. Where this
+section differs from `## Changes` §2, this section wins.
+
+Starting state: the working tree already holds the uncommitted ask-06 work
+listed in `impl-plans/progress/ask-06-workflow-authoring.md` (proposals,
+draft confirm, removal). Keep it. Do not redo or revert it. Only the items
+A1 to A5 remain. Record new edits in the same progress log.
+
+### A1. Registry result revision (`WorkflowRegistryService.swift`)
+
+- `WorkflowRegistryMutationResult` gains `public var definitionRevision: String?`
+  and a last init parameter `definitionRevision: String? = nil`. Add an
+  explicit `CodingKeys` enum with the five existing keys only, so the field
+  is never encoded or decoded. `riela workflow register|update --output json`
+  must stay byte-identical (`WorkflowRegistryCLICommand.render` encodes this
+  type).
+- The value is `WorkflowHistoryCanonicalCoding.sha256` of the bytes of the
+  stored `workflow.json`, the same value `definitionSnapshot` returns
+  (`WorkflowRegistryService.swift:229-247`).
+- Set it in exactly three operations, inside the existing lock closure and
+  before the closure returns:
+  - `register(input:overwrite:activationState:workingDirectory:)`: after
+    `registry.register`, from the private `definitionData(for:)` of the new
+    entry, inside `coordinated`.
+  - `update(target:input:workingDirectory:)`: inside
+    `withCoordinatorWorkflowLocks`, after `registry.update`.
+  - `updateBundleDefinition(...)`: the hash of the `replacement` bytes that
+    were written and published. `updateDefinition` and
+    `updateEditorNodeSettings` get it through this function.
+- `update` gains `expectedDefinitionRevision: String? = nil` (before
+  `workingDirectory`). When it is set, call
+  `requireDefinitionRevision(_:entry:)` inside the workflow locks before
+  `registry.update`, as `delete` does (line 168). A mismatch throws the
+  existing `REGISTRY_CONFLICT` error and writes nothing.
+- `delete`, `setActivation` and `consolidate` keep `definitionRevision == nil`.
+
+Pitfalls: do not call `definitionSnapshot` or `withCoordinatedRead` from
+inside `coordinated` to get the revision (nested lock). Do not compute the
+revision after the lock closure returns. Do not change
+`WorkflowMutableRegistry`, the journal, or any error code.
+
+### A2. Provider output (`WorkflowRegistryGraphQLProvider.swift`)
+
+- `projectMutation`: when `result.definitionRevision` is not nil and the
+  projected `workflow` is not nil, set `workflow.definitionRevision` to it.
+  No extra read. `definition` stays as it is today (nil for a web principal).
+- Plain path of `updateMutableWorkflow` (no `webPrincipalId`, line 120):
+  pass `expectedDefinitionRevision: input.expectedDefinitionRevision` to
+  `WorkflowRegistryService.update`.
+- Nothing else changes: no input field, no SDL change
+  (`definitionRevision: String` already exists in
+  `Sources/RielaGraphQL/WorkflowRegistryGraphQLSchema.swift:64`), retain
+  handles and web checks untouched.
+
+### A3. Ask store confirm (`Sources/RielaCLI/Ask`)
+
+- `AskMutationSurface` gains
+  `applyWorkflow(_ target: AskWorkflowActionTarget) async throws -> AskActionResult`.
+- `ProviderAskMutationSurface` gains `registry: any GraphQLDocumentExecuting`.
+  It is built once in `AskHost.local` (`Surfaces/AskHost+Surfaces.swift:25`,
+  the only construction site) as
+  `WorkflowRegistryGraphQLDocumentExecutor(localProvider: <authoring provider>)`,
+  where the authoring provider is the same instance `AskReadProviders.local`
+  already builds (`webPrincipalId: "ask"`, `authoringProjection: true`);
+  expose it as a stored property of `AskReadProviders`. This is the
+  revision-guarded path: it requires `expectedDefinitionRevision` on update
+  and expands retain handles. The per-host closures of `## Changes` §2 are
+  not needed; do not edit the host files for this.
+- Build the request as a locally trusted request, the way
+  `Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift` builds its
+  `GraphQLDocumentRequest` (`isLocallyTrusted: true`,
+  `localWorkingDirectory`). Two constant documents, variables only from the
+  stored target:
+  - no base: `registerMutableWorkflow` with input `definition` and
+    `overwrite: false`;
+  - base: `updateMutableWorkflow` with input `target` (`workflowId`,
+    `scope: USER`, `originId`), `definition`, `expectedDefinitionRevision`.
+  Both select `accepted`, `workflow` (`workflowId`, `definitionRevision`) and
+  `errors` (`code`, `message`).
+- The target record gains `baseOriginId` (string), stored at proposal from the
+  inspected entry's `originId`. `baseWorkflowId`, `baseOriginId` and
+  `expectedDefinitionRevision` are all present or all absent; otherwise
+  `action_target_invalid`. With a base, `definition.workflowId` must equal
+  `baseWorkflowId`; otherwise `workflow_invalid` and no row.
+- Result: `ok: true`, `summary` `"Workflow registered"` or
+  `"Workflow updated"`, `ids: [workflowId, definitionRevision]`, both taken
+  from the mutation payload. A registry error (response `errors` or payload
+  `errors`) becomes a thrown `AskError` whose code is the registry code
+  (`REGISTRY_CONFLICT`, `DUPLICATE_WORKFLOW`, and so on). An accepted payload
+  without `definitionRevision` throws `action_mutation_failed`.
+- Never read the workflow again after the mutation to get the revision.
+  Remove the "cannot report the applied definition revision" refusal in
+  `AskActionService.execute`.
+
+### A4. Retain key shared by host and tool server (`Sources/RielaCLI/Ask/Tools`)
+
+A retain handle is an HMAC with a key that is random per process
+(`WorkflowRegistryGraphQLProvider.swift:7`). With the `mcp` transport the
+handle is issued in the tool-server process and checked at confirm in the
+host process, so the authoring provider must use one key per store.
+
+- `AskReadProviders.local` passes `retainKey:` to the authoring provider. The
+  key is 32 random bytes in the file `<session store root>/ask-retain-key`,
+  mode 0600, created exclusively on first use; if the file exists, read it;
+  a file that is not exactly 32 bytes is an error (`AskError` code
+  `retain_key_invalid`), never replaced silently.
+- The file is not under `ask-turns`, is never logged, and is never put in
+  argv, an environment hand-off or a prompt.
+- No registry source change is needed for this (`retainKey:` exists).
+
+### A5. Stale browser fixture (`web/e2e/workflow-studio.spec.ts`)
+
+Remove the two route mocks for `/api/v1/workflow-editor/generations`, the
+`generationRequests` and `generationPolls` state, and the test
+`shows agent changes while still running and restores draft with undo after stop`
+(its UI was removed by plan 07). Change nothing else under `web/`.
+
+### Tests added by this amendment
+
+`Tests/RielaCLITests/WorkflowRegistryMutationRevisionTests.swift` (temporary
+registry home; imitate the environment set-up of
+`Tests/RielaCLITests/WorkflowMutableRegistryTests.swift`):
+- `register` of a valid bundle -> `definitionRevision` is 64 hex characters
+  and equals the SHA-256 of the stored `workflow.json`.
+- `update` with a changed bundle -> the revision differs from the register
+  revision and equals the hash of the stored file.
+- `update` with a stale `expectedDefinitionRevision` -> throws
+  `REGISTRY_CONFLICT`; the stored file is unchanged.
+- `update` with the current `expectedDefinitionRevision` -> accepted.
+- JSON encoding of a result with a revision -> no `definitionRevision` key.
+- plain provider `updateMutableWorkflow` with a stale
+  `expectedDefinitionRevision` -> `REGISTRY_CONFLICT`.
+- provider with a web principal: `registerMutableWorkflow` and
+  `updateMutableWorkflow` payloads carry `workflow.definitionRevision` equal
+  to the revision of a following `workflow(target:)` read, and
+  `workflow.definition` is nil.
+
+`Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift:49` and
+`Tests/RielaAppSupportTests/WorkflowEditorDefinitionTests.swift:177`: the
+two `XCTAssertNil` assertions on a mutation payload's `definitionRevision`
+now expect the revision. Do not weaken any other assertion.
+
+`AskWorkflowAuthoringTests` (the store cases listed in `## Tests` become
+required and use the real temporary registry, no spy for the registry):
+- store confirm without base -> `confirmed`; the workflow is in the registry;
+  `result.ids == [workflowId, revision]` and the revision equals the hash of
+  the stored file.
+- second proposal with the same id and no base -> confirm ends `failed` with
+  the registry's duplicate code (assert the exact code the registry returns,
+  not a generic one); registry unchanged.
+- store confirm with a mutable base -> updated; `result.ids[1]` is the new
+  revision and differs from `expectedDefinitionRevision`.
+- base changed after the proposal -> `failed` with `REGISTRY_CONFLICT`;
+  the stored file still holds the other writer's content.
+- base with a protected field: the proposal carries the retain handle from
+  `workflow_inspect` -> after confirm the stored value equals the original.
+- two `AskReadProviders.local` values for the same store root issue the same
+  retain handle for the same field, equal to the handle of a provider built
+  with the key file's bytes; the key file has mode 0600 and 32 bytes.
+- target with `baseWorkflowId` but no `baseOriginId` -> `action_target_invalid`,
+  zero registry calls.
+- base whose id differs from `definition.workflowId` -> `workflow_invalid`,
+  no row.
+
+### Verification and done criteria added by this amendment
+
+The `## Verification` block below already holds the amended test command
+and the two new `grep` checks. In addition:
+
+- Both `grep` checks exit 1 with an empty log.
+- `scripts/surface-parity/generate-sdl.sh` leaves
+  `Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift` unchanged.
+- A failing test in a file outside `writePaths` is reported as
+  `BLOCKED: write scope` with the test name; do not edit that file.
+- No `implementation_blocked`; the progress log status is complete and its
+  `BLOCKED: write scope` entry is closed with the evidence path.
+- `git status --short` shows no path outside `writePaths`.
+- The Playwright suite is not run here (no browser in the gate); the
+  fixture change is checked by the `grep` and noted in the progress log.
+
 ## Imitate
 
 - `Sources/RielaCLI/Ask/Actions` (plan 02) for proposer validation and the
@@ -242,10 +454,14 @@ three routes.
 mkdir -p tmp/ask-riela/ask-06-workflow-authoring
 scripts/surface-parity/generate-sdl.sh > tmp/ask-riela/ask-06-workflow-authoring/sdl.log 2>&1
 arch -arm64 /bin/zsh -lc 'swift build' > tmp/ask-riela/ask-06-workflow-authoring/build.log 2>&1
-arch -arm64 /bin/zsh -lc 'swift test --filter "AskWorkflowAuthoringTests|AskToolSetTests|AskToolServerTests|AskReadOnlyTests|AskActionTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskGraphQLTests|AskExampleWalkthroughTests|WorkflowEditorDefinitionTests|WorkflowEditorLaunchTests|WorkflowEditorRunEvidenceTests|ServeWebEditorTests|ServeWebHostTests|RielaAppWebAPIRouteTests|SurfaceCatalogTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParityExecutorCoverageTests"' > tmp/ask-riela/ask-06-workflow-authoring/test.log 2>&1
+arch -arm64 /bin/zsh -lc 'swift test --filter "AskWorkflowAuthoringTests|AskToolSetTests|AskToolServerTests|AskToolExecutorTests|AskReadOnlyTests|AskActionTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskGraphQLTests|AskExampleWalkthroughTests|WorkflowRegistryMutationRevisionTests|WorkflowMutableRegistryTests|WorkflowRegistryEvolutionTests|WorkflowDefinitionGraphQLTests|GraphQLWorkflowRegistryTests|GraphQLWorkflowWebContractTests|RielaAppWebRegistryProviderTests|WorkflowEditorDefinitionTests|WorkflowEditorLaunchTests|WorkflowEditorRunEvidenceTests|ServeWebEditorTests|ServeWebHostTests|RielaAppWebAPIRouteTests|SurfaceCatalogTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParityExecutorCoverageTests"' > tmp/ask-riela/ask-06-workflow-authoring/test.log 2>&1
+grep -n "generations\|generationRequests\|generationPolls\|Ask the agent" web/e2e/workflow-studio.spec.ts > tmp/ask-riela/ask-06-workflow-authoring/e2e-fixture.log 2>&1
+grep -rn "cannot report the applied definition revision" Sources > tmp/ask-riela/ask-06-workflow-authoring/no-refusal.log 2>&1
 ```
 
-All exit 0. Evidence: proposals are validated, applied only on confirm, the
+The two `grep` lines must exit 1 (no match); every other line exits 0.
+
+Evidence: proposals are validated, applied only on confirm, the
 draft path saves nothing, and the old endpoints are gone from code, route
 table and catalog.
 

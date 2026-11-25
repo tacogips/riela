@@ -123,6 +123,10 @@
       {
         "decision": "Operator directive: any checkpointAmendment inherited by this rerun (rounds 1/2, previousCheckpointCommit 33344ee6 / e208d257) is stale and this checkpoint runs in full mode at HEAD 7855cf90, which is now the manifest originalHead.",
         "rationale": "Session 4 ended blocked on ask-06-workflow-authoring by a dependency-admission bookkeeping mismatch (the step 6 fanout item omitted ask-05-mcp-transport from acceptedPlanIds although the implementation gate had accepted it) with the amendment budget exhausted. The operator committed the reviewed implementation of plans 01-05 and 07 as 7855cf90 and recorded ask-04, ask-05 and ask-07 as acceptedDependencies. ask-06-workflow-authoring is the only remaining plan, has no unaccepted dependency and is the single wave. Keep these manifest and plan edits exactly; they are operator-approved and need no further plan review before dispatch. Note for ask-06: ask-07 already removed web/src/workflows/WorkflowAgentChat.tsx, so the workflow editor must reach authoring through the Ask panel with the workflow as context."
+      },
+      {
+        "decision": "Amendment 2026-11-25 round 1 (session 5, previous checkpoint efb07056): ask-06-workflow-authoring may edit Sources/RielaWorkflowRegistry/WorkflowRegistryService.swift and Sources/RielaWorkflowRegistry/WorkflowRegistryGraphQLProvider.swift. The coordinated register, update and updateBundleDefinition operations return the written definition revision in `WorkflowRegistryMutationResult.definitionRevision` (not JSON-encoded), the provider exposes it through the existing `definitionRevision` output field, and the plain update path honours `expectedDefinitionRevision`. Ask store confirm runs the register and update documents through the Ask authoring registry provider (principal `ask`), takes the revision from the mutation payload and never reads again. The authoring provider's retain key is a per-store mode 0600 key file so handles issued by the tool-server process verify in the host. ask-06 also owns Tests/RielaCLITests/WorkflowRegistryMutationRevisionTests.swift, one assertion in Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift and the stale fixture web/e2e/workflow-studio.spec.ts. No mutation input, SDL, plan id or wave change.",
+        "rationale": "Blocked plan ask-06-workflow-authoring (reason blocked-wave-scope-or-contract, finding ASK-06-REGISTRY-RESULT-REVISION, evidence tmp/ask-riela/ask-06-workflow-authoring/scope-and-checkpoint.log): the coordinated mutations did not return the written revision and the plain provider ignored the expected revision on update, so a follow-up read could attribute another writer's revision to the confirmed action. The resume criterion asks for exactly these two paths. The step 6 risks (cross-process retain handles, stale browser fixture) get one owner each. Details in impl-plans/active/ask-06-workflow-authoring.md, section `Amendment 2026-11-25 (blocked-wave-scope-or-contract, round 1)`."
       }
     ],
     "intentionalTradeoffs": [
@@ -253,7 +257,12 @@
         "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
         "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
         "Tests/RielaGraphQLTests/SurfaceParityGraphQLTests.swift",
-        "impl-plans/progress/ask-06-workflow-authoring.md"
+        "impl-plans/progress/ask-06-workflow-authoring.md",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryService.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryGraphQLProvider.swift",
+        "Tests/RielaCLITests/WorkflowRegistryMutationRevisionTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift",
+        "web/e2e/workflow-studio.spec.ts"
       ],
       "sharedPaths": [],
       "sharedPathNotes": [
@@ -276,6 +285,26 @@
         {
           "path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
           "intendedEdit": "Generated: regenerate only if a descriptor changed."
+        },
+        {
+          "path": "Sources/RielaWorkflowRegistry/WorkflowRegistryService.swift",
+          "intendedEdit": "Amendment round 1: add `WorkflowRegistryMutationResult.definitionRevision` (not encoded), set it inside the coordinated register, update and updateBundleDefinition operations, and add the optional `expectedDefinitionRevision` guard to `update`. No other behaviour change."
+        },
+        {
+          "path": "Sources/RielaWorkflowRegistry/WorkflowRegistryGraphQLProvider.swift",
+          "intendedEdit": "Amendment round 1: `projectMutation` copies the result revision into the existing `definitionRevision` output field; the plain update path passes `input.expectedDefinitionRevision` to the service. Inputs, retain-handle logic and projections are unchanged."
+        },
+        {
+          "path": "Tests/RielaCLITests/WorkflowRegistryMutationRevisionTests.swift",
+          "intendedEdit": "New file: service and provider tests for the returned revision and the plain-path revision guard."
+        },
+        {
+          "path": "Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift",
+          "intendedEdit": "Only the assertion at line 49 (`XCTAssertNil(registered.workflow?.definitionRevision)`) changes to expect the 64-character revision equal to the one read afterwards; `definition` stays nil."
+        },
+        {
+          "path": "web/e2e/workflow-studio.spec.ts",
+          "intendedEdit": "Remove the mocks of the retired `/api/v1/workflow-editor/generations` routes, their state (`generationRequests`, `generationPolls`) and the test `shows agent changes while still running and restores draft with undo after stop`. No other test changes."
         }
       ],
       "artifactRoots": [],
@@ -283,13 +312,18 @@
         "`propose_workflow` proposals are validated and applied only on confirm (`applyWorkflow`, draft or store mode); the draft path saves nothing; the old generation endpoints are gone from code, route table and catalog.",
         "`grep -rn \"workflow-editor/generations\\|WorkflowEditorGenerationStore\\|WorkflowEditorAuthoringRounds\\|workflowEditorGenerations\\|workflowEditorSystemPrompt\\|generation-start\" Sources Tests` prints nothing.",
         "`grep -rn \"overwrite: true\" Sources/RielaCLI/Ask` prints nothing.",
-        "Verification exits 0; progress log impl-plans/progress/ask-06-workflow-authoring.md written with the design section 7.3 deviation."
+        "Verification exits 0; progress log impl-plans/progress/ask-06-workflow-authoring.md written with the design section 7.3 deviation.",
+        "Amendment round 1: `WorkflowRegistryMutationResult.definitionRevision` is set inside the coordinated register, update and updateBundleDefinition operations, is not JSON-encoded, and is exposed through the existing GraphQL `definitionRevision` field of mutation payloads; the plain update path honours `expectedDefinitionRevision`.",
+        "Amendment round 1: store-mode confirm registers or updates through the Ask authoring registry provider, records `[workflowId, definitionRevision]` from the mutation payload with no follow-up read, and fails with the registry code on duplicate id or stale revision; retain handles verify across processes through the per-store key file.",
+        "`grep -n \"generations\\|generationRequests\\|generationPolls\\|Ask the agent\" web/e2e/workflow-studio.spec.ts` and `grep -rn \"cannot report the applied definition revision\" Sources` print nothing."
       ],
       "verification": [
         "mkdir -p tmp/ask-riela/ask-06-workflow-authoring",
         "scripts/surface-parity/generate-sdl.sh > tmp/ask-riela/ask-06-workflow-authoring/sdl.log 2>&1",
         "arch -arm64 /bin/zsh -lc 'swift build' > tmp/ask-riela/ask-06-workflow-authoring/build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskWorkflowAuthoringTests|AskToolSetTests|AskToolServerTests|AskReadOnlyTests|AskActionTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskGraphQLTests|AskExampleWalkthroughTests|WorkflowEditorDefinitionTests|WorkflowEditorLaunchTests|WorkflowEditorRunEvidenceTests|ServeWebEditorTests|ServeWebHostTests|RielaAppWebAPIRouteTests|SurfaceCatalogTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParityExecutorCoverageTests\"' > tmp/ask-riela/ask-06-workflow-authoring/test.log 2>&1"
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AskWorkflowAuthoringTests|AskToolSetTests|AskToolServerTests|AskToolExecutorTests|AskReadOnlyTests|AskActionTests|AskTurnEngineTests|AskPromptInjectionTests|AskCommandTests|AskGraphQLTests|AskExampleWalkthroughTests|WorkflowRegistryMutationRevisionTests|WorkflowMutableRegistryTests|WorkflowRegistryEvolutionTests|WorkflowDefinitionGraphQLTests|GraphQLWorkflowRegistryTests|GraphQLWorkflowWebContractTests|RielaAppWebRegistryProviderTests|WorkflowEditorDefinitionTests|WorkflowEditorLaunchTests|WorkflowEditorRunEvidenceTests|ServeWebEditorTests|ServeWebHostTests|RielaAppWebAPIRouteTests|SurfaceCatalogTests|SurfaceParityWebAPITests|SurfaceParityConsoleReadTests|SurfaceParityCLITests|SurfaceParityGraphQLTests|SurfaceParityDTOSchemaTests|SurfaceParityExecutorCoverageTests\"' > tmp/ask-riela/ask-06-workflow-authoring/test.log 2>&1",
+        "grep -n \"generations\\|generationRequests\\|generationPolls\\|Ask the agent\" web/e2e/workflow-studio.spec.ts > tmp/ask-riela/ask-06-workflow-authoring/e2e-fixture.log 2>&1",
+        "grep -rn \"cannot report the applied definition revision\" Sources > tmp/ask-riela/ask-06-workflow-authoring/no-refusal.log 2>&1"
       ]
     }
   ],

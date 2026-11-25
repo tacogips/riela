@@ -33,7 +33,7 @@ final class WorkflowDefinitionStoreTests: XCTestCase {
       XCTAssertTrue(try database.tableExists(table), "missing \(table)")
     }
     XCTAssertFalse(try database.tableExists("definition_blobs"))
-    XCTAssertEqual(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration, 12)
+    XCTAssertEqual(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration, 13)
     XCTAssertEqual(try database.query("PRAGMA user_version").first?["user_version"], String(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration))
   }
 

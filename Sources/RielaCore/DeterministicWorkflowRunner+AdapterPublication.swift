@@ -31,19 +31,11 @@ extension DeterministicWorkflowRunner {
         ),
         inputSnapshot: inputSnapshot,
         effectiveStepBudget: request.effectiveStepBudget,
+        requestedModel: basePayload.model,
+        recorder: request.activityRecorder,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
-      if let rejection = promptGuard?.rejection {
-        return try await publishAdapterFailure(
-          rejection,
-          sessionId: sessionId,
-          step: step,
-          attempt: attempt,
-          backend: basePayload.executionBackend,
-          transitions: transitions
-        )
-      }
       var attemptInput = adapterInput
       attemptInput.executionIndex = executionIndex
       attemptInput.output = basePayload.output == nil
@@ -51,25 +43,29 @@ extension DeterministicWorkflowRunner {
         : AdapterOutputAttemptContext(maxValidationAttempts: maxAttempts, attempt: attempt)
       let adapterOutput: AdapterExecutionOutput
       do {
-        let context = adapterExecutionContext(
-          deadline: deadline(for: step, request: request),
-          workflowId: request.workflow.workflowId,
-          step: step,
-          execution: execution,
-          eventContext: startedExecution.backendEventContext,
-          handler: request.eventHandler
-        )
-        let silenceMonitor = startAgentSilenceMonitorIfNeeded(
-          request: request,
-          workflowId: request.workflow.workflowId,
-          step: step,
-          execution: execution,
-          eventContext: startedExecution.backendEventContext
-        )
-        defer {
-          silenceMonitor?.cancel()
+        adapterOutput = try await settlingActivity(request: request, sessionId: sessionId, executionId: execution.executionId) {
+          if let rejection = promptGuard?.rejection { throw rejection }
+          let context = adapterExecutionContext(
+            deadline: deadline(for: step, request: request),
+            workflowId: request.workflow.workflowId,
+            step: step,
+            execution: execution,
+            eventContext: startedExecution.backendEventContext,
+            request: request,
+            handler: request.eventHandler
+          )
+          let silenceMonitor = startAgentSilenceMonitorIfNeeded(
+            request: request,
+            workflowId: request.workflow.workflowId,
+            step: step,
+            execution: execution,
+            eventContext: startedExecution.backendEventContext
+          )
+          defer { silenceMonitor?.cancel() }
+          return try await executePlacedAdapter(
+            attemptInput, step: step, executionId: "\(sessionId)/\(execution.executionId)", context: context
+          )
         }
-        adapterOutput = try await executePlacedAdapter(attemptInput, step: step, executionId: "\(sessionId)/\(execution.executionId)", context: context)
       } catch let validationError as WorkflowPublicationError {
         guard case let .validationRejected(reason) = validationError else { throw validationError }
         try await recordAdapterValidationRejection(

@@ -149,6 +149,21 @@ enum HookClientVendor: String, CaseIterable, ExpressibleByArgument {
 /// `@Argument`. Their actions are declared here so the CLI surface stays
 /// enumerable: adding a case without a `SurfaceCatalog` row fails the CLI gate,
 /// and the owning switches read their literals from these raw values.
+enum BotClientAction: String, CaseIterable {
+  case create, list, show, update, pause, resume, remove, pin, unpin, move, snooze, unsnooze, settle, unsettle
+  case activity, answer
+
+  static var allRawValues: [String] { allCases.map(\.rawValue) }
+}
+
+enum ModelClientAction: String, CaseIterable {
+  case list
+}
+
+enum ProviderClientAction: String, CaseIterable {
+  case list, show, refresh, add, update, remove
+}
+
 enum RoutineClientAction: String, CaseIterable {
   case create
   case list

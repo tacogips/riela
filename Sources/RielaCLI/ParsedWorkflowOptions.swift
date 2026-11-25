@@ -13,6 +13,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Option var variables: String?
   @Option var variablesFile: String?
   @Option var nodePatch: String?
+  @Option(name: .customLong("bot")) var bot: String?
   @Option var instance: String?
   @Option var instanceScope: WorkflowInstanceScope?
   @Option var saveInstance: String?
@@ -48,6 +49,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--runtime-environment-file",
     "--variables",
     "--variables-file",
+    "--bot",
     "--instance",
     "--instance-scope",
     "--save-instance",

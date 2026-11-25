@@ -23,15 +23,6 @@ protocol SlackGatewayAPI: Sendable {
 protocol EventWorkflowRunning: Sendable {
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult
 }
-protocol EventWorkflowTriggerDefaultsResolving: Sendable {
-  func triggerDefaults(workflowName: String, parsed: ParsedParityOptions) throws -> EventOverlapSettings?
-  func workflowId(workflowName: String, parsed: ParsedParityOptions) throws -> String?
-  func sessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) throws -> String?
-}
-extension EventWorkflowTriggerDefaultsResolving {
-  func workflowId(workflowName: String, parsed: ParsedParityOptions) throws -> String? { nil }
-  func sessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) throws -> String? { nil }
-}
 private struct CronPolicyResolution {
   var policies: [String: EffectiveEventOverlapPolicy]
   var records: JSONObject
@@ -44,6 +35,8 @@ struct EventWorkflowRunRequest: Sendable {
   var parsed: ParsedParityOptions
   var onSessionStarted: (@Sendable (String) -> Void)?
   var operatorCancellation: OperatorCancellation?
+  var botId: String?
+  var botLinkSource: (source: String, sourceRef: String?) = ("run", nil)
 }
 struct EventResolvedAttachmentInputs: Equatable, Sendable {
   var attachments: [JSONObject]
@@ -1022,39 +1015,6 @@ extension DefaultEventLiveServer {
     )
   }
 }
-struct CLIWorkflowTriggerDefaultsResolver: EventWorkflowTriggerDefaultsResolving {
-  func triggerDefaults(workflowName: String, parsed: ParsedParityOptions) throws -> EventOverlapSettings? {
-    try resolve(workflowName: workflowName, parsed: parsed).workflow.triggerDefaults
-  }
-  func workflowId(workflowName: String, parsed: ParsedParityOptions) throws -> String? {
-    try resolve(workflowName: workflowName, parsed: parsed).workflow.workflowId
-  }
-  func sessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) throws -> String? {
-    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-    let resolution = WorkflowResolutionOptions(workflowName: workflowName, scope: parsed.scope,
-      workflowDefinitionDir: parsed.workflowDefinitionDir, workingDirectory: workingDirectory)
-    let bundle = try resolve(workflowName: workflowName, parsed: parsed)
-    let persisted = CLIWorkflowSessionResolution.resolutionForPersistence(resolution: resolution, resolvedSourceScope: bundle.sourceScope)
-    return CLIWorkflowSessionStore.resolveRootDirectory(sessionStore: parsed.sessionStore, scope: persisted.scope, workingDirectory: workingDirectory)
-  }
-  private func resolve(workflowName: String, parsed: ParsedParityOptions) throws -> ResolvedWorkflowBundle {
-    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-    let options = WorkflowResolutionOptions(
-      workflowName: workflowName,
-      scope: parsed.scope,
-      workflowDefinitionDir: parsed.workflowDefinitionDir,
-      workingDirectory: workingDirectory
-    )
-    let fileResolver = WorkflowRunCommand().resolver
-    let resolver = DefinitionStoreWorkflowBundleResolver(
-      inner: fileResolver,
-      sessionStore: parsed.sessionStore,
-      actor: .init(kind: .cli, id: "events-serve"),
-      mode: .lookupOnly
-    )
-    return try resolver.resolve(options)
-  }
-}
 struct CLIEventWorkflowRunner: EventWorkflowRunning {
   var command: WorkflowRunCommand
   init(command: WorkflowRunCommand = WorkflowRunCommand()) {
@@ -1067,6 +1027,7 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
     let workingDirectory = request.parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     var observedCommand = command
     observedCommand.sessionStartedObserver = request.onSessionStarted
+    observedCommand.botLinkSource = request.botLinkSource
     if let cancellation = request.operatorCancellation {
       observedCommand.operatorCancellationReason = { cancellation.failureReason }
     }
@@ -1085,7 +1046,8 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
       timeoutMs: request.parsed.timeoutMs,
       artifactRoot: request.parsed.artifactRoot,
       sessionStore: request.parsed.sessionStore,
-      workingDirectory: workingDirectory
+      workingDirectory: workingDirectory,
+      botId: request.botId
     )
     options.executionMode = .service(.init(kind: .cli, id: "events-serve"))
     let result = await observedCommand.run(options)

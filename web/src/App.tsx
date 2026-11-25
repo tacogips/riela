@@ -18,11 +18,14 @@ import { ServerLoginView } from './views/ServerLoginView'
 import { WorkflowsView } from './views/WorkflowsView'
 import { OpsRunView } from './ops/OpsRunView'
 import { OpsWorkflowsView } from './ops/OpsWorkflowsView'
+import { BotsView } from './bots/BotsView'
+import { BotDetailView } from './bots/BotDetailView'
 import { parseViewHash, viewHash, type HashRoute } from './routes'
 
 const navigation: Array<{ id: NavigationView; label: string; icon: ActionIconName }> = [
   { id: 'workflows', label: 'Workflows', icon: 'workflow' },
   { id: 'ops', label: 'Command deck', icon: 'dashboard' },
+  { id: 'bots', label: 'Bots', icon: 'inspect' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ]
 
@@ -38,6 +41,7 @@ export function App() {
   const [selectedInstanceId, setSelectedInstanceId] = createSignal('')
   const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
   const [selectedOpsRun, setSelectedOpsRun] = createSignal<{ instanceId: string; sessionId: string; workflowId: string }>()
+  const [selectedBotId, setSelectedBotId] = createSignal('')
   const [connectionRevision, setConnectionRevision] = createSignal(0)
   const host = createPollingResource(() => `active-host:${connectionRevision()}`, discoverHost)
   const authenticationRequired = createMemo(() => {
@@ -63,6 +67,10 @@ export function App() {
       const run = selectedOpsRun()
       return run ? { view: 'ops-run', instanceId: run.instanceId, sessionId: run.sessionId } : undefined
     }
+    if (currentView === 'bot-detail') {
+      const botId = selectedBotId()
+      return botId ? { view: 'bot-detail', botId } : undefined
+    }
     return { view: currentView }
   }
   const applyHashRoute = () => {
@@ -83,6 +91,7 @@ export function App() {
     } else if (route.view === 'ops-run') {
       setSelectedOpsRun({ instanceId: route.instanceId, sessionId: route.sessionId, workflowId: '' })
     }
+    if (route.view === 'bot-detail') setSelectedBotId(route.botId)
     setView(route.view === 'instances' ? 'workflows' : route.view)
   }
   onMount(() => {
@@ -114,6 +123,7 @@ export function App() {
       setSelectedInstanceId('')
       setSelectedRun(undefined)
       setSelectedOpsRun(undefined)
+      setSelectedBotId('')
     }
     if (transition.view !== view()) setView(transition.view)
     previousProfileKey = nextProfileKey
@@ -128,11 +138,17 @@ export function App() {
           <div><strong>Riela</strong><span>{remoteOrigin ? 'Remote control plane' : 'Local control plane'}</span></div>
         </div>
         <nav aria-label="Primary navigation">
-          <For each={visibleNavigation()}>{(item) => (
-            <ActionButton icon={item.icon} classList={{ active: view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
+          <For each={visibleNavigation()}>{(item) => {
+            const active = () => view() === item.id
+              || (item.id === 'workflows' && view() === 'workflow-detail')
+              || (item.id === 'logs' && view() === 'run-detail')
+              || (item.id === 'ops' && view() === 'ops-run')
+              || (item.id === 'bots' && view() === 'bot-detail')
+            return <ActionButton icon={item.icon} classList={{ active: active() }}
+              aria-current={active() ? 'page' : undefined} onClick={() => setView(item.id)}>
               {item.label}
             </ActionButton>
-          )}</For>
+          }}</For>
         </nav>
         <Show when={host.data() && !authenticationRequired()}>
           <div class="header-profile">
@@ -197,6 +213,16 @@ export function App() {
                 workflowId={selectedOpsRun()!.workflowId}
                 onBack={() => setView('ops')}
               />
+            </Match>
+            <Match when={view() === 'bots'}>
+              <Show when={profileKey()} keyed>{(key) =>
+                <BotsView profileKey={key} onOpenBot={(botId) => { setSelectedBotId(botId); setView('bot-detail') }} />
+              }</Show>
+            </Match>
+            <Match when={view() === 'bot-detail' && selectedBotId()}>
+              <Show when={JSON.stringify([profileKey(), selectedBotId()])} keyed>{(_key) =>
+                <BotDetailView profileKey={profileKey()} botId={selectedBotId()} onBack={() => setView('bots')} />
+              }</Show>
             </Match>
             <Match when={view() === 'settings'}>
               <Show when={profileKey()} keyed>{(_settingsProfileKey) =>

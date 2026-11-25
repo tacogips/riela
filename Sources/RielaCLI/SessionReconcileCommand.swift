@@ -216,6 +216,7 @@ struct SessionReconcileCommandRunner {
       } else if let updatedSnapshot {
         try runtimeStore.save(updatedSnapshot)
       }
+      BotActivityRuntime.settleProcessExit(sessionId: sessionId, sessionStoreRoot: root, now: now)
       return SessionReconcileEntry(sessionId: sessionId, workflowId: workflowId, verdict: "orphaned", applied: true, reason: Self.cancellationReason)
     } catch {
       return SessionReconcileEntry(sessionId: sessionId, workflowId: workflowId, verdict: "skipped", applied: false, reason: String(describing: error))

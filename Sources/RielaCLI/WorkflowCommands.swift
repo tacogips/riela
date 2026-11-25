@@ -267,6 +267,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var authToken: String?
   public var authTokenEnv: String?
   public var managerSessionId: String?
+  public var botId: String?
 
   public init(
     workflowName: String,
@@ -281,8 +282,10 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     timeoutMs: Int? = nil,
     authToken: String? = nil,
     authTokenEnv: String? = nil,
-    managerSessionId: String? = nil
+    managerSessionId: String? = nil,
+    botId: String? = nil
   ) {
+    self.botId = botId
     self.workflowName = workflowName
     self.instanceIdentity = instanceIdentity
     self.runtimeVariables = runtimeVariables
@@ -449,7 +452,7 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
       throw CLIUsageError("remote run returned non-object GraphQL response")
     }
     if case let .array(errors)? = root["errors"], !errors.isEmpty {
-      throw CLIUsageError("remote run returned GraphQL errors")
+      throw CLIUsageError(remoteRunGraphQLErrorMessage(errors))
     }
     guard
       case let .object(dataObject)? = root["data"],
@@ -461,11 +464,26 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
   }
 }
 
-private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONObject {
+func remoteRunGraphQLErrorMessage(_ errors: [JSONValue]) -> String {
+  if case let .object(error)? = errors.first,
+     case let .object(extensions)? = error["extensions"],
+     case let .string(code)? = extensions["code"],
+     code == "BOT_NOT_FOUND" || code == "BOT_PAUSED",
+     case let .string(message)? = error["message"],
+     nonEmptyString(message) != nil {
+    return message
+  }
+  return "remote run returned GraphQL errors"
+}
+
+func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONObject {
   var input: JSONObject = [
     "workflowName": .string(request.workflowName),
     "runtimeVariables": .object(request.runtimeVariables)
   ]
+  if let botId = request.botId {
+    input["botId"] = .string(botId)
+  }
   if let instanceIdentity = request.instanceIdentity {
     input["instanceIdentity"] = .string(instanceIdentity)
   }

@@ -166,7 +166,7 @@ public struct RielaCLIApplication: Sendable {
       case let .task(command):
         return await taskCommandRunner.run(command)
       case let .scoped(command):
-        return await scopedCommandRunner.run(command)
+        return await runScopedCommand(command)
       }
     } catch let error as CLIUsageError {
       return renderParserFailure(arguments: arguments, error: error)
@@ -326,6 +326,29 @@ Riela CLI
 
 Usage:
   riela --version
+  riela model list [--provider <instance-id>] [options]
+  riela provider list [options]
+  riela provider show <instance-id> [options]
+  riela provider refresh [<instance-id>] [options]
+  riela provider add --id <id> --driver <driver> [options]
+  riela provider update <instance-id> [options]
+  riela provider remove <instance-id> [options]
+  riela bot create --name <name> [--id <id>] [options]
+  riela bot list [--group-by none|workspace] [options]
+  riela bot show <id> [options]
+  riela bot update <id> [options]
+  riela bot pause <id> [options]
+  riela bot resume <id> [options]
+  riela bot remove <id> [options]
+  riela bot activity (<bot-id> | --session <id>) [--after <seq>] [--limit <count>] [--follow] [--output json|jsonl|text]
+  riela bot answer <request-id> (--option <option-id> | --decline) [options]
+  riela bot pin <id> [--item session:<id>|task:<id>] [options]
+  riela bot unpin <id> [--item <item>] [options]
+  riela bot move <id> --position <number> [--item <item>] [options]
+  riela bot snooze <id> --until <ISO-8601> | --for <duration> [--item <item>] [options]
+  riela bot unsnooze <id> [--item <item>] [options]
+  riela bot settle <id> [--item <item>] [options]
+  riela bot unsettle <id> [--item <item>] [options]
   riela sandbox run --backend auto|container|seatbelt|bubblewrap [options] -- executable [arguments]
   riela workflow validate <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
@@ -355,7 +378,7 @@ Usage:
   riela workflow definition purge-history <workflow> --reason <text> --yes [--dry-run]
   Leading-dash values for definition options must use --option=<value>, for example --text=--- yaml.
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
-  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--output jsonl|json|text]
+  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--bot <bot-id>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela instance reload <identity> --reason <text> [--workflow-definition-dir <dir>] [--interrupt-running] [--wait-idle] [--timeout-seconds N] [--server URL] [--profile P] [--cwd <dir>]
   riela instance run <identity> [--variables <json|@file>] [--wait] [--timeout-seconds N] [--poll-interval-seconds N] [--allow-overlap] [--server URL] [--profile P] [--cwd <dir>]

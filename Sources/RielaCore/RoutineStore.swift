@@ -45,6 +45,7 @@ public struct RoutineRecord: Codable, Equatable, Sendable {
   public var overlapPolicy: String?
   public var maxQueuedRuns: Int?
   public var maxConcurrentRuns: Int?
+  public var botId: String?
 
   public init(
     routineId: String,
@@ -69,7 +70,8 @@ public struct RoutineRecord: Codable, Equatable, Sendable {
     origin: JSONObject? = nil,
     overlapPolicy: String? = nil,
     maxQueuedRuns: Int? = nil,
-    maxConcurrentRuns: Int? = nil
+    maxConcurrentRuns: Int? = nil,
+    botId: String? = nil
   ) {
     self.routineId = routineId
     self.name = name
@@ -94,6 +96,7 @@ public struct RoutineRecord: Codable, Equatable, Sendable {
     self.overlapPolicy = overlapPolicy
     self.maxQueuedRuns = maxQueuedRuns
     self.maxConcurrentRuns = maxConcurrentRuns
+    self.botId = botId
   }
 }
 

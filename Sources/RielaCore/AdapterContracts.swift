@@ -149,6 +149,97 @@ public struct AdapterExecutionIdentity: Codable, Equatable, Hashable, Sendable {
   }
 }
 
+public enum AdapterActivityUpdate: Codable, Equatable, Sendable {
+  case message(messageId: String?, text: String, replace: Bool)
+  case thought(text: String)
+  case toolCall(AdapterActivityToolCall)
+  case plan(planId: String, entries: [AdapterActivityPlanEntry])
+  case planRemoved(planId: String)
+  case mode(modeId: String)
+  case commands(names: [String])
+  case configOptions(options: [JSONObject])
+  case sessionInfo(title: String?)
+  case usage(JSONObject)
+  case notice(severity: String, title: String, description: String?)
+  case subagent(subSessionId: String, title: String?, state: String?)
+  case stop(stopReason: String, limited: Bool, limitedResetAt: Date?)
+  case reportedModel(String)
+  case other(updateKind: String)
+}
+
+public struct AdapterActivityLocation: Codable, Equatable, Sendable {
+  public var path: String
+  public var line: Int?
+
+  public init(path: String, line: Int? = nil) {
+    self.path = path
+    self.line = line
+  }
+}
+
+/// Optional fields are nil when the backend update did not carry them.
+public struct AdapterActivityToolCall: Codable, Equatable, Sendable {
+  public var toolCallId: String
+  public var title: String?
+  public var toolKind: String?
+  public var status: String?
+  public var locations: [AdapterActivityLocation]?
+
+  public init(
+    toolCallId: String, title: String? = nil, toolKind: String? = nil,
+    status: String? = nil, locations: [AdapterActivityLocation]? = nil
+  ) {
+    self.toolCallId = toolCallId
+    self.title = title
+    self.toolKind = toolKind
+    self.status = status
+    self.locations = locations
+  }
+}
+
+public struct AdapterActivityPlanEntry: Codable, Equatable, Sendable {
+  public var content: String
+  public var status: String
+  public var priority: String
+
+  public init(content: String, status: String, priority: String) {
+    self.content = content
+    self.status = status
+    self.priority = priority
+  }
+}
+
+public struct AdapterPermissionOption: Codable, Equatable, Sendable {
+  public var optionId: String
+  public var name: String
+  public var kind: String
+
+  public init(optionId: String, name: String, kind: String) {
+    self.optionId = optionId
+    self.name = name
+    self.kind = kind
+  }
+}
+
+public struct AdapterPermissionRequest: Codable, Equatable, Sendable {
+  public var toolCallId: String?
+  public var title: String?
+  public var options: [AdapterPermissionOption]
+
+  public init(toolCallId: String? = nil, title: String? = nil, options: [AdapterPermissionOption]) {
+    self.toolCallId = toolCallId
+    self.title = title
+    self.options = options
+  }
+}
+
+public enum AdapterPermissionOutcome: Codable, Equatable, Sendable {
+  case selected(optionId: String)
+  case cancelled
+}
+
+public typealias AdapterPermissionRequestHandler = @Sendable (AdapterPermissionRequest) async -> AdapterPermissionOutcome
+
 public enum AdapterBackendEventChannel: String, Codable, Equatable, Sendable {
   case lifecycle
   case assistant
@@ -170,6 +261,7 @@ public struct AdapterBackendEvent: Codable, Equatable, Sendable {
   public var sequence: Int?
   public var at: Date?
   public var backendSessionId: String?
+  public var activity: AdapterActivityUpdate?
 
   public init(
     provider: String,
@@ -183,7 +275,8 @@ public struct AdapterBackendEvent: Codable, Equatable, Sendable {
     metadata: JSONObject? = nil,
     sequence: Int? = nil,
     at: Date? = nil,
-    backendSessionId: String? = nil
+    backendSessionId: String? = nil,
+    activity: AdapterActivityUpdate? = nil
   ) {
     self.provider = provider
     self.eventType = eventType
@@ -197,6 +290,7 @@ public struct AdapterBackendEvent: Codable, Equatable, Sendable {
     self.sequence = sequence
     self.at = at
     self.backendSessionId = backendSessionId
+    self.activity = activity
   }
 }
 
@@ -206,9 +300,16 @@ public struct AdapterExecutionContext: Sendable {
   public var deadline: Date?
   public var backendEventHandler: AdapterBackendEventHandler?
 
-  public init(deadline: Date? = nil, backendEventHandler: AdapterBackendEventHandler? = nil) {
+  public var permissionRequestHandler: AdapterPermissionRequestHandler?
+
+  public init(
+    deadline: Date? = nil,
+    backendEventHandler: AdapterBackendEventHandler? = nil,
+    permissionRequestHandler: AdapterPermissionRequestHandler? = nil
+  ) {
     self.deadline = deadline
     self.backendEventHandler = backendEventHandler
+    self.permissionRequestHandler = permissionRequestHandler
   }
 }
 

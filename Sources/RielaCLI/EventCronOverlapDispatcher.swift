@@ -37,6 +37,7 @@ struct CronOverlapFire: Sendable {
   var routineId: String?
   var routineStoreRoot: String?
   var coalescedTickCount: Int
+  var botId: String?
 }
 
 enum CronOverlapSubmitOutcome: Equatable, Sendable {
@@ -396,7 +397,9 @@ actor CronOverlapDispatcher {
           hops.append(Task {
             await dispatcher.recordSessionStarted(receiptId: id, sessionId: sessionId, bindingId: fire.bindingId)
           })
-        }
+        },
+        botId: fire.botId,
+        botLinkSource: fire.routineId.map { ("routine", $0) } ?? ("run", nil)
       )
       let result: WorkflowRunResult?
       let failure: String?
@@ -476,13 +479,13 @@ actor CronOverlapDispatcher {
       scope.pendingAfterCancel = nil
       scope.settleGeneration += 1
       scopes[bindingId] = scope
-      guard !skipDeferredIfRoutineInactive(pending, policy: policy) else {
+      guard let admitted = admitDeferredRoutine(pending, policy: policy) else {
         releaseQueuedReservation()
         await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
         return
       }
       start(
-        pending, policy: policy,
+        admitted, policy: policy,
         reason: CronOverlapReason.cancelRunning(bindingId, cancelledSessionId: ids.first),
         cancelledSessionIds: ids
       )
@@ -507,11 +510,11 @@ actor CronOverlapDispatcher {
           scope.pendingAfterCancel == nil, !scope.queue.isEmpty {
       let next = scope.queue.removeFirst()
       scopes[bindingId] = scope
-      if skipDeferredIfRoutineInactive(next, policy: policy) {
+      guard let admitted = admitDeferredRoutine(next, policy: policy) else {
         releaseQueuedReservation()
         continue
       }
-      start(next, policy: policy)
+      start(admitted, policy: policy)
       return
     }
   }
@@ -531,14 +534,19 @@ actor CronOverlapDispatcher {
     }
   }
 
-  /// Returns true when the routine gate stopped the deferred fire (it is then
-  /// recorded `skipped` with the gate's reason).
-  private func skipDeferredIfRoutineInactive(_ fire: CronOverlapFire, policy: EffectiveEventOverlapPolicy) -> Bool {
-    guard let routineId = fire.routineId else { return false }
-    let gate = server.routineDispatchGate(routineId: routineId, storeRoot: fire.routineStoreRoot, parsed: parsed)
-    guard let reason = gate.skipReason else { return false }
-    _ = recordNonStart(fire, policy: policy, status: .skipped, reason: reason)
-    return true
+  /// Reloads the routine at promotion, recording a skip if it can no longer run.
+  private func admitDeferredRoutine(_ fire: CronOverlapFire, policy: EffectiveEventOverlapPolicy) -> CronOverlapFire? {
+    guard let routineId = fire.routineId else { return fire }
+    let gate = server.routineDispatchGate(
+      routineId: routineId, storeRoot: fire.routineStoreRoot, parsed: parsed, workflowName: fire.workflowName
+    )
+    if let reason = gate.skipReason {
+      _ = recordNonStart(fire, policy: policy, status: .skipped, reason: reason)
+      return nil
+    }
+    var admitted = fire
+    admitted.botId = gate.botId
+    return admitted
   }
 
   private func settleTimedOut(bindingId: String, generation: Int) {

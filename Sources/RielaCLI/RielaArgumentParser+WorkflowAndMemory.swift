@@ -220,7 +220,8 @@ extension RielaArgumentParser {
       authTokenEnv: parsed.authTokenEnv,
       fromRegistry: parsed.fromRegistry,
       supervisorMode: parsed.supervisorMode,
-      resumeSessionId: parsed.resumeSessionId
+      resumeSessionId: parsed.resumeSessionId,
+      botId: parsed.bot
     )
     options.runtimeEnvironmentFile = parsed.runtimeEnvironmentFile
     options.entryStepId = parsed.entryStepId

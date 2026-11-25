@@ -276,6 +276,9 @@ public enum ScopedCommandKind: String, Codable, CaseIterable, Sendable {
   case hook
   case events
   case routine
+  case bot
+  case model
+  case provider
   case serve
   case callStep = "call-step"
   case workflowCall = "workflow-call"
@@ -347,6 +350,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var resumeSessionId: String?
   /// A declared local entry; omitted for normal workflow entry semantics.
   public var entryStepId: String?
+  public var botId: String?
 
   public init(
     target: String,
@@ -377,9 +381,11 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     supervisorMode: Bool = false,
     resumeSessionId: String? = nil,
     runtimeEnvironmentFile: String? = nil,
-    entryStepId: String? = nil
+    entryStepId: String? = nil,
+    botId: String? = nil
   ) {
     executionMode = .oneTime
+    self.botId = botId
     self.entryStepId = entryStepId
     self.runtimeEnvironmentFile = runtimeEnvironmentFile
     self.target = target
@@ -506,6 +512,16 @@ public struct RielaArgumentParser: CLIArgumentParsing {
 
   private func parseCommandFamilyRoute(_ route: any ParsableCommand) throws -> RielaCommand? {
     switch route {
+    case let route as BotRoute:
+      let parsed = try ParsedScopedCommandArguments.parseCLI(route.passthroughArguments)
+      return .scoped(ScopedCommand(kind: .bot, options: try parseGeneric(
+        scope: "bot", command: parsed.command, target: parsed.target,
+        arguments: parsed.options, defaultOutput: .text
+      )))
+    case let route as ModelRoute:
+      return try parseCatalogRoute(.model, arguments: route.passthroughArguments)
+    case let route as ProviderRoute:
+      return try parseCatalogRoute(.provider, arguments: route.passthroughArguments)
     case let route as SpecialistRoute:
       return .specialist(try parseSpecialist(route.passthroughArguments))
     case let route as SessionRoute:
@@ -958,4 +974,13 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     return MemoryCommand(kind: kind, options: options)
   }
 
+}
+
+extension RielaArgumentParser {
+  private func parseCatalogRoute(_ kind: ScopedCommandKind, arguments: [String]) throws -> RielaCommand {
+    let parsed = try ParsedScopedCommandArguments.parseCLI(arguments)
+    return .scoped(ScopedCommand(kind: kind, options: try parseGeneric(
+      scope: kind.rawValue, command: parsed.command, target: parsed.target, arguments: parsed.options, defaultOutput: .text
+    )))
+  }
 }

@@ -16,7 +16,7 @@ func validateWorkflowExecutionRoots(_ roots: [ParsedGraphQLRootField]) throws {
       }
       let allowed: Set<String> = [
         "workflowName", "runtimeVariables", "instanceIdentity", "nodePatch", "maxSteps",
-        "maxConcurrency", "maxLoopIterations", "disableDefaultLoopGuard", "defaultTimeoutMs"
+        "maxConcurrency", "maxLoopIterations", "disableDefaultLoopGuard", "defaultTimeoutMs", "botId"
       ]
       guard Set(input.keys).isSubset(of: allowed) else { throw executionInvalid("unsupported execution input field") }
       guard case let .string(name)? = input["workflowName"], !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -31,6 +31,12 @@ func validateWorkflowExecutionRoots(_ roots: [ParsedGraphQLRootField]) throws {
         guard case let .string(identity) = value,
               !identity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
           throw executionInvalid("instanceIdentity must be nonempty")
+        }
+      }
+      if let value = input["botId"], value != .null {
+        guard case let .string(botId) = value,
+              !botId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          throw executionInvalid("botId must be nonempty")
         }
       }
       for key in ["maxSteps", "maxConcurrency", "maxLoopIterations", "defaultTimeoutMs"] {

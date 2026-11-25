@@ -199,6 +199,11 @@ func serveMachineGraphQLAdapter(
             provider: RielaSessionControlProvider(
               workingDirectory: workingDirectory,
               sessionStore: storeRoot
+            ),
+            next: BotsGraphQLDocumentExecutor(
+              provider: BotsGraphQLProvider(
+                workingDirectory: workingDirectory, sessionStoreRoot: storeRoot, environment: environment
+              )
             )
           )
           )

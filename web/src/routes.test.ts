@@ -9,7 +9,7 @@ describe('hash route parsing', () => {
   })
 
   test('parses navigation views and the command deck', () => {
-    for (const view of ['instances', 'logs', 'workflows', 'ops', 'settings'] as const) {
+    for (const view of ['instances', 'logs', 'workflows', 'ops', 'bots', 'settings'] as const) {
       expect(parseViewHash(`#/${view}`)).toEqual({ view })
     }
   })
@@ -24,6 +24,16 @@ describe('hash route parsing', () => {
   test('allows an empty instance for private ops runs', () => {
     expect(parseViewHash('#/ops/runs//session-9'))
       .toEqual({ view: 'ops-run', instanceId: '', sessionId: 'session-9' })
+  })
+
+  test('parses and round-trips the Bots list and detail links', () => {
+    expect(viewHash({ view: 'bots' })).toBe('#/bots')
+    expect(parseViewHash('#/bots/release-bot')).toEqual({ view: 'bot-detail', botId: 'release-bot' })
+    const detail = { view: 'bot-detail', botId: 'release/bot' } as const
+    expect(viewHash(detail)).toBe('#/bots/release%2Fbot')
+    expect(parseViewHash(viewHash(detail))).toEqual(detail)
+    expect(parseViewHash('#/bots/')).toBeUndefined()
+    expect(parseViewHash('#/bots/release/bot')).toBeUndefined()
   })
 
   test('rejects malformed or unknown hashes', () => {

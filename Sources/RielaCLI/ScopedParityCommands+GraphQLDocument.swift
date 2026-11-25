@@ -47,10 +47,22 @@ extension ScopedParityCommandRunner {
             sessionStore: parsed.sessionStore,
             scope: parsed.scope
           ),
-          next: RoutineGraphQLDocumentExecutor(
-            provider: FileRoutineGraphQLProvider(
+          next: BotsGraphQLDocumentExecutor(
+            provider: BotsGraphQLProvider(
               workingDirectory: workingDirectory,
+              sessionStoreRoot: CLIWorkflowSessionStore.resolveRootDirectory(
+                sessionStore: parsed.sessionStore, scope: parsed.scope, workingDirectory: workingDirectory
+              ),
               environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            ),
+            next: RoutineGraphQLDocumentExecutor(
+              provider: FileRoutineGraphQLProvider(
+                workingDirectory: workingDirectory,
+                environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
+                botExists: BotRunLinker.botExists(sessionStoreRoot: CLIWorkflowSessionStore.resolveRootDirectory(
+                  sessionStore: parsed.sessionStore, scope: parsed.scope, workingDirectory: workingDirectory
+                ))
+              )
             )
           )
         )

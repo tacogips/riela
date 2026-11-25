@@ -41,13 +41,22 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
       disableDefaultLoopGuard: input.disableDefaultLoopGuard ?? false,
       defaultTimeoutMs: input.defaultTimeoutMs,
       sessionStore: sessionStoreRoot,
-      workingDirectory: workingDirectory
+      workingDirectory: workingDirectory,
+      botId: input.botId
     )
     options.executionMode = .service(.init(kind: .api))
     var nodeEnvironment = environment
     nodeEnvironment["RIELA_API_KEY"] = ""
-    let commandResult = await CLIRuntimeEnvironment.$overrides.withValue(nodeEnvironment) {
-      await command.run(options)
+    let commandResult = try await CLIRuntimeEnvironment.$overrides.withValue(nodeEnvironment) {
+      if let botId = options.botId {
+        let root = BotRunLinker.resolveSessionStoreRoot(options: options, scope: .auto)
+        do {
+          _ = try BotRunLinker(sessionStoreRoot: root).prepare(botId: botId)
+        } catch let error as BotRunLinkError {
+          throw GraphQLWorkflowExecutionRejection(code: error.code.uppercased(), message: error.message)
+        }
+      }
+      return await command.run(options)
     }
 #if DEBUG
     let result = testCommandResultOverride?(commandResult) ?? commandResult

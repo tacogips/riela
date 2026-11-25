@@ -33,7 +33,8 @@ extension WorkflowRunCommand {
       timeoutMs: options.timeoutMs,
       authToken: authToken,
       authTokenEnv: authTokenEnv,
-      managerSessionId: managerSessionId
+      managerSessionId: managerSessionId,
+      botId: nonEmptyString(options.botId)
     )
     let result = try await graphQLTransport.executeWorkflow(endpoint: endpoint, request: request)
     return CLICommandResult(

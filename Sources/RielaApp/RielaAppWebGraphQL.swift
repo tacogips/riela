@@ -65,10 +65,18 @@ extension RielaApp {
               provider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() },
               next: RoutineAwareGraphQLFallbackExecutor(
                 routine: RoutineGraphQLDocumentExecutor(
-                  provider: FileRoutineGraphQLProvider(workingDirectory: appHomeDirectory.path)
+                  provider: FileRoutineGraphQLProvider(
+                    workingDirectory: appHomeDirectory.path,
+                    botExists: BotRunLinker.botExists(sessionStoreRoot: sessionStoreRoot)
+                  )
                 ),
-                next: RielaConfigGraphQLDocumentExecutor(
-                  provider: RielaAppConfigurationGraphQLProvider(app: self)
+                next: BotsGraphQLDocumentExecutor(
+                  provider: BotsGraphQLProvider(
+                    workingDirectory: appHomeDirectory.path, sessionStoreRoot: sessionStoreRoot, environment: environment
+                  ),
+                  next: RielaConfigGraphQLDocumentExecutor(
+                    provider: RielaAppConfigurationGraphQLProvider(app: self)
+                  )
                 )
               )
             )

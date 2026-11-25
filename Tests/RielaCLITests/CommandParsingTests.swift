@@ -36,7 +36,8 @@ final class CommandParsingTests: XCTestCase {
       Set([
         "workflow", "package", "node", "rrun", "setup", "gateway", "memory", "cache", "instance", "doctor", "gc",
         "session", "loop", "task", "graphql", "gql", "hook", "events", "routine", "serve", "call-step", "workflow-call", "kaiba", "version",
-        "specialist", "gateway", "cache", "environment", "storage", "voice"
+        "specialist", "gateway", "cache", "environment", "storage", "voice", "bot",
+        "model", "provider"
       ])
     )
   }

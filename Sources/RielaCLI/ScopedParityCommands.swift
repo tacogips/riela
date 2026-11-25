@@ -75,8 +75,8 @@ public struct ScopedParityCommandRunner: Sendable {
         parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
       } else if command.kind == .events, options.command == "schedules" {
         parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
-      } else if command.kind == .routine {
-        // Routine flags are parsed by ParsedRoutineOptions inside routineResult.
+      } else if [.routine, .bot, .model, .provider].contains(command.kind) {
+        // Each family parses its own options.
         parityArguments = []
       } else {
         parityArguments = options.arguments
@@ -108,6 +108,10 @@ public struct ScopedParityCommandRunner: Sendable {
       case .events:
         let result = try await eventResult(options: options, parsed: parsed)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
+      case .bot:
+        return botResult(options: options)
+      case .model, .provider:
+        return await ModelCatalogCommands().run(kind: command.kind, options: options)
       case .routine:
         let result = try routineResult(options: options)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }

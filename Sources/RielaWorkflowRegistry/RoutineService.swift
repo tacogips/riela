@@ -33,6 +33,7 @@ public struct RoutineCreateRequest: Codable, Equatable, Sendable {
   public var overlapPolicy: String?
   public var maxQueuedRuns: Int?
   public var maxConcurrentRuns: Int?
+  public var botId: String?
 
   public init(
     name: String,
@@ -49,7 +50,8 @@ public struct RoutineCreateRequest: Codable, Equatable, Sendable {
     origin: JSONObject? = nil,
     overlapPolicy: String? = nil,
     maxQueuedRuns: Int? = nil,
-    maxConcurrentRuns: Int? = nil
+    maxConcurrentRuns: Int? = nil,
+    botId: String? = nil
   ) {
     self.name = name
     self.instruction = instruction
@@ -66,6 +68,7 @@ public struct RoutineCreateRequest: Codable, Equatable, Sendable {
     self.overlapPolicy = overlapPolicy
     self.maxQueuedRuns = maxQueuedRuns
     self.maxConcurrentRuns = maxConcurrentRuns
+    self.botId = botId
   }
 }
 
@@ -85,13 +88,16 @@ public struct RoutineMutationResult: Codable, Equatable, Sendable {
 public struct RoutineService: Sendable {
   public var workingDirectory: String
   public var environment: [String: String]
+  private let botExists: (@Sendable (String) -> Bool)?
 
   public init(
     workingDirectory: String = FileManager.default.currentDirectoryPath,
-    environment: [String: String] = ProcessInfo.processInfo.environment
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    botExists: (@Sendable (String) -> Bool)? = nil
   ) {
     self.workingDirectory = workingDirectory
     self.environment = environment
+    self.botExists = botExists
   }
 
   public func store(routineStoreRoot: String? = nil) -> RoutineStore {
@@ -128,6 +134,10 @@ public struct RoutineService: Sendable {
       throw RoutineServiceError("unknown timezone identifier '\(timezone)'")
     }
 
+    if let botId = request.botId, let botExists, !botExists(botId) {
+      throw RoutineServiceError("bot_not_found: \(botId)")
+    }
+
     let routineId = "routine-\(Self.slug(name))-\(Self.randomSuffix())"
     let sourceId = "\(routineId)-cron"
     let bindingId = "\(routineId)-binding"
@@ -154,7 +164,8 @@ public struct RoutineService: Sendable {
       origin: request.origin,
       overlapPolicy: request.overlapPolicy,
       maxQueuedRuns: request.maxQueuedRuns,
-      maxConcurrentRuns: request.maxConcurrentRuns
+      maxConcurrentRuns: request.maxConcurrentRuns,
+      botId: request.botId
     )
 
     let binding = eventBinding(for: record, storeRoot: routineStore.rootDirectory)

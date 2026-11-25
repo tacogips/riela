@@ -31,6 +31,7 @@ func consumeGatewayTurnV2(
   _ request: GatewayTurnRequest,
   client: ACPClientConnection,
   collector: GatewayACPUpdateCollector,
+  permissions: GatewayPermissionLifetime,
   backendEventHandler: AdapterBackendEventHandler?
 ) async throws -> GatewayACPTurn {
   let session = try await client.newSessionV2(
@@ -41,7 +42,9 @@ func consumeGatewayTurnV2(
       }
     )
   )
-  let watchdog = GatewayDeadlineWatchdog(deadline: request.deadline, client: client, sessionId: session.sessionId)
+  let watchdog = GatewayDeadlineWatchdog(
+    deadline: request.deadline, client: client, sessionId: session.sessionId, permissions: permissions
+  )
   defer { watchdog.cancel() }
 
   var finalState: ACPV2StateUpdate?
@@ -52,7 +55,7 @@ func consumeGatewayTurnV2(
       case .accepted:
         break
       case .update(let update):
-        if let backendEvent = collector.consume(update) {
+        for backendEvent in collector.consume(update) {
           await backendEventHandler?(backendEvent)
         }
       case .finished(let state):
@@ -69,22 +72,24 @@ func consumeGatewayTurnV2(
     throw AdapterExecutionError(.invalidOutput, "agent-gateway stream ended without an idle state update")
   }
   if finalState.stopReason == .cancelled, watchdog.deadlineExpired {
-    throw AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
+    throw GatewayTurnFailure(
+      error: AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated"),
+      reason: ACPStopReason.cancelled.rawValue, meta: finalState.meta, acpError: finalState.error
+    )
   }
   if finalState.stopReason == .error {
     // Same wording as a v1 error response, so failure classification and
     // diagnostics do not depend on the negotiated protocol version.
     let error = finalState.error ?? ACPError.internalError("agent-gateway turn failed")
-    throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
+    let failure = gatewayProviderError(error)
+    throw GatewayTurnFailure(error: failure, reason: failure.message, meta: finalState.meta, acpError: error)
   }
   // v2 stop reasons are an open set and may be absent; without a
   // recognized one the outcome of the turn is unknown, never success.
-  guard let stopReason = finalState.stopReason.flatMap({ ACPStopReason(rawValue: $0.rawValue) }) else {
-    throw AdapterExecutionError(
-      .providerError,
-      "agent-gateway turn ended with stop reason '\(finalState.stopReason?.rawValue ?? "unknown")'"
-    )
-  }
+  let stopReason = try gatewayStopReason(finalState.stopReason?.rawValue, meta: finalState.meta, error: finalState.error)
+  await collector.emitTurnEnd(
+    reason: stopReason.rawValue, meta: finalState.meta, error: finalState.error, handler: backendEventHandler
+  )
   return collector.turn(stopReason: stopReason, state: finalState)
 }
 
@@ -93,41 +98,58 @@ extension GatewayACPUpdateCollector {
   /// updates are upserts keyed by id: the first `tool_call_update` for an id
   /// creates the tool call, and a whole-message update replaces what chunks
   /// accumulated for that message.
-  func consume(_ update: ACPV2SessionUpdate) -> AdapterBackendEvent? {
+  func consume(_ update: ACPV2SessionUpdate) -> [AdapterBackendEvent] {
     lock.withLock {
-      switch update {
-      case .agentMessageChunk(let chunk):
-        guard case .text(let text) = chunk.content else { return nil }
+      let activity = GatewayActivityMapping.update(from: update)
+      let primary = primaryEvent(update, activity: activity)
+      if let mode = GatewayActivityMapping.mode(from: update) {
+        return [primary, activityEvent(update.kind, activity: mode)]
+      }
+      return [primary]
+    }
+  }
+
+  private func primaryEvent(_ update: ACPV2SessionUpdate, activity: AdapterActivityUpdate) -> AdapterBackendEvent {
+    switch update {
+    case .agentMessageChunk(let chunk):
+      if case .text(let text) = chunk.content {
         messages.append(chunk)
         accumulatedText = messages.joinedText
-        return chunkEvent(.agentMessageChunk, channel: .assistant, text: text.text)
-      case .agentMessage(let message):
-        messages.apply(message)
-        accumulatedText = messages.joinedText
-        // A whole message is output that did not arrive as chunks.
-        guard case .set = message.content, let text = messages.text(of: message.messageId),
-              !text.isEmpty else { return nil }
-        return chunkEvent(.agentMessageChunk, channel: .assistant, text: text)
-      case .agentThoughtChunk(let chunk):
-        guard case .text(let text) = chunk.content else { return nil }
-        return chunkEvent(.agentThoughtChunk, channel: .thinking, text: text.text)
-      case .toolCallUpdate(let update):
-        let isNew = seenToolCalls.insert(update.toolCallId).inserted
-        return chunkEvent(
-          isNew ? .toolCall : .toolCallUpdate,
-          channel: .tool,
-          text: nil,
-          toolCall: GatewayToolCallEventMetadata(
-            toolCallId: update.toolCallId,
-            title: update.title.value,
-            kind: update.kind.value.flatMap(ACPToolKind.init(rawValue:)),
-            status: update.status.value.flatMap(ACPToolCallStatus.init(rawValue:))
-          )
-        )
-      default:
-        return nil
+        return chunkEvent(.agentMessageChunk, channel: .assistant, text: text.text, activity: activity)
       }
+    case .agentMessage(let message):
+      messages.apply(message)
+      accumulatedText = messages.joinedText
+      // A whole message is output that did not arrive as chunks.
+      if case .set = message.content, let text = messages.text(of: message.messageId), !text.isEmpty {
+        return chunkEvent(.agentMessageChunk, channel: .assistant, text: text, activity: activity)
+      }
+    case .agentThoughtChunk(let chunk):
+      if case .text(let text) = chunk.content {
+        return chunkEvent(.agentThoughtChunk, channel: .thinking, text: text.text, activity: activity)
+      }
+    case .toolCallUpdate(let call):
+      let isNew = seenToolCalls.insert(call.toolCallId).inserted
+      return chunkEvent(
+        isNew ? .toolCall : .toolCallUpdate,
+        channel: .tool,
+        text: nil,
+        toolCall: GatewayToolCallEventMetadata(
+          toolCallId: call.toolCallId,
+          title: call.title.value,
+          kind: call.kind.value.flatMap(ACPToolKind.init(rawValue:)),
+          status: call.status.value.flatMap(ACPToolCallStatus.init(rawValue:))
+        ),
+        activity: activity
+      )
+    case .toolCallContentChunk, .terminalUpdate, .terminalOutputChunk:
+      return activityEvent(update.kind, channel: .tool, activity: activity)
+    case .agentThought, .userMessage, .userMessageChunk, .stateUpdate, .planUpdate, .planRemoved,
+         .availableCommandsUpdate, .configOptionUpdate, .sessionInfoUpdate, .usageUpdate, .notice,
+         .replayComplete, .subagentUpdate, .other:
+      break
     }
+    return activityEvent(update.kind, activity: activity)
   }
 
   func turn(stopReason: ACPStopReason, state: ACPV2StateUpdate) -> GatewayACPTurn {

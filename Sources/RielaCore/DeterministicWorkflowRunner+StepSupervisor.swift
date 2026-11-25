@@ -161,6 +161,10 @@ private struct StepSupervisedFailure: Error {
 }
 
 extension DeterministicWorkflowRunner {
+  func isSupervisedActivityTimeout(_ error: Error) -> Bool {
+    error is StepSupervisorExpired || (error as? StepSupervisedFailure)?.error.code == .timeout
+  }
+
   func executeSupervisedAddonAndPublish(
     addon: WorkflowNodeAddonRef, session: WorkflowSession, sessionId: String,
     workflow: WorkflowDefinition, step: WorkflowStepRef, resolvedInputPayload: JSONObject,
@@ -175,40 +179,44 @@ extension DeterministicWorkflowRunner {
       step: step, attempt: executionIndex, backend: nil, inputSnapshot: [
         "variables": .object(request.variables),
         "resolvedInputPayload": .object(workflowAddonResolvedInputPayload(resolvedInputPayload, session: session))
-      ], handler: request.eventHandler)
+      ], recorder: request.activityRecorder, handler: request.eventHandler)
     let recordDuration = max(0, Int(retryClock.now().timeIntervalSince(recordStart) * 1_000))
     let context = adapterExecutionContext(deadline: nil, workflowId: workflow.workflowId, step: step,
-      execution: started.execution, eventContext: started.backendEventContext, handler: request.eventHandler)
+      execution: started.execution, eventContext: started.backendEventContext, request: request, handler: request.eventHandler)
     let race = StepSupervisorRace()
     let success: SupervisedSuccess
     do {
-      if let stepDeadline, retryClock.now() >= stepDeadline {
-        throw StepSupervisedFailure(error: AdapterExecutionError(.timeout, "\(addon.name) step deadline exceeded before dispatch"),
-          reason: .stepDeadline, attempts: 0, timeoutKind: .stepDeadline)
-      }
-      success = try await withTaskCancellationHandler {
-        try await withCheckedThrowingContinuation { continuation in
-          race.install(continuation)
-          let child = Task {
-            do {
-              let arguments = SupervisedRegionArguments(addon: addon, session: session, sessionId: sessionId,
-                workflow: workflow, step: step, resolvedInputPayload: resolvedInputPayload, request: request,
-                executionIndex: executionIndex, started: started, context: context, readyAt: readyAt,
-                stepDeadline: stepDeadline, queueWait: queueWait, recordDuration: recordDuration)
-              let result = try await supervisedAddonRegion(arguments, race: race)
-              race.finish(.success(result))
-            } catch { race.finish(.failure(error)) }
-          }
-          race.setChild(child)
-          if let stepDeadline {
-            let timer = Task {
-              do { try await retryClock.sleep(until: stepDeadline.addingTimeInterval(5)) } catch { return }
-              race.finishTimer(attempt: nil)
-            }
-            race.setStepTimer(timer)
-          }
+      success = try await settlingActivity(
+        request: request, sessionId: sessionId, executionId: started.execution.executionId
+      ) {
+        if let stepDeadline, retryClock.now() >= stepDeadline {
+          throw StepSupervisedFailure(error: AdapterExecutionError(.timeout, "\(addon.name) step deadline exceeded before dispatch"),
+            reason: .stepDeadline, attempts: 0, timeoutKind: .stepDeadline)
         }
-      } onCancel: { race.finish(.failure(CancellationError()), cancelled: true) }
+        return try await withTaskCancellationHandler {
+          try await withCheckedThrowingContinuation { continuation in
+            race.install(continuation)
+            let child = Task {
+              do {
+                let arguments = SupervisedRegionArguments(addon: addon, session: session, sessionId: sessionId,
+                  workflow: workflow, step: step, resolvedInputPayload: resolvedInputPayload, request: request,
+                  executionIndex: executionIndex, started: started, context: context, readyAt: readyAt,
+                  stepDeadline: stepDeadline, queueWait: queueWait, recordDuration: recordDuration)
+                let result = try await supervisedAddonRegion(arguments, race: race)
+                race.finish(.success(result))
+              } catch { race.finish(.failure(error)) }
+            }
+            race.setChild(child)
+            if let stepDeadline {
+              let timer = Task {
+                do { try await retryClock.sleep(until: stepDeadline.addingTimeInterval(5)) } catch { return }
+                race.finishTimer(attempt: nil)
+              }
+              race.setStepTimer(timer)
+            }
+          }
+        } onCancel: { race.finish(.failure(CancellationError()), cancelled: true) }
+      }
     } catch {
       if isWorkflowRunCancellation(error) {
         await context.backendEventHandler?(AdapterBackendEvent(provider: addon.name, eventType: "riela.step.retry.stopped",
@@ -335,6 +343,9 @@ extension DeterministicWorkflowRunner {
       do {
         var attemptContext = context
         attemptContext.deadline = attemptDeadline
+        attemptContext.permissionRequestHandler = activityPermissionHandler(
+          request: request, sessionId: sessionId, executionId: started.execution.executionId, deadline: attemptDeadline
+        )
         let output = try await executePlacedAddon(input, step: step,
           executionId: "\(sessionId)/\(started.execution.executionId)", context: attemptContext)
         guard race.endAttempt(attempt) else { throw CancellationError() }

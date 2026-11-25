@@ -10,6 +10,7 @@ public struct GraphQLExecuteWorkflowInput: Codable, Equatable, Sendable {
   public var maxLoopIterations: Int?
   public var disableDefaultLoopGuard: Bool?
   public var defaultTimeoutMs: Int?
+  public var botId: String?
 
   public init(
     workflowName: String,
@@ -20,8 +21,10 @@ public struct GraphQLExecuteWorkflowInput: Codable, Equatable, Sendable {
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
     disableDefaultLoopGuard: Bool? = nil,
-    defaultTimeoutMs: Int? = nil
+    defaultTimeoutMs: Int? = nil,
+    botId: String? = nil
   ) {
+    self.botId = botId
     self.workflowName = workflowName
     self.runtimeVariables = runtimeVariables
     self.instanceIdentity = instanceIdentity
@@ -31,6 +34,16 @@ public struct GraphQLExecuteWorkflowInput: Codable, Equatable, Sendable {
     self.maxLoopIterations = maxLoopIterations
     self.disableDefaultLoopGuard = disableDefaultLoopGuard
     self.defaultTimeoutMs = defaultTimeoutMs
+  }
+}
+
+public struct GraphQLWorkflowExecutionRejection: Error, Equatable, Sendable {
+  public var code: String
+  public var message: String
+
+  public init(code: String, message: String) {
+    self.code = code
+    self.message = message
   }
 }
 

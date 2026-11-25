@@ -464,6 +464,7 @@ extension SurfaceCatalog {
         family: "routine",
         kind: .mutation,
         cli: "routine create",
+        cliOptions: ["--bot"],
         graphql: graphQLMutation("createRoutine"),
         desktop: .implemented
       ),

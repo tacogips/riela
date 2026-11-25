@@ -256,6 +256,8 @@ extension DeterministicWorkflowRunner {
         crossWorkflowDispatchDepth: request.crossWorkflowDispatchDepth + 1
       )
       childRequest.workflowRunId = request.workflowRunId
+      childRequest.botContext = request.botContext
+      childRequest.activityRecorder = request.activityRecorder
       childRequest.fanoutChangeContext = request.fanoutChangeContext
       childRequest.parentSessionId = parentSessionId
       childRequest.rootSessionId = rootSessionId

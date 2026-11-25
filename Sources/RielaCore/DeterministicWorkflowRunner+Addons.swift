@@ -46,48 +46,53 @@ extension DeterministicWorkflowRunner {
           "variables": .object(request.variables),
           "resolvedInputPayload": .object(workflowAddonResolvedInputPayload(resolvedInputPayload, session: session))
         ],
+        recorder: request.activityRecorder,
         handler: request.eventHandler
       )
-      let operationExecutionId: String
-      do {
-        operationExecutionId = try WorkflowAddonExecutionIdentity.deriveOperationExecutionId(
-          stepExecutionId: startedExecution.execution.executionId,
-          predecessorStepExecutionId: predecessorExecutionIds.first,
-          predecessorStepExecutionIds: predecessorExecutionIds
+      adapterOutput = try await settlingActivity(
+        request: request, sessionId: sessionId, executionId: startedExecution.execution.executionId
+      ) {
+        let operationExecutionId: String
+        do {
+          operationExecutionId = try WorkflowAddonExecutionIdentity.deriveOperationExecutionId(
+            stepExecutionId: startedExecution.execution.executionId,
+            predecessorStepExecutionId: predecessorExecutionIds.first,
+            predecessorStepExecutionIds: predecessorExecutionIds
+          )
+        } catch let error as WorkflowAddonOperationIdentityError {
+          throw AdapterExecutionError(.invalidInput, error.diagnosticCode)
+        }
+        let declaredMemoryRetentions = effectiveMemoryDeclarations(workflow: workflow, step: step, payload: nil)
+          .compactMap { memory in memory.historyRetention.map { (memory.id, $0) } }
+        let addonInput = WorkflowAddonExecutionInput(
+          workflowId: workflow.workflowId,
+          stepId: step.id,
+          nodeId: step.nodeId,
+          addon: addon,
+          variables: request.variables,
+          resolvedInputPayload: workflowAddonResolvedInputPayload(resolvedInputPayload, session: session),
+          attachments: attachments,
+          executionIdentity: WorkflowAddonExecutionIdentity(
+            workflowExecutionId: sessionId,
+            stepExecutionId: startedExecution.execution.executionId,
+            operationExecutionId: operationExecutionId,
+            attempt: executionIndex,
+            predecessorStepExecutionId: predecessorExecutionIds.first,
+            predecessorStepExecutionIds: predecessorExecutionIds
+          ),
+          memoryHistoryRetentions: declaredMemoryRetentions.isEmpty
+            ? nil
+            : Dictionary(uniqueKeysWithValues: declaredMemoryRetentions)
         )
-      } catch let error as WorkflowAddonOperationIdentityError {
-        throw AdapterExecutionError(.invalidInput, error.diagnosticCode)
+        return try await executePlacedAddon(
+          addonInput, step: step, executionId: "\(sessionId)/\(startedExecution.execution.executionId)",
+          context: adapterExecutionContext(
+            deadline: deadline(for: step, request: request), workflowId: workflow.workflowId,
+            step: step, execution: startedExecution.execution,
+            eventContext: startedExecution.backendEventContext, request: request, handler: request.eventHandler
+          )
+        )
       }
-      let declaredMemoryRetentions = effectiveMemoryDeclarations(workflow: workflow, step: step, payload: nil)
-        .compactMap { memory in memory.historyRetention.map { (memory.id, $0) } }
-      let addonInput = WorkflowAddonExecutionInput(
-        workflowId: workflow.workflowId,
-        stepId: step.id,
-        nodeId: step.nodeId,
-        addon: addon,
-        variables: request.variables,
-        resolvedInputPayload: workflowAddonResolvedInputPayload(resolvedInputPayload, session: session),
-        attachments: attachments,
-        executionIdentity: WorkflowAddonExecutionIdentity(
-          workflowExecutionId: sessionId,
-          stepExecutionId: startedExecution.execution.executionId,
-          operationExecutionId: operationExecutionId,
-          attempt: executionIndex,
-          predecessorStepExecutionId: predecessorExecutionIds.first,
-          predecessorStepExecutionIds: predecessorExecutionIds
-        ),
-        memoryHistoryRetentions: declaredMemoryRetentions.isEmpty
-          ? nil
-          : Dictionary(uniqueKeysWithValues: declaredMemoryRetentions)
-      )
-      adapterOutput = try await executePlacedAddon(
-        addonInput, step: step, executionId: "\(sessionId)/\(startedExecution.execution.executionId)",
-        context: adapterExecutionContext(
-          deadline: deadline(for: step, request: request), workflowId: workflow.workflowId,
-          step: step, execution: startedExecution.execution,
-          eventContext: startedExecution.backendEventContext, handler: request.eventHandler
-        )
-      )
     } catch let adapterFailure as AdapterExecutionError {
       if step.failurePolicy == .advisory {
         return try await publishAdvisoryFailure(

@@ -1,5 +1,5 @@
-export type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'settings'
-export type View = NavigationView | 'workflow-detail' | 'run-detail' | 'ops-run'
+export type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'bots' | 'settings'
+export type View = NavigationView | 'workflow-detail' | 'run-detail' | 'ops-run' | 'bot-detail'
 
 export interface ProfileViewTransition {
   clearSelection: boolean
@@ -14,7 +14,10 @@ export function profileViewTransition(
 ): ProfileViewTransition {
   const profileChanged = previousProfileKey !== undefined && previousProfileKey !== nextProfileKey
   void mode
-  const fallbackView = currentView === 'workflow-detail' ? 'workflows' : currentView === 'run-detail' ? 'workflows' : currentView === 'ops-run' ? 'ops' : currentView
+  let fallbackView = currentView
+  if (currentView === 'workflow-detail' || currentView === 'run-detail') fallbackView = 'workflows'
+  if (currentView === 'ops-run') fallbackView = 'ops'
+  if (currentView === 'bot-detail') fallbackView = 'bots'
   return {
     clearSelection: profileChanged,
     view: profileChanged ? fallbackView : currentView,

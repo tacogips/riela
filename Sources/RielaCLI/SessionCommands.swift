@@ -613,28 +613,38 @@ public struct SessionRerunCommand: Sendable {
         ),
         recorder: jsonlRecorder
       )
-      let result = try await withSessionKaibaSnapshot(kaibaContext, mockScenarioPath: effectiveMockScenarioPath) {
-        try await runner.run(
-          DeterministicWorkflowRunRequest(
-            workflow: bundle.workflow,
-            nodePayloads: bundle.nodePayloads,
-            variables: variables,
-            rerunFromSessionId: persisted.session.sessionId,
-            rerunFromStepId: options.stepId,
-            preserveHistory: options.preserveHistory,
-            sourceRecoveryLineage: persistedRecoveryLineage(
-              sessionId: persisted.session.sessionId,
-              storeRoot: storeRoot
-            ),
-            effectiveInstance: instanceResolution.effectiveInstance,
-            eventHandler: eventHandler,
-            sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks),
-            definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
-              for: bundle,
-              workflowName: persisted.workflowName
-            )
-          )
+      var request = DeterministicWorkflowRunRequest(
+        workflow: bundle.workflow,
+        nodePayloads: bundle.nodePayloads,
+        variables: variables,
+        rerunFromSessionId: persisted.session.sessionId,
+        rerunFromStepId: options.stepId,
+        preserveHistory: options.preserveHistory,
+        sourceRecoveryLineage: persistedRecoveryLineage(
+          sessionId: persisted.session.sessionId,
+          storeRoot: storeRoot
+        ),
+        effectiveInstance: instanceResolution.effectiveInstance,
+        eventHandler: eventHandler,
+        sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks),
+        definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
+          for: bundle,
+          workflowName: persisted.workflowName
         )
+      )
+      request.activityRecorder = BotActivityRuntime.recorder(sessionStoreRoot: storeRoot)
+      if let botContext = BotActivityRuntime.botContext(
+        forExistingSession: persisted.session.sessionId, sessionStoreRoot: storeRoot
+      ) {
+        request.botContext = botContext
+        request.eventHandler = BotActivityRuntime.rerunEventHandler(
+          eventHandler, sourceSessionId: persisted.session.sessionId, botContext: botContext,
+          sessionStoreRoot: storeRoot, runtimeStore: runtimeStore
+        )
+      }
+      let rerunRequest = request
+      let result = try await withSessionKaibaSnapshot(kaibaContext, mockScenarioPath: effectiveMockScenarioPath) {
+        try await runner.run(rerunRequest)
       }
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
       let loopEvidence = projectLoopEvidence(
@@ -887,30 +897,34 @@ public struct SessionResumeCommand: Sendable {
         ),
         recorder: jsonlRecorder
       )
+      var request = DeterministicWorkflowRunRequest(
+        workflow: bundle.workflow,
+        nodePayloads: bundle.nodePayloads,
+        variables: variables,
+        maxSteps: options.maxSteps,
+        resumeSessionId: persisted.session.sessionId,
+        retryFailedStep: options.retryFailedStep,
+        sourceRecoveryLineage: persistedRecoveryLineage(
+          sessionId: persisted.session.sessionId,
+          storeRoot: storeRoot
+        ),
+        effectiveInstance: instanceResolution.effectiveInstance,
+        eventHandler: eventHandler,
+        sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks),
+        definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
+          for: bundle,
+          workflowName: persisted.workflowName
+        )
+      )
+      request.activityRecorder = BotActivityRuntime.recorder(sessionStoreRoot: storeRoot)
+      request.botContext = BotActivityRuntime.botContext(
+        forExistingSession: persisted.session.sessionId, sessionStoreRoot: storeRoot
+      )
+      let resumeRequest = request
       let result: WorkflowRunResult
       do {
         result = try await withSessionKaibaSnapshot(kaibaContext, mockScenarioPath: effectiveMockScenarioPath) {
-          try await runner.run(
-            DeterministicWorkflowRunRequest(
-              workflow: bundle.workflow,
-              nodePayloads: bundle.nodePayloads,
-              variables: variables,
-              maxSteps: options.maxSteps,
-              resumeSessionId: persisted.session.sessionId,
-              retryFailedStep: options.retryFailedStep,
-              sourceRecoveryLineage: persistedRecoveryLineage(
-                sessionId: persisted.session.sessionId,
-                storeRoot: storeRoot
-              ),
-              effectiveInstance: instanceResolution.effectiveInstance,
-              eventHandler: eventHandler,
-              sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks),
-              definitionSource: bundle.definitionSource ?? WorkflowDefinitionDocument.fileDefinitionSource(
-                for: bundle,
-                workflowName: persisted.workflowName
-              )
-            )
-          )
+          try await runner.run(resumeRequest)
         }
       } catch {
         do {

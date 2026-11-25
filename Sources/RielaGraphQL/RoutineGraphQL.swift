@@ -64,6 +64,7 @@ public struct GraphQLRoutine: Codable, Equatable, Sendable {
   public var overlapPolicy: GraphQLEventOverlapPolicy?
   public var maxQueuedRuns: Int?
   public var maxConcurrentRuns: Int?
+  public var botId: String?
 
   public init(_ record: RoutineRecord) {
     self.routineId = record.routineId
@@ -89,6 +90,7 @@ public struct GraphQLRoutine: Codable, Equatable, Sendable {
     self.overlapPolicy = record.overlapPolicy.flatMap(GraphQLEventOverlapPolicy.init(rawValue:))
     self.maxQueuedRuns = record.maxQueuedRuns
     self.maxConcurrentRuns = record.maxConcurrentRuns
+    self.botId = record.botId
   }
 }
 
@@ -127,6 +129,7 @@ public struct GraphQLCreateRoutineInput: Codable, Equatable, Sendable {
   public var overlapPolicy: GraphQLEventOverlapPolicy?
   public var maxQueuedRuns: Int?
   public var maxConcurrentRuns: Int?
+  public var botId: String?
 
   public init(
     name: String,
@@ -143,7 +146,8 @@ public struct GraphQLCreateRoutineInput: Codable, Equatable, Sendable {
     origin: JSONObject? = nil,
     overlapPolicy: GraphQLEventOverlapPolicy? = nil,
     maxQueuedRuns: Int? = nil,
-    maxConcurrentRuns: Int? = nil
+    maxConcurrentRuns: Int? = nil,
+    botId: String? = nil
   ) {
     self.name = name
     self.instruction = instruction
@@ -160,6 +164,7 @@ public struct GraphQLCreateRoutineInput: Codable, Equatable, Sendable {
     self.overlapPolicy = overlapPolicy
     self.maxQueuedRuns = maxQueuedRuns
     self.maxConcurrentRuns = maxConcurrentRuns
+    self.botId = botId
   }
 }
 
@@ -468,34 +473,13 @@ extension RoutineAwareGraphQLFallbackExecutor: GraphQLDocumentDomainPreflighting
   }
 }
 
-public let routineGraphQLSchemaTypes = """
+public let routineGraphQLSchemaTypes = (
+  GraphQLSchemaGenerator.routineTypes.map(GraphQLSchemaGenerator.renderType) + [routineGraphQLSupplementalSchemaTypes]
+).joined(separator: "\n")
+
+let routineGraphQLSupplementalSchemaTypes = """
 enum RoutineStatus { ACTIVE, DISABLED, COMPLETED }
 enum EventOverlapPolicy { skip, cancelRunning, queue, concurrent }
-type Routine {
-  routineId: String!
-  name: String!
-  instruction: String
-  task: String!
-  schedule: String!
-  timezone: String
-  workflowName: String!
-  completionCriteria: String
-  status: RoutineStatus!
-  createdAt: String!
-  updatedAt: String!
-  completedAt: String
-  completionNote: String
-  lastRunAt: String
-  runCount: Int!
-  eventRoot: String!
-  sourceId: String!
-  bindingId: String!
-  deactivateWorkflowOnCompletion: Boolean!
-  origin: JSONObject
-  overlapPolicy: EventOverlapPolicy
-  maxQueuedRuns: Int
-  maxConcurrentRuns: Int
-}
 type RoutineError { code: String!, message: String! }
 type RoutineListPayload { routines: [Routine!]!, errors: [RoutineError!]! }
 type RoutineQueryPayload { routine: Routine, errors: [RoutineError!]! }
@@ -506,23 +490,6 @@ type RoutineMutationPayload {
   errors: [RoutineError!]!
 }
 input RoutineFilter { status: RoutineStatus, workflowName: String, limit: Int, routineStoreRoot: String }
-input CreateRoutineInput {
-  name: String!
-  instruction: String
-  task: String!
-  schedule: String
-  every: String
-  timezone: String
-  workflowName: String!
-  completionCriteria: String
-  eventRoot: String
-  routineStoreRoot: String
-  deactivateWorkflowOnCompletion: Boolean
-  origin: JSONObject
-  overlapPolicy: EventOverlapPolicy
-  maxQueuedRuns: Int
-  maxConcurrentRuns: Int
-}
 input CompleteRoutineInput { routineId: String!, note: String, routineStoreRoot: String }
 input SetRoutineStatusInput { routineId: String!, status: RoutineStatus!, routineStoreRoot: String }
 input SetRoutineOverlapPolicyInput { routineId: String!, overlapPolicy: EventOverlapPolicy, maxQueuedRuns: Int, maxConcurrentRuns: Int, routineStoreRoot: String }

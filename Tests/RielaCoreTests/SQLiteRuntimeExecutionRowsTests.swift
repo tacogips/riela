@@ -68,9 +68,10 @@ final class SQLiteRuntimeExecutionRowsTests: XCTestCase {
     let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     try store.save(snapshot(id: "generation-cache", executions: [], date: date))
-    try database(root: root).execute("PRAGMA user_version = 13")
+    let newerGeneration = SQLiteWorkflowRuntimePersistenceStore.schemaGeneration + 1
+    try database(root: root).execute("PRAGMA user_version = \(newerGeneration)")
     XCTAssertThrowsError(try store.save(snapshot(id: "generation-cache", executions: [], date: date))) {
-      XCTAssertTrue(String(describing: $0).contains("generation 13"))
+      XCTAssertTrue(String(describing: $0).contains("generation \(newerGeneration)"))
     }
   }
 

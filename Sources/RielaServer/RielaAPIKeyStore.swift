@@ -10,6 +10,27 @@ import Darwin
 public struct RielaAPIKeyStore: Sendable {
   public enum Purpose: String, Codable, Sendable { case client, worker }
 
+  public enum Scope: String, Codable, Sendable, Comparable {
+    case read, operate, admin
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+      switch (lhs, rhs) {
+      case (.read, .operate), (.read, .admin), (.operate, .admin): true
+      default: false
+      }
+    }
+  }
+
+  public struct PairingInfo: Codable, Equatable, Sendable {
+    public let clientName: String
+    public let pairedAt: Date
+
+    public init(clientName: String, pairedAt: Date) {
+      self.clientName = clientName
+      self.pairedAt = pairedAt
+    }
+  }
+
   public struct Record: Codable, Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -18,6 +39,11 @@ public struct RielaAPIKeyStore: Sendable {
     public let createdAt: Date
     public let expiresAt: Date?
     public fileprivate(set) var revokedAt: Date?
+    public let scope: Scope?
+    public let pairing: PairingInfo?
+    public fileprivate(set) var lastUsedAt: Date?
+
+    public var effectiveScope: Scope { scope ?? .admin }
   }
 
   /// The token is available only in the issuance result, never in list results or persisted records.
@@ -26,10 +52,40 @@ public struct RielaAPIKeyStore: Sendable {
     public let token: String
   }
 
-  public enum StoreError: Error { case invalidRequest, keyNotFound, unavailable, corrupt }
+  public enum StoreError: Error {
+    case invalidRequest, keyNotFound, unavailable, corrupt
+    case pairingCodeInvalid, pairingAddressNotRoutable, pairingAddressRequiresTLS
+
+    public var code: String {
+      switch self {
+      case .invalidRequest: "invalid_request"
+      case .keyNotFound: "key_not_found"
+      case .unavailable: "api_auth_unavailable"
+      case .corrupt: "api_auth_corrupt"
+      case .pairingCodeInvalid: "pairing_code_invalid"
+      case .pairingAddressNotRoutable: "pairing_address_not_routable"
+      case .pairingAddressRequiresTLS: "pairing_address_requires_tls"
+      }
+    }
+  }
+
+  private struct PairingCode: Encodable {
+    let address: String
+    let secret: String
+    let serverId: String
+  }
+
+  private struct StoredPairingCode: Codable {
+    let digest: String
+    let address: String
+    let scope: Scope
+    let expiresAt: Date
+    var failedAttempts = 0
+    var usedAt: Date?
+  }
 
   private struct StoredKey: Codable {
-    let record: Record
+    var record: Record
     let digest: String
   }
 
@@ -37,6 +93,7 @@ public struct RielaAPIKeyStore: Sendable {
     var version = 1
     var requireClientKey = true
     var keys: [StoredKey] = []
+    var pairingCode: StoredPairingCode?
   }
 
   public let root: URL
@@ -48,24 +105,108 @@ public struct RielaAPIKeyStore: Sendable {
 
   public func issue(
     name: String, purpose: Purpose = .client, workerID: String? = nil,
-    expiresAt: Date? = nil, now: Date = Date()
+    expiresAt: Date? = nil, now: Date = Date(), scope: Scope? = nil, pairing: PairingInfo? = nil
   ) throws -> IssuedKey {
-    let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !name.isEmpty, name.utf8.count <= 200,
-          !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
-          expiresAt.map({ $0 > now }) ?? true,
+    let name = try Self.keyName(name)
+    guard expiresAt.map({ $0 > now }) ?? true,
           purpose == .worker ? workerID?.isEmpty == false : workerID == nil else {
       throw StoreError.invalidRequest
     }
-    let secret = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
-    let token = "riela_" + secret.base64EncodedString()
+    let issued = Self.makeKey(name: name, purpose: purpose, workerID: workerID,
+                              expiresAt: expiresAt, now: now, scope: scope, pairing: pairing)
+    try transaction { $0.keys.append(Self.storedKey(issued)) }
+    return issued
+  }
+
+  public func mintPairingCode(
+    address: String, scope: Scope, serverId: String, now: Date, ttl: TimeInterval = 600
+  ) throws -> String {
+    _ = try RielaPairingAddress.validate(address)
+    guard ttl.isFinite, ttl > 0 else { throw StoreError.invalidRequest }
+    let secret = Self.randomSecret()
+    let code = PairingCode(address: address, secret: secret, serverId: serverId)
+    let encoded = try JSONEncoder().encode(code)
+    try transaction { state in
+      state.pairingCode = StoredPairingCode(digest: Self.digest(secret), address: address,
+                                            scope: scope, expiresAt: now.addingTimeInterval(ttl))
+    }
+    return "rp1." + Self.base64URL(encoded)
+  }
+
+  public func redeemPairingCode(secret: String, clientName: String, now: Date) throws -> IssuedKey {
+    let name = try? Self.keyName(clientName)
+    let digest = SHA256.hash(data: Data(secret.utf8))
+    let result: (issued: IssuedKey?, changed: Bool) = try transaction(writeWhen: { $0.changed }, { state in
+      guard var code = state.pairingCode, code.usedAt == nil, code.expiresAt > now else { return (nil, false) }
+      guard Self.matches(digest, stored: code.digest) else {
+        code.failedAttempts += 1
+        state.pairingCode = code.failedAttempts < 5 ? code : nil
+        return (nil, true)
+      }
+      // Client names are persisted and audited. A pairing envelope is longer than its 43-byte secret.
+      guard let name,
+            name.range(of: secret, options: .literal) == nil,
+            name.range(of: #"rp1\.[A-Za-z0-9_-]{58,}"#, options: .regularExpression) == nil else {
+        return (nil, false)
+      }
+      let pairing = PairingInfo(clientName: name, pairedAt: now)
+      let key = Self.makeKey(name: name, purpose: .client, workerID: nil,
+                             expiresAt: nil, now: now, scope: code.scope, pairing: pairing)
+      code.usedAt = now
+      state.pairingCode = code
+      state.keys.append(Self.storedKey(key))
+      return (key, true)
+    })
+    guard let issued = result.issued else { throw StoreError.pairingCodeInvalid }
+    return issued
+  }
+
+  public func pairingGrants() throws -> [Record] {
+    try transaction(write: false) { $0.keys.map(\.record).filter { $0.pairing != nil } }
+  }
+
+  public func touch(id: String, now: Date) throws {
+    try transaction(writeWhen: { $0 }, { state in
+      guard let index = state.keys.firstIndex(where: { $0.record.id == id && $0.record.revokedAt == nil }),
+            state.keys[index].record.lastUsedAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true else {
+        return false
+      }
+      state.keys[index].record.lastUsedAt = now
+      return true
+    })
+  }
+
+  private static func keyName(_ value: String) throws -> String {
+    let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty, name.utf8.count <= 200,
+          !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+      throw StoreError.invalidRequest
+    }
+    return name
+  }
+
+  private static func makeKey(
+    name: String, purpose: Purpose, workerID: String?, expiresAt: Date?, now: Date, scope: Scope?, pairing: PairingInfo?
+  ) -> IssuedKey {
+    let record = Record(id: UUID().uuidString.lowercased(), name: name, purpose: purpose,
+                        workerID: workerID, createdAt: now, expiresAt: expiresAt, revokedAt: nil,
+                        scope: scope, pairing: pairing, lastUsedAt: nil)
+    return IssuedKey(record: record, token: "riela_" + randomSecret())
+  }
+
+  private static func storedKey(_ issued: IssuedKey) -> StoredKey {
+    StoredKey(record: issued.record, digest: digest(issued.token))
+  }
+
+  private static func randomSecret() -> String {
+    base64URL(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
+  }
+
+  private static func base64URL(_ data: Data) -> String {
+    data.base64EncodedString()
       .replacingOccurrences(of: "+", with: "-")
       .replacingOccurrences(of: "/", with: "_")
       .replacingOccurrences(of: "=", with: "")
-    let record = Record(id: UUID().uuidString.lowercased(), name: name, purpose: purpose,
-                        workerID: workerID, createdAt: now, expiresAt: expiresAt, revokedAt: nil)
-    try transaction { $0.keys.append(StoredKey(record: record, digest: Self.digest(token))) }
-    return IssuedKey(record: record, token: token)
   }
 
   public func list() throws -> [Record] { try transaction(write: false) { $0.keys.map(\.record) } }
@@ -130,7 +271,19 @@ public struct RielaAPIKeyStore: Sendable {
     SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 
-  private func transaction<Value>(write: Bool = true, _ operation: (inout State) throws -> Value) throws -> Value {
+  private func transaction<Value>(
+    write: Bool = true, writeWhen: (Value) -> Bool = { _ in true }, _ operation: (inout State) throws -> Value
+  ) throws -> Value {
+    try withStoreLock {
+      let file = root.appendingPathComponent("api-keys.json")
+      var state = try read(file)
+      let result = try operation(&state)
+      if write, writeWhen(result) { try Self.persist(try Self.encode(state), to: file) }
+      return result
+    }
+  }
+
+  func withStoreLock<Value>(_ operation: () throws -> Value) throws -> Value {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
                                             attributes: [.posixPermissions: 0o700])
     let lock = root.appendingPathComponent("api-keys.lock")
@@ -142,24 +295,11 @@ public struct RielaAPIKeyStore: Sendable {
       guard errno == EINTR else { throw StoreError.unavailable }
     }
     defer { _ = flock(descriptor, LOCK_UN) }
-    let file = root.appendingPathComponent("api-keys.json")
-    var state = try read(file)
-    let result = try operation(&state)
-    if write { try persist(state, to: file) }
-    return result
+    return try operation()
   }
 
   private func read(_ file: URL) throws -> State {
-    let descriptor = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-    if descriptor < 0 {
-      guard errno == ENOENT else { throw StoreError.unavailable }
-      return State()
-    }
-    defer { close(descriptor) }
-    var info = stat()
-    guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw StoreError.unavailable }
-    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
-    guard let data = try handle.readToEnd() else { throw StoreError.corrupt }
+    guard let data = try Self.readRegularFile(file) else { return State() }
     let state: State
     do { state = try JSONDecoder().decode(State.self, from: data) } catch { throw StoreError.corrupt }
     guard state.version == 1,
@@ -172,17 +312,36 @@ public struct RielaAPIKeyStore: Sendable {
     return state
   }
 
-  private func persist(_ state: State, to file: URL) throws {
+  static func readRegularFile(_ file: URL) throws -> Data? {
+    let descriptor = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+    if descriptor < 0 {
+      guard errno == ENOENT else { throw StoreError.unavailable }
+      return nil
+    }
+    defer { close(descriptor) }
+    var info = stat()
+    guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw StoreError.unavailable }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+    guard let data = try handle.readToEnd() else { throw StoreError.corrupt }
+    return data
+  }
+
+  private static func encode(_ state: State) throws -> Data {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let data = try encoder.encode(state)
-    let staging = root.appendingPathComponent(".api-keys-\(UUID().uuidString).tmp")
+    return try encoder.encode(state)
+  }
+
+  static func persist(_ data: Data, to file: URL) throws {
+    let root = file.deletingLastPathComponent()
+    let staging = root.appendingPathComponent(".\(file.lastPathComponent)-\(UUID().uuidString).tmp")
     let descriptor = open(staging.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)
     guard descriptor >= 0 else { throw StoreError.unavailable }
     defer {
       close(descriptor)
       _ = unlink(staging.path)
     }
+    guard fchmod(descriptor, 0o600) == 0 else { throw StoreError.unavailable }
     let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
     try handle.write(contentsOf: data)
     guard fsync(descriptor) == 0, rename(staging.path, file.path) == 0 else { throw StoreError.unavailable }

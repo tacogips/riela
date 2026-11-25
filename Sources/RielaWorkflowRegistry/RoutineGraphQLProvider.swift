@@ -8,17 +8,20 @@ import RielaGraphQL
 public struct FileRoutineGraphQLProvider: RoutineGraphQLProviding, Sendable {
   public var workingDirectory: String
   public var environment: [String: String]
+  public var botExists: (@Sendable (String) -> Bool)?
 
   public init(
     workingDirectory: String = FileManager.default.currentDirectoryPath,
-    environment: [String: String] = ProcessInfo.processInfo.environment
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    botExists: (@Sendable (String) -> Bool)? = nil
   ) {
     self.workingDirectory = workingDirectory
     self.environment = environment
+    self.botExists = botExists
   }
 
   private var service: RoutineService {
-    RoutineService(workingDirectory: workingDirectory, environment: environment)
+    RoutineService(workingDirectory: workingDirectory, environment: environment, botExists: botExists)
   }
 
   public func routines(filter: GraphQLRoutineFilterInput?) async throws -> [GraphQLRoutine] {
@@ -57,7 +60,8 @@ public struct FileRoutineGraphQLProvider: RoutineGraphQLProviding, Sendable {
         origin: input.origin,
         overlapPolicy: input.overlapPolicy?.rawValue,
         maxQueuedRuns: input.maxQueuedRuns,
-        maxConcurrentRuns: input.maxConcurrentRuns
+        maxConcurrentRuns: input.maxConcurrentRuns,
+        botId: input.botId
       )))
     }
   }

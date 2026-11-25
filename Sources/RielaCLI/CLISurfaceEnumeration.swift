@@ -105,6 +105,10 @@ public enum CLISurfaceEnumerator {
           CLICommandDescriptor([route, action.rawValue, $0])
         }
       }
+    case "bot":
+      return nested(BotClientAction.allRawValues)
+    case "model", "provider":
+      return nested(catalogActions(route))
     case "routine":
       return nested(RoutineClientAction.allRawValues)
     case "serve":
@@ -122,6 +126,10 @@ public enum CLISurfaceEnumerator {
     }
   }
 
+  private static func catalogActions(_ route: String) -> [String] {
+    route == "model" ? ModelClientAction.allRawValues : ProviderClientAction.allRawValues
+  }
+
   /// Routes that are deliberately a single command with no subcommands.
   /// Everything else must have an expansion case above.
   static let leafRoutes: Set<String> = ["gql", "rrun", "gc", "version", "call-step", "workflow-call"]
@@ -136,7 +144,7 @@ public enum CLISurfaceEnumerator {
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = ["environment", "voice",
     "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
-    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve", "storage", "doctor"
+    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "bot", "model", "provider", "serve", "storage", "doctor"
   ]
 
   /// Every `--option` token any `riela` parser accepts, rendered from the
@@ -151,6 +159,8 @@ public enum CLISurfaceEnumerator {
       ParsedMemoryOptions.helpMessage(),
       ParsedCacheArguments.helpMessage(),
       ParsedRoutineOptions.helpMessage(),
+      ParsedBotOptions.helpMessage(),
+      ModelCatalogOptions.helpMessage(),
       ParsedVoiceListenOptions.helpMessage(),
       ParsedWorkflowManifestOptions.helpMessage(),
       ParsedWorkflowRegisterArguments.helpMessage(),

@@ -30,6 +30,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var agentSilenceMonitorIntervalMs: Int
   public var effectiveInstance: EffectiveWorkflowInstance?
   public var eventHandler: WorkflowRunEventHandler?
+  public var botContext: BotRunContext?
+  public var activityRecorder: (any WorkflowActivityRecording)?
   /// Optional process-level admission boundary invoked after the session
   /// identity is resolved and before any workflow event or node effect.
   public var sessionExecutionAdmission: (@Sendable (String) throws -> Void)?
@@ -851,35 +853,42 @@ extension DeterministicWorkflowRunner {
         backendWorkingDirectory: recordedDirectory,
         inputSnapshot: ["variables": .object(request.variables), "resolvedInputPayload": .object(resolvedInputPayload)],
         effectiveStepBudget: request.effectiveStepBudget,
+        requestedModel: payload.model,
+        recorder: request.activityRecorder,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
       let availableMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
-      let result = try await executePlacedStdio(
-        WorkflowStdioNodeExecutionInput(
-          workflowId: workflow.workflowId,
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          executionIndex: executionIndex,
-          kind: kind,
-          node: localPayload,
-          variables: request.variables,
-          resolvedInputPayload: resolvedInputPayload,
-          memoryRootDirectory: availableMemories.isEmpty ? nil : resolvedMemoryRootDirectory(request: request),
-          availableMemories: availableMemories,
-          policy: stdioPolicyContext(workflow: workflow, step: step, payload: payload, request: request)
-        ),
-        step: step, executionId: "\(sessionId)/\(execution.executionId)",
-        context: adapterExecutionContext(
-          deadline: deadline(for: step, request: request),
-          workflowId: workflow.workflowId,
-          step: step,
-          execution: execution,
-          eventContext: startedExecution.backendEventContext,
-          handler: request.eventHandler
+      let result = try await settlingActivity(
+        request: request, sessionId: sessionId, executionId: execution.executionId
+      ) {
+        return try await executePlacedStdio(
+          WorkflowStdioNodeExecutionInput(
+            workflowId: workflow.workflowId,
+            sessionId: sessionId,
+            stepId: step.id,
+            nodeId: step.nodeId,
+            executionIndex: executionIndex,
+            kind: kind,
+            node: localPayload,
+            variables: request.variables,
+            resolvedInputPayload: resolvedInputPayload,
+            memoryRootDirectory: availableMemories.isEmpty ? nil : resolvedMemoryRootDirectory(request: request),
+            availableMemories: availableMemories,
+            policy: stdioPolicyContext(workflow: workflow, step: step, payload: payload, request: request)
+          ),
+          step: step, executionId: "\(sessionId)/\(execution.executionId)",
+          context: adapterExecutionContext(
+            deadline: deadline(for: step, request: request),
+            workflowId: workflow.workflowId,
+            step: step,
+            execution: execution,
+            eventContext: startedExecution.backendEventContext,
+            request: request,
+            handler: request.eventHandler
+          )
         )
-      )
+      }
       // The external effect returned, but no node result/session terminal
       // record has been published yet. A SIGKILL here must be recovered from
       // canonical SQLite as an uncertain effect, never by relaunching it.

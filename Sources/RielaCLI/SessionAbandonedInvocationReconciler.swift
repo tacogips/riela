@@ -122,8 +122,9 @@ struct SessionAbandonedInvocationReconciler {
         snapshot.session.status = .cancelled
         snapshot.session.failureKind = .cancelled
         snapshot.session.failureReason = reason
-        snapshot.session.failedAt = now()
-        snapshot.session.updatedAt = now()
+        let closedAt = now()
+        snapshot.session.failedAt = closedAt
+        snapshot.session.updatedAt = closedAt
         let store = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
         do {
           var record = try store.load(sessionId: child)
@@ -132,6 +133,7 @@ struct SessionAbandonedInvocationReconciler {
         } catch CLIWorkflowSessionStoreError.notFound {
           try parentStore.save(snapshot)
         }
+        BotActivityRuntime.settleProcessExit(sessionId: child, sessionStoreRoot: sessionStoreRoot, now: closedAt)
       }
       return verdict(key, parent, child, "abandoned", applied: apply)
     } catch {

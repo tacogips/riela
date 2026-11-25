@@ -1,0 +1,97 @@
+.bots-page {
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 24px;
+  max-width: 1440px;
+}
+
+.bots-header,
+.bots-row-top,
+.bots-identity,
+.bot-actions,
+.bots-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bots-header,
+.bots-row-top {
+  justify-content: space-between;
+}
+
+.bots-header h1,
+.bots-header h2,
+.bots-routines h2 {
+  margin: 0;
+}
+
+.bots-header h1 { margin-right: auto; }
+.bots-meta, .bots-events time, .bots-section summary small { color: var(--muted); font-size: .85em; }
+.bots-meta { overflow-wrap: anywhere; }
+
+.bots-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.bots-form label { display: grid; gap: 4px; }
+
+.bots-section,
+.bots-group,
+.bots-row,
+.bot-request {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.bots-section { background: var(--surface); }
+.bots-section summary, .bots-group summary, .bot-card-actions summary { cursor: pointer; }
+.bots-section > summary, .bots-group > summary { padding: 10px 14px; font-weight: 600; }
+.bots-section summary small { margin-left: 6px; }
+.bots-group { margin: 0 10px 10px; }
+.bots-row, .bot-request { padding: 10px; background: var(--surface-subtle); overflow-wrap: anywhere; }
+.bots-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e8b356; }
+
+.bots-rows, .bots-work, .bots-events {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bots-section > .bots-rows, .bots-group > .bots-rows { padding: 0 10px 10px; }
+.bots-work { margin-top: 8px; }
+
+.bot-detail-layout {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.bot-board { display: grid; flex: 2 1 44ch; gap: 10px; min-width: 0; }
+.bot-card, .bot-request, .bots-routines { display: grid; gap: 8px; }
+.bot-card-selected { border-color: var(--accent); }
+.bot-card-actions > summary { margin-bottom: 5px; font-size: .85em; }
+
+.bots-activity {
+  display: grid;
+  flex: 1 1 38ch;
+  min-width: 0;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.bots-events { max-height: 55vh; overflow: auto; }
+.bots-events li { display: grid; gap: 3px; padding: 6px 0; border-top: 1px solid var(--line); }
+
+@media (max-width: 620px) {
+  .bots-page { padding: 14px; }
+}

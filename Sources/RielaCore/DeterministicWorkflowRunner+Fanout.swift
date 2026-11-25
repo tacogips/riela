@@ -350,6 +350,8 @@ extension DeterministicWorkflowRunner {
       )
       branchRequest.runStartedAt = fanoutDispatchAt
       branchRequest.workflowRunId = request.workflowRunId
+      branchRequest.botContext = request.botContext
+      branchRequest.activityRecorder = request.activityRecorder
       branchRequest.parentSessionId = parentSessionId
       branchRequest.rootSessionId = request.rootSessionId ?? parentSessionId
       branchRequest.resumeSessionId = try await reserveNestedSession(

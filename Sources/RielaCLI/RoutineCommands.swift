@@ -10,6 +10,7 @@ struct ParsedRoutineOptions: ParsableArguments, Sendable {
   @Option var every: String?
   @Option var timezone: String?
   @Option var workflow: String?
+  @Option var bot: String?
   @Option(name: .customLong("completion-criteria")) var completionCriteria: String?
   @Option(name: .customLong("overlap-policy")) var overlapPolicy: String?
   @Option(name: .customLong("max-queued-runs")) var maxQueuedRuns: Int?
@@ -41,9 +42,14 @@ extension ScopedParityCommandRunner {
     let action = options.command ?? RoutineClientAction.list.rawValue
     let parsed = try ParsedRoutineOptions(options.arguments)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let sessionStoreRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: nil, scope: .auto, workingDirectory: workingDirectory, environment: environment
+    )
     let service = RoutineService(
       workingDirectory: workingDirectory,
-      environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+      environment: environment,
+      botExists: BotRunLinker.botExists(sessionStoreRoot: sessionStoreRoot)
     )
     do {
       switch action {
@@ -71,7 +77,8 @@ extension ScopedParityCommandRunner {
           deactivateWorkflowOnCompletion: parsed.deactivateWorkflowOnCompletion,
           overlapPolicy: parsed.overlapPolicy,
           maxQueuedRuns: parsed.maxQueuedRuns,
-          maxConcurrentRuns: parsed.maxConcurrentRuns
+          maxConcurrentRuns: parsed.maxConcurrentRuns,
+          botId: parsed.bot
         ))
         return routineCommandResult(
           action: action,
@@ -194,6 +201,7 @@ extension ScopedParityCommandRunner {
   private func routineSummaryLine(_ record: RoutineRecord) -> String {
     "routine=\(record.routineId) name=\(record.name) status=\(record.status.rawValue) "
       + "schedule=\"\(record.schedule)\" workflow=\(record.workflowName) runs=\(record.runCount)"
+      + (record.botId.map { " botId=\($0)" } ?? "")
   }
 
   private func routineDetailLines(_ record: RoutineRecord) -> [String] {
@@ -215,6 +223,9 @@ extension ScopedParityCommandRunner {
       "bindingId=\(record.bindingId)",
       "deactivateWorkflowOnCompletion=\(record.deactivateWorkflowOnCompletion)"
     ]
+    if let botId = record.botId {
+      lines.append("botId=\(botId)")
+    }
     lines.append("overlapPolicy=\(record.overlapPolicy ?? "inherit")")
     if let maxQueuedRuns = record.maxQueuedRuns {
       lines.append("maxQueuedRuns=\(maxQueuedRuns)")

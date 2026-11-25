@@ -731,6 +731,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try SQLiteWorkflowStartupIdentities.ensureSchema(db, source: .runtime)
       try Self.createNestedInvocationSchema(in: db)
       try SQLiteRuntimeExecutionRowsSchema.create(in: db)
+      try BotStoreSchema.createTables(in: db)
     }
   }
 

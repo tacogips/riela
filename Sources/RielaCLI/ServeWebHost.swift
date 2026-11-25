@@ -233,7 +233,12 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
             ),
             next: ConsoleGraphQLDocumentExecutor(
               provider: consoleProvider,
-              next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+              next: BotsGraphQLDocumentExecutor(
+                provider: BotsGraphQLProvider(
+                  workingDirectory: workingDirectory, sessionStoreRoot: sessionStoreRoot, environment: environment
+                ),
+                next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+              )
             )
           )
           )

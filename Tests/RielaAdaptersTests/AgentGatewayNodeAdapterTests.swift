@@ -175,7 +175,9 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   #expect(output.payload == ["text": .string("hello")])
   #expect(output.model == "openai/gpt-5")
   #expect(output.usage?.totalTokens == 3)
-  let streamed = await events.values
+  let allEvents = await events.values
+  let streamed = allEvents.filter { $0.channel == .assistant || $0.channel == .thinking }
+  #expect(allEvents.suffix(3).map(\.eventType) == ["usage_update", "reported_model", "stop"])
   #expect(streamed.count == 1)
   #expect(streamed.first?.contentDelta == "hello")
   #expect(streamed.first?.channel == .assistant)
@@ -544,7 +546,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
     ),
     context: AdapterExecutionContext { event in await events.append(event) }
   )
-  let streamed = await events.values
+  let streamed = await events.values.filter { $0.channel == .assistant || $0.channel == .thinking }
   #expect(streamed.map(\.channel) == [.thinking, .assistant])
   #expect(streamed.map(\.eventType) == ["agent_thought_chunk", "agent_message_chunk"])
 }

@@ -121,6 +121,8 @@ public struct WorkflowExecutionGraphQLDocumentExecutor: GraphQLDocumentExecuting
           }
         }
         data[root.responseKey] = projectGraphQLValue(value, selections: root.selections)
+      } catch let rejection as GraphQLWorkflowExecutionRejection {
+        return workflowExecutionError(code: rejection.code, message: rejection.message, completedData: data)
       } catch {
         return workflowExecutionError(code: "WORKFLOW_EXECUTION_FAILED", message: "workflow execution failed", completedData: data)
       }

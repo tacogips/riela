@@ -378,6 +378,7 @@ struct TerminalRetentionExecutor {
               """, bindings: [.text(id), .text(row.workflowId), .text(family.rootId), .text(Self.timestamp(now)),
                 .text(paths.artifactRoot ?? ""), .text(paths.memoryRoot ?? ""), .int(row.payloadBytes)])
             try TerminalRetentionSecondary.deleteMessages(id: id, db: db)
+            try BotActivityRuntime.deleteRuntimeRows(sessionIds: [id], in: db)
             if try db.tableExists("workflow_runtime_executions") {
               try db.execute("DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=?", bindings: [.text(id)])
             }
@@ -583,6 +584,7 @@ struct TerminalRetentionExecutor {
   }
 
   private func deleteResultRows(_ id: String, db: SQLiteDatabase) throws {
+    try BotActivityRuntime.deleteRuntimeRows(sessionIds: [id], in: db)
     if try db.tableExists("workflow_runtime_executions") {
       try db.execute("DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=?", bindings: [.text(id)])
     }
@@ -754,6 +756,7 @@ struct TerminalRetentionExecutor {
       reclaimer: reclaimer)
     try db.transaction { db in
       for id in ids {
+        try BotActivityRuntime.deleteRuntimeRows(sessionIds: [id], in: db)
         if try db.tableExists("workflow_runtime_executions") {
           try db.execute("DELETE FROM workflow_runtime_executions WHERE workflow_execution_id=?", bindings: [.text(id)])
         }

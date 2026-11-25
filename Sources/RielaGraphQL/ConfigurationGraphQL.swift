@@ -296,7 +296,7 @@ public struct RielaConfigurationGraphQLError: Error, Equatable, Sendable {
 
 public struct RielaConfigGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   static let queryFields: Set<String> = ["configuration"]
-  static let mutationFields: Set<String> = [
+  public static let mutationFields: Set<String> = [
     "updateAssistantConfiguration",
     "updateAppearanceConfiguration",
     "updateHTTPServerConfiguration",

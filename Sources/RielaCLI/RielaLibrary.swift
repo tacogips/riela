@@ -139,10 +139,22 @@ public struct RielaLibrary: Sendable {
             scope: scope,
             workflowDefinitionDir: workflowDefinitionDir
           ),
-          next: RoutineGraphQLDocumentExecutor(
-            provider: FileRoutineGraphQLProvider(
+          next: BotsGraphQLDocumentExecutor(
+            provider: BotsGraphQLProvider(
               workingDirectory: workingDirectory,
+              sessionStoreRoot: CLIWorkflowSessionStore.resolveRootDirectory(
+                sessionStore: sessionStore, scope: scope, workingDirectory: workingDirectory
+              ),
               environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            ),
+            next: RoutineGraphQLDocumentExecutor(
+              provider: FileRoutineGraphQLProvider(
+                workingDirectory: workingDirectory,
+                environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
+                botExists: BotRunLinker.botExists(sessionStoreRoot: CLIWorkflowSessionStore.resolveRootDirectory(
+                  sessionStore: sessionStore, scope: scope, workingDirectory: workingDirectory
+                ))
+              )
             )
           )
         )

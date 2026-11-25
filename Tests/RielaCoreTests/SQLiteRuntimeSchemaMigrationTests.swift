@@ -46,7 +46,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     try db.execute("DROP TABLE workflow_runtime_payload_refs")
     try db.execute("PRAGMA user_version = 11")
     try store.prepareSchema(in: db)
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: db), 12)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: db), SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
     XCTAssertTrue(try db.tableExists("workflow_runtime_payload_refs"))
     XCTAssertEqual(try db.query("SELECT digest FROM workflow_runtime_payloads ORDER BY digest").compactMap { $0["digest"] }, before)
     XCTAssertEqual(try db.query("SELECT name FROM sqlite_master WHERE type='index' AND name='workflow_runtime_payload_refs_root_digest'").count, 1)
@@ -61,7 +61,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
       entryStepId: "entry", createdAt: date, updatedAt: date
     )
     let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
-    try createHistoricalStore(path: path, session: original, generation: 9)
+    try Self.createHistoricalStore(path: path, session: original, generation: 9)
     let fixture = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
     try SQLiteWorkflowRuntimePersistenceStore.createGeneration10DefinitionSchema(in: fixture)
     try fixture.execute(
@@ -78,7 +78,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
     try store.prepareSchema(in: database)
 
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 12)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
     XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
   }
 
@@ -95,7 +95,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
       entryStepId: "step", createdAt: date, updatedAt: date, executions: [execution]
     )
     let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
-    try createHistoricalStore(path: path, session: session, generation: 9)
+    try Self.createHistoricalStore(path: path, session: session, generation: 9)
     let fixture = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
     try SQLiteWorkflowRuntimePersistenceStore.createGeneration10DefinitionSchema(in: fixture)
     try fixture.execute(
@@ -140,7 +140,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     XCTAssertEqual(try store.legacyEmbeddedNestedInvocationKeys(limit: 10), ["generation-ten-invocation"])
     XCTAssertTrue(try store.convertLegacyNestedInvocation(invocationKey: "generation-ten-invocation"))
     let migrated = try SQLiteDatabase.open(path: path, mode: .readOnly)
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: migrated), 12)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: migrated), SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
     XCTAssertEqual(
       try store.nestedInvocationRecord(key: "generation-ten-invocation", in: migrated)?.reservation,
       reservation
@@ -160,13 +160,13 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
       entryStepId: "entry", createdAt: date, updatedAt: date
     )
     let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
-    try createHistoricalStore(path: path, session: original, generation: 9)
+    try Self.createHistoricalStore(path: path, session: original, generation: 9)
 
     let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
     let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate, options: .writableRuntimeStoreDefault)
     try store.prepareSchema(in: database)
 
-    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), 12)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: database), SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
     XCTAssertEqual(try store.load(sessionId: original.sessionId).session, original)
   }
 
@@ -226,7 +226,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
       entryStepId: "entry", createdAt: date, updatedAt: date
     )
     let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
-    try createHistoricalStore(path: path, session: legacy, generation: Self.nestedInvocationGeneration)
+    try Self.createHistoricalStore(path: path, session: legacy, generation: Self.nestedInvocationGeneration)
 
     XCTAssertTrue(SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: path), "the discarded store is deleted, not upgraded")
@@ -259,7 +259,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
       entryStepId: "entry", createdAt: date, updatedAt: date
     )
     let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
-    try createHistoricalStore(path: path, session: original, generation: generation)
+    try Self.createHistoricalStore(path: path, session: original, generation: generation)
     if recoveryColumnAlreadyPresent {
       let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
       try database.execute("ALTER TABLE workflow_nested_invocations ADD COLUMN recovery_reason TEXT")
@@ -303,7 +303,7 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     return root
   }
 
-  private func createHistoricalStore(path: String, session: WorkflowSession, generation: Int64) throws {
+  static func createHistoricalStore(path: String, session: WorkflowSession, generation: Int64) throws {
     let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
     // Literal released generation-2 DDL, independent of today's schema builder.
     try database.execute(

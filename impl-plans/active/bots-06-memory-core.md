@@ -207,6 +207,8 @@ Exit 0; three suites, 0 failures.
 
 ## Done criteria
 
+The [implementation progress record](../progress/bots-06-memory-core.md) records the status and evidence for these criteria.
+
 - `git status --short Packages/RielaMemory` prints nothing.
 - `grep -rn "import RielaWork" Sources/RielaCore/BotMemory` prints nothing.
 - Verification exits 0; progress log written.

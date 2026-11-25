@@ -28,6 +28,7 @@ public struct WorkflowRunCommand: Sendable {
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
   var sessionStartedObserver: (@Sendable (String) -> Void)?
+  var botLinkSource: (source: String, sourceRef: String?) = ("run", nil)
   var operatorCancellationReason: (@Sendable () -> String?)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
@@ -93,6 +94,10 @@ public struct WorkflowRunCommand: Sendable {
         environment: runEnvironment
       )
       let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
+      let botLinker = BotRunLinker(sessionStoreRoot: storeRoot)
+      let botContext = try prepareBotContext(options.botId, linker: botLinker) ?? options.resumeSessionId.flatMap {
+        BotActivityRuntime.botContext(forExistingSession: $0, sessionStoreRoot: storeRoot)
+      }
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath, workingDirectory: runWorkingDirectory,
         environment: runEnvironment,
@@ -191,6 +196,13 @@ public struct WorkflowRunCommand: Sendable {
           )
         }
         if event.type == .sessionStarted && event.workflowId == persistenceBundle.workflow.workflowId {
+          if let botContext, options.resumeSessionId == nil,
+             let session = try? await runtimeStore.loadSession(id: event.sessionId), session.parentSessionId == nil {
+            botLinker.link(
+              sessionId: event.sessionId, botId: botContext.botId,
+              source: botLinkSource.source, sourceRef: botLinkSource.sourceRef, at: session.createdAt
+            )
+          }
           sessionStartedObserver?(event.sessionId)
         }
         if let jsonlRecorder {
@@ -209,31 +221,16 @@ public struct WorkflowRunCommand: Sendable {
       }
       let processAdmission = makeSessionExecutionAdmission(registry: executionLocks)
       let taskAdmission = makeTaskAdmission(taskReservation, processAdmission: processAdmission)
-      let initialRequest = DeterministicWorkflowRunRequest(
-        workflow: bundle.workflow,
-        nodePayloads: bundle.nodePayloads,
-        variables: effectiveVariables,
-        maxSteps: options.maxSteps,
-        maxConcurrency: options.maxConcurrency,
-        maxLoopIterations: options.maxLoopIterations,
-        disableDefaultLoopGuard: options.disableDefaultLoopGuard,
-        defaultTimeoutMs: options.defaultTimeoutMs,
-        timeoutMs: options.timeoutMs,
-        resumeSessionId: options.resumeSessionId,
-        agentSilenceWarningMs: options.agentSilenceWarningMs,
-        agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
-        effectiveInstance: effectiveInstance,
-        eventHandler: runEventHandler,
-        sessionExecutionAdmission: taskAdmission ?? processAdmission,
-        boundaryHandover: taskContext?.boundaryHandover, cancellationCause: taskContext?.cancellationCause,
-        cancellationReason: operatorCancellationReason,
-        definitionSource: definitionSource
+      var request = makeRunRequest(
+        options: options, preparedRun: preparedRun, taskContext: taskContext,
+        eventHandler: runEventHandler, sessionAdmission: taskAdmission ?? processAdmission, botContext: botContext
       )
+      request.activityRecorder = BotActivityRuntime.recorder(sessionStoreRoot: storeRoot)
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
         kaibaSnapshot,
         allowsMockExecution: options.mockScenarioPath != nil
-      ) {
-        try await runner.run(initialRequest)
+      ) { [request] in
+        try await runner.run(request)
       }
       return try await finalizeRun(
         &finalResult,
@@ -252,7 +249,7 @@ public struct WorkflowRunCommand: Sendable {
       )
     } catch let error as CLIUsageError {
       releasePendingLease(pendingLease)
-      return await renderRunFailure(
+      var failure = await renderRunFailure(
         options: options,
         exitCode: .usage,
         error: error.message,
@@ -260,6 +257,10 @@ public struct WorkflowRunCommand: Sendable {
         jsonlRecorder: jsonlRecorder,
         gatewayValidationWarnings: gatewayValidationWarnings
       )
+      if options.botId != nil, options.output.isStructured, BotRunLinkError.isBotRejectionMessage(error.message) {
+        failure.stderr += error.message + "\n"
+      }
+      return failure
     } catch {
       releasePendingLease(pendingLease)
       return await renderRunFailure(
@@ -512,11 +513,7 @@ public struct WorkflowRunCommand: Sendable {
       resolution: resolution,
       resolvedSourceScope: resolvedSourceScope
     )
-    return CLIWorkflowSessionStore.resolveRootDirectory(
-      sessionStore: options.sessionStore,
-      scope: persistedResolution.scope,
-      workingDirectory: options.workingDirectory
-    )
+    return BotRunLinker.resolveSessionStoreRoot(options: options, scope: persistedResolution.scope)
   }
 
   private func persistSessionRecord(

@@ -55,7 +55,7 @@ extension DefaultEventLiveServer {
       if policy.policy != .concurrent && !isLatestDueTick {
         continue
       }
-      let fire = CronOverlapFire(
+      var fire = CronOverlapFire(
         bindingId: trigger.bindingId,
         sourceId: source.id,
         workflowName: workflowName,
@@ -71,7 +71,8 @@ extension DefaultEventLiveServer {
         let gate = routineDispatchGate(
           routineId: routineId,
           storeRoot: binding.routineStoreRoot,
-          parsed: parsed
+          parsed: parsed,
+          workflowName: workflowName
         )
         if let skipReason = gate.skipReason {
           // Persisted like the deferred-start gate skip (design §7.1), but the
@@ -79,6 +80,7 @@ extension DefaultEventLiveServer {
           await dispatcher.recordRoutineGateSkip(fire, reason: skipReason)
           continue
         }
+        fire.botId = gate.botId
       }
       _ = await dispatcher.submit(fire)
       submitted = true
@@ -92,7 +94,8 @@ extension DefaultEventLiveServer {
   func routineDispatchGate(
     routineId: String,
     storeRoot: String?,
-    parsed: ParsedParityOptions
+    parsed: ParsedParityOptions,
+    workflowName: String? = nil
   ) -> RoutineDispatchGate {
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     let store = RoutineStore(rootDirectory: RoutineStore.resolveRootDirectory(
@@ -115,7 +118,13 @@ extension DefaultEventLiveServer {
           skipReason: "routine-\(record.status.rawValue):\(routineId)"
         )
       }
-      return RoutineDispatchGate(routineId: routineId, store: store, skipReason: nil)
+      if let botId = record.botId {
+        let storeRoot = routineSessionStoreRoot(workflowName: workflowName ?? record.workflowName, parsed: parsed)
+        if BotRunLinker.isPaused(botId: botId, sessionStoreRoot: storeRoot) == true {
+          return RoutineDispatchGate(routineId: routineId, store: store, skipReason: "bot_paused:\(botId)")
+        }
+      }
+      return RoutineDispatchGate(routineId: routineId, store: store, skipReason: nil, botId: record.botId)
     } catch {
       return RoutineDispatchGate(
         routineId: routineId,
@@ -124,12 +133,66 @@ extension DefaultEventLiveServer {
       )
     }
   }
+  private func routineSessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) -> String {
+    let resolver = triggerDefaultsResolver ?? CLIWorkflowTriggerDefaultsResolver()
+    if let root = try? resolver.sessionStoreRoot(workflowName: workflowName, parsed: parsed) {
+      return root
+    }
+    return CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: parsed.sessionStore, scope: parsed.scope,
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    )
+  }
 }
 
 struct RoutineDispatchGate {
   let routineId: String
   let store: RoutineStore
   let skipReason: String?
+  var botId: String?
+}
+
+protocol EventWorkflowTriggerDefaultsResolving: Sendable {
+  func triggerDefaults(workflowName: String, parsed: ParsedParityOptions) throws -> EventOverlapSettings?
+  func workflowId(workflowName: String, parsed: ParsedParityOptions) throws -> String?
+  func sessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) throws -> String?
+}
+extension EventWorkflowTriggerDefaultsResolving {
+  func workflowId(workflowName: String, parsed: ParsedParityOptions) throws -> String? { nil }
+  func sessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) throws -> String? { nil }
+}
+struct CLIWorkflowTriggerDefaultsResolver: EventWorkflowTriggerDefaultsResolving {
+  func triggerDefaults(workflowName: String, parsed: ParsedParityOptions) throws -> EventOverlapSettings? {
+    try resolve(workflowName: workflowName, parsed: parsed).workflow.triggerDefaults
+  }
+  func workflowId(workflowName: String, parsed: ParsedParityOptions) throws -> String? {
+    try resolve(workflowName: workflowName, parsed: parsed).workflow.workflowId
+  }
+  func sessionStoreRoot(workflowName: String, parsed: ParsedParityOptions) throws -> String? {
+    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let resolution = WorkflowResolutionOptions(workflowName: workflowName, scope: parsed.scope,
+      workflowDefinitionDir: parsed.workflowDefinitionDir, workingDirectory: workingDirectory)
+    let bundle = try resolve(workflowName: workflowName, parsed: parsed)
+    let persisted = CLIWorkflowSessionResolution.resolutionForPersistence(resolution: resolution, resolvedSourceScope: bundle.sourceScope)
+    return CLIWorkflowSessionStore.resolveRootDirectory(sessionStore: parsed.sessionStore, scope: persisted.scope, workingDirectory: workingDirectory)
+  }
+  private func resolve(workflowName: String, parsed: ParsedParityOptions) throws -> ResolvedWorkflowBundle {
+    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let options = WorkflowResolutionOptions(
+      workflowName: workflowName,
+      scope: parsed.scope,
+      workflowDefinitionDir: parsed.workflowDefinitionDir,
+      workingDirectory: workingDirectory
+    )
+    let fileResolver = WorkflowRunCommand().resolver
+    let resolver = DefinitionStoreWorkflowBundleResolver(
+      inner: fileResolver,
+      sessionStore: parsed.sessionStore,
+      actor: .init(kind: .cli, id: "events-serve"),
+      mode: .lookupOnly
+    )
+    return try resolver.resolve(options)
+  }
 }
 
 extension EventLiveConfig {

@@ -61,8 +61,11 @@ public enum WorkflowBackendPolicyValidation {
       }
       if model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         diagnostics.append(error("\(path).backendPolicy.modelByBackend.\(backend.rawValue)", "must not be empty"))
-      } else if let models = knownModels[backend], !models.contains(model) {
-        diagnostics.append(error("\(path).backendPolicy.modelByBackend.\(backend.rawValue)", "is not known for this backend"))
+      } else if model != ModelSentinel.defaultModel, let models = knownModels[backend], !models.contains(model) {
+        diagnostics.append(WorkflowValidationDiagnostic(
+          severity: .warning, path: "\(path).backendPolicy.modelByBackend.\(backend.rawValue)",
+          message: "model_unknown: is not known for this backend"
+        ))
       }
     }
     return diagnostics

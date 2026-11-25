@@ -9,6 +9,364 @@ extension GraphQLContractProjector {
   public static let schemaContract = """
   scalar JSON
   scalar JSONObject
+  type Routine {
+    routineId: String!
+    name: String!
+    instruction: String
+    task: String!
+    schedule: String!
+    timezone: String
+    workflowName: String!
+    completionCriteria: String
+    status: RoutineStatus!
+    createdAt: String!
+    updatedAt: String!
+    completedAt: String
+    completionNote: String
+    lastRunAt: String
+    runCount: Int!
+    eventRoot: String!
+    sourceId: String!
+    bindingId: String!
+    deactivateWorkflowOnCompletion: Boolean!
+    origin: JSONObject
+    overlapPolicy: EventOverlapPolicy
+    maxQueuedRuns: Int
+    maxConcurrentRuns: Int
+    botId: String
+  }
+  input CreateRoutineInput {
+    name: String!
+    instruction: String
+    task: String!
+    schedule: String
+    every: String
+    timezone: String
+    workflowName: String!
+    completionCriteria: String
+    eventRoot: String
+    routineStoreRoot: String
+    deactivateWorkflowOnCompletion: Boolean
+    origin: JSONObject
+    overlapPolicy: EventOverlapPolicy
+    maxQueuedRuns: Int
+    maxConcurrentRuns: Int
+    botId: String
+  }
+  type Bot {
+    botId: String!
+    name: String!
+    purpose: String
+    personaId: String
+    defaultBackend: String
+    defaultModel: String
+    providerInstanceId: String
+    workspace: String
+    paused: Boolean!
+    memoryUpkeep: String!
+    lookAround: String!
+    permissionWaitMs: Int!
+    createdAt: String!
+    updatedAt: String!
+  }
+  type BotCounts {
+    needsYou: Int!
+    working: Int!
+    waiting: Int!
+    planned: Int!
+  }
+  type BotOrigin {
+    remote: String!
+    serverId: String
+    serverName: String
+    verified: Boolean!
+    connection: String!
+    observedAt: String!
+  }
+  type BotListState {
+    pinned: Boolean!
+    manualOrder: Int
+    snoozedUntil: String
+    snoozedAt: String
+    settledAt: String
+    settledBy: String
+  }
+  type BotBoardItem {
+    itemKind: String!
+    itemId: String!
+    group: String!
+    title: String!
+    workflowId: String
+    stepId: String
+    nodeId: String
+    backend: String
+    model: String
+    startedAt: String
+    elapsedMs: Int
+    lastActivityAt: String
+    status: String!
+    waitingReason: String
+    limitedResetAt: String
+    activitySource: String!
+    doingNow: String
+    checklist: [BotActivityPlan!]!
+    pendingRequests: [BotPendingRequest!]!
+    answerPath: String
+    question: BotBoardQuestion
+    lastResult: String
+    sessionId: String
+    bumpedAt: String
+    listState: BotListState!
+    origin: BotOrigin!
+  }
+  type BotActivityPlan {
+    planId: String!
+    entries: [BotActivityPlanEntry!]!
+  }
+  type BotActivityPlanEntry {
+    content: String!
+    status: String!
+    priority: String!
+  }
+  type BotPendingRequest {
+    requestId: String!
+    title: String
+    options: [BotPermissionOption!]!
+    createdAt: String!
+    expiresAt: String!
+  }
+  type BotPermissionOption {
+    optionId: String!
+    name: String!
+    kind: String!
+  }
+  type BotBoardQuestion {
+    questionId: String!
+    text: String!
+    optionIds: [String!]!
+  }
+  type BotBoard {
+    needsYou: [BotBoardItem!]!
+    inProgress: [BotBoardItem!]!
+    waiting: [BotBoardItem!]!
+    planned: [BotBoardItem!]!
+    closed: [BotBoardItem!]!
+    closedTotal: Int!
+  }
+  type BotOverviewRow {
+    bot: Bot!
+    counts: BotCounts!
+    inProgress: [BotBoardItem!]!
+    lastActivityAt: String
+    lastResult: String
+    listState: BotListState!
+    section: String!
+    workspaceGroup: String!
+    origin: BotOrigin!
+  }
+  type BotWorkspaceGroup {
+    key: String!
+    needsYou: Boolean!
+    botIds: [String!]!
+  }
+  type BotRoutine {
+    routineId: String!
+    name: String!
+    workflowName: String!
+    status: String!
+    nextRunAt: String
+  }
+  type BotListPayload {
+    bots: [BotOverviewRow!]!
+    groups: [BotWorkspaceGroup!]!
+  }
+  type BotDetailPayload {
+    bot: Bot!
+    board: BotBoard!
+    routines: [BotRoutine!]!
+    origin: BotOrigin!
+    suggestions: [JSON!]!
+    memory: JSON
+  }
+  type BotMutationPayload {
+    bot: Bot!
+    warnings: [String!]!
+  }
+  input BotFilter {
+    groupBy: String
+    remote: String
+  }
+  input CreateBotInput {
+    id: String
+    name: String!
+    purpose: String
+    personaId: String
+    defaultBackend: String
+    defaultModel: String
+    providerInstanceId: String
+    workspace: String
+    memoryUpkeep: String
+    lookAround: String
+    permissionWaitMs: Int
+    remote: String
+  }
+  input UpdateBotInput {
+    botId: String!
+    name: String
+    purpose: String
+    personaId: String
+    defaultBackend: String
+    defaultModel: String
+    providerInstanceId: String
+    workspace: String
+    memoryUpkeep: String
+    lookAround: String
+    permissionWaitMs: Int
+    remote: String
+  }
+  input SetBotPausedInput {
+    botId: String!
+    paused: Boolean!
+    remote: String
+  }
+  input RemoveBotInput {
+    botId: String!
+    remote: String
+  }
+  input SetBotListStateInput {
+    botId: String!
+    itemKind: String
+    itemId: String
+    pinned: Boolean
+    manualOrder: Int
+    snoozedUntil: String
+    clearSnooze: Boolean
+    settled: Boolean
+    remote: String
+  }
+  type BotActivityEvent {
+    sessionId: String!
+    seq: Int!
+    executionId: String
+    at: String!
+    kind: String!
+    payload: JSONObject!
+  }
+  type BotActivityToolCall {
+    toolCallId: String!
+    title: String
+    toolKind: String
+    status: String
+    locations: [BotActivityLocation!]
+    updatedAt: String!
+  }
+  type BotActivityLocation {
+    path: String!
+    line: Int
+  }
+  type BotActivitySubagent {
+    subSessionId: String!
+    title: String
+    state: String
+  }
+  type BotActivityStop {
+    stopReason: String!
+    limited: Boolean!
+    limitedResetAt: String
+  }
+  type BotActivityState {
+    source: String!
+    currentExecutionId: String
+    currentStepId: String
+    currentNodeId: String
+    backend: String
+    requestedModel: String
+    reportedModel: String
+    toolCalls: [BotActivityToolCall!]!
+    plans: [BotActivityPlan!]!
+    mode: String
+    commands: [String!]!
+    configOptions: JSON!
+    usage: JSON
+    subagents: [BotActivitySubagent!]!
+    pendingRequestIds: [String!]!
+    lastStop: BotActivityStop
+    lastMessageLine: String
+    lastEventAt: String
+  }
+  type BotActivityPage {
+    events: [BotActivityEvent!]!
+    state: BotActivityState
+    lastSequence: Int!
+    firstRetainedSequence: Int!
+    truncated: Boolean!
+    activitySource: String!
+    sessionStatus: String!
+    origin: BotOrigin!
+  }
+  input AnswerBotRequestInput {
+    requestId: String!
+    optionId: String
+    decline: Boolean
+    remote: String
+  }
+  type BotRequestPayload {
+    requestId: String!
+    status: String!
+    outcomeOptionId: String
+    resolvedBy: String
+  }
+  type CatalogModel {
+    id: String!
+    label: String
+    sources: [String!]!
+    reasoningEfforts: [String!]!
+    serviceTiers: [String!]!
+    modes: [String!]!
+    observedAt: String
+  }
+  type ProviderInstance {
+    instanceId: String!
+    driver: String!
+    label: String
+    account: String
+    builtIn: Boolean!
+    availability: String
+    authentication: String
+    version: String
+    failures: [String!]!
+    probedAt: String
+    models: [CatalogModel!]!
+    origin: BotOrigin!
+  }
+  type ModelCatalogPayload {
+    providers: [ProviderInstance!]!
+  }
+  type ProviderListPayload {
+    providers: [ProviderInstance!]!
+  }
+  type ProviderPayload {
+    provider: ProviderInstance!
+  }
+  input SaveProviderInstanceInput {
+    instanceId: String!
+    driver: String
+    label: String
+    account: String
+    providerName: String
+    providerProxy: String
+    apiKeyEnvironment: String
+    customModels: [String!]
+    remote: String
+  }
+  input RefreshProvidersInput {
+    instanceId: String
+    remote: String
+  }
+  input RemoveProviderInstanceInput {
+    instanceId: String!
+    remote: String
+  }
   input ExecuteWorkflowInput {
     workflowName: String!
     runtimeVariables: JSONObject
@@ -19,6 +377,7 @@ extension GraphQLContractProjector {
     maxLoopIterations: Int
     disableDefaultLoopGuard: Boolean
     defaultTimeoutMs: Int
+    botId: String
   }
   type ExecuteWorkflowPayload {
     workflowExecutionId: String!
@@ -572,7 +931,7 @@ extension GraphQLContractProjector {
   }
   \(workflowRegistryGraphQLSchemaTypes)
   \(configurationGraphQLSchemaTypes)
-  \(routineGraphQLSchemaTypes)
+  \(routineGraphQLSupplementalSchemaTypes)
   \(taskHandoverGraphQLSchemaTypes)
   \(workflowDefinitionGraphQLSchemaTypes)
   type Query {
@@ -601,6 +960,12 @@ extension GraphQLContractProjector {
     consoleInstance(identity: String!): ConsoleInstancePayload!
     opsOverview: OpsOverviewPayload!
     configuration: RielaConfiguration!
+    bots(filter: BotFilter): BotListPayload!
+    bot(botId: String!, remote: String): BotDetailPayload!
+    botActivity(sessionId: String!, afterSequence: Int = 0, limit: Int = 200, waitMs: Int = 0, remote: String): BotActivityPage!
+    modelCatalog(providerInstanceId: String, remote: String): ModelCatalogPayload!
+    providers(remote: String): ProviderListPayload!
+    provider(instanceId: String!, remote: String): ProviderPayload!
   }
   type Mutation {
     executeWorkflow(input: ExecuteWorkflowInput!): ExecuteWorkflowPayload!
@@ -647,6 +1012,15 @@ extension GraphQLContractProjector {
     updateWorkflowStorageConfiguration(input: UpdateWorkflowStorageConfigurationInput!): RielaConfiguration!
     updateWorkflowInstanceConfiguration(input: WorkflowInstanceConfigurationInput!): ConfigurationRevision!
     registerEventSourceConfiguration(input: EventSourceConfigurationInput!): ConfigurationRevision!
+    createBot(input: CreateBotInput!): BotMutationPayload!
+    updateBot(input: UpdateBotInput!): BotMutationPayload!
+    setBotPaused(input: SetBotPausedInput!): BotMutationPayload!
+    removeBot(input: RemoveBotInput!): BotMutationPayload!
+    answerBotRequest(input: AnswerBotRequestInput!): BotRequestPayload!
+    setBotListState(input: SetBotListStateInput!): BotMutationPayload!
+    refreshProviders(input: RefreshProvidersInput!): ProviderListPayload!
+    saveProviderInstance(input: SaveProviderInstanceInput!): ProviderPayload!
+    removeProviderInstance(input: RemoveProviderInstanceInput!): ProviderListPayload!
   }
   """
 }

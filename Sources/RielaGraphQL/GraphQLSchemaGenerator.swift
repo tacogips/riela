@@ -48,7 +48,7 @@ public enum GraphQLSchemaGenerator {
   /// Object and input types of the control-plane contract. The DTO-sync test
   /// pins every `GraphQL*DTO` struct to its descriptor here, so a DTO field
   /// added without a schema field fails the build gate.
-  public static let types: [TypeDescriptor] = [
+  public static let types: [TypeDescriptor] = routineTypes + botTypes + modelCatalogTypes + [
     .init(kind: .input, name: "ExecuteWorkflowInput", fields: [
       .init(name: "workflowName", type: "String!"),
       .init(name: "runtimeVariables", type: "JSONObject"),
@@ -58,7 +58,8 @@ public enum GraphQLSchemaGenerator {
       .init(name: "maxConcurrency", type: "Int"),
       .init(name: "maxLoopIterations", type: "Int"),
       .init(name: "disableDefaultLoopGuard", type: "Boolean"),
-      .init(name: "defaultTimeoutMs", type: "Int")
+      .init(name: "defaultTimeoutMs", type: "Int"),
+      .init(name: "botId", type: "String")
     ]),
     .init(kind: .object, name: "ExecuteWorkflowPayload", fields: [
       .init(name: "workflowExecutionId", type: "String!"),
@@ -616,6 +617,31 @@ public enum GraphQLSchemaGenerator {
   /// The catalog decides which fields the schema publishes and in what order;
   /// this table supplies each one's arguments and return type.
   public static let rootFields: [String: FieldDescriptor] = [
+    "Query.modelCatalog": .init(
+      name: "modelCatalog", arguments: "providerInstanceId: String, remote: String", type: "ModelCatalogPayload!"
+    ),
+    "Query.providers": .init(name: "providers", arguments: "remote: String", type: "ProviderListPayload!"),
+    "Query.provider": .init(name: "provider", arguments: "instanceId: String!, remote: String", type: "ProviderPayload!"),
+    "Mutation.refreshProviders": .init(name: "refreshProviders", arguments: "input: RefreshProvidersInput!", type: "ProviderListPayload!"),
+    "Mutation.saveProviderInstance": .init(
+      name: "saveProviderInstance", arguments: "input: SaveProviderInstanceInput!", type: "ProviderPayload!"
+    ),
+    "Mutation.removeProviderInstance": .init(
+      name: "removeProviderInstance", arguments: "input: RemoveProviderInstanceInput!", type: "ProviderListPayload!"
+    ),
+    "Query.bots": .init(name: "bots", arguments: "filter: BotFilter", type: "BotListPayload!"),
+    "Query.bot": .init(name: "bot", arguments: "botId: String!, remote: String", type: "BotDetailPayload!"),
+    "Query.botActivity": .init(
+      name: "botActivity",
+      arguments: "sessionId: String!, afterSequence: Int = 0, limit: Int = 200, waitMs: Int = 0, remote: String",
+      type: "BotActivityPage!"
+    ),
+    "Mutation.answerBotRequest": .init(name: "answerBotRequest", arguments: "input: AnswerBotRequestInput!", type: "BotRequestPayload!"),
+    "Mutation.createBot": .init(name: "createBot", arguments: "input: CreateBotInput!", type: "BotMutationPayload!"),
+    "Mutation.updateBot": .init(name: "updateBot", arguments: "input: UpdateBotInput!", type: "BotMutationPayload!"),
+    "Mutation.setBotPaused": .init(name: "setBotPaused", arguments: "input: SetBotPausedInput!", type: "BotMutationPayload!"),
+    "Mutation.removeBot": .init(name: "removeBot", arguments: "input: RemoveBotInput!", type: "BotMutationPayload!"),
+    "Mutation.setBotListState": .init(name: "setBotListState", arguments: "input: SetBotListStateInput!", type: "BotMutationPayload!"),
     "Mutation.executeWorkflow": .init(name: "executeWorkflow", arguments: "input: ExecuteWorkflowInput!", type: "ExecuteWorkflowPayload!"),
     "Query.workflowDefinitionHistory": .init(name: "workflowDefinitionHistory", arguments: "workflowName: String!, nodeId: String, limit: Int, storeScope: String", type: "[WorkflowDefinitionAuditRecord!]!"),
     "Query.workflowDefinition": .init(name: "workflowDefinition", arguments: "workflowName: String!, versionId: String, storeScope: String", type: "WorkflowDefinitionVersion"),
@@ -692,16 +718,63 @@ public enum GraphQLSchemaGenerator {
     "Query.workflows": .init(name: "workflows", arguments: "filter: WorkflowFilter", type: "WorkflowListPayload!")
   ]
 
+  static let routineTypes: [TypeDescriptor] = [
+    .init(kind: .object, name: "Routine", fields: [
+      .init(name: "routineId", type: "String!"),
+      .init(name: "name", type: "String!"),
+      .init(name: "instruction", type: "String"),
+      .init(name: "task", type: "String!"),
+      .init(name: "schedule", type: "String!"),
+      .init(name: "timezone", type: "String"),
+      .init(name: "workflowName", type: "String!"),
+      .init(name: "completionCriteria", type: "String"),
+      .init(name: "status", type: "RoutineStatus!"),
+      .init(name: "createdAt", type: "String!"),
+      .init(name: "updatedAt", type: "String!"),
+      .init(name: "completedAt", type: "String"),
+      .init(name: "completionNote", type: "String"),
+      .init(name: "lastRunAt", type: "String"),
+      .init(name: "runCount", type: "Int!"),
+      .init(name: "eventRoot", type: "String!"),
+      .init(name: "sourceId", type: "String!"),
+      .init(name: "bindingId", type: "String!"),
+      .init(name: "deactivateWorkflowOnCompletion", type: "Boolean!"),
+      .init(name: "origin", type: "JSONObject"),
+      .init(name: "overlapPolicy", type: "EventOverlapPolicy"),
+      .init(name: "maxQueuedRuns", type: "Int"),
+      .init(name: "maxConcurrentRuns", type: "Int"),
+      .init(name: "botId", type: "String")
+    ]),
+    .init(kind: .input, name: "CreateRoutineInput", fields: [
+      .init(name: "name", type: "String!"),
+      .init(name: "instruction", type: "String"),
+      .init(name: "task", type: "String!"),
+      .init(name: "schedule", type: "String"),
+      .init(name: "every", type: "String"),
+      .init(name: "timezone", type: "String"),
+      .init(name: "workflowName", type: "String!"),
+      .init(name: "completionCriteria", type: "String"),
+      .init(name: "eventRoot", type: "String"),
+      .init(name: "routineStoreRoot", type: "String"),
+      .init(name: "deactivateWorkflowOnCompletion", type: "Boolean"),
+      .init(name: "origin", type: "JSONObject"),
+      .init(name: "overlapPolicy", type: "EventOverlapPolicy"),
+      .init(name: "maxQueuedRuns", type: "Int"),
+      .init(name: "maxConcurrentRuns", type: "Int"),
+      .init(name: "botId", type: "String")
+    ])
+  ]
+
   /// SDL blocks that stay hand-written (delta D2). They are interpolated by
   /// both the generator and the checked-in literal, so both see one source.
   static var handWrittenSchemaBlocks: [String] {
-    [workflowRegistryGraphQLSchemaTypes, configurationGraphQLSchemaTypes, routineGraphQLSchemaTypes, taskHandoverGraphQLSchemaTypes, workflowDefinitionGraphQLSchemaTypes]
+    [workflowRegistryGraphQLSchemaTypes, configurationGraphQLSchemaTypes, routineGraphQLSupplementalSchemaTypes, taskHandoverGraphQLSchemaTypes, workflowDefinitionGraphQLSchemaTypes]
   }
 
   static let handWrittenSchemaBlockNames: [String] = [
     "workflowRegistryGraphQLSchemaTypes",
     "configurationGraphQLSchemaTypes",
-    "routineGraphQLSchemaTypes",
+    "routineGraphQLSupplementalSchemaTypes",
     "taskHandoverGraphQLSchemaTypes",
     "workflowDefinitionGraphQLSchemaTypes"
   ]
@@ -723,9 +796,7 @@ public enum GraphQLSchemaGenerator {
   static func renderTemplate(handWrittenBlocks: [String]) -> String {
     var out: [String] = scalars.map { "scalar \($0)" }
     for type in types {
-      out.append("\(type.kind.rawValue) \(type.name) {")
-      out.append(contentsOf: type.fields.map { "  \($0.declaration)" })
-      out.append("}")
+      out.append(renderType(type))
     }
     out.append(contentsOf: handWrittenBlocks)
     for root in SurfaceGraphQLRoot.allCases {
@@ -734,6 +805,11 @@ public enum GraphQLSchemaGenerator {
       out.append("}")
     }
     return out.joined(separator: "\n")
+  }
+
+  static func renderType(_ type: TypeDescriptor) -> String {
+    (["\(type.kind.rawValue) \(type.name) {"] + type.fields.map { "  \($0.declaration)" } + ["}"])
+      .joined(separator: "\n")
   }
 
   /// Both directions of the catalog/schema contract for root fields.

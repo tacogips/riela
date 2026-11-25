@@ -63,6 +63,8 @@ extension DeterministicWorkflowRunner {
     backendWorkingDirectory: String? = nil,
     inputSnapshot: JSONObject? = nil,
     effectiveStepBudget: Int? = nil,
+    requestedModel: String? = nil,
+    recorder: (any WorkflowActivityRecording)? = nil,
     handler: WorkflowRunEventHandler?
   ) async throws -> WorkflowStepStartedExecutionRecord {
     let execution = try await store.recordStepExecution(
@@ -80,6 +82,10 @@ extension DeterministicWorkflowRunner {
     guard let updatedSession = try await store.loadSession(id: sessionId) else {
       throw WorkflowRuntimeStoreError.sessionNotFound(sessionId)
     }
+    await recorder?.stepStarted(
+      sessionId: sessionId, executionId: execution.executionId, stepId: step.id, nodeId: step.nodeId,
+      backend: backend?.rawValue, requestedModel: requestedModel, at: execution.createdAt
+    )
     await emitStepStartedEvent(
       workflowId: workflowId,
       session: updatedSession,
@@ -104,9 +110,11 @@ extension DeterministicWorkflowRunner {
     step: WorkflowStepRef,
     execution: WorkflowStepExecution,
     eventContext: WorkflowBackendEventEmissionContext,
+    request: DeterministicWorkflowRunRequest,
     handler: WorkflowRunEventHandler?
   ) -> AdapterExecutionContext {
-    AdapterExecutionContext(deadline: deadline) { backendEvent in
+    let recorder = request.activityRecorder
+    let backendHandler: AdapterBackendEventHandler = { backendEvent in
       guard !backendEvent.eventType.isEmpty else {
         return
       }
@@ -130,6 +138,11 @@ extension DeterministicWorkflowRunner {
       guard let receipt else {
         return
       }
+      if let recorder, let update = backendEvent.activity {
+        await recorder.record(
+          sessionId: eventContext.sessionId, executionId: receipt.executionId, update: update, at: receipt.at ?? Date()
+        )
+      }
       var enrichedEvent = backendEvent
       enrichedEvent.sequence = receipt.sequence
       enrichedEvent.at = receipt.at
@@ -141,6 +154,52 @@ extension DeterministicWorkflowRunner {
         backendEvent: enrichedEvent,
         handler: handler
       )
+    }
+    return AdapterExecutionContext(
+      deadline: deadline, backendEventHandler: backendHandler,
+      permissionRequestHandler: activityPermissionHandler(
+        request: request, sessionId: eventContext.sessionId, executionId: execution.executionId, deadline: deadline
+      )
+    )
+  }
+
+  func activityPermissionHandler(
+    request: DeterministicWorkflowRunRequest, sessionId: String, executionId: String, deadline: Date?
+  ) -> AdapterPermissionRequestHandler? {
+    guard let recorder = request.activityRecorder else { return nil }
+    let waitMs = request.botContext?.permissionWaitMs ?? 0
+    return { permission in
+      await recorder.requestPermission(
+        sessionId: sessionId, executionId: executionId, request: permission, waitMs: waitMs, deadline: deadline
+      )
+    }
+  }
+
+  func settlingActivity<T>(
+    request: DeterministicWorkflowRunRequest, sessionId: String, executionId: String, _ body: () async throws -> T
+  ) async throws -> T {
+    guard let recorder = request.activityRecorder else { return try await body() }
+    do {
+      let result = try await body()
+      await recorder.settle(
+        sessionId: sessionId, executionId: executionId, reason: .completed,
+        stepStatus: WorkflowStepExecutionStatus.completed.rawValue, at: Date()
+      )
+      return result
+    } catch {
+      let reason: ActivitySettleReason
+      let status: WorkflowStepExecutionStatus
+      if isWorkflowRunCancellation(error) || Task.isCancelled {
+        (reason, status) = (.cancelled, .cancelled)
+      } else if (error as? AdapterExecutionError)?.code == .timeout || isSupervisedActivityTimeout(error) {
+        (reason, status) = (.timeout, .failed)
+      } else {
+        (reason, status) = (.providerError, .failed)
+      }
+      await recorder.settle(
+        sessionId: sessionId, executionId: executionId, reason: reason, stepStatus: status.rawValue, at: Date()
+      )
+      throw error
     }
   }
 

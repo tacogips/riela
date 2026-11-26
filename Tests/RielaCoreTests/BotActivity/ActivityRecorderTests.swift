@@ -213,6 +213,44 @@ final class ActivityRecorderTests: XCTestCase {
     }
   }
 
+  func testStepStartedPreservesHeapBackedLastMessageLineAcrossSteps() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = SQLiteWorkflowActivityRecorder(sessionStoreRoot: root.path)
+    let store = BotStore(sessionStoreRoot: root.path)
+    let longLine = String(repeating: "a", count: 200)
+
+    await recorder.stepStarted(
+      sessionId: sessionId, executionId: "exec-1", stepId: "step-1", nodeId: "node-1",
+      backend: "antigravity-agent", requestedModel: "gemini-4-neon", at: at
+    )
+    await recorder.record(
+      sessionId: sessionId,
+      executionId: "exec-1",
+      update: .message(messageId: "m1", text: longLine, replace: false),
+      at: at.addingTimeInterval(1)
+    )
+    await recorder.settle(
+      sessionId: sessionId, executionId: "exec-1", reason: .completed, stepStatus: "completed",
+      at: at.addingTimeInterval(2)
+    )
+
+    for step in 2...6 {
+      await recorder.stepStarted(
+        sessionId: sessionId, executionId: "exec-\(step)", stepId: "step-\(step)", nodeId: "node-\(step)",
+        backend: "antigravity-agent", requestedModel: "gemini-4-neon", at: at.addingTimeInterval(Double(step * 2))
+      )
+      await recorder.settle(
+        sessionId: sessionId, executionId: "exec-\(step)", reason: .completed, stepStatus: "completed",
+        at: at.addingTimeInterval(Double(step * 2 + 1))
+      )
+    }
+
+    let page = try store.activityPage(sessionId: sessionId, afterSequence: 0, limit: 50)
+    XCTAssertEqual(page.state?.lastMessageLine, longLine)
+    XCTAssertEqual(page.state?.source, "acp")
+  }
+
   private func temporaryRoot() -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   }

@@ -83,17 +83,16 @@ public enum ActivityReducer {
     state: inout ActivityState, executionId: String, stepId: String, nodeId: String,
     backend: String?, requestedModel: String?, at: Date
   ) -> [ActivityEventDraft] {
-    let source = state.source
-    let lastMessageLine = state.lastMessageLine
-    state = ActivityState()
-    state.source = source
-    state.lastMessageLine = lastMessageLine
-    state.currentExecutionId = executionId
-    state.currentStepId = stepId
-    state.currentNodeId = nodeId
-    state.backend = backend
-    state.requestedModel = requestedModel
-    state.lastEventAt = at
+    var next = ActivityState()
+    next.source = state.source
+    next.lastMessageLine = state.lastMessageLine
+    next.currentExecutionId = executionId
+    next.currentStepId = stepId
+    next.currentNodeId = nodeId
+    next.backend = backend
+    next.requestedModel = requestedModel
+    next.lastEventAt = at
+    state = next
     var payload: JSONObject = ["stepId": .string(stepId), "nodeId": .string(nodeId)]
     payload["backend"] = backend.map(JSONValue.string)
     payload["requestedModel"] = requestedModel.map(JSONValue.string)

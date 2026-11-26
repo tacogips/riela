@@ -288,16 +288,16 @@ public struct RoutineStore: Sendable {
     return changed > 0
   }
 
+  private static let timestampFormatter = LockedISO8601DateFormatter(
+    fallbackFormatOptions: [.withInternetDateTime]
+  )
+
   public static func timestamp(_ date: Date = Date()) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.string(from: date)
+    timestampFormatter.string(from: date)
   }
 
   private static func date(fromTimestamp timestamp: String) -> Date? {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: timestamp)
+    timestampFormatter.date(from: timestamp)
   }
 
   private func openWritable() throws -> SQLiteDatabase {

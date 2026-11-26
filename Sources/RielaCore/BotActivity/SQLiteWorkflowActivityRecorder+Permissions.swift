@@ -8,7 +8,7 @@ extension SQLiteWorkflowActivityRecorder {
     let expiresAt = min(at.addingTimeInterval(Double(max(0, waitMs)) / 1_000), deadline ?? .distantFuture)
     let record = ActivityRequestRecord(sessionId: sessionId, executionId: executionId, request: request, at: at, expiresAt: expiresAt)
     do {
-      let inserted = try store.write { db in
+      let inserted = try withWriter { db in
         var journal = try ActivityJournal(sessionId: sessionId, db: db)
         guard journal.state.currentExecutionId == executionId else { return false }
         flush(buffers[sessionId] ?? [], executionId: executionId, into: &journal, at: at, final: false)
@@ -69,7 +69,7 @@ extension SQLiteWorkflowActivityRecorder {
   private func resolvePendingPermission(
     _ record: ActivityRequestRecord, by reason: ActivityRequestRecord.Resolution, at: Date
   ) throws -> AdapterPermissionOutcome {
-    try store.write { db in
+    try withWriter { db in
       guard var latest = try ActivityRequestRecord.load(id: record.requestId, db: db) else { return .cancelled }
       if latest.status != .pending { return latest.outcome }
       var journal = try ActivityJournal(sessionId: record.sessionId, db: db)

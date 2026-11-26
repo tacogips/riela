@@ -53,14 +53,44 @@ public struct BotStore: Sendable {
     return try body(database)
   }
 
-  public func write<T>(_ body: (SQLiteDatabase) throws -> T) throws -> T {
-    let database = try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: sessionStoreRoot) {
-      let database = try SQLiteDatabase.open(path: databasePath, options: .writableRuntimeStoreDefault)
+  public func openWritable() throws -> SQLiteDatabase {
+    let path = databasePath
+    if BotStoreSchemaSetupCache.shared.hasPreparedFile(databasePath: path) {
+      let database = try SQLiteDatabase.open(path: path, options: .writableRuntimeStoreDefault)
+      let currentSchemaVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init)
+      let userVersion = Int(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
+      if let currentSchemaVersion, BotStoreSchemaSetupCache.shared.hasPrepared(
+        databasePath: path, schemaVersion: currentSchemaVersion, userVersion: userVersion
+      ) {
+        try SQLiteWorkflowRuntimePersistenceStore.requireCompatibleSchemaGeneration(in: database)
+        return database
+      }
+    }
+    return try RuntimeDatabaseAccess.withSchemaLock(rootDirectory: sessionStoreRoot) {
+      let database = try SQLiteDatabase.open(path: path, options: .writableRuntimeStoreDefault)
       try BotStoreSchema.prepare(in: database)
       try AskStoreSchema.prepare(in: database)
+      if let updatedVersion = try database.query("PRAGMA schema_version").first?["schema_version"].flatMap(Int.init) {
+        BotStoreSchemaSetupCache.shared.markPrepared(
+          databasePath: path,
+          schemaVersion: updatedVersion,
+          userVersion: Int(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
+        )
+      }
       return database
     }
-    return try database.transaction(body)
+  }
+
+  public func write<T>(_ body: (SQLiteDatabase) throws -> T) throws -> T {
+    let database = try openWritable()
+    do {
+      return try database.transaction(body)
+    } catch {
+      if String(describing: error).contains("no such table") {
+        BotStoreSchemaSetupCache.shared.invalidate(databasePath: databasePath)
+      }
+      throw error
+    }
   }
 
   @discardableResult
@@ -212,5 +242,58 @@ public struct BotStore: Sendable {
 
   private static func notFound(_ botId: String) -> BotStoreError {
     BotStoreError(code: "bot_not_found", message: "Bot '\(botId)' was not found")
+  }
+}
+
+private final class BotStoreSchemaSetupCache: @unchecked Sendable {
+  static let shared = BotStoreSchemaSetupCache()
+
+  private let lock = NSLock()
+  private struct Entry: Equatable {
+    let device: UInt64
+    let inode: UInt64
+    let schemaVersion: Int
+    let userVersion: Int
+  }
+  private var versions: [String: Entry] = [:]
+
+  func hasPreparedFile(databasePath: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let existing = versions[databasePath],
+          let identity = fileIdentity(databasePath: databasePath) else { return false }
+    return existing.device == identity.device && existing.inode == identity.inode
+  }
+
+  func hasPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let identity = fileIdentity(databasePath: databasePath) else { return false }
+    let expected = Entry(
+      device: identity.device, inode: identity.inode, schemaVersion: schemaVersion, userVersion: userVersion
+    )
+    return versions[databasePath] == expected
+  }
+
+  func markPrepared(databasePath: String, schemaVersion: Int, userVersion: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let identity = fileIdentity(databasePath: databasePath) else { return }
+    versions[databasePath] = Entry(
+      device: identity.device, inode: identity.inode, schemaVersion: schemaVersion, userVersion: userVersion
+    )
+  }
+
+  func invalidate(databasePath: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    versions.removeValue(forKey: databasePath)
+  }
+
+  private func fileIdentity(databasePath: String) -> (device: UInt64, inode: UInt64)? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: databasePath),
+          let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
+          let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value else { return nil }
+    return (device, inode)
   }
 }

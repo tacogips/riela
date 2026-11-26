@@ -1,4 +1,5 @@
 import Foundation
+import RielaSQLite
 
 public actor SQLiteWorkflowActivityRecorder: WorkflowActivityRecording {
   struct TextBuffer {
@@ -17,6 +18,37 @@ public actor SQLiteWorkflowActivityRecorder: WorkflowActivityRecording {
   var activeExecutions: [String: String] = [:]
   var lastTextFlush: [String: Date] = [:]
   private var loggedSessions: Set<String> = []
+  private var writerConnection: (database: SQLiteDatabase, device: UInt64, inode: UInt64)?
+
+  func withWriter<T>(_ body: (SQLiteDatabase) throws -> T) throws -> T {
+    let path = store.databasePath
+    let database: SQLiteDatabase
+    if let cached = writerConnection,
+       let identity = Self.fileIdentity(at: path),
+       cached.device == identity.device,
+       cached.inode == identity.inode {
+      database = cached.database
+    } else {
+      writerConnection = nil
+      database = try store.openWritable()
+      if let identity = Self.fileIdentity(at: path) {
+        writerConnection = (database, identity.device, identity.inode)
+      }
+    }
+    do {
+      return try database.transaction(body)
+    } catch {
+      writerConnection = nil
+      throw error
+    }
+  }
+
+  private static func fileIdentity(at path: String) -> (device: UInt64, inode: UInt64)? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+          let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
+          let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value else { return nil }
+    return (device, inode)
+  }
 
   public init(
     sessionStoreRoot: String, limits: ActivityLimits = .default,
@@ -32,7 +64,7 @@ public actor SQLiteWorkflowActivityRecorder: WorkflowActivityRecording {
     backend: String?, requestedModel: String?, at: Date
   ) {
     do {
-      let remaining = try store.write { db in
+      let remaining = try withWriter { db in
         var journal = try ActivityJournal(sessionId: sessionId, db: db)
         if journal.state.currentExecutionId == executionId { return buffers[sessionId] }
         if let previous = journal.state.currentExecutionId {
@@ -65,7 +97,7 @@ public actor SQLiteWorkflowActivityRecorder: WorkflowActivityRecording {
           executionId: executionId, kind: .thought, messageId: nil, openedAt: at, replacesMessage: false, text: text
         ))
       default:
-        let backend = try store.write { db -> String? in
+        let backend = try withWriter { db -> String? in
           var journal = try ActivityJournal(sessionId: sessionId, db: db)
           guard journal.state.currentExecutionId == executionId else { return nil }
           flush(buffers[sessionId] ?? [], executionId: executionId, into: &journal, at: at, final: false)
@@ -113,7 +145,7 @@ public actor SQLiteWorkflowActivityRecorder: WorkflowActivityRecording {
     sessionId: String, executionId: String, reason: ActivitySettleReason, stepStatus: String, at: Date
   ) {
     do {
-      try store.write { db in
+      try withWriter { db in
         var journal = try ActivityJournal(sessionId: sessionId, db: db)
         guard journal.state.currentExecutionId == executionId else { return }
         flush(buffers[sessionId] ?? [], executionId: executionId, into: &journal, at: at, final: true)

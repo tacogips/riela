@@ -137,6 +137,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
   private let handle: OpaquePointer?
   private let ownsHandle: Bool
   private let tracksStatementWork: Bool
+  private let handleLock = NSRecursiveLock()
   private let statementWorkLock = NSLock()
   private var accumulatedVMSteps = 0
   private var accumulatedFullScanSteps = 0
@@ -161,6 +162,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
   }
 
   deinit {
+    handleLock.lock()
+    defer { handleLock.unlock() }
     if ownsHandle {
       sqlite3_close(handle)
     }
@@ -215,7 +218,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
     let isNewFile = options.incrementalAutoVacuumForNewFile
       && (!FileManager.default.fileExists(atPath: path) || fileSize(at: path) == 0)
     var db: OpaquePointer?
-    guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK, let opened = db else {
+    guard sqlite3_open_v2(path, &db, flags | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK, let opened = db else {
       let message = db.map(errorMessage) ?? "sqlite open failed"
       let code = db.map(sqlite3_errcode)
       if let db {
@@ -263,6 +266,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
     begin: String = "BEGIN IMMEDIATE",
     _ body: (SQLiteDatabase) throws -> T
   ) throws -> T {
+    handleLock.lock()
+    defer { handleLock.unlock() }
     try execute(begin)
     do {
       let value = try body(self)
@@ -280,6 +285,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
 
   @discardableResult
   public func executeAndReturnChangedRowCount(_ sql: String, bindings: [SQLiteValue] = []) throws -> Int {
+    handleLock.lock()
+    defer { handleLock.unlock() }
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else {
       throw sqliteError(operation: .execute, sql: sql)
@@ -296,6 +303,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
   }
 
   public func query(_ sql: String, bindings: [SQLiteValue] = []) throws -> [SQLiteRow] {
+    handleLock.lock()
+    defer { handleLock.unlock() }
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else {
       throw sqliteError(operation: .query, sql: sql)

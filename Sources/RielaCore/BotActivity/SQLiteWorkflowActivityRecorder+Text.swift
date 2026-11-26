@@ -19,7 +19,7 @@ extension SQLiteWorkflowActivityRecorder {
     if !pending.isEmpty || shouldFlush {
       let flushed = shouldFlush ? pending + [combined] : pending
       let executionId = buffer.executionId
-      try store.write { db in
+      try withWriter { db in
         var journal = try ActivityJournal(sessionId: sessionId, db: db)
         guard journal.state.currentExecutionId == executionId else { return }
         flush(flushed, executionId: executionId, into: &journal, at: at, final: false)

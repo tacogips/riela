@@ -174,6 +174,45 @@ final class ActivityRecorderTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: root), existing)
   }
 
+  func testConcurrentFanoutRecordingAndTimestampFormatting() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = SQLiteWorkflowActivityRecorder(sessionStoreRoot: root.path)
+    let store = BotStore(sessionStoreRoot: root.path)
+
+    await withTaskGroup(of: Void.self) { group in
+      for branch in 0..<12 {
+        group.addTask { [at] in
+          let branchSession = "fanout-session-\(branch)"
+          let branchExec = "exec-\(branch)"
+          await recorder.stepStarted(
+            sessionId: branchSession, executionId: branchExec, stepId: "step6", nodeId: "node6",
+            backend: "codex-agent", requestedModel: "gpt-6.1-terra", at: at
+          )
+          for step in 0..<10 {
+            _ = RoutineStore.timestamp(at.addingTimeInterval(Double(step)))
+            await recorder.record(
+              sessionId: branchSession,
+              executionId: branchExec,
+              update: .toolCall(.init(toolCallId: "tool-\(branch)-\(step)", title: "Tool \(step)", status: "completed")),
+              at: at.addingTimeInterval(Double(step))
+            )
+          }
+          await recorder.settle(
+            sessionId: branchSession, executionId: branchExec, reason: .completed, stepStatus: "completed",
+            at: at.addingTimeInterval(20)
+          )
+        }
+      }
+    }
+
+    for branch in 0..<12 {
+      let page = try store.activityPage(sessionId: "fanout-session-\(branch)", afterSequence: 0, limit: 50)
+      XCTAssertGreaterThanOrEqual(page.events.count, 13)
+      XCTAssertNil(page.state?.currentExecutionId)
+    }
+  }
+
   private func temporaryRoot() -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   }

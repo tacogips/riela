@@ -29,6 +29,7 @@ enum SessionObservabilityComposition {
       GatewayEventActivityProbe(backend: .codexAgent),
       GatewayEventActivityProbe(backend: .claudeCodeAgent),
       GatewayEventActivityProbe(backend: .cursorCliAgent),
+      GatewayEventActivityProbe(backend: .antigravityAgent),
       GatewayEventActivityProbe(backend: .officialOpenAISDK),
       GatewayEventActivityProbe(backend: .officialAnthropicSDK),
       GatewayEventActivityProbe(backend: .officialGeminiSDK),

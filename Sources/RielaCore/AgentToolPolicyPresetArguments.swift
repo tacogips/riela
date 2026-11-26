@@ -36,7 +36,7 @@ public enum AgentToolPolicyPresetArguments {
       true
     case (.noTools, .officialCursorSDK):
       true
-    case (.webSearch, .officialCursorSDK), (_, .cursorCliAgent):
+    case (.webSearch, .officialCursorSDK), (_, .cursorCliAgent), (_, .antigravityAgent):
       false
     }
   }
@@ -52,7 +52,7 @@ public enum AgentToolPolicyPresetArguments {
       codexArguments(preset, sessionReuse: sessionReuse, keepClientMCPServers: keepClientMCPServers)
     case .claudeCodeAgent:
       claudeArguments(preset, keepClientMCPServers: keepClientMCPServers)
-    case .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
+    case .cursorCliAgent, .antigravityAgent, .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
       nil
     }
   }

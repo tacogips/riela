@@ -131,6 +131,8 @@ public func agentToolPolicyArguments(_ policy: AgentToolPolicy?, backend: CliAge
     backendSpecific = policy.claudeArguments
   case .cursorCliAgent:
     backendSpecific = policy.cursorArguments
+  case .antigravityAgent:
+    backendSpecific = policy.antigravityArguments
   }
   return policy.additionalArguments + backendSpecific
 }

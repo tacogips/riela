@@ -4,12 +4,14 @@ public enum CliAgentBackend: String, Codable, CaseIterable, Sendable {
   case codexAgent = "codex-agent"
   case claudeCodeAgent = "claude-code-agent"
   case cursorCliAgent = "cursor-cli-agent"
+  case antigravityAgent = "antigravity-agent"
 }
 
 public enum NodeExecutionBackend: String, Codable, CaseIterable, Hashable, Sendable {
   case codexAgent = "codex-agent"
   case claudeCodeAgent = "claude-code-agent"
   case cursorCliAgent = "cursor-cli-agent"
+  case antigravityAgent = "antigravity-agent"
   case officialOpenAISDK = "official/openai-sdk"
   case officialAnthropicSDK = "official/anthropic-sdk"
   case officialGeminiSDK = "official/gemini-sdk"
@@ -23,6 +25,8 @@ public enum NodeExecutionBackend: String, Codable, CaseIterable, Hashable, Senda
       .claudeCodeAgent
     case .cursorCliAgent:
       .cursorCliAgent
+    case .antigravityAgent:
+      .antigravityAgent
     case .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
       nil
     }
@@ -86,6 +90,7 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
   public var codexArguments: [String]
   public var claudeArguments: [String]
   public var cursorArguments: [String]
+  public var antigravityArguments: [String]
 
   public init(
     mode: AgentToolPolicyMode? = nil,
@@ -93,6 +98,7 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
     codexArguments: [String] = [],
     claudeArguments: [String] = [],
     cursorArguments: [String] = [],
+    antigravityArguments: [String] = [],
     preset: AgentToolPolicyPreset? = nil
   ) {
     self.preset = preset
@@ -101,6 +107,7 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
     self.codexArguments = codexArguments
     self.claudeArguments = claudeArguments
     self.cursorArguments = cursorArguments
+    self.antigravityArguments = antigravityArguments
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -110,6 +117,7 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
     case codexArguments
     case claudeArguments
     case cursorArguments
+    case antigravityArguments
   }
 
   public init(from decoder: Decoder) throws {
@@ -120,6 +128,7 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
       codexArguments: try container.decodeIfPresent([String].self, forKey: .codexArguments) ?? [],
       claudeArguments: try container.decodeIfPresent([String].self, forKey: .claudeArguments) ?? [],
       cursorArguments: try container.decodeIfPresent([String].self, forKey: .cursorArguments) ?? [],
+      antigravityArguments: try container.decodeIfPresent([String].self, forKey: .antigravityArguments) ?? [],
       preset: try container.decodeIfPresent(AgentToolPolicyPreset.self, forKey: .preset)
     )
   }
@@ -132,6 +141,9 @@ public struct AgentToolPolicy: Codable, Equatable, Sendable {
     try container.encode(codexArguments, forKey: .codexArguments)
     try container.encode(claudeArguments, forKey: .claudeArguments)
     try container.encode(cursorArguments, forKey: .cursorArguments)
+    if !antigravityArguments.isEmpty {
+      try container.encode(antigravityArguments, forKey: .antigravityArguments)
+    }
   }
 }
 

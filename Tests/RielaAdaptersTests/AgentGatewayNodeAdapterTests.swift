@@ -703,6 +703,40 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   #expect(executor.params() == nil)
 }
 
+@Test func gatewayAdapterMapsAntigravityBackendAndSandboxArguments() async throws {
+  let cases: [(AgentSandboxMode?, [String])] = [
+    (.readOnly, ["--disable-slash-commands", "--effort", "high", "--sandbox", "--dangerously-skip-permissions"]),
+    (.workspaceWrite, ["--disable-slash-commands", "--effort", "high", "--mode", "accept-edits", "--dangerously-skip-permissions"]),
+    (.dangerFullAccess, ["--disable-slash-commands", "--effort", "high", "--dangerously-skip-permissions"])
+  ]
+  for (sandbox, expectedPrefix) in cases {
+    let executor = GatewayStubExecutor()
+    let output = try await AgentGatewayNodeAdapter(
+      environment: ["RIELA_ANTIGRAVITY_AGENT_EXECUTABLE": "/custom/bin/agy"],
+      executorFactory: executor.factory
+    ).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(
+          id: "worker",
+          executionBackend: .antigravityAgent,
+          model: "gemini-4-neon",
+          effort: .high,
+          agentSandbox: sandbox
+        ),
+        promptText: "hello"
+      ),
+      context: AdapterExecutionContext()
+    )
+    let params = try #require(executor.params())
+    #expect(params.vendor == .antigravity)
+    #expect(params.model == "gemini-4-neon")
+    #expect(params.executable == "/custom/bin/agy")
+    #expect(vendorArguments(params) == expectedPrefix)
+    #expect(output.provider == "antigravity")
+    #expect(output.model == "gemini-4-neon")
+  }
+}
+
 private actor GatewayEventStore {
   var values: [AdapterBackendEvent] = []
   func append(_ event: AdapterBackendEvent) { values.append(event) }

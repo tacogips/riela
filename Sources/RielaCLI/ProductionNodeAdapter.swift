@@ -30,6 +30,7 @@ public func makeProductionNodeAdapter(
         .codexAgent: gatewayFactory,
         .claudeCodeAgent: gatewayFactory,
         .cursorCliAgent: gatewayFactory,
+        .antigravityAgent: gatewayFactory,
         .officialOpenAISDK: gatewayFactory,
         .officialAnthropicSDK: gatewayFactory,
         .officialGeminiSDK: gatewayFactory,

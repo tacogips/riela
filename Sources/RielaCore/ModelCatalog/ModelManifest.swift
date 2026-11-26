@@ -38,6 +38,10 @@ public enum ModelManifest {
       "auto", "composer-2.5", "gpt-5.6-sol-medium", "gpt-5.6-terra-medium", "gpt-5.6-luna-medium",
       "claude-opus-4-8-high", "claude-sonnet-5-high"
     ]),
+    .antigravityAgent: reasoningModels([
+      "gemini-4-neon", "gemini-4-carbon", "gemini-4-argon", "gemini-4-hydrogen",
+      "gemini-3.8-flash", "claude-opus-5-5", "claude-sonnet-5-5"
+    ]),
     .officialOpenAISDK: reasoningModels([
       "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-5.6", "gpt-5.4-mini", "gpt-5.5", "gpt-5.4"
     ]),

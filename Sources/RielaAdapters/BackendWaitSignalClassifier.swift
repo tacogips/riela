@@ -40,7 +40,7 @@ public struct TableBackendWaitSignalClassifier: BackendWaitSignalClassifying {
     table: Dictionary(uniqueKeysWithValues: NodeExecutionBackend.allCases.map { backend in
       let rules: [BackendWaitSignalRule]
       switch backend {
-      case .codexAgent, .claudeCodeAgent, .cursorCliAgent:
+      case .codexAgent, .claudeCodeAgent, .cursorCliAgent, .antigravityAgent:
         rules = [BackendWaitSignalRule(
           eventTypes: toolCallEventTypes,
           metadataStatus: ACPToolCallStatus.pending.rawValue

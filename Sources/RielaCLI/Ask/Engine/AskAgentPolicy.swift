@@ -23,7 +23,7 @@ enum AskAgentPolicy {
       provider: provider,
       providerProxy: proxy
     )
-    return (node, backend == .cursorCliAgent)
+    return (node, backend == .cursorCliAgent || backend == .antigravityAgent)
   }
 
   /// Claude Code maps the read-only sandbox to plan mode, which refuses MCP
@@ -70,7 +70,7 @@ enum AskAgentPolicy {
     case .codexAgent, .officialOpenAISDK: ("openai", "https://api.openai.com/v1")
     case .claudeCodeAgent, .officialAnthropicSDK: ("anthropic", "https://api.anthropic.com/v1")
     case .cursorCliAgent, .officialCursorSDK: ("cursor-api", "https://api.cursor.com/v1")
-    case .officialGeminiSDK: ("gemini", "https://generativelanguage.googleapis.com/v1beta")
+    case .antigravityAgent, .officialGeminiSDK: ("gemini", "https://generativelanguage.googleapis.com/v1beta")
     }
     let name = resolved.providerName ?? defaults.name
     let defaultURL = name == "openrouter" ? ModelCatalogService.openRouterBaseURL : defaults.baseURL

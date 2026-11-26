@@ -790,6 +790,7 @@ private func gatewayVendor(_ node: AgentNodePayload) throws -> GatewayVendor {
   case .codexAgent: return .codex
   case .claudeCodeAgent: return .claudeCode
   case .cursorCliAgent: return .cursor
+  case .antigravityAgent: return .antigravity
   case .officialOpenAISDK:
     return node.provider?.name == GatewayVendor.openRouter.rawValue ? .openRouter : .openAI
   case .officialAnthropicSDK: return .anthropic
@@ -814,6 +815,7 @@ private func gatewayVendorExecutable(
   case .codex: ("codexExecutable", "RIELA_CODEX_AGENT_EXECUTABLE")
   case .claudeCode: ("claudeExecutable", "RIELA_CLAUDE_CODE_AGENT_EXECUTABLE")
   case .cursor: ("cursorExecutable", "RIELA_CURSOR_CLI_AGENT_EXECUTABLE")
+  case .antigravity: ("antigravityExecutable", "RIELA_ANTIGRAVITY_AGENT_EXECUTABLE")
   case .openAI, .anthropic, .gemini, .openRouter, .cursorAPI: ("", "")
   }
   if case let .string(value)? = input.node.variables[keys.variable] { return value }
@@ -831,6 +833,7 @@ private func gatewayVendorArguments(
   case .codex: ("codexAdditionalArgs", .codexAgent)
   case .claudeCode: ("claudeAdditionalArgs", .claudeCodeAgent)
   case .cursor: ("cursorAdditionalArgs", .cursorCliAgent)
+  case .antigravity: ("antigravityAdditionalArgs", .antigravityAgent)
   case .openAI, .anthropic, .gemini, .openRouter, .cursorAPI: ("", .codexAgent)
   }
   let configured: [String]
@@ -857,6 +860,11 @@ private func gatewayVendorArguments(
   case .cursor:
     (input.node.agentSandbox.map { ["--sandbox", $0.rawValue] } ?? [])
       + images.flatMap { ["--image", $0] }
+  case .antigravity:
+    ["--disable-slash-commands"]
+      + (input.node.effort.map { ["--effort", $0.rawValue] } ?? [])
+      + antigravitySandboxArguments(for: input.node.agentSandbox)
+      + uniqueImageDirectories(images).flatMap { ["--add-dir", $0] }
   case .openAI, .anthropic, .gemini, .openRouter, .cursorAPI:
     []
   }
@@ -910,6 +918,15 @@ private func claudePermissionMode(for sandbox: AgentSandboxMode?) -> String? {
   case .workspaceWrite: "acceptEdits"
   case .dangerFullAccess: "bypassPermissions"
   case nil: nil
+  }
+}
+
+private func antigravitySandboxArguments(for sandbox: AgentSandboxMode?) -> [String] {
+  switch sandbox {
+  case .readOnly: ["--sandbox", "--dangerously-skip-permissions"]
+  case .workspaceWrite: ["--mode", "accept-edits", "--dangerously-skip-permissions"]
+  case .dangerFullAccess: ["--dangerously-skip-permissions"]
+  case nil: ["--dangerously-skip-permissions"]
   }
 }
 

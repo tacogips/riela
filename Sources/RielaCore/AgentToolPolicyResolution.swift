@@ -67,6 +67,7 @@ public func resolveAgentToolPolicy(
   policy.codexArguments = try arguments(policy.codexArguments)
   policy.claudeArguments = try arguments(policy.claudeArguments)
   policy.cursorArguments = try arguments(policy.cursorArguments)
+  policy.antigravityArguments = try arguments(policy.antigravityArguments)
   guard let preset = policy.preset else { return policy }
   guard let executionBackend,
         AgentToolPolicyPresetArguments.isSupported(preset, backend: executionBackend) else {
@@ -82,7 +83,7 @@ public func resolveAgentToolPolicy(
     policy.codexArguments = presetArguments + policy.additionalArguments + policy.codexArguments
   case .claudeCodeAgent:
     policy.claudeArguments = presetArguments + policy.additionalArguments + policy.claudeArguments
-  case .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
+  case .cursorCliAgent, .antigravityAgent, .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
     return policy
   }
   policy.additionalArguments = []

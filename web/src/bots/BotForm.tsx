@@ -8,6 +8,7 @@ export const drivers = [
   ['codex-agent', 'Codex'],
   ['claude-code-agent', 'Claude Code'],
   ['cursor-cli-agent', 'Cursor CLI'],
+  ['antigravity-agent', 'Antigravity'],
   ['official/openai-sdk', 'OpenAI SDK'],
   ['official/anthropic-sdk', 'Anthropic SDK'],
   ['official/gemini-sdk', 'Gemini SDK'],

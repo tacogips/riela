@@ -110,7 +110,7 @@ public struct BackendCapabilityProbe: Sendable {
       arguments = ["login", "status"]
     case .claudeCodeAgent:
       arguments = ["auth", "status"]
-    case .cursorCliAgent:
+    case .cursorCliAgent, .antigravityAgent:
       arguments = nil
     case .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
       arguments = nil
@@ -155,6 +155,8 @@ public struct BackendCapabilityProbe: Sendable {
       (command, overrideName) = ("claude", "RIELA_CLAUDE_CODE_AGENT_EXECUTABLE")
     case .cursorCliAgent:
       (command, overrideName) = ("cursor-agent", "RIELA_CURSOR_CLI_AGENT_EXECUTABLE")
+    case .antigravityAgent:
+      (command, overrideName) = ("agy", "RIELA_ANTIGRAVITY_AGENT_EXECUTABLE")
     case .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
       return nil
     }
@@ -174,7 +176,7 @@ public struct BackendCapabilityProbe: Sendable {
     case .officialAnthropicSDK: ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]
     case .officialGeminiSDK: ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
     case .officialCursorSDK: ["CURSOR_API_KEY"]
-    case .codexAgent, .claudeCodeAgent, .cursorCliAgent: nil
+    case .codexAgent, .claudeCodeAgent, .cursorCliAgent, .antigravityAgent: nil
     }
   }
 

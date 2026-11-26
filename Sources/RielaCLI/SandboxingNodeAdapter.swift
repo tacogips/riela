@@ -31,7 +31,7 @@ actor SandboxingNodeAdapter: NodeAdapter {
       throw AdapterExecutionError(.policyBlocked, "ephemeral agents require an explicit resolved output schema")
     }
     let backend = try resolveNodeExecutionBackend(input.node)
-    guard [.codexAgent, .claudeCodeAgent, .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK,
+    guard [.codexAgent, .claudeCodeAgent, .cursorCliAgent, .antigravityAgent, .officialOpenAISDK, .officialAnthropicSDK,
       .officialGeminiSDK, .officialCursorSDK].contains(backend) else {
       throw AdapterExecutionError(.policyBlocked, "sandboxed node requires a vendor CLI or HTTP SDK backend")
     }
